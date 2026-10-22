@@ -4,18 +4,55 @@ Bendo is a Hono-style web framework written in Bend, plus a TypeScript toolkit. 
 
 ## Toolchain
 
-- Bend 2.0.38, installed with `curl -fsSL https://bend-lang.com/install.sh | BEND_NO_TELEMETRY=1 sh`. Add `~/.bend/bin` to PATH.
-- Bun for the TypeScript packages and tests.
-- Lean (through elan) for `bend PROOF.bend --verdict`.
+Bend is pinned in `.bend-version`; Lean is pinned in `lean-toolchain` at the
+version required by Bend's strict proof kernel. Run the following from the repo
+root on a clean Ubuntu 24.04 machine (with sudo access):
+
+```sh
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl git unzip build-essential clang
+
+curl -fsSL https://bun.sh/install -o /tmp/bendo-bun-install.sh
+bash /tmp/bendo-bun-install.sh
+export PATH="$HOME/.bun/bin:$PATH"
+
+curl -fsSL https://bend-lang.com/install.sh -o /tmp/bendo-bend-install.sh
+BEND_NO_TELEMETRY=1 sh /tmp/bendo-bend-install.sh
+export PATH="$HOME/.bend/bin:$PATH"
+export BEND_NO_TELEMETRY=1
+bun run check:bend
+
+curl -fsSL https://elan.lean-lang.org/elan-init.sh -o /tmp/bendo-elan-init.sh
+sh /tmp/bendo-elan-init.sh -y --no-modify-path --default-toolchain none
+export PATH="$HOME/.elan/bin:$PATH"
+elan toolchain install "$(cat lean-toolchain)"
+
+bun install --frozen-lockfile
+timeout --foreground 10m bun run check
+timeout --foreground 10m bend PROOF.bend --verdict
+```
+
+Both proof commands must print `ALL PROOFS CHECK`. Elan selects the repo's
+`lean-toolchain` automatically; no global Lean default is needed. Add
+`~/.bun/bin`, `~/.bend/bin` and `~/.elan/bin` to your shell's PATH for later
+sessions. Bend builds its proof kernel on the first strict check.
+
+The Bend installer currently installs its bundled release and accepts no version
+argument. `bun run check:bend` compares `bend version` with `.bend-version` and
+stops on a mismatch, including in CI. If the installer advances, obtain the
+pinned release from https://github.com/bendlang/bend/releases (including its
+`bin`, `bend2` and `guide` directories under `~/.bend`), then rerun the check.
+Do not change the pin just to bypass a mismatch.
 
 Bend v2 is newer than most model training data. Read `~/.bend/guide/GUIDE.md` and `bend base <Name>` before writing Bend. Do not guess syntax from Bend v1 or HVM examples.
 
 ## Commands
 
-- `bun run prove`: check every proof (`bend PROOF.bend`).
+- `bun run prove`: check every proof with the Lean-backed kernel (`bend PROOF.bend --verdict`).
 - `bun run typecheck`: TypeScript.
 - `bun run test`: integration tests. They compile Bend examples to native binaries and hit them over HTTP.
-- `bun run check`: all of the above. It must pass before work lands.
+- `bun run check:bend`: validate the installed Bend version against `.bend-version`.
+- `bun run check`: the version check and all of the above. It must pass before work lands.
 
 ## Bend rules that bite
 
