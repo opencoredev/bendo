@@ -1,0 +1,16 @@
+{
+  "name": "bendo-monorepo",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "prove": "bend PROOF.bend",
+    "test": "bun test --timeout 30000 tests",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "check": "bun run prove && bun run typecheck && bun run test"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.0"
+  }
+}
