@@ -1,6 +1,4 @@
-export type BendInstall =
-  | { kind: "found"; path: string; version: string }
-  | { kind: "missing" };
+export type BendInstall = { kind: "found"; path: string; version: string } | { kind: "missing" };
 
 const VERSION_LINE = /v?(\d+\.\d+\.\d+)/;
 

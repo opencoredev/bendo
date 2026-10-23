@@ -2,16 +2,23 @@
   "name": "bendo-monorepo",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "check:bend": "sh scripts/check-bend-version.sh",
     "prove": "bend PROOF.bend --verdict",
-    "test": "bun test --timeout 30000 tests",
+    "test": "timeout --foreground 5m bun test --timeout 30000 tests",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "check": "bun run check:bend && bun run prove && bun run typecheck && bun run test"
+    "check": "bun run check:bend && bun run prove && bun run lint && bun run format:check && bun run typecheck && bun run test",
+    "lint": "oxlint --threads=4 --deny-warnings .",
+    "format": "oxfmt --threads=4 .",
+    "format:check": "oxfmt --threads=4 --check ."
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "oxfmt": "0.74.0",
+    "oxlint": "1.89.0",
     "typescript": "^5.9.0"
   }
 }
