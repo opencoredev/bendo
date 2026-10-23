@@ -319,3 +319,367 @@ def hex_go_append(fuel, n, xs, ys):
       {==}
     case 1n+p:
       hex_append_case(p, n, xs, ys, U32.is_eq(n, 0), hex_go_append(p, (n / 16 : U32), C.hex_char((n % 16 : U32)) <> xs, ys))
+
+# Quotient bits followed by four zero bits; the result index is 4 + n.
+def quotient_word(n: Nat, w: Word(n)) -> Word(4n+n):
+  match n w:
+    case 0n WNil{}:
+      Word.zero(4n)
+    case 1n+k WCon{h, t}:
+      WCon{h, quotient_word(k, t)}
+
+# The restoring division step shifts a remainder nibble once. Its top bit
+# becomes the next quotient bit; the incoming bit replaces the low bit.
+law div16_step:
+  for +p: Nat
+  for +q: Word(p)
+  for +a: Bool
+  for +b: Bool
+  for +c: Bool
+  for +d: Bool
+  for +e: Bool
+  {U32.divmod.go.rec(p, a, 16, (q, nibble(WCon{b, WCon{c, WCon{d, WCon{e, WNil{}}}}}))) == (WCon{e, q}, nibble(WCon{a, WCon{b, WCon{c, WCon{d, WNil{}}}}})) : Word(1n+p) & U32}
+
+def div16_step(p, q, a, b, c, d, e):
+  match a b c d e:
+    case False{} False{} False{} False{} False{}:
+      {==}
+    case False{} False{} False{} False{} True{}:
+      {==}
+    case False{} False{} False{} True{} False{}:
+      {==}
+    case False{} False{} False{} True{} True{}:
+      {==}
+    case False{} False{} True{} False{} False{}:
+      {==}
+    case False{} False{} True{} False{} True{}:
+      {==}
+    case False{} False{} True{} True{} False{}:
+      {==}
+    case False{} False{} True{} True{} True{}:
+      {==}
+    case False{} True{} False{} False{} False{}:
+      {==}
+    case False{} True{} False{} False{} True{}:
+      {==}
+    case False{} True{} False{} True{} False{}:
+      {==}
+    case False{} True{} False{} True{} True{}:
+      {==}
+    case False{} True{} True{} False{} False{}:
+      {==}
+    case False{} True{} True{} False{} True{}:
+      {==}
+    case False{} True{} True{} True{} False{}:
+      {==}
+    case False{} True{} True{} True{} True{}:
+      {==}
+    case True{} False{} False{} False{} False{}:
+      {==}
+    case True{} False{} False{} False{} True{}:
+      {==}
+    case True{} False{} False{} True{} False{}:
+      {==}
+    case True{} False{} False{} True{} True{}:
+      {==}
+    case True{} False{} True{} False{} False{}:
+      {==}
+    case True{} False{} True{} False{} True{}:
+      {==}
+    case True{} False{} True{} True{} False{}:
+      {==}
+    case True{} False{} True{} True{} True{}:
+      {==}
+    case True{} True{} False{} False{} False{}:
+      {==}
+    case True{} True{} False{} False{} True{}:
+      {==}
+    case True{} True{} False{} True{} False{}:
+      {==}
+    case True{} True{} False{} True{} True{}:
+      {==}
+    case True{} True{} True{} False{} False{}:
+      {==}
+    case True{} True{} True{} False{} True{}:
+      {==}
+    case True{} True{} True{} True{} False{}:
+      {==}
+    case True{} True{} True{} True{} True{}:
+      {==}
+
+law div16_low:
+  for +lo: Word(4n)
+  {U32.divmod.go(4n, lo, 16) == (Word.zero(4n), nibble(lo)) : Word(4n) & U32}
+
+def div16_low(lo):
+  match lo:
+    case WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WNil{}}}}}:
+      {==}
+    case WCon{False{}, WCon{False{}, WCon{False{}, WCon{True{}, WNil{}}}}}:
+      {==}
+    case WCon{False{}, WCon{False{}, WCon{True{}, WCon{False{}, WNil{}}}}}:
+      {==}
+    case WCon{False{}, WCon{False{}, WCon{True{}, WCon{True{}, WNil{}}}}}:
+      {==}
+    case WCon{False{}, WCon{True{}, WCon{False{}, WCon{False{}, WNil{}}}}}:
+      {==}
+    case WCon{False{}, WCon{True{}, WCon{False{}, WCon{True{}, WNil{}}}}}:
+      {==}
+    case WCon{False{}, WCon{True{}, WCon{True{}, WCon{False{}, WNil{}}}}}:
+      {==}
+    case WCon{False{}, WCon{True{}, WCon{True{}, WCon{True{}, WNil{}}}}}:
+      {==}
+    case WCon{True{}, WCon{False{}, WCon{False{}, WCon{False{}, WNil{}}}}}:
+      {==}
+    case WCon{True{}, WCon{False{}, WCon{False{}, WCon{True{}, WNil{}}}}}:
+      {==}
+    case WCon{True{}, WCon{False{}, WCon{True{}, WCon{False{}, WNil{}}}}}:
+      {==}
+    case WCon{True{}, WCon{False{}, WCon{True{}, WCon{True{}, WNil{}}}}}:
+      {==}
+    case WCon{True{}, WCon{True{}, WCon{False{}, WCon{False{}, WNil{}}}}}:
+      {==}
+    case WCon{True{}, WCon{True{}, WCon{False{}, WCon{True{}, WNil{}}}}}:
+      {==}
+    case WCon{True{}, WCon{True{}, WCon{True{}, WCon{False{}, WNil{}}}}}:
+      {==}
+    case WCon{True{}, WCon{True{}, WCon{True{}, WCon{True{}, WNil{}}}}}:
+      {==}
+
+law div16_words:
+  for +n: Nat
+  for +lo: Word(4n)
+  for +hi: Word(n)
+  {U32.divmod.go(4n+n, Bits.cat(4n, n, lo, hi), 16) == (quotient_word(n, hi), nibble(lo)) : Word(4n+n) & U32}
+
+def div16_words(n, lo, hi):
+  match n lo hi:
+    case 0n WCon{a, WCon{b, WCon{c, WCon{d, WNil{}}}}} WNil{}:
+      div16_low(WCon{a, WCon{b, WCon{c, WCon{d, WNil{}}}}})
+    case 1n+k WCon{+a, WCon{+b, WCon{+c, WCon{+d, WNil{}}}}} WCon{+e, +t}:
+      %Equal.sym(Word(4n+k) & U32, U32.divmod.go(4n+k, Bits.cat(4n, k, WCon{b, WCon{c, WCon{d, WCon{e, WNil{}}}}}, t), 16), (quotient_word(k, t), nibble(WCon{b, WCon{c, WCon{d, WCon{e, WNil{}}}}})), div16_words(k, WCon{b, WCon{c, WCon{d, WCon{e, WNil{}}}}}, t)) : {U32.divmod.go.rec(4n+k, a, 16, _) == (WCon{e, quotient_word(k, t)}, nibble(WCon{a, WCon{b, WCon{c, WCon{d, WNil{}}}}})) : Word(1n+(4n+k)) & U32}
+      div16_step(4n+k, quotient_word(k, t), a, b, c, d, e)
+
+law div16_split:
+  for +lo: Word(4n)
+  for +hi: Word(28n)
+  {(U32{Bits.cat(4n, 28n, lo, hi)} / 16 : U32) == U32{quotient_word(28n, hi)} : U32}
+
+def div16_split(lo, hi):
+  Equal.cong(Word(32n) & U32, U32, pair => U32.div.fin(pair), U32.divmod.go(32n, Bits.cat(4n, 28n, lo, hi), 16), (quotient_word(28n, hi), nibble(lo)), div16_words(28n, lo, hi))
+
+law mod16_split:
+  for +lo: Word(4n)
+  for +hi: Word(28n)
+  {(U32{Bits.cat(4n, 28n, lo, hi)} % 16 : U32) == nibble(lo) : U32}
+
+def mod16_split(lo, hi):
+  Equal.cong(Word(32n) & U32, U32, pair => U32.mod.fin(pair), U32.divmod.go(32n, Bits.cat(4n, 28n, lo, hi), 16), (quotient_word(28n, hi), nibble(lo)), div16_words(28n, lo, hi))
+
+# The same canonical digits as hex_go, but represented as four-bit words.
+# No division remains in this representation.
+def hex_digits(fuel: Nat, +n: U32, +acc: List<&2, Word(4n)>) -> List<&2, Word(4n)>:
+  match fuel n:
+    case 0n n:
+      acc
+    case 1n+p U32{WCon{+a, WCon{+b, WCon{+c, WCon{+d, +hi}}}}}:
+      +lo = {WCon{a, WCon{b, WCon{c, WCon{d, WNil{}}}}} : Word(4n)}
+      C.branch(List<&2, Word(4n)>, U32.is_eq(U32{Bits.cat(4n, 28n, lo, hi)}, 0),
+        u => acc, u => hex_digits(p, U32{quotient_word(28n, hi)}, lo <> acc))
+
+def hex_digits_case(+p: Nat, +lo: Word(4n), +hi: Word(28n), +acc: List<&2, Word(4n)>, zero: Bool,
+    step: {C.hex_go(p, U32{quotient_word(28n, hi)}, C.hex_char(nibble(lo)) <> hex_bytes(acc)) == hex_bytes(hex_digits(p, U32{quotient_word(28n, hi)}, lo <> acc)) : List<&2, U32>}) ->
+    {C.branch(List<&2, U32>, zero, u => hex_bytes(acc), u => C.hex_go(p, U32{quotient_word(28n, hi)}, C.hex_char(nibble(lo)) <> hex_bytes(acc))) == hex_bytes(C.branch(List<&2, Word(4n)>, zero, u => acc, u => hex_digits(p, U32{quotient_word(28n, hi)}, lo <> acc))) : List<&2, U32>}:
+  match zero:
+    case True{}:
+      {==}
+    case False{}:
+      step
+
+law hex_go_digits:
+  for +fuel: Nat
+  for +n: U32
+  for +acc: List<&2, Word(4n)>
+  {C.hex_go(fuel, n, hex_bytes(acc)) == hex_bytes(hex_digits(fuel, n, acc)) : List<&2, U32>}
+
+def hex_go_digits(fuel, n, acc):
+  match fuel n:
+    case 0n n:
+      {==}
+    case 1n+p U32{WCon{+a, WCon{+b, WCon{+c, WCon{+d, +hi}}}}}:
+      +lo = {WCon{a, WCon{b, WCon{c, WCon{d, WNil{}}}}} : Word(4n)}
+      +n = {U32{Bits.cat(4n, 28n, lo, hi)} : U32}
+      %Equal.sym(U32, (n / 16 : U32), U32{quotient_word(28n, hi)}, div16_split(lo, hi)) : {C.branch(List<&2, U32>, U32.is_eq(n, 0), u => hex_bytes(acc), u => C.hex_go(p, _, C.hex_char((n % 16 : U32)) <> hex_bytes(acc))) == hex_bytes(hex_digits(1n+p, n, acc)) : List<&2, U32>}
+      %Equal.sym(U32, (n % 16 : U32), nibble(lo), mod16_split(lo, hi)) : {C.branch(List<&2, U32>, U32.is_eq(n, 0), u => hex_bytes(acc), u => C.hex_go(p, U32{quotient_word(28n, hi)}, C.hex_char(_) <> hex_bytes(acc))) == hex_bytes(hex_digits(1n+p, n, acc)) : List<&2, U32>}
+      hex_digits_case(p, lo, hi, acc, U32.is_eq(n, 0), hex_go_digits(p, U32{quotient_word(28n, hi)}, lo <> acc))
+
+law hex_nibble_octet:
+  for +bits: Word(4n)
+  {(C.hex_char(nibble(bits)) <= 255 : U32) == True{} : Bool}
+
+def hex_nibble_octet(bits):
+  match bits:
+    case WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WNil{}}}}}:
+      {==}
+    case WCon{False{}, WCon{False{}, WCon{False{}, WCon{True{}, WNil{}}}}}:
+      {==}
+    case WCon{False{}, WCon{False{}, WCon{True{}, WCon{False{}, WNil{}}}}}:
+      {==}
+    case WCon{False{}, WCon{False{}, WCon{True{}, WCon{True{}, WNil{}}}}}:
+      {==}
+    case WCon{False{}, WCon{True{}, WCon{False{}, WCon{False{}, WNil{}}}}}:
+      {==}
+    case WCon{False{}, WCon{True{}, WCon{False{}, WCon{True{}, WNil{}}}}}:
+      {==}
+    case WCon{False{}, WCon{True{}, WCon{True{}, WCon{False{}, WNil{}}}}}:
+      {==}
+    case WCon{False{}, WCon{True{}, WCon{True{}, WCon{True{}, WNil{}}}}}:
+      {==}
+    case WCon{True{}, WCon{False{}, WCon{False{}, WCon{False{}, WNil{}}}}}:
+      {==}
+    case WCon{True{}, WCon{False{}, WCon{False{}, WCon{True{}, WNil{}}}}}:
+      {==}
+    case WCon{True{}, WCon{False{}, WCon{True{}, WCon{False{}, WNil{}}}}}:
+      {==}
+    case WCon{True{}, WCon{False{}, WCon{True{}, WCon{True{}, WNil{}}}}}:
+      {==}
+    case WCon{True{}, WCon{True{}, WCon{False{}, WCon{False{}, WNil{}}}}}:
+      {==}
+    case WCon{True{}, WCon{True{}, WCon{False{}, WCon{True{}, WNil{}}}}}:
+      {==}
+    case WCon{True{}, WCon{True{}, WCon{True{}, WCon{False{}, WNil{}}}}}:
+      {==}
+    case WCon{True{}, WCon{True{}, WCon{True{}, WCon{True{}, WNil{}}}}}:
+      {==}
+
+law hex_bytes_octets:
+  for +ds: List<&2, Word(4n)>
+  {C.octets(hex_bytes(ds)) == True{} : Bool}
+
+def hex_bytes_octets(ds):
+  match ds:
+    case Nil{}:
+      {==}
+    case d <> t:
+      %Equal.sym(Bool, (C.hex_char(nibble(d)) <= 255 : U32), True{}, hex_nibble_octet(d)) : {_ && C.octets(hex_bytes(t)) == True{} : Bool}
+      hex_bytes_octets(t)
+
+law hex_go_octets:
+  for +fuel: Nat
+  for +n: U32
+  {C.octets(C.hex_go(fuel, n, [])) == True{} : Bool}
+
+def hex_go_octets(fuel, n):
+  %Equal.sym(List<&2, U32>, C.hex_go(fuel, n, []), hex_bytes(hex_digits(fuel, n, [])), hex_go_digits(fuel, n, [])) : {C.octets(_) == True{} : Bool}
+  hex_bytes_octets(hex_digits(fuel, n, []))
+
+# Zero-padded quotients retain the original unsigned comparison.
+law compare_quotients:
+  for +n: Nat
+  for +a: Word(n)
+  for +b: Word(n)
+  {Word.cmp(4n+n, quotient_word(n, a), quotient_word(n, b)) == Word.cmp(n, a, b) : Cmp}
+
+def compare_quotients(n, a, b):
+  match n a b:
+    case 0n WNil{} WNil{}:
+      {==}
+    case 1n+k WCon{+ah, +at} WCon{+bh, +bt}:
+      Equal.cong(Cmp, Cmp, c => Word.cmp.fin(ah, bh, c), Word.cmp(4n+k, quotient_word(k, at), quotient_word(k, bt)), Word.cmp(k, at, bt), compare_quotients(k, at, bt))
+
+def compare_max_fin(+h: Bool, c: Cmp, safe: {Cmp.is_le(c) == True{} : Bool}) ->
+    {Cmp.is_le(Word.cmp.fin(h, True{}, c)) == True{} : Bool}:
+  match h c:
+    case h LT{}:
+      {==}
+    case False{} EQ{}:
+      {==}
+    case True{} EQ{}:
+      {==}
+    case h GT{}:
+      Bits.absurd({False{} == True{} : Bool}, Bits.false_true(safe))
+
+law compare_max:
+  for +n: Nat
+  for +w: Word(n)
+  {Cmp.is_le(Word.cmp(n, w, Word.not(n, Word.zero(n)))) == True{} : Bool}
+
+def compare_max(n, w):
+  match n w:
+    case 0n WNil{}:
+      {==}
+    case 1n+k WCon{+h, +t}:
+      compare_max_fin(h, Word.cmp(k, t, Word.not(k, Word.zero(k))), compare_max(k, t))
+
+law quotient_fits:
+  for +hi: Word(28n)
+  {(U32{quotient_word(28n, hi)} <= 268435455 : U32) == True{} : Bool}
+
+def quotient_fits(hi):
+  %Equal.sym(Cmp, Word.cmp(32n, quotient_word(28n, hi), quotient_word(28n, Word.not(28n, Word.zero(28n)))), Word.cmp(28n, hi, Word.not(28n, Word.zero(28n))), compare_quotients(28n, hi, Word.not(28n, Word.zero(28n)))) : {Cmp.is_le(_) == True{} : Bool}
+  compare_max(28n, hi)
+
+law div16_fits:
+  for +n: U32
+  {((n / 16 : U32) <= 268435455 : U32) == True{} : Bool}
+
+def div16_fits(n):
+  match n:
+    case U32{WCon{+a, WCon{+b, WCon{+c, WCon{+d, +hi}}}}}:
+      +lo = {WCon{a, WCon{b, WCon{c, WCon{d, WNil{}}}}} : Word(4n)}
+      %Equal.sym(U32, (U32{Bits.cat(4n, 28n, lo, hi)} / 16 : U32), U32{quotient_word(28n, hi)}, div16_split(lo, hi)) : {(_ <= 268435455 : U32) == True{} : Bool}
+      quotient_fits(hi)
+
+law adc_zero:
+  for +n: Nat
+  for +w: Word(n)
+  {Word.adc(n, w, Word.zero(n), False{}, False{}) == w : Word(n)}
+
+def adc_zero(n, w):
+  match n w:
+    case 0n WNil{}:
+      {==}
+    case 1n+k WCon{False{}, +t}:
+      Equal.cong(Word(k), Word(1n+k), x => WCon{False{}, x}, Word.adc(k, t, Word.zero(k), False{}, False{}), t, adc_zero(k, t))
+    case 1n+k WCon{True{}, +t}:
+      Equal.cong(Word(k), Word(1n+k), x => WCon{True{}, x}, Word.adc(k, t, Word.zero(k), False{}, False{}), t, adc_zero(k, t))
+
+law add_low_nibble:
+  for +lo: Word(4n)
+  for +hi: Word(28n)
+  {(U32{Bits.cat(4n, 28n, Word.zero(4n), hi)} + nibble(lo) : U32) == U32{Bits.cat(4n, 28n, lo, hi)} : U32}
+
+def add_low_nibble(lo, hi):
+  match lo:
+    case WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WNil{}}}}}:
+      Equal.cong(Word(28n), U32, t => U32{Bits.cat(4n, 28n, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WNil{}}}}}, t)}, Word.adc(28n, hi, Word.zero(28n), False{}, False{}), hi, adc_zero(28n, hi))
+    case WCon{False{}, WCon{False{}, WCon{False{}, WCon{True{}, WNil{}}}}}:
+      Equal.cong(Word(28n), U32, t => U32{Bits.cat(4n, 28n, WCon{False{}, WCon{False{}, WCon{False{}, WCon{True{}, WNil{}}}}}, t)}, Word.adc(28n, hi, Word.zero(28n), False{}, False{}), hi, adc_zero(28n, hi))
+    case WCon{False{}, WCon{False{}, WCon{True{}, WCon{False{}, WNil{}}}}}:
+      Equal.cong(Word(28n), U32, t => U32{Bits.cat(4n, 28n, WCon{False{}, WCon{False{}, WCon{True{}, WCon{False{}, WNil{}}}}}, t)}, Word.adc(28n, hi, Word.zero(28n), False{}, False{}), hi, adc_zero(28n, hi))
+    case WCon{False{}, WCon{False{}, WCon{True{}, WCon{True{}, WNil{}}}}}:
+      Equal.cong(Word(28n), U32, t => U32{Bits.cat(4n, 28n, WCon{False{}, WCon{False{}, WCon{True{}, WCon{True{}, WNil{}}}}}, t)}, Word.adc(28n, hi, Word.zero(28n), False{}, False{}), hi, adc_zero(28n, hi))
+    case WCon{False{}, WCon{True{}, WCon{False{}, WCon{False{}, WNil{}}}}}:
+      Equal.cong(Word(28n), U32, t => U32{Bits.cat(4n, 28n, WCon{False{}, WCon{True{}, WCon{False{}, WCon{False{}, WNil{}}}}}, t)}, Word.adc(28n, hi, Word.zero(28n), False{}, False{}), hi, adc_zero(28n, hi))
+    case WCon{False{}, WCon{True{}, WCon{False{}, WCon{True{}, WNil{}}}}}:
+      Equal.cong(Word(28n), U32, t => U32{Bits.cat(4n, 28n, WCon{False{}, WCon{True{}, WCon{False{}, WCon{True{}, WNil{}}}}}, t)}, Word.adc(28n, hi, Word.zero(28n), False{}, False{}), hi, adc_zero(28n, hi))
+    case WCon{False{}, WCon{True{}, WCon{True{}, WCon{False{}, WNil{}}}}}:
+      Equal.cong(Word(28n), U32, t => U32{Bits.cat(4n, 28n, WCon{False{}, WCon{True{}, WCon{True{}, WCon{False{}, WNil{}}}}}, t)}, Word.adc(28n, hi, Word.zero(28n), False{}, False{}), hi, adc_zero(28n, hi))
+    case WCon{False{}, WCon{True{}, WCon{True{}, WCon{True{}, WNil{}}}}}:
+      Equal.cong(Word(28n), U32, t => U32{Bits.cat(4n, 28n, WCon{False{}, WCon{True{}, WCon{True{}, WCon{True{}, WNil{}}}}}, t)}, Word.adc(28n, hi, Word.zero(28n), False{}, False{}), hi, adc_zero(28n, hi))
+    case WCon{True{}, WCon{False{}, WCon{False{}, WCon{False{}, WNil{}}}}}:
+      Equal.cong(Word(28n), U32, t => U32{Bits.cat(4n, 28n, WCon{True{}, WCon{False{}, WCon{False{}, WCon{False{}, WNil{}}}}}, t)}, Word.adc(28n, hi, Word.zero(28n), False{}, False{}), hi, adc_zero(28n, hi))
+    case WCon{True{}, WCon{False{}, WCon{False{}, WCon{True{}, WNil{}}}}}:
+      Equal.cong(Word(28n), U32, t => U32{Bits.cat(4n, 28n, WCon{True{}, WCon{False{}, WCon{False{}, WCon{True{}, WNil{}}}}}, t)}, Word.adc(28n, hi, Word.zero(28n), False{}, False{}), hi, adc_zero(28n, hi))
+    case WCon{True{}, WCon{False{}, WCon{True{}, WCon{False{}, WNil{}}}}}:
+      Equal.cong(Word(28n), U32, t => U32{Bits.cat(4n, 28n, WCon{True{}, WCon{False{}, WCon{True{}, WCon{False{}, WNil{}}}}}, t)}, Word.adc(28n, hi, Word.zero(28n), False{}, False{}), hi, adc_zero(28n, hi))
+    case WCon{True{}, WCon{False{}, WCon{True{}, WCon{True{}, WNil{}}}}}:
+      Equal.cong(Word(28n), U32, t => U32{Bits.cat(4n, 28n, WCon{True{}, WCon{False{}, WCon{True{}, WCon{True{}, WNil{}}}}}, t)}, Word.adc(28n, hi, Word.zero(28n), False{}, False{}), hi, adc_zero(28n, hi))
+    case WCon{True{}, WCon{True{}, WCon{False{}, WCon{False{}, WNil{}}}}}:
+      Equal.cong(Word(28n), U32, t => U32{Bits.cat(4n, 28n, WCon{True{}, WCon{True{}, WCon{False{}, WCon{False{}, WNil{}}}}}, t)}, Word.adc(28n, hi, Word.zero(28n), False{}, False{}), hi, adc_zero(28n, hi))
+    case WCon{True{}, WCon{True{}, WCon{False{}, WCon{True{}, WNil{}}}}}:
+      Equal.cong(Word(28n), U32, t => U32{Bits.cat(4n, 28n, WCon{True{}, WCon{True{}, WCon{False{}, WCon{True{}, WNil{}}}}}, t)}, Word.adc(28n, hi, Word.zero(28n), False{}, False{}), hi, adc_zero(28n, hi))
+    case WCon{True{}, WCon{True{}, WCon{True{}, WCon{False{}, WNil{}}}}}:
+      Equal.cong(Word(28n), U32, t => U32{Bits.cat(4n, 28n, WCon{True{}, WCon{True{}, WCon{True{}, WCon{False{}, WNil{}}}}}, t)}, Word.adc(28n, hi, Word.zero(28n), False{}, False{}), hi, adc_zero(28n, hi))
+    case WCon{True{}, WCon{True{}, WCon{True{}, WCon{True{}, WNil{}}}}}:
+      Equal.cong(Word(28n), U32, t => U32{Bits.cat(4n, 28n, WCon{True{}, WCon{True{}, WCon{True{}, WCon{True{}, WNil{}}}}}, t)}, Word.adc(28n, hi, Word.zero(28n), False{}, False{}), hi, adc_zero(28n, hi))

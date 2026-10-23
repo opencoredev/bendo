@@ -145,4 +145,7 @@ def Laws.chunked_roundtrip(chunks, limit, suffix, valid):
     case Nil{} <> rest:
       Laws.chunked_roundtrip(rest, limit, suffix, valid)
     case (c <> tail) <> rest:
+      +size = U32.from_nat(List.length(&2, U32, c <> tail))
+      # Expose structural nibbles instead of expanding eight div/mod pairs.
+      %Equal.sym(List<&2, U32>, Chunked.hex_go(8n, size, []), ChunkedProof.hex_bytes(ChunkedProof.hex_digits(8n, size, [])), ChunkedProof.hex_go_digits(8n, size, [])) : {Chunked.decode(Bytes.append(Bytes.append(_, 13 <> 10 <> Bytes.append(c <> tail, 13 <> 10 <> Chunked.encode(rest))), suffix), limit) == Chunked.Decoded{c <> Bytes.append(tail, List.concat(&2, U32, rest)), [], suffix} : Chunked.DecodeResult}
       ?chunked_roundtrip_nonempty_chunk
