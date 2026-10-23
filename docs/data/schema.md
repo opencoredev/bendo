@@ -42,10 +42,10 @@ type Schema is Data:
 
 `decode(schema, json)` returns `Result<&2, &2, Errors(), Value>`.
 `Errors()` is `List<&2, Error>`; each error has a `Code`, a message, and a
-`List<&2, PathPart>`. Decoding stops at the first failure, so the list holds one
-error. Its path leads from the root to the failing value through `PathKey{String}`
-(an object key) and `PathIndex{Nat}` (an array position); a scalar schema at the
-root gives an empty path. Collecting every error is BND-35 work.
+`List<&2, PathPart>` leading from the root to the failing location through
+`PathKey{String}` (an object key) and `PathIndex{Nat}` (an array position). A
+rejection lists every failing location, up to 100; see [Errors](#errors).
+`decode_first` stops at the first failure and returns one error.
 
 Successful scalar values are `VString{String}`, `VNumber{String}`,
 `VInteger{String}`, `VBool{Bool}`, or `VLiteral{Json.Json}`. Numbers retain the
@@ -261,6 +261,7 @@ type Unknown is Data:
 type Presence is Data:
   Required{}
   Optional{}
+  Default{value: Json.Json}
 
 type Field is Data:
   Field{key: String, schema: Schema, presence: Presence}
@@ -322,7 +323,8 @@ item's error path starts with its zero-based `PathIndex`.
 `ObjectSchema{fields, unknown}` accepts an object when:
 
 - each declared key appears exactly once if `Required{}`, at most once if
-  `Optional{}`, and its member is accepted by that field's schema;
+  `Optional{}` or `Default{v}`, and its member is accepted by that field's
+  schema;
 - under `Strict{}`, every member's key is declared; under `Strip{}`, undeclared
   members are ignored and left out of the value, even when they repeat.
 
@@ -330,14 +332,32 @@ Bendo's JSON keeps duplicate keys, and parsers disagree about which duplicate
 wins, so a declared key that appears twice rejects the object with
 `duplicate key` under either policy. The value is `VObject` with one `VField`
 per declared field in schema order, `None{}` for an absent optional field.
-Errors for a member start with its `PathKey`; a missing required key and a
-duplicate key name that key, and an undeclared key under `Strict{}` has an
-empty path.
+Errors for a member start with its `PathKey`; a missing required key, a
+duplicate key and an undeclared key under `Strict{}` each name that key.
 
 Optionality lives on the field, not on a schema: JSON has no undefined value,
 so "may be absent" only means something for an object key. Use
-`NullableSchema` for "may be null". BND-35 adds defaults as a third
-`Presence`.
+`NullableSchema` for "may be null".
+
+### Defaults
+
+`Field{k, schema, Default{v}}` may be absent; then its `VField` holds `v`
+decoded by `schema`, exactly as if the input had carried `v`. A defaulted
+object fills its own defaults in turn. The default must satisfy its field's
+schema: the decoder checks it with the rest of the schema before reading
+input, and a schema with a bad default returns `InvalidSchema`.
+
+```python
+def query() -> S.Schema:
+  S.ObjectSchema{[
+    S.Field{"limit", S.IntegerSchema{Some{"1"}, Some{"100"}}, S.Default{J.JNumber{"10"}}},
+    S.Field{"tag", S.ArraySchema{S.StringSchema{1n, None{}, None{}, S.Plain{}}, 0n, Some{5n}}, S.Optional{}},
+  ], S.Strip{}}
+```
+
+Decoding `{}` against `query()` gives
+`VObject{[VField{"limit", Some{VInteger{"10"}}}, VField{"tag", None{}}]}`.
+JSON Schema export (BND-37) should emit the value as `default`.
 
 ### Nullable and union
 
@@ -352,8 +372,8 @@ When no member accepts, the error is `Constraint` with
 ### Validity
 
 A compound schema is valid when every part is: `min_items <= max_items`, declared
-keys are well-formed Unicode and distinct within an object, and every child
-schema is valid. The decoder checks the whole tree, including union members it
+keys are well-formed Unicode and distinct within an object, every default
+meets its field's schema, and every child schema is valid. The decoder checks the whole tree, including union members it
 may never reach, before reading input, and an invalid tree returns
 `InvalidSchema` with `invalid schema`.
 
@@ -367,9 +387,82 @@ O(members × declared fields) for its key checks; there is no per-pair
 comparison between members, so a fixed schema costs time linear in the body.
 A union tries each member on the same value, so a value under nested unions can
 be decoded once per path through them; that factor depends on the schema, not
-on the body. `tests/schema-compound.test.ts` measures 256 KiB and 1 MiB
+on the body.
+
+A rejection decodes again to collect errors. The collector also walks lists
+with tail calls and stops as soon as it holds 100 errors, so a body of a
+million bad items or undeclared keys costs one pass to its hundredth error,
+and each error's path is as long as the schema is deep. Coercion makes one
+pass per declared field over an object's members, plus one to gather each
+array field, so it is linear in the body for a fixed schema.
+`tests/schema-errors.test.ts` times 256 KiB and 1 MiB bodies (capped error
+lists, undeclared keys, a repeated text key) and requires the larger to cost
+under 8 times the smaller. `tests/schema-compound.test.ts` measures 256 KiB and 1 MiB
 bodies (integer arrays, unknown keys, one key repeated, oversized arrays) and
 requires the larger to cost under 8 times the smaller.
+
+## Coercion for text sources
+
+Params, query strings, headers and forms carry only strings. Decode them with
+`decode_from(TextSource{}, schema, json)`, which coerces before decoding;
+`decode_from(JsonBody{}, ...)` and `decode` never coerce, so a JSON body that
+sends `"10"` for an integer is a type mismatch. Build the input as an object
+of `JString` members in arrival order, keeping repeated keys. `coerce(schema,
+json)` returns the coerced value on its own. The rules:
+
+- under `NumberSchema` and `IntegerSchema`, a string that is a valid JSON
+  number token becomes that number. `"010"`, `"+1"`, `" 1"` and `"1."` stay
+  strings. Integer schemas still apply the lexical integer rule afterwards, so
+  `"1e2"` becomes a number and fails as a constraint;
+- under `BooleanSchema`, exactly `"true"` and `"false"` become booleans;
+- under `ArraySchema`, each item is coerced against the item schema;
+- under `NullableSchema`, the value is coerced against the inner schema. The
+  text `"null"` stays a string; leave the key out instead;
+- under `ObjectSchema`, each member named by a declared field is coerced
+  against that field's schema. For an array field, every member with that key
+  is gathered, in order, into one array that takes the first member's place,
+  so `?tag=a&tag=b` and `?tag=a` both give arrays. A key that is absent stays
+  absent, so defaults and optional fields still apply. A non-array key that
+  repeats is still a `duplicate key`;
+- unions, literals, enums and undeclared members are left as they are, so a
+  union member or enum that needs a number never matches a text value.
+
+For example, coercing `{"limit":"20","tag":"a","x":"1","tag":"b"}` against
+`query()` gives `{"limit":20,"tag":["a","b"],"x":"1"}`. Errors from a text
+source name paths in the coerced value: the second `tag` is `["tag", 1]`.
+
+## Errors
+
+A rejection lists every location where a check fails, at most 100
+(`error_cap()`). Arrays report every failing item and objects every failing
+field. A location below a failed check is not examined: an array of the wrong
+length or a value of the wrong kind reports one error and nothing inside it,
+and a union that matches no member reports one error for the whole value,
+whatever its members said. In each object, undeclared keys under `Strict{}`
+come first in input order, then the declared fields in schema order.
+
+| Location | Path | Code | Message |
+| --- | --- | --- | --- |
+| scalar of the wrong kind | the value | `TypeMismatch` | `expected schema scalar kind` |
+| scalar failing a check, literal or enum | the value | `Constraint` | `value does not satisfy scalar checks` |
+| array or object of the wrong kind | the value | `TypeMismatch` | `expected schema kind` |
+| array length out of bounds | the array | `Constraint` | `array length out of bounds` |
+| undeclared key under `Strict{}` | `[..., key]` | `Constraint` | `object has an undeclared key` |
+| required key missing | `[..., key]` | `Constraint` | `missing required key` |
+| declared key repeated | `[..., key]` | `Constraint` | `duplicate key` |
+| no union member matches | the value | `Constraint` | `value matches no union member` |
+| invalid schema | `[]` | `InvalidSchema` | `invalid schema` |
+
+`errors_json(errors)` gives the list as JSON for responses (BND-36), one object
+per error in this order with these keys:
+
+```json
+[{"path":["people",1,"name"],"code":"constraint","message":"missing required key"}]
+```
+
+Path segments are key strings and index numbers. Codes are `"invalid_schema"`,
+`"type_mismatch"` and `"constraint"`. The shape is stable: new fields may be
+added, but these keep their names and meanings.
 
 ## Errors and extension points
 
@@ -381,13 +474,13 @@ differs from the schema. `Constraint` means a value fails a check, literal
 membership, or scalar validity.
 Even an otherwise matching enum rejects if another member is malformed.
 
-There is no coercion, default insertion, or error accumulation yet (BND-35), and
-no route validation (BND-36) or JSON Schema export (BND-37). BND-37 should export
+There is no route validation (BND-36) or JSON Schema export (BND-37) yet. BND-37 should export
 `Strict{}` as `additionalProperties: false`, `Optional{}` by omission from
 `required`, nullables and unions as `anyOf`, and must record the duplicate-key,
 first-match and lexical-integer rules as decoder policy, since JSON Schema
 validators do not share them. Defaults remain annotations until consumers
-explicitly call a decoder implementing that policy.
+explicitly call a decoder implementing that policy. Coercion is decoder policy
+too: JSON Schema validators do not coerce.
 The prototype generator is unchanged; production record generation can call
 this generic scalar decoder per field without duplicating scalar checks.
 
@@ -409,7 +502,7 @@ The value side of the spec, `Schema.value_for`, builds the expected value tree
 without checking any constraint; for a union it picks the first member that
 `decode` accepts, which the first law ties to the specification.
 
-Three laws quantify every schema and every JSON tree, including malformed
+These laws quantify every schema and every JSON tree, including malformed
 schemas and constructed data:
 
 - `schema_acceptance_iff` equates successful decoding with
@@ -423,13 +516,43 @@ schemas and constructed data:
   decoding accepts, every array item, every member with a declared key, the
   inner value of a non-null nullable, and at least one union member satisfy
   their own schemas. It follows from the first law.
+- `schema_errors_name_failing_paths` (BND-35): a rejection lists between one
+  and 100 errors, and each error's path is a location where
+  `SchemaSpec.error_at` finds a failing check.
+- `schema_errors_complete` (BND-35): for every path `error_at` accepts, the
+  decoder rejects and lists an error with exactly that path, unless it already
+  lists 100.
+- `schema_coerce_matches_spec` (BND-35): `coerce` equals
+  `SchemaSpec.coerce_text`, which restates the coercion rules by plain
+  recursion with the specification's own number grammar.
+  `schema_coerced_acceptance_iff`, `schema_coerced_preserves_typed_value`,
+  `schema_coerced_errors_name_failing_paths` and
+  `schema_coerced_errors_complete` restate the four laws above for
+  `decode_from(TextSource{}, ...)`, read against the coerced value.
+
+Defaults are part of the first two laws: `SchemaSpec.schema_ok` requires every
+default to meet its field's schema, `SchemaSpec.presence` lets a defaulted key
+be absent, and `value_for` fills an absent defaulted field with its value.
+
+`SchemaSpec.fault(s, v, path, Here{})` defines the locations. The empty path
+fails when `v` fails a scalar schema, has the wrong kind or array length, or
+matches no union member. `[i, ...rest]` leads into item `i` of an array of the
+right length, `[k]` names a declared key present a number of times its
+presence forbids or a key `Strict{}` does not declare, and `[k, ...rest]` leads
+into the one member named by a declared key. A nullable reads a non-null value
+against its inner schema.
 
 The scalar proofs go through one equivalence lemma per check
 (`proof/schema-*.bend`); the compound proofs (`proof/schema-compound.bend`)
 follow the decoder's states by induction on the schema and on each list.
+`proof/schema-errors.bend` follows the error collector's states the same way
+(the errors a state starts with, the budget, an empty result, soundness and
+completeness), and `proof/schema-coerce.bend` follows the coercion's states.
+Both files are generated from per-state cases by the scripts in
+`scripts/schema-proofs/`.
 
 Run `bun run prove` for the strict Lean-backed kernel and
-`bun test --timeout 30000 tests/schema.test.ts tests/schema-compound.test.ts`
+`bun test --timeout 30000 tests/schema.test.ts tests/schema-compound.test.ts tests/schema-errors.test.ts`
 for real native and `.mjs` consumers. Tests cover every kind and check, malformed schemas and input, exact
 boundaries, Unicode scalar lengths, numerical const equality, huge decimal
 orders, and long strings without JavaScript call-stack growth. For patterns
@@ -440,3 +563,8 @@ hand-checked cases in both targets, a three-level typed record, 3,000 seeded
 random schemas and inputs (duplicate and unknown keys included) against an
 independent TypeScript reading of this page and against the specification,
 and megabyte bodies.
+
+BND-35 tests decode defaults, coercion and error lists in both targets, run
+2,100 seeded text inputs through both targets and an independent TypeScript
+reading of the coercion rules, check the error laws on 600 seeded random
+schemas with defaults through the specification, and time megabyte bodies.
