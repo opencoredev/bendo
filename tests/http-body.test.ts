@@ -52,7 +52,7 @@ function status(response: Buffer, code: number): void {
   expect(response.toString("latin1").split("\r\n")[0]).toBe(
     `HTTP/1.1 ${code} ${code === 200 ? "OK" : code === 413 ? "Content Too Large" : code === 417 ? "Expectation Failed" : "Bad Request"}`,
   );
-  expect(response.toString("latin1")).toContain("Connection: close\r\n");
+  expect(response.toString("latin1").toLowerCase()).toContain("connection: close\r\n");
 }
 function body(response: Buffer): Buffer {
   return response.subarray(response.indexOf("\r\n\r\n") + 4);
@@ -152,7 +152,7 @@ describe("request body framing over real TCP", () => {
       // write side open: the server must bound teardown without client EOF.
       const response = await exchange([raw]);
       status(response, code);
-      expect(response.toString("latin1")).toContain("Content-Length: 0\r\n");
+      expect(response.toString("latin1").toLowerCase()).toContain("content-length: 0\r\n");
       expect(body(response)).toHaveLength(0);
     });
   }
