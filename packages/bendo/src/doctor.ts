@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { findBend } from "./bend.ts";
 
@@ -20,7 +21,14 @@ export function doctor(): number {
   const leanPin = pin("lean-toolchain");
   if (!/^leanprover\/lean4:v[0-9A-Za-z.+-]+$/.test(leanPin))
     throw new Error("Invalid lean-toolchain: expected leanprover/lean4:v<version>");
-  const leanInstall = `elan toolchain install ${leanPin}`;
+  const leanInstall = 'elan toolchain install "$(cat lean-toolchain)"';
+  // Resolve the installed binary directly: an elan proxy can install even for --version.
+  const leanPath = resolve(
+    process.env.ELAN_HOME ?? resolve(homedir(), ".elan"),
+    "toolchains",
+    leanPin.replaceAll("/", "--").replace(":", "---"),
+    "bin/lean",
+  );
   const bend = findBend();
   const tools = [
     {
@@ -41,8 +49,8 @@ export function doctor(): number {
     },
     {
       name: "lean",
-      path: Bun.which("lean"),
-      args: [`+${leanPin}`, "--version"],
+      path: Bun.which(leanPath),
+      args: ["--version"],
       pattern: /^Lean \(version (\d+\.\d+\.\d+(?:-[\w.]+)?)/m,
       expected: leanPin.replace(/^leanprover\/lean4:v/, ""),
       install: `${elanInstall} && ${leanInstall}`,

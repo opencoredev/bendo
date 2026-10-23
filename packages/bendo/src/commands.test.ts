@@ -1,5 +1,13 @@
 import { afterAll, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -57,6 +65,30 @@ test("doctor lists every missing tool with its installation command outside a pr
     expect(result.out).toContain(command);
 });
 
+test("doctor never installs a missing pinned Lean toolchain", () => {
+  const elan = Bun.which("elan");
+  if (elan === null) throw new Error("elan required");
+  const home = join(root, "empty-elan");
+  const tools = join(home, "bin");
+  mkdirSync(tools, { recursive: true });
+  copyFileSync(elan, join(tools, "elan"));
+  copyFileSync(elan, join(tools, "lean"));
+  const result = run(["doctor"], root, {
+    ...hidden,
+    PATH: tools,
+    ELAN_HOME: home,
+    ELAN_DIST_SERVER: "http://127.0.0.1:9",
+    HTTPS_PROXY: "http://127.0.0.1:9",
+    HTTP_PROXY: "http://127.0.0.1:9",
+    ALL_PROXY: "http://127.0.0.1:9",
+    NO_PROXY: "",
+  });
+  expect(result.code).toBe(1);
+  expect(existsSync(join(home, "toolchains"))).toBe(false);
+  expect(result.out).toContain("lean: missing");
+  expect(result.out).toContain('elan toolchain install "$(cat lean-toolchain)"');
+});
+
 test("doctor selects pinned Lean outside a project without a global default", () => {
   const tools = join(root, "outside-tools");
   mkdirSync(tools);
@@ -66,15 +98,18 @@ test("doctor selects pinned Lean outside a project without a global default", ()
   fake(tools, "elan", "elan 4.2.4");
   fake(tools, "clang", "clang version 18.1.3");
   fake(tools, "bun", "1.4.4");
+  const home = join(root, "installed-elan");
+  const bin = join(home, "toolchains", pin.replaceAll("/", "--").replace(":", "---"), "bin");
+  mkdirSync(bin, { recursive: true });
   writeFileSync(
-    join(tools, "lean"),
+    join(bin, "lean"),
     `#!${process.execPath}
-if (process.argv[2] !== ${JSON.stringify(`+${pin}`)} || process.argv[3] !== '--version') process.exit(1);
+if (process.argv[2] !== '--version' || process.argv.length !== 3) process.exit(1);
 console.log(${JSON.stringify(`Lean (version ${pin.replace("leanprover/lean4:v", "")}, x86_64)`)});
 `,
     { mode: 0o755 },
   );
-  const result = run(["doctor"], root, { ...hidden, PATH: tools });
+  const result = run(["doctor"], root, { ...hidden, PATH: tools, ELAN_HOME: home });
   expect(result.code).toBe(0);
   expect(result.out).toMatch(/lean [0-9.]+ .*: OK/);
 });
@@ -93,17 +128,20 @@ test("doctor compares project pins and rejects failed or unparseable version pro
   writeFileSync(join(project, ".bend-version"), "2.8.9\n");
   writeFileSync(join(project, "lean-toolchain"), "leanprover/lean4:v4.99.0\n");
   fake(project, "bend", "bend 2.0.1");
-  fake(project, "lean", "Lean (version 4.34.0, x86_64)");
+  const home = join(project, ".elan");
+  const bin = join(home, "toolchains", "leanprover--lean4---v4.99.0", "bin");
+  mkdirSync(bin, { recursive: true });
+  fake(bin, "lean", "Lean (version 4.34.0, x86_64)");
   fake(project, "elan", "elan 4.2.4");
   fake(project, "clang", "Ubuntu clang version 18.1.3");
   fake(project, "bun", "1.4.4");
-  const env = { ...hidden, PATH: project };
+  const env = { ...hidden, PATH: project, ELAN_HOME: home };
   const mismatch = run(["doctor"], project, env);
   expect(mismatch.code).toBe(1);
   expect(mismatch.out).toContain("mismatch (expected 2.8.9)");
   expect(mismatch.out).toContain("mismatch (expected 4.99.0)");
   fake(project, "bend", "bend 2.8.9");
-  fake(project, "lean", "Lean (version 4.99.0, x86_64)");
+  fake(bin, "lean", "Lean (version 4.99.0, x86_64)");
   expect(run(["doctor"], project, env).code).toBe(0);
   fake(project, "clang", "nonsense");
   expect(run(["doctor"], project, env).out).toContain("clang: cannot read version");
