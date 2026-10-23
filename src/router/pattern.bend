@@ -132,20 +132,25 @@ def static_ok(s: String) -> Bool:
     case SCon{Chr{+n}, t}:
       E.scalar(n) && Bool.not(U32.is_eq(n, 58) || U32.is_eq(n, 42) || U32.is_eq(n, 123) || U32.is_eq(n, 125) || U32.is_eq(n, 63) || U32.is_eq(n, 35)) && static_ok(t)
 
-def compile_segment(+s: String) -> Result<&2, &2, PatternError, Segment>:
+def compile_head(+h: Char, +t: String) -> Result<&2, &2, PatternError, Segment>:
+  E.choose(Result<&2, &2, PatternError, Segment>, Char.is_eq(h, ':'), u => (
+    capture(split_name(t))
+  ), u => (
+    E.choose(Result<&2, &2, PatternError, Segment>, Char.is_eq(h, '*'), u => (
+      E.choose(Result<&2, &2, PatternError, Segment>, String.is_empty(t), u => Done{Wildcard{"*"}}, u => (
+        E.choose(Result<&2, &2, PatternError, Segment>, name_ok(t), u => Done{Wildcard{t}}, u => Fail{PatternError{InvalidName{}, t}})
+      ))
+    ), u => (
+      E.choose(Result<&2, &2, PatternError, Segment>, static_ok(SCon{h, t}), u => Done{Static{SCon{h, t}}}, u => Fail{PatternError{InvalidStatic{}, SCon{h, t}}})
+    ))
+  ))
+
+def compile_segment(s: String) -> Result<&2, &2, PatternError, Segment>:
   match s:
-    case SCon{':', t}:
-      capture(split_name(t))
-    case SCon{'*', SNil{}}:
-      Done{Wildcard{"*"}}
-    case SCon{'*', +t}:
-      E.choose(Result<&2, &2, PatternError, Segment>, name_ok(t), u => (
-        Done{Wildcard{t}}
-      ), u => (Fail{PatternError{InvalidName{}, t}}))
-    case _:
-      E.choose(Result<&2, &2, PatternError, Segment>, static_ok(s), u => (
-        Done{Static{s}}
-      ), u => (Fail{PatternError{InvalidStatic{}, s}}))
+    case SNil{}:
+      Done{Static{SNil{}}}
+    case SCon{h, t}:
+      compile_head(h, t)
 
 def seen(names: List<&2, String>, +name: String) -> Bool:
   match names:
@@ -216,14 +221,17 @@ def compile_segments(xs: List<&2, String>, +names: List<&2, String>) -> Result<&
 def path_segments(s: String) -> List<&2, String>:
   String.split(s, '/')
 
+def compile_body(t: String) -> Result<&2, &2, PatternError, Pattern>:
+  do Result<&2, &2, PatternError, Pattern>:
+    xs : List<&2, Segment> <- compile_segments(path_segments(t), Nil{})
+    return Pattern{xs}
+
 def compile(source: String) -> Result<&2, &2, PatternError, Pattern>:
   match source:
-    case SCon{'/', t}:
-      do Result<&2, &2, PatternError, Pattern>:
-        xs : List<&2, Segment> <- compile_segments(path_segments(t), Nil{})
-        return Pattern{xs}
-    case other:
-      Fail{PatternError{MissingSlash{}, other}}
+    case SNil{}:
+      Fail{PatternError{MissingSlash{}, SNil{}}}
+    case SCon{+h, +t}:
+      E.choose(Result<&2, &2, PatternError, Pattern>, Char.is_eq(h, '/'), u => compile_body(t), u => Fail{PatternError{MissingSlash{}, SCon{h, t}}})
 
 def put_capture(name: String, value: String, tail: Maybe<&2, Params>) -> Maybe<&2, Params>:
   do Maybe<&2, Params>:

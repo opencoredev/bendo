@@ -4,6 +4,8 @@ import ./src/http.bend as Http
 import ./LAWS.bend as Laws
 import ./src/router/proofs.bend as PatternProof
 import ./src/router/pattern.bend as Pattern
+import ./src/router/compile-proofs.bend as CompileProof
+import ./src/router/equality-proofs.bend as EqualityProof
 
 def Laws.text_body_after_blank(body):
   ("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nConnection: close", ({==}, {==}))
