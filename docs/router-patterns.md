@@ -127,7 +127,8 @@ and every independently admissible assignment. It promises that filling
 succeeds and matching that path returns the exact assignment. The predicate
 `admissible` never calls `fill` or `match_path`.
 
-The filling-success lemmas in `src/router/proofs.bend` pass the strict kernel.
-The full roundtrip proof remains open: codec inversion, preservation of static
-segments through splitting and joining, and matching induction are still needed.
-Consequently `bun run prove` and the full `bun run check` gate currently fail.
+The full roundtrip proof passes the strict Lean-backed kernel. Its helper
+lemmas cover Unicode and percent-codec inversion, compilation cleanliness,
+split/join preservation, and matching for captures, optional params and wildcards.
+`bun run prove` prints `ALL PROOFS CHECK`; `bun run check` also runs the native
+integration suite, TypeScript checks, lint and formatting checks.
