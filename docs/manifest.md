@@ -69,8 +69,10 @@ context with the accessor API.
 `text`, `body`, `not_modified`, `get`, `head`, `post`, `put`, `patch`, `delete`,
 `options`, `all` and `on`. `spec()` and `trie()` construct router-kind values;
 method-aware dispatch currently uses the reference router. BND-17 integrates trie
-selection. Header limits, timeout fields, max requests and keep-alive are reserved
-for BND-11. Connections currently serve one request and close.
+selection. Header limits, idle/head/body timeouts, max requests and keep-alive
+are enforced by the connection loop. HTTP/1.1 connections persist by default;
+HTTP/1.0 connections always close, including requests for keep-alive. See
+[connection policy](decisions/0009-connections.md) for deadlines and close rules.
 
 The legacy byte-handler `Serve.serve` and two-field `Serve.Config` remain available
 for existing low-level consumers. New applications use `B.serve` and `B.config`.

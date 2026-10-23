@@ -4,6 +4,8 @@ import ./proof/schema.bend as SchemaProof
 import ./src/data/schema.bend as Schema
 import ./src/http/response.bend as Response
 import ./src/http/write_response.bend as WriteResponse
+
+import ./src/http/chunked.bend as Chunked
 import ./src/http.bend as Http
 import ./src/http/bytes.bend as Bytes
 import ./src/http/request.bend as Request
@@ -32,6 +34,9 @@ import ./proof/response-status.bend as ResponseStatus
 import ./proof/response-spec-proof.bend as ResponseSpecProof
 import ./proof/response-spec.bend as ResponseSpec
 import ./proof/response-framing-spec.bend as ResponseFramingSpec
+
+import ./proof/chunked.bend as ChunkedProof
+import ./proof/chunked-roundtrip.bend as ChunkedRoundtrip
 
 import ./src/router/proofs.bend as PatternProof
 import ./src/router/pattern.bend as Pattern
@@ -358,6 +363,11 @@ def Laws.hex_roundtrip(xs, valid):
 
 def Laws.base64_roundtrip(xs, url, padded, valid):
   Base64Proof.roundtrip(xs, url, padded, valid)
+
+# BND-8: chunked encode/decode roundtrip.
+
+def Laws.chunked_roundtrip(chunks, limit, suffix, valid):
+  ChunkedRoundtrip.roundtrip(chunks, limit, suffix, valid)
 
 # BND-33
 

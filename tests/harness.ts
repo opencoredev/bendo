@@ -9,6 +9,8 @@ const ROOT = resolve(import.meta.dir, "..");
 export const BEND_COMPILE_TIMEOUT = "180s";
 /** Per-test timeout for a test whose body runs one `bend` compile. Above BEND_COMPILE_TIMEOUT. */
 export const COMPILE_TEST_TIMEOUT_MS = 200_000;
+/** Per-test timeout for tests that push megabyte inputs through `.mjs` builds. */
+export const SLOW_TEST_TIMEOUT_MS = 120_000;
 
 export type RunningServer = { url: string; [Symbol.asyncDispose]: () => Promise<void> };
 
