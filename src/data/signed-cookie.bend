@@ -11,10 +11,19 @@ import ../crypto/compare.bend as Compare
 type Keys is Data:
   Keys{first: String, rest: List<&2, String>}
 
+# Validate external strings with constant JavaScript call depth.
+def scalar_valid_go(s: String, ok: Bool) -> Bool:
+  match s:
+    case SNil{}: ok
+    case SCon{Chr{c}, t}: scalar_valid_go(t, ok && Utf8.scalar(c))
+
+def scalar_valid(s: String) -> Bool:
+  scalar_valid_go(s, True{})
+
 def valid_keys_go(xs: List<&2, String>, ok: Bool) -> Bool:
   match xs:
     case Nil{}: ok
-    case x <> t: valid_keys_go(t, ok && Utf8.valid(x))
+    case x <> t: valid_keys_go(t, ok && scalar_valid(x))
 
 def configured(keys: Keys, ok: Bool) -> Maybe<&2, Keys>:
   match ok:
@@ -24,7 +33,7 @@ def configured(keys: Keys, ok: Bool) -> Maybe<&2, Keys>:
 def configure(xs: List<&2, String>) -> Maybe<&2, Keys>:
   match xs:
     case Nil{}: None{}
-    case +first <> +rest: configured(Keys{first, rest}, valid_keys_go(rest, Utf8.valid(first)))
+    case +first <> +rest: configured(Keys{first, rest}, valid_keys_go(rest, scalar_valid(first)))
 
 def digest(key: String, value: String) -> List<&2, U32>:
   Hmac.sha256(Utf8.encode(key), Utf8.encode(value))
@@ -84,4 +93,4 @@ def serialize_valid(name: String, value: String, keys: Keys, options: Cookie.Opt
       Cookie.serialize(name, sign(first, value), options)
 
 def serialize(name: String, +value: String, keys: Keys, options: Cookie.Options) -> Result<&2, &2, Cookie.Error, String>:
-  serialize_valid(name, value, keys, options, Utf8.valid(value))
+  serialize_valid(name, value, keys, options, scalar_valid(value))
