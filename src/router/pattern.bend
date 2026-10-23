@@ -13,6 +13,9 @@ type Segment is Data:
   Static{raw: String}
   Capture{name: String, constraint: C.Constraint, optional: Bool}
   Wildcard{name: String}
+  InteriorWildcard{}
+  PrefixWildcard{prefix: String}
+  Span{name: String}
 
 type Pattern is Data:
   Pattern{segments: List<&2, Segment>}
@@ -96,10 +99,10 @@ def constraint_result(r: Maybe<&2, C.Constraint>, +body: String, name: String, o
         Fail{PatternError{UnknownConstraint{}, body}}
       ))
 
-def constrained(+suffix: String, name: String, optional: Bool) -> Result<&2, &2, PatternError, Segment>:
+def constrained(+suffix: String, +name: String, +optional: Bool) -> Result<&2, &2, PatternError, Segment>:
   E.choose(Result<&2, &2, PatternError, Segment>, String.starts_with(suffix, "{") && String.ends_with(suffix, "}"), u => (
     +body = String.take(String.drop(suffix, 1n), Nat.sub(String.length(suffix), 2n))
-    constraint_result(C.compile(body), body, name, optional)
+    E.choose(Result<&2, &2, PatternError, Segment>, String.eq(body, ".+") && Bool.not(optional), u => Done{Span{name}}, u => constraint_result(C.compile(body), body, name, optional))
   ), u => (Fail{PatternError{UnbalancedBraces{}, suffix}}))
 
 def capture_suffix(+suffix: String, +name: String) -> Result<&2, &2, PatternError, Segment>:
@@ -130,7 +133,15 @@ def static_ok(s: String) -> Bool:
     case SNil{}:
       True{}
     case SCon{Chr{+n}, t}:
-      E.scalar(n) && Bool.not(U32.is_eq(n, 58) || U32.is_eq(n, 42) || U32.is_eq(n, 123) || U32.is_eq(n, 125) || U32.is_eq(n, 63) || U32.is_eq(n, 35)) && static_ok(t)
+      E.scalar(n) && Bool.not(U32.is_eq(n, 42) || U32.is_eq(n, 123) || U32.is_eq(n, 125) || U32.is_eq(n, 63) || U32.is_eq(n, 35)) && static_ok(t)
+
+def compile_static(+raw: String) -> Result<&2, &2, PatternError, Segment>:
+  E.choose(Result<&2, &2, PatternError, Segment>, String.ends_with(raw, "*"), u => (
+    +prefix = String.take(raw, Nat.sub(String.length(raw), 1n))
+    E.choose(Result<&2, &2, PatternError, Segment>, static_ok(prefix), u => Done{PrefixWildcard{prefix}}, u => Fail{PatternError{InvalidStatic{}, raw}})
+  ), u => (
+    E.choose(Result<&2, &2, PatternError, Segment>, static_ok(raw), u => Done{Static{raw}}, u => Fail{PatternError{InvalidStatic{}, raw}})
+  ))
 
 def compile_head(+h: Char, +t: String) -> Result<&2, &2, PatternError, Segment>:
   E.choose(Result<&2, &2, PatternError, Segment>, Char.is_eq(h, ':'), u => (
@@ -141,7 +152,7 @@ def compile_head(+h: Char, +t: String) -> Result<&2, &2, PatternError, Segment>:
         E.choose(Result<&2, &2, PatternError, Segment>, name_ok(t), u => Done{Wildcard{t}}, u => Fail{PatternError{InvalidName{}, t}})
       ))
     ), u => (
-      E.choose(Result<&2, &2, PatternError, Segment>, static_ok(SCon{h, t}), u => Done{Static{SCon{h, t}}}, u => Fail{PatternError{InvalidStatic{}, SCon{h, t}}})
+      compile_static(SCon{h, t})
     ))
   ))
 
@@ -167,6 +178,10 @@ def segment_name(s: Segment) -> Maybe<&2, String>:
       Some{name}
     case Wildcard{name}:
       Some{name}
+    case Span{name}:
+      Some{name}
+    case _:
+      None{}
 
 def terminal(s: Segment) -> Bool:
   match s:
@@ -176,6 +191,10 @@ def terminal(s: Segment) -> Bool:
       optional
     case Wildcard{name}:
       True{}
+    case PrefixWildcard{prefix}:
+      True{}
+    case _:
+      False{}
 
 def terminal_error(s: Segment) -> ErrorKind:
   match s:
@@ -198,6 +217,29 @@ def duplicate(name: Maybe<&2, String>, names: List<&2, String>) -> Bool:
     case Some{n}:
       seen(names, n)
 
+def optional_sources(xs: List<&2, String>) -> Bool:
+  match xs:
+    case Nil{}:
+      True{}
+    case +h <> t:
+      String.starts_with(h, ":") && String.ends_with(h, "?") && optional_sources(t)
+
+def invalid_tail(seg: Segment, +rest: List<&2, String>) -> Bool:
+  match seg:
+    case Capture{name, c, True{}}:
+      Bool.not(optional_sources(rest))
+    case Wildcard{"*"}:
+      False{}
+    case _:
+      terminal(seg) && Bool.not(List.is_empty(&2, String, rest))
+
+def located(seg: Segment, rest: List<&2, String>) -> Segment:
+  match seg rest:
+    case Wildcard{"*"} h <> t:
+      InteriorWildcard{}
+    case s _:
+      s
+
 # One shrinking segment-list traversal; constraints themselves are pure data.
 def compile_segments(xs: List<&2, String>, +names: List<&2, String>) -> Result<&2, &2, PatternError, List<&2, Segment>>:
   match xs:
@@ -205,11 +247,12 @@ def compile_segments(xs: List<&2, String>, +names: List<&2, String>) -> Result<&
       Done{Nil{}}
     case +raw <> +rest:
       do Result<&2, &2, PatternError, List<&2, Segment>>:
-        +seg : Segment <- compile_segment(raw)
+        parsed : Segment <- compile_segment(raw)
+        +seg : Segment = located(parsed, rest)
         E.choose(Result<&2, &2, PatternError, List<&2, Segment>>, duplicate(segment_name(seg), names), u => (
           Fail{PatternError{DuplicateName{}, raw}}
         ), u => (
-          E.choose(Result<&2, &2, PatternError, List<&2, Segment>>, terminal(seg) && Bool.not(List.is_empty(&2, String, rest)), u => (
+          E.choose(Result<&2, &2, PatternError, List<&2, Segment>>, invalid_tail(seg, rest), u => (
             Fail{PatternError{terminal_error(seg), raw}}
           ), u => (
             do Result<&2, &2, PatternError, List<&2, Segment>>:
@@ -230,6 +273,8 @@ def compile(source: String) -> Result<&2, &2, PatternError, Pattern>:
   match source:
     case SNil{}:
       Fail{PatternError{MissingSlash{}, SNil{}}}
+    case "*":
+      compile_body("*")
     case SCon{+h, +t}:
       E.choose(Result<&2, &2, PatternError, Pattern>, Char.is_eq(h, '/'), u => compile_body(t), u => Fail{PatternError{MissingSlash{}, SCon{h, t}}})
 
@@ -241,6 +286,56 @@ def put_capture(name: String, value: String, tail: Maybe<&2, Params>) -> Maybe<&
 def value_ok(c: C.Constraint, +value: String) -> Bool:
   Bool.not(String.is_empty(value)) && E.scalars(value) && C.accepts(c, value)
 
+def prefer(hit: Maybe<&2, Params>, next: Unit -> Maybe<&2, Params>) -> Maybe<&2, Params>:
+  match hit:
+    case Some{ps}:
+      Some{ps}
+    case None{}:
+      next(Unit{})
+
+def span_result(name: String, raw: String, tail: Maybe<&2, Params>) -> Maybe<&2, Params>:
+  do Maybe<&2, Params>:
+    +value : String <- E.decode(raw)
+    E.choose(Maybe<&2, Params>, value_ok(C.Any{}, value), u => put_capture(name, value, tail), u => None{})
+
+# Search budget bounds recursion depth, not the number of alternatives. Every
+# transition consumes one segment or path part, so this budget is sufficient.
+def search(fuel: Nat, +segs: List<&2, Segment>, +paths: List<&2, String>, +taken: List<&2, String>) -> Maybe<&2, Params>:
+  match fuel:
+    case 0n:
+      None{}
+    case 1n+ +f:
+      match segs paths:
+        case Nil{} Nil{}:
+          Some{Nil{}}
+        case Wildcard{name} <> Nil{} ps:
+          do Maybe<&2, Params>:
+            value : String <- E.decode(String.join(ps, "/"))
+            return [Param{name, value}]
+        case PrefixWildcard{prefix} <> Nil{} raw <> tail:
+          E.choose(Maybe<&2, Params>, String.starts_with(raw, prefix), u => Some{Nil{}}, u => None{})
+        case InteriorWildcard{} <> rest Nil{}:
+          search(f, rest, Nil{}, Nil{})
+        case InteriorWildcard{} <> rest raw <> tail:
+          prefer(search(f, rest, paths, Nil{}), u => search(f, segs, tail, Nil{}))
+        case Span{name} <> rest Nil{}:
+          span_result(name, String.join(taken, "/"), search(f, rest, Nil{}, Nil{}))
+        case Span{name} <> rest raw <> tail:
+          prefer(search(f, segs, tail, List.append(&2, String, taken, [raw])), u => span_result(name, String.join(taken, "/"), search(f, rest, paths, Nil{})))
+        case Capture{name, c, True{}} <> rest Nil{}:
+          search(f, rest, Nil{}, Nil{})
+        case Capture{name, +c, optional} <> rest raw <> tail:
+          do Maybe<&2, Params>:
+            +value : String <- E.decode(raw)
+            E.choose(Maybe<&2, Params>, value_ok(c, value), u => put_capture(name, value, search(f, rest, tail, Nil{})), u => None{})
+        case Static{raw} <> rest h <> tail:
+          E.choose(Maybe<&2, Params>, String.eq(raw, h), u => search(f, rest, tail, Nil{}), u => None{})
+        case _ _:
+          None{}
+
+def search_segments(+segs: List<&2, Segment>, +paths: List<&2, String>) -> Maybe<&2, Params>:
+  search(1n+Nat.add(List.length(&2, Segment, segs), List.length(&2, String, paths)), segs, paths, Nil{})
+
 def match_segments(segs: List<&2, Segment>, paths: List<&2, String>) -> Maybe<&2, Params>:
   match segs paths:
     case Nil{} Nil{}:
@@ -251,8 +346,8 @@ def match_segments(segs: List<&2, Segment>, paths: List<&2, String>) -> Maybe<&2
       do Maybe<&2, Params>:
         value : String <- E.decode(String.join(ps, "/"))
         return [Param{name, value}]
-    case Capture{name, c, True{}} <> Nil{} Nil{}:
-      Some{Nil{}}
+    case Capture{name, c, True{}} <> rest Nil{}:
+      match_segments(rest, Nil{})
     case Capture{name, +c, optional} <> rest raw <> tail:
       do Maybe<&2, Params>:
         +value : String <- E.decode(raw)
@@ -263,13 +358,28 @@ def match_segments(segs: List<&2, Segment>, paths: List<&2, String>) -> Maybe<&2
       E.choose(Maybe<&2, Params>, String.eq(raw, h), u => (
         match_segments(rest, tail)
       ), u => (None{}))
+    case InteriorWildcard{} <> rest ps:
+      search_segments(InteriorWildcard{} <> rest, ps)
+    case PrefixWildcard{prefix} <> rest ps:
+      search_segments(PrefixWildcard{prefix} <> rest, ps)
+    case Span{name} <> rest ps:
+      search_segments(Span{name} <> rest, ps)
     case _ _:
       None{}
 
+def all_optional(segs: List<&2, Segment>) -> Bool:
+  match segs:
+    case Nil{}:
+      True{}
+    case Capture{name, c, True{}} <> rest:
+      all_optional(rest)
+    case _:
+      False{}
+
 def match_path(pattern: Pattern, path: String) -> Maybe<&2, Params>:
   match pattern path:
-    case Pattern{Capture{name, c, True{}} <> Nil{}} "/":
-      Some{Nil{}}
+    case Pattern{Capture{name, c, True{}} <> +rest} "/":
+      E.choose(Maybe<&2, Params>, all_optional(rest), u => Some{Nil{}}, u => match_segments(Capture{name, c, True{}} <> rest, [""]))
     case Pattern{segs} SCon{'/', t}:
       match_segments(segs, path_segments(t))
     case _ _:
@@ -284,14 +394,26 @@ def fill_segments(segs: List<&2, Segment>, ps: Params) -> Maybe<&2, List<&2, Str
       do Maybe<&2, List<&2, String>>:
         tail : List<&2, String> <- fill_segments(rest, values)
         return raw <> tail
-    case Capture{name, c, True{}} <> Nil{} Nil{}:
-      Some{Nil{}}
+    case Capture{name, c, True{}} <> rest Nil{}:
+      fill_segments(rest, Nil{})
     case Capture{name, c, optional} <> rest Param{key, +value} <> tail:
       E.choose(Maybe<&2, List<&2, String>>, String.eq(name, key) && value_ok(c, value), u => (
         do Maybe<&2, List<&2, String>>:
           xs : List<&2, String> <- fill_segments(rest, tail)
           return E.encode(value) <> xs
       ), u => (None{}))
+    case InteriorWildcard{} <> rest values:
+      do Maybe<&2, List<&2, String>>:
+        xs : List<&2, String> <- fill_segments(rest, values)
+        return "" <> xs
+    case PrefixWildcard{prefix} <> Nil{} Nil{}:
+      Some{[prefix]}
+    case Span{name} <> rest Param{key, +value} <> tail:
+      E.choose(Maybe<&2, List<&2, String>>, String.eq(name, key) && value_ok(C.Any{}, value), u => (
+        do Maybe<&2, List<&2, String>>:
+          xs : List<&2, String> <- fill_segments(rest, tail)
+          return E.encode(value) <> xs
+      ), u => None{})
     case Wildcard{name} <> Nil{} Param{key, +value} <> Nil{}:
       E.choose(Maybe<&2, List<&2, String>>, String.eq(name, key) && E.scalars(value), u => (
         Some{[E.encode(value)]}
@@ -312,10 +434,16 @@ def admissible_segments(segs: List<&2, Segment>, ps: Params) -> Bool:
       True{}
     case Static{raw} <> rest values:
       admissible_segments(rest, values)
-    case Capture{name, c, True{}} <> Nil{} Nil{}:
-      True{}
+    case Capture{name, c, True{}} <> rest Nil{}:
+      admissible_segments(rest, Nil{})
     case Capture{name, c, optional} <> rest Param{key, +value} <> tail:
       String.eq(name, key) && value_ok(c, value) && admissible_segments(rest, tail)
+    case InteriorWildcard{} <> rest values:
+      admissible_segments(rest, values)
+    case PrefixWildcard{prefix} <> Nil{} Nil{}:
+      True{}
+    case Span{name} <> rest Param{key, +value} <> tail:
+      String.eq(name, key) && value_ok(C.Any{}, value) && admissible_segments(rest, tail)
     case Wildcard{name} <> Nil{} Param{key, +value} <> Nil{}:
       String.eq(name, key) && E.scalars(value)
     case _ _:
