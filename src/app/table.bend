@@ -107,3 +107,41 @@ def stage_ids(-Tag: Data, entries: List<&2, Middleware<Tag>>, +stage: Stage) -> 
     case Middleware{pattern, tag} <> tail: stage_ids(Tag, tail, stage)
     case Staged{kind, tag} <> tail:
       include(Tag, tag, stage_ids(Tag, tail, stage), U32.is_eq(stage_number(kind), stage_number(stage)))
+
+# The runtime's stage-ordered execution plan. The pre chain enters after routing;
+# response chains execute sequentially, errors conditionally, observers after send.
+type Lifecycle<-Tag: Data> is Data:
+  Lifecycle{request: List<&2, Tag>, pre: List<&2, Tag>, after: List<&2, Tag>, map: List<&2, Tag>, errors: List<&2, Tag>, observers: List<&2, Tag>}
+
+def lifecycle(-Tag: Data, +layers: List<&2, Middleware<Tag>>, path: String) -> Lifecycle<Tag>:
+  Lifecycle{
+    stage_ids(Tag, layers, Request{}),
+    List.concat(&2, Tag, [selected(Tag, layers, path), stage_ids(Tag, layers, Parse{}), stage_ids(Tag, layers, Transform{}), stage_ids(Tag, layers, BeforeHandle{})]),
+    stage_ids(Tag, layers, AfterHandle{}),
+    stage_ids(Tag, layers, MapResponse{}),
+    stage_ids(Tag, layers, Error{}),
+    stage_ids(Tag, layers, AfterResponse{})}
+
+def lifecycle_request(-Tag: Data, plan: Lifecycle<Tag>) -> List<&2, Tag>:
+  Lifecycle{request, pre, after, map, errors, observers} = plan
+  request
+
+def lifecycle_pre(-Tag: Data, plan: Lifecycle<Tag>) -> List<&2, Tag>:
+  Lifecycle{request, pre, after, map, errors, observers} = plan
+  pre
+
+def lifecycle_after(-Tag: Data, plan: Lifecycle<Tag>) -> List<&2, Tag>:
+  Lifecycle{request, pre, after, map, errors, observers} = plan
+  after
+
+def lifecycle_map(-Tag: Data, plan: Lifecycle<Tag>) -> List<&2, Tag>:
+  Lifecycle{request, pre, after, map, errors, observers} = plan
+  map
+
+def lifecycle_errors(-Tag: Data, plan: Lifecycle<Tag>) -> List<&2, Tag>:
+  Lifecycle{request, pre, after, map, errors, observers} = plan
+  errors
+
+def lifecycle_observers(-Tag: Data, plan: Lifecycle<Tag>) -> List<&2, Tag>:
+  Lifecycle{request, pre, after, map, errors, observers} = plan
+  observers

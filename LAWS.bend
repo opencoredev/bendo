@@ -899,8 +899,9 @@ law middleware_associative:
   for -next: C -> R
   {Middleware.compose(C, R, Middleware.compose(C, R, a, b), c, ctx, next) == Middleware.compose(C, R, a, Middleware.compose(C, R, b, c), ctx, next) : R}
 
-# Successful construction preserves registration order, duplicates, and raw-path
-# selection, with global and matching path-specific ids still interleaved.
+# Ordinary middleware only: successful construction preserves registration order,
+# duplicates, and selection at the supplied raw path, with global and matching
+# path-specific ids interleaved. Hook registrations contribute no ordinary ids.
 law middleware_registration_selection:
   for -Tag: Data
   for +entries: List<&2, Table.Entry<Tag>>
@@ -908,3 +909,31 @@ law middleware_registration_selection:
   for +path: String
   for built: {Table.build(Tag, entries) == Done{table} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
   {MiddlewareSelectionSpec.selected(Tag, table, path) == MiddlewareSelectionSpec.filter(Tag, entries, path) : List<&2, Tag>}
+
+# BND-23
+# Every stage selects exactly its registration-ordered, duplicate-preserving ids.
+law lifecycle_stage_selection:
+  for -Tag: Data
+  for +entries: List<&2, Table.Entry<Tag>>
+  for +routes: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Valid<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +stage: Table.Stage
+  for built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  {Table.stage_ids(Tag, layers, stage) == MiddlewareSelectionSpec.hooks(Tag, entries, stage) : List<&2, Tag>}
+
+# The exact plan consumed by Handle: request, ordinary/parse/transform/before,
+# after_handle, map_response, conditional on_error, deferred on_after_response.
+# path is the raw routing path AFTER on_request rewrites; only ordinary use_path
+# selection depends on it. Request and response ids are path-independent, so the
+# runtime may select them before rewrites. This is selection, not a promise that
+# short-circuited pre stages or conditional error hooks execute on every request.
+law lifecycle_ordered_selection:
+  for -Tag: Data
+  for +entries: List<&2, Table.Entry<Tag>>
+  for +routes: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Valid<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +path: String
+  for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  {Table.lifecycle(Tag, layers, path) == MiddlewareSelectionSpec.lifecycle(Tag, entries, path) : Table.Lifecycle<Tag>}

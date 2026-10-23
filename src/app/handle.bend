@@ -51,9 +51,8 @@ def with_params(-Vars: Data, ctx: Context.Ctx<Vars>, ps: Pattern.Params) -> Cont
 
 def resolved_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +resolution: Methods.Resolution<Tag>, +layers: List<&2, Table.Middleware<Tag>>, ctx: Context.Ctx<Vars>, +env: Env, +slot: Chan(Context.Ctx<Vars>)) -> IO(Response.Res):
   +routed = with_params(Vars, ctx, params(Tag, resolution))
-  ids = List.append(&2, Tag, Table.stage_ids(Tag, layers, Table.Parse{}), List.append(&2, Tag, Table.stage_ids(Tag, layers, Table.Transform{}), Table.stage_ids(Tag, layers, Table.BeforeHandle{})))
-  legacy = Table.selected(Tag, layers, Context.path(Vars, routed))
-  onion = Hooks.chain(~Vars, ~Tag, ~Env, ~middleware, List.append(&2, Tag, legacy, ids), env, slot)
+  ids = Table.lifecycle_pre(Tag, Table.lifecycle(Tag, layers, Context.path(Vars, routed)))
+  onion = Hooks.chain(~Vars, ~Tag, ~Env, ~middleware, ids, env, slot)
   do IO<Response.Res>:
     Hooks.remember(Vars, slot, routed)
     onion(routed, changed => terminal(~Vars, ~Tag, ~Env, ~dispatch, resolution, changed, env))
@@ -84,18 +83,19 @@ def parsed_pending(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Contex
     case Fail{error}: IO.pure(Response.Res & IO(Unit), (finish(method, Response.text(400, "Bad Request")), IO.pure(Unit, Unit{})))
     case Done{pairs}:
       +ctx = Context.variables(Vars, Context.create(req, [], body, pairs))
+      +plan = Table.lifecycle(Tag, layers, path)
       do IO<Response.Res & IO(Unit)>:
         +slot : Chan(Context.Ctx<Vars>) <- Chan.new(Context.Ctx<Vars>, 1)
         seeded : Result<&1, &1, Context.Ctx<Vars>, Unit> <- Chan.send(Context.Ctx<Vars>, slot, ctx)
         Hooks.sent(Context.Ctx<Vars>, seeded)
-        res : Response.Res <- Hooks.chain(~Vars, ~Tag, ~Env, ~middleware, Table.stage_ids(Tag, layers, Table.Request{}), env, slot, ctx, changed => route_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, table, changed, env, slot))
+        res : Response.Res <- Hooks.chain(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_request(Tag, plan), env, slot, ctx, changed => route_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, table, changed, env, slot))
         +latest : Context.Ctx<Vars> <- Hooks.recall(Vars, slot)
-        after : Response.Res <- Hooks.post(~Vars, ~Tag, ~Env, ~middleware, Table.stage_ids(Tag, layers, Table.AfterHandle{}), latest, env, res)
-        +mapped : Response.Res <- Hooks.post(~Vars, ~Tag, ~Env, ~middleware, Table.stage_ids(Tag, layers, Table.MapResponse{}), latest, env, after)
+        after : Response.Res <- Hooks.post(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_after(Tag, plan), latest, env, res)
+        +mapped : Response.Res <- Hooks.post(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_map(Tag, plan), latest, env, after)
         +checked : Response.Res = validated(mapped, Response.valid(mapped))
-        recovered : Response.Res <- recover(~Vars, ~Tag, ~Env, ~middleware, Table.stage_ids(Tag, layers, Table.Error{}), latest, env, checked, error_response(checked))
+        recovered : Response.Res <- recover(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_errors(Tag, plan), latest, env, checked, error_response(checked))
         +final : Response.Res = finish(method, recovered)
-        return (final, Hooks.observe(~Vars, ~Tag, ~Env, ~middleware, Table.stage_ids(Tag, layers, Table.AfterResponse{}), latest, env, final))
+        return (final, Hooks.observe(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_observers(Tag, plan), latest, env, final))
 
 def pending_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, env: Env, +req: Request.Req, body: List<&2, U32>) -> IO(Response.Res & IO(Unit)):
   Request.Req{method, path, query, version, headers} = req
