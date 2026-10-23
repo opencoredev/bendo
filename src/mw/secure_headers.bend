@@ -1,10 +1,12 @@
 # Security response headers, following Hono's secureHeaders defaults.
 import Base
+import ../app/observability.bend as Obs
+import ./response_policy.bend as Policy
+import ./response_fields.bend as Fields
 import ../app/context.bend as C
 import ../http/request.bend as Request
 import ../http/response.bend as Response
 import ../http/bytes.bend as Bytes
-import ./common.bend as Common
 
 type Field is Data:
   Field{name: String, value: String}
@@ -69,21 +71,31 @@ def keep_powered_by(config: Config) -> Config:
   match config:
     case Config{fs, r}: Config{fs, False{}}
 
-def applied(fs: List<&2, Field>, res: Response.Res) -> Response.Res:
+def fields(fs: List<&2, Field>) -> List<&2, Request.Header>:
   match fs:
-    case Nil{}: res
-    case Field{n, v} <> t: applied(t, Common.header(res, n, v))
+    case Nil{}: []
+    case Field{n, v} <> t: Request.Header{n, Response.utf8(v)} <> fields(t)
 
-def powered(remove: Bool, res: Response.Res) -> Response.Res:
-  match remove res:
-    case False{} r: r
-    case True{} Response.Res{s, hs, b, rep}: Response.Res{s, C.without(hs, "x-powered-by"), b, rep}
+def names(fs: List<&2, Field>, remove: Bool) -> List<&2, String>:
+  match fs remove:
+    case Nil{} True{}: ["x-powered-by"]
+    case Nil{} False{}: []
+    case Field{n, v} <> t r: n <> names(t, r)
+
+def sent_fields(fs: List<&2, Field>, remove: Bool) -> List<&2, Request.Header>:
+  match remove:
+    case True{}: Fields.without(fields(fs), "x-powered-by")
+    case False{}: fields(fs)
+
+def policy(config: Config) -> Policy.Policy:
+  match config:
+    case Config{+fs, +r}: Policy.Policy{names(fs, r), sent_fields(fs, r), []}
 
 def secured(config: Config, res: Response.Res) -> Response.Res:
-  match config:
-    case Config{fs, r}: powered(r, applied(fs, res))
+  Policy.apply(policy(config), res)
 
-def middleware(-Vars: Data, config: Config, c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
+def middleware(-Vars: Data, +config: Config, +c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
   do IO<Response.Res>:
     res : Response.Res <- next(c)
+    Obs.retain(C.observation(Vars, c), policy(config))
     return secured(config, res)

@@ -235,6 +235,15 @@ describe("CORS with listed origins", () => {
     expect(values(denied, "access-control-allow-origin")).toEqual([]);
     expect(values(denied, "access-control-allow-credentials")).toEqual([]);
     expect(values(denied, "vary")).toEqual(["Accept, accept-encoding, origin"]);
+    for (const field of CORS_FIELDS) expect(values(denied, field)).toEqual([]);
+    for (const field of [
+      "access-control-allow-methods",
+      "access-control-allow-headers",
+      "access-control-max-age",
+    ]) {
+      expect(values(granted, field)).toEqual([]);
+    }
+    expect(values(granted, "access-control-expose-headers")).toEqual(["X-Total"]);
   });
 
   test("reflected request headers combine every field, keep tokens and vary", async () => {
@@ -487,4 +496,92 @@ describe("trailing slash", () => {
     expect(always.status).toBe(301);
     expect(always.headers.get("location")).toBe("/append-always/page/");
   });
+});
+
+const SECURITY_DEFAULTS: Record<string, string> = {
+  "cross-origin-resource-policy": "same-origin",
+  "cross-origin-opener-policy": "same-origin",
+  "origin-agent-cluster": "?1",
+  "referrer-policy": "no-referrer",
+  "strict-transport-security": "max-age=15552000; includeSubDomains",
+  "x-content-type-options": "nosniff",
+  "x-dns-prefetch-control": "off",
+  "x-download-options": "noopen",
+  "x-frame-options": "SAMEORIGIN",
+  "x-permitted-cross-domain-policies": "none",
+  "x-xss-protection": "0",
+};
+
+describe("finalized response policies", () => {
+  for (const [path, method, status] of [
+    ["/final/error4", "GET", 422],
+    ["/final/error5", "GET", 503],
+    ["/final/missing", "GET", 404],
+    ["/final/method", "POST", 405],
+    ["/final/map", "GET", 200],
+    ["/final/invalid", "GET", 500],
+    ["/final/invalid-recovery", "GET", 500],
+  ] satisfies [string, string, number][]) {
+    test(`${method} ${path} keeps CORS and all security defaults after hooks`, async () => {
+      const res = await request(path, { method, headers: { origin: "http://cred.example:8443" } });
+      expect(res.status).toBe(status);
+      expect(res.headers.get("access-control-allow-origin")).toBe("http://cred.example:8443");
+      expect(res.headers.get("access-control-allow-credentials")).toBe("true");
+      expect(res.headers.get("vary")?.toLowerCase().split(/,\s*/)).toContain("origin");
+      for (const [name, value] of Object.entries(SECURITY_DEFAULTS)) {
+        expect(res.headers.get(name)).toBe(value);
+      }
+      expect(res.headers.get("x-powered-by")).toBeNull();
+      if (path === "/final/error4") {
+        expect(res.headers.get("vary")).toBe("Accept, Origin");
+        expect(await res.text()).toBe("rendered error");
+      } else if (path === "/final/error5") {
+        expect(await res.text()).toBe("Internal Server Error");
+      } else if (path === "/final/map") {
+        expect(await res.text()).toBe("replacement");
+      }
+    });
+  }
+
+  test("finalization preserves Vary star", async () => {
+    const res = await request("/final/star", { headers: { origin: "http://cred.example:8443" } });
+    expect(res.headers.get("vary")).toBe("*");
+  });
+
+  test("denied final errors have no grant", async () => {
+    const res = await request("/final/error4", { headers: { origin: "https://evil.example" } });
+    expect(res.status).toBe(422);
+    expect(corsFields(res.headers)).toEqual(
+      Object.fromEntries(CORS_FIELDS.map((name) => [name, null])),
+    );
+    expect(res.headers.get("vary")).toBe("Accept, Origin");
+    for (const [name, value] of Object.entries(SECURITY_DEFAULTS))
+      expect(res.headers.get(name)).toBe(value);
+  });
+});
+
+test("later security response hooks win over earlier hooks and ordinary middleware", async () => {
+  const res = await request("/final/hook-order");
+  expect(res.headers.get("x-frame-options")).toBe("DENY");
+});
+
+test("security removal wins over a configured X-Powered-By field", async () => {
+  const res = await request("/powered-remove");
+  expect(res.status).toBe(200);
+  expect(res.headers.get("x-powered-by")).toBeNull();
+});
+
+test("invalid retained fields yield 500 without erasing valid policies or observability", async () => {
+  const res = await request("/final/bad-config", {
+    headers: { origin: "http://cred.example:8443", "x-request-id": "bad-config-42" },
+  });
+  expect(res.status).toBe(500);
+  expect(res.headers.get("x-test")).toBeNull();
+  expect(res.headers.get("x-request-id")).toBe("bad-config-42");
+  expect(res.headers.get("server-timing")).toMatch(/^total;dur=\d+$/);
+  expect(res.headers.get("access-control-allow-origin")).toBe("http://cred.example:8443");
+  expect(res.headers.get("access-control-allow-credentials")).toBe("true");
+  expect(res.headers.get("vary")).toBe("Origin");
+  for (const [name, value] of Object.entries(SECURITY_DEFAULTS))
+    expect(res.headers.get(name)).toBe(value);
 });

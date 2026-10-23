@@ -1,5 +1,6 @@
 # Request-local framework metadata; separate from application variables.
 import Base
+import ../mw/response_policy.bend as Policy
 import ./store.bend as Store
 import ../http/request.bend as Request
 import ../http/response.bend as Response
@@ -11,22 +12,22 @@ type Mark is Data:
   Mark{name: String, duration_ms: Nat}
 
 type State is Data:
-  State{id: Maybe<&2, String>, timing: Maybe<&2, Store.Store<List<&2, Mark>>>, finalized: Maybe<&2, Chan(Maybe<&2, String>)>}
+  State{id: Maybe<&2, String>, timing: Maybe<&2, Store.Store<List<&2, Mark>>>, finalized: Maybe<&2, Chan(Maybe<&2, String>)>, policies: Maybe<&2, Chan(List<&2, Policy.Policy>)>}
 
 def empty() -> State:
-  State{None{}, None{}, None{}}
+  State{None{}, None{}, None{}, None{}}
 
 def id(state: State) -> Maybe<&2, String>:
-  State{id, timing, finalized} = state
+  State{id, timing, finalized, policies} = state
   id
 
 def timing(state: State) -> Maybe<&2, Store.Store<List<&2, Mark>>>:
-  State{id, timing, finalized} = state
+  State{id, timing, finalized, policies} = state
   timing
 
 def with_id(state: State, id: String) -> State:
-  State{old, timing, finalized} = state
-  State{Some{id}, timing, finalized}
+  State{old, timing, finalized, policies} = state
+  State{Some{id}, timing, finalized, policies}
 
 # Final response fields win, including mixed-case names. Only fill missing fields.
 def has_header(hs: List<&2, Request.Header>, +name: String) -> Bool:
@@ -96,8 +97,8 @@ def timed(res: Response.Res, got: Poll<&1, &1, Maybe<&1, Maybe<&2, String>>, Uni
 
 # The timing owner publishes once after next returns. Consume and close its
 # request-local mailbox after hooks and validation, before observers or transport.
-def finalize(state: State, res: Response.Res) -> IO(Response.Res):
-  State{id, timing, finalized} = state
+def finalized_timing(state: State, res: Response.Res) -> IO(Response.Res):
+  State{id, timing, finalized, policies} = state
   match finalized:
     case None{}: IO.pure(Response.Res, request_id(res, id))
     case Some{+channel}:
@@ -105,3 +106,46 @@ def finalize(state: State, res: Response.Res) -> IO(Response.Res):
         got : Poll<&1, &1, Maybe<&1, Maybe<&2, String>>, Unit> <- Chan.try_recv(Maybe<&2, String>, channel, 0)
         Chan.close(Maybe<&2, String>, channel)
         return timed(request_id(res, id), got)
+
+# One request owns this mailbox. Immutable context copies share its policies,
+# so short-circuits and response hooks need not forward a new context.
+def with_policies(state: State, channel: Chan(List<&2, Policy.Policy>)) -> State:
+  State{id, timing, finalized, old} = state
+  State{id, timing, finalized, Some{channel}}
+
+def recorded(+channel: Chan(List<&2, Policy.Policy>), policy: Policy.Policy, got: Maybe<&1, List<&2, Policy.Policy>>) -> IO(Unit):
+  match got:
+    case None{}: IO.pure(Unit, Unit{})
+    case Some{policies}:
+      do IO<Unit>:
+        sent : Result<&1, &1, List<&2, Policy.Policy>, Unit> <- Chan.send(List<&2, Policy.Policy>, channel, List.append(&2, Policy.Policy, policies, [policy]))
+        return Unit{}
+
+def retain(state: State, policy: Policy.Policy) -> IO(Unit):
+  State{id, timing, finalized, policies} = state
+  match policies:
+    case None{}: IO.pure(Unit, Unit{})
+    case Some{+channel}:
+      do IO<Unit>:
+        got : Maybe<&1, List<&2, Policy.Policy>> <- Chan.recv(List<&2, Policy.Policy>, channel)
+        recorded(channel, policy, got)
+
+def applied(got: Maybe<&1, List<&2, Policy.Policy>>, res: Response.Res) -> Response.Res:
+  match got:
+    case None{}: res
+    case Some{policies}: Policy.finalized(policies, res)
+
+def finalized_policies(policies: Maybe<&2, Chan(List<&2, Policy.Policy>)>, res: Response.Res) -> IO(Response.Res):
+  match policies:
+    case None{}: IO.pure(Response.Res, res)
+    case Some{+channel}:
+      do IO<Response.Res>:
+        got : Maybe<&1, List<&2, Policy.Policy>> <- Chan.recv(List<&2, Policy.Policy>, channel)
+        Chan.close(List<&2, Policy.Policy>, channel)
+        return applied(got, res)
+
+def finalize(+state: State, res: Response.Res) -> IO(Response.Res):
+  State{id, timing, finalized, policies} = state
+  do IO<Response.Res>:
+    decorated : Response.Res <- finalized_policies(policies, res)
+    finalized_timing(state, decorated)

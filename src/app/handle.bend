@@ -1,5 +1,6 @@
 # Network-free entrypoint; only the app dispatcher may perform IO.
 import Base
+import ../mw/response_policy.bend as Policy
 import ./table.bend as Table
 import ./context.bend as Context
 import ./middleware.bend as Middleware
@@ -90,10 +91,14 @@ def parsed_pending(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Contex
   match parsed_query:
     case Fail{error}: IO.pure(Response.Res & IO(Unit), (finish(method, Response.text(400, "Bad Request")), IO.pure(Unit, Unit{})))
     case Done{pairs}:
-      +ctx = Context.variables(Vars, Context.create(req, [], body, pairs))
+      +base_ctx = Context.variables(Vars, Context.create(req, [], body, pairs))
       +initial = RouteSlot.identity(Tag, count, Methods.resolve_with(Tag, kind, compiled, path, method, Methods.defaults()))
       request_ids = Table.scoped_stage_ids(Tag, layers, initial, Table.Request{})
       do IO<Response.Res & IO(Unit)>:
+        +policies : Chan(List<&2, Policy.Policy>) <- Chan.new(List<&2, Policy.Policy>, 1)
+        policy_seeded : Result<&1, &1, List<&2, Policy.Policy>, Unit> <- Chan.send(List<&2, Policy.Policy>, policies, [])
+        Hooks.sent(List<&2, Policy.Policy>, policy_seeded)
+        +ctx : Context.Ctx<Vars> = Context.with_observation(Vars, base_ctx, Obs.with_policies(Context.observation(Vars, base_ctx), policies))
         +route_slot : Chan(Maybe<&2, Nat>) <- Chan.new(Maybe<&2, Nat>, 1)
         route_seeded : Result<&1, &1, Maybe<&2, Nat>, Unit> <- Chan.send(Maybe<&2, Nat>, route_slot, initial)
         Hooks.sent(Maybe<&2, Nat>, route_seeded)
@@ -107,8 +112,9 @@ def parsed_pending(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Contex
         after : Response.Res <- Hooks.post(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_after(Tag, plan), latest, env, res)
         +mapped : Response.Res <- Hooks.post(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_map(Tag, plan), latest, env, after)
         +checked : Response.Res = validated(mapped, Response.valid(mapped))
-        recovered : Response.Res <- recover(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_errors(Tag, plan), latest, env, checked, error_response(checked))
-        +final : Response.Res <- Obs.finalize(Context.observation(Vars, latest), finish(method, recovered))
+        +recovered : Response.Res <- recover(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_errors(Tag, plan), latest, env, checked, error_response(checked))
+        decorated : Response.Res <- Obs.finalize(Context.observation(Vars, latest), validated(recovered, Response.valid(recovered)))
+        +final : Response.Res = finish(method, decorated)
         return (final, Hooks.observe(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_observers(Tag, plan), latest, env, final))
 
 def pending_routed(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), kind: Router.RouterKind, table: Table.Table<Tag>, env: Env, +req: Request.Req, body: List<&2, U32>) -> IO(Response.Res & IO(Unit)):

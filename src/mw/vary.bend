@@ -3,7 +3,7 @@
 # name the list does not already contain (compared without ASCII case).
 # Vary: * stays *.
 import Base
-import ../app/context.bend as C
+import ./response_fields.bend as Fields
 import ../http/request.bend as Request
 import ../http/bytes.bend as Bytes
 
@@ -78,6 +78,6 @@ def merged(hs: List<&2, Request.Header>, +values: List<&2, List<&2, U32>>, +adde
     case False{}: unstarred(hs, values, added, blank(values, added))
 
 def add(+hs: List<&2, Request.Header>, names: List<&2, String>) -> List<&2, Request.Header>:
-  +values = Request.lookup(hs, "vary")
+  +values = Fields.values(hs, "vary")
   +seen = all_items(values)
-  merged(C.without(hs, "vary"), values, missing(names, seen), has("*", seen))
+  merged(Fields.without(hs, "vary"), values, missing(names, seen), has("*", seen))

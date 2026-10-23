@@ -32,19 +32,16 @@ cover, since the first registration is the outermost layer. They then cover the
 handler, inner middleware, inner short circuits and the router's 404 and 405
 answers.
 
-Their headers are set on the response their `next` returns. Anything that
-replaces that response later does not carry them:
-
-- an `after_handle`, `map_response` or `on_error` hook that builds a new
-  response (these run after the ordinary onion unwinds, see
-  [decision 0010](decisions/0010-hooks.md));
-- an invalid response, which final validation turns into an empty 500;
-- a request rejected before the app runs (malformed HTTP, bad query encoding).
-
-If a response hook replaces responses, register secure headers as the last
-`B.map_response` hook instead, which runs after the other mappers. A browser
-treats a response without CORS headers as a failed cross-origin request, which
-is the safe failure.
+CORS and security middleware retain the policy that applies to this request.
+After `after_handle`, `map_response`, `on_error` and final response validation,
+the framework applies those policies again before observers and transport.
+Replacement responses and validation-generated 500s carry the same CORS grant
+and security headers. An invalid custom field produces a 500; valid policy
+fields, request ID and timing still reach that response. Existing `Vary` fields
+are merged, including `Vary: *`.
+Requests rejected before middleware runs (malformed HTTP or bad query encoding)
+are outside these policies. A middleware registered inside a short circuit
+cannot cover that response, because it never ran.
 
 ## CORS
 
@@ -58,6 +55,10 @@ Build `config` with one of:
   with `B.cors_origin(origin)` or, to also send
   `Access-Control-Allow-Credentials: true` to that origin,
   `B.cors_origin_credentials(origin)`. Credentials are chosen per origin.
+
+For credentialed origins, list header names explicitly. A configured
+`headers: ["*"]` is sent literally; browsers do not treat it as a wildcard on
+credentialed requests. Leaving headers unconfigured reflects the requested names.
 
 Adjust either with `B.cors_methods(config, methods)`,
 `B.cors_headers(config, headers)`, `B.cors_expose(config, headers)` and
@@ -78,6 +79,10 @@ scheme and host in lowercase, the default port dropped. So
 `https://APP.example:443` matches a configured `https://app.example`, and the
 grant echoes the serialized form. `http://app.example`,
 `https://app.example:8443` and `https://sub.app.example` are other origins.
+
+Origin equivalence currently follows this parser, pending BND-85's independent
+origin specification. It does not implement every browser URL normalization:
+configured `http://127.1` and browser `http://127.0.0.1` are different strings.
 
 Configured entries may be full URLs; only their origin counts, so
 `https://app.example/login` configures `https://app.example`. Request `Origin`
@@ -106,7 +111,9 @@ Hono sends the methods and headers to denied origins too.
 
 Any other request, including an `OPTIONS` request without those fields, goes
 to the app. The middleware then removes any `Access-Control-Allow-Origin`,
-`Access-Control-Allow-Credentials` and `Access-Control-Expose-Headers` fields
+`Access-Control-Allow-Credentials`, `Access-Control-Allow-Methods`,
+`Access-Control-Allow-Headers`, `Access-Control-Max-Age` and
+`Access-Control-Expose-Headers` fields
 the app set, and adds its own for an allowed origin. Two conflicting grants
 are never sent, and a handler cannot grant an origin the policy denies.
 
@@ -256,6 +263,20 @@ CORS (`src/mw/cors_policy.bend` against `proof/cors-spec.bend`):
   equal the specification, with the configured values in order, and none for
   a denied origin.
 
+Response finalization (`src/mw/response_policy.bend` and request policies
+against the response specs in `proof/`):
+
+- `cors_response_spec`: for every configuration, request and downstream
+  response, derive the grant from the request, remove all six downstream CORS
+  grant fields and emit the complete actual or preflight field set.
+- `cors_vary_origin`: listed-origin policies preserve existing `Vary` values
+  and add `Origin` when absent; an existing `*` stays `*`.
+- `vary_add_spec`: merging matches the independent Vary specification for
+  every existing field list.
+- `secure_headers_defaults_spec`: applying defaults to every response removes
+  conflicting fields and `X-Powered-By`, adds the eleven literal values in
+  `proof/secure-headers-spec.bend`, and preserves unrelated response data.
+
 Method override (`src/mw/method_override_policy.bend` against
 `proof/override-spec.bend`):
 
@@ -279,8 +300,10 @@ Trailing slash (`src/mw/trailing_slash_policy.bend` against
 - `trailing_trim_keeps_root`, `trailing_trim_target` and
   `trailing_append_target`.
 
-Origin serialization, `Request.method` and the header-list splitter used for
-reflection are shared parsing primitives, not restated by the specs.
+Origin serialization, request field lookup, UTF-8 decoding, `Request.method`,
+string splitting and token validation are shared parsing primitives. The
+response specs independently define Vary membership and reflected header
+selection.
 
 Verify with:
 

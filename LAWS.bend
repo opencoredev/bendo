@@ -69,6 +69,13 @@ import ./src/mw/csrf_policy.bend as CsrfPolicy
 import ./proof/csrf-spec.bend as CsrfSpec
 import ./src/mw/cors_policy.bend as CorsPolicy
 import ./proof/cors-spec.bend as CorsSpec
+import ./src/mw/cors_request.bend as CorsRequest
+import ./src/mw/vary.bend as Vary
+import ./src/mw/response_policy.bend as ResponsePolicy
+import ./src/mw/secure_headers.bend as SecureHeaders
+import ./proof/response-policy-spec.bend as ResponsePolicySpec
+import ./proof/cors-response-spec.bend as CorsResponseSpec
+import ./proof/secure-headers-spec.bend as SecureHeadersSpec
 import ./src/mw/method_override_policy.bend as OverridePolicy
 import ./proof/override-spec.bend as OverrideSpec
 import ./src/mw/trailing_slash_policy.bend as TrailingPolicy
@@ -1629,6 +1636,49 @@ law cors_actual_fields_spec:
   for +config: CorsPolicy.Config
   for +g: Maybe<&2, CorsPolicy.Grant>
   {CorsPolicy.actual_fields(config, g) == CorsSpec.actual_fields(config, g) : List<&2, CorsPolicy.Field>}
+
+# The CORS policy a request retains, applied at finalization to whatever
+# response reached it, equals CorsResponseSpec.response for every
+# configuration, request and response. The grant, the preflight
+# classification and the requested headers are read from the request's own
+# fields (missing, single or repeated). Status, body, representation and
+# unrelated fields stay as they were; every downstream copy of the six CORS
+# fields, in any case, is dropped; then the complete preflight or actual
+# field set follows, then the Vary merge.
+law cors_response_spec:
+  for +config: CorsPolicy.Config
+  for +req: Request.Req
+  for +res: Response.Res
+  {ResponsePolicy.apply(CorsRequest.policy(config, req), res) == CorsResponseSpec.response(config, req, res) : Response.Res}
+
+# A listed-origin CORS response always ends with exactly one Vary field that
+# covers Origin: "*" when downstream Vary listed "*", otherwise every
+# downstream Vary value byte for byte followed by Origin (and, for a
+# reflecting preflight, Access-Control-Request-Headers) unless already listed.
+# Vary fields are found without regard to name case.
+law cors_vary_origin:
+  for +es: List<&2, CorsPolicy.Entry>
+  for +methods: List<&2, String>
+  for +headers: List<&2, String>
+  for +expose: List<&2, String>
+  for +max_age: Maybe<&2, Nat>
+  for +req: Request.Req
+  for +res: Response.Res
+  {ResponsePolicySpec.vary_values(ResponsePolicySpec.headers(ResponsePolicy.apply(CorsRequest.policy(CorsPolicy.Config{CorsPolicy.Listed{es}, methods, headers, expose, max_age}, req), res))) == ResponsePolicySpec.vary_result(ResponsePolicySpec.vary_values(ResponsePolicySpec.headers(res)), "Origin" <> CorsResponseSpec.request_header_names(CorsResponseSpec.preflight(req), headers)) : List<&2, List<&2, U32>>}
+
+# Adding names to Vary equals the independent merge for every field list.
+law vary_add_spec:
+  for +hs: List<&2, Request.Header>
+  for +names: List<&2, String>
+  {Vary.add(hs, names) == ResponsePolicySpec.vary_add(hs, names) : List<&2, Request.Header>}
+
+# The default security policy, applied to any response, keeps status, body,
+# representation and every unrelated field, drops every copy of the eleven
+# default fields and of X-Powered-By in any case, and appends the eleven
+# literal defaults once each.
+law secure_headers_defaults_spec:
+  for +res: Response.Res
+  {ResponsePolicy.apply(SecureHeaders.policy(SecureHeaders.defaults()), res) == SecureHeadersSpec.secured(res) : Response.Res}
 
 # BND-40: method override. A rewrite happens only for a POST.
 law override_rewrites_only_post:

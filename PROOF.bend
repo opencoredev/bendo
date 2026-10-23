@@ -85,6 +85,10 @@ import ./proof/jwt-structure.bend as JwtStructureProof
 import ./proof/jwt-encoding.bend as JwtEncodingProof
 import ./proof/csrf.bend as CsrfProof
 import ./proof/cors.bend as CorsProof
+import ./proof/cors-response.bend as CorsResponseProof
+import ./proof/cors-vary.bend as CorsVaryProof
+import ./proof/response-policy.bend as ResponsePolicyProof
+import ./proof/secure-headers.bend as SecureHeadersProof
 import ./proof/override.bend as OverrideProof
 import ./proof/trailing.bend as TrailingProof
 
@@ -636,6 +640,18 @@ def Laws.cors_preflight_fields_spec(config, g, reflected):
 
 def Laws.cors_actual_fields_spec(config, g):
   CorsProof.actual_fields(config, g)
+
+def Laws.cors_response_spec(config, req, res):
+  CorsResponseProof.response(config, req, res)
+
+def Laws.cors_vary_origin(es, methods, headers, expose, max_age, req, res):
+  CorsVaryProof.vary_origin(es, methods, headers, expose, max_age, req, res)
+
+def Laws.vary_add_spec(hs, names):
+  ResponsePolicyProof.vary_add(hs, names)
+
+def Laws.secure_headers_defaults_spec(res):
+  SecureHeadersProof.defaults(res)
 
 def Laws.override_rewrites_only_post(allowed, wire, values, m, h):
   OverrideProof.only_post(allowed, wire, values, m, h)

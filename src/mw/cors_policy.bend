@@ -186,10 +186,10 @@ def vary(config: Config, preflight_answer: Bool) -> List<&2, String>:
     case Config{origins, methods, headers, expose, age}:
       List.append(&2, String, origin_vary(origins), headers_vary(preflight_answer, headers))
 
-# The ordinary response fields this middleware owns. Values the application
+# The grant fields owned on both ordinary and preflight responses. Values the application
 # set for them are replaced, so two conflicting grants are never sent.
 def owned() -> List<&2, String>:
-  ["access-control-allow-origin", "access-control-allow-credentials", "access-control-expose-headers"]
+  ["access-control-allow-origin", "access-control-allow-credentials", "access-control-expose-headers", "access-control-allow-methods", "access-control-allow-headers", "access-control-max-age"]
 
 def any_defaults() -> Config:
   Config{Any{}, ["GET", "HEAD", "PUT", "POST", "DELETE", "PATCH", "QUERY"], [], [], None{}}
