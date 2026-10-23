@@ -1,6 +1,8 @@
 # Method-aware reference routing; app tags remain copyable data.
 import Base
 import ./spec.bend as S
+import ./trie.bend as Tr
+import ./router.bend as Router
 import ./pattern.bend as P
 import ./encoding.bend as E
 import ./proofs.bend as Core
@@ -373,3 +375,77 @@ def allow_text(xs: List<&2, R.Method>) -> String:
       R.method_text(h)
     case h <> tail:
       R.method_text(h) ++ ", " ++ allow_text(tail)
+
+# BND-17: resolution through the configured router. The trie supplies the
+# ordered path-matching candidates; Allow and HEAD fallback read the same list.
+
+# A validated table with its trie, built once at startup.
+type Index<-T: Data> is Data:
+  Index{valid: Valid<T>, trie: Tr.Trie<Binding<T>>}
+
+def prepare(-T: Data, +valid: Valid<T>) -> Index<T>:
+  Index{valid, Tr.build_trie(Binding<T>, raw(T, valid))}
+
+def index_valid(-T: Data, index: Index<T>) -> Valid<T>:
+  Index{valid, trie} = index
+  valid
+
+# Every registration that matches the path, ascending by index.
+def hits(-T: Data, entries: List<&2, Tr.Candidate<Binding<T>>>, +path: String, +opts: Options) -> List<&2, S.Match<Binding<T>>>:
+  match entries:
+    case Nil{}:
+      Nil{}
+    case Tr.Candidate{index, S.Route{pattern, binding}} <> rest:
+      Tr.keep(Binding<T>, index, binding, match_path(pattern, path, opts), hits(T, rest, path, opts))
+
+def first_allowed(-T: Data, xs: List<&2, S.Match<Binding<T>>>, +method: R.Method) -> Maybe<&2, S.Match<T>>:
+  match xs:
+    case Nil{}:
+      None{}
+    case S.Match{index, Binding{methods, tag}, params} <> rest:
+      E.choose(Maybe<&2, S.Match<T>>, contains(methods, method), u => Some{S.Match{index, tag, params}}, u => first_allowed(T, rest, method))
+
+def any_hit(-T: Data, xs: List<&2, S.Match<Binding<T>>>) -> Bool:
+  match xs:
+    case Nil{}:
+      False{}
+    case h <> rest:
+      True{}
+
+def hit_methods(-T: Data, xs: List<&2, S.Match<Binding<T>>>) -> List<&2, R.Method>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case S.Match{index, Binding{methods, tag}, params} <> rest:
+      List.append(&2, R.Method, methods, hit_methods(T, rest))
+
+# The same decisions as resolve_direct, read from the matching list.
+def decide(-T: Data, hit: Maybe<&2, S.Match<T>>, +xs: List<&2, S.Match<Binding<T>>>, method: R.Method) -> Resolution<T>:
+  match hit:
+    case Some{hit}:
+      Found{hit, False{}}
+    case None{}:
+      match method:
+        case R.Head{}:
+          fallback(T, first_allowed(T, xs, R.Get{}), u => miss(T, any_hit(T, xs), canonical(hit_methods(T, xs))))
+        case _:
+          miss(T, any_hit(T, xs), canonical(hit_methods(T, xs)))
+
+def resolve_hits(-T: Data, +xs: List<&2, S.Match<Binding<T>>>, +method: R.Method) -> Resolution<T>:
+  decide(T, first_allowed(T, xs, method), xs, method)
+
+# The trie indexes raw static segments, so it prefilters only the default
+# strict, case-sensitive options. Other options scan every registration.
+def entries(-T: Data, valid: Valid<T>, trie: Tr.Trie<Binding<T>>, +path: String, opts: Options) -> List<&2, Tr.Candidate<Binding<T>>>:
+  match opts:
+    case Options{True{}, True{}}:
+      Tr.candidates(Binding<T>, trie, path)
+    case _:
+      Tr.indexed(Binding<T>, raw(T, valid), 0n)
+
+def resolve_with(-T: Data, kind: Router.RouterKind, index: Index<T>, +path: String, +method: R.Method, +opts: Options) -> Resolution<T>:
+  match kind index:
+    case Router.Spec{} Index{valid, trie}:
+      resolve(T, valid, path, method, opts)
+    case Router.Trie{} Index{valid, trie}:
+      resolve_hits(T, hits(T, entries(T, valid, trie, path, opts), path, opts), method)

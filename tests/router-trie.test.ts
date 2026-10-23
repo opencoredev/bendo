@@ -134,7 +134,7 @@ function run(cases: Case[]): string[][] {
   });
   expect(result.exitCode, result.stderr.toString()).toBe(0);
   const [header, ...lines] = result.stdout.toString().trimEnd().split("\n");
-  expect(header).toBe("default=Spec");
+  expect(header).toBe("default=Trie");
   expect(lines).toHaveLength(cases.length);
   return lines.map((line) => {
     const fields = line.split("\t");
@@ -179,7 +179,7 @@ function minimize(input: Case): Case {
   return current;
 }
 
-test("trie and Spec-default config preserve first registration, tags, and decoded params", () => {
+test("trie-default and Spec config preserve first registration, tags, and decoded params", () => {
   const cases: (Case & { expected: string })[] = [
     { patterns: [], path: "/", expected: "none" },
     { patterns: ["/"], path: "/", expected: "0:1000" },

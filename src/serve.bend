@@ -7,6 +7,7 @@ import ./app/config.bend as Config
 import ./app/manifest.bend as Manifest
 import ./app/table.bend as Table
 import ./app/handle.bend as Handle
+import ./router/router.bend as Router
 import ./http/response.bend as Response
 import ./http/write_response.bend as Write
 import ./http/bytes.bend as Bytes
@@ -163,12 +164,12 @@ def encoded(res: Response.Res) -> List<&2, U32>:
   Bytes.append(Bytes.encode(Write.status_text(status) ++ Write.headers_text(headers) ++ "\r\n\r\n"), body)
 
 type State<-Tag: Data, -Env: Data> is Data:
-  State{table: Table.Table<Tag>, env: Env}
+  State{table: Table.Table<Tag>, env: Env, router: Router.RouterKind}
 
 def respond(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Handle.Ctx -> Env -> IO(Response.Res), req: R.Req, body: List<&2, U32>, state: State<Tag, Env>) -> IO(List<&2, U32>):
-  State{table, env} = state
+  State{table, env, router} = state
   do IO<List<&2, U32>>:
-    res : Response.Res <- Handle.handle(~Tag, ~Env, ~dispatch, table, env, req, body)
+    res : Response.Res <- Handle.handle_with(~Tag, ~Env, ~dispatch, router, table, env, req, body)
     return encoded(res)
 
 def startup(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Handle.Ctx -> Env -> IO(Response.Res), +table: Table.Table<Tag>, env: Env, config: Config.Config, manifest: Bool) -> IO(Unit):
@@ -183,7 +184,7 @@ def startup(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Handle.Ctx -> Env -> IO(Re
         +port : U32 = Config.port_env(port_env, fallback)
         listener : Listener <- IO.try(Listener, TCP.listen(host, port))
         IO.print("bendo listening on http://" ++ host ++ ":" ++ U32.show(port))
-        loop(~State<Tag, Env>, ~(req => body => state => respond(~Tag, ~Env, ~dispatch, req, body, state)), listener, State{table, env}, limit)
+        loop(~State<Tag, Env>, ~(req => body => state => respond(~Tag, ~Env, ~dispatch, req, body, state)), listener, State{table, env, router}, limit)
 
 def run(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Handle.Ctx -> Env -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config) -> IO(Unit):
   do IO<Unit>:

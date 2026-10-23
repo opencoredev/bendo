@@ -25,9 +25,9 @@ type Config is Data:
 # body_timeout_ms: 30000 ms to read the body; enforced by BND-11.
 # max_requests: 100 requests per connection; enforced by BND-11.
 # keep_alive: True; BND-11 enables reuse (currently one request per connection).
-# router: Spec; reference method resolution until BND-17 integrates Trie.
+# router: Trie, proven equal to Spec (BND-17); B.serve resolves methods with it.
 def defaults() -> Config:
-  Config{"127.0.0.1", 8787, 1048576, 65536, 5000, 10000, 30000, 100, True{}, Router.Spec{}}
+  Config{"127.0.0.1", 8787, 1048576, 65536, 5000, 10000, 30000, 100, True{}, Router.default_kind()}
 
 # Validate decimal syntax before Base U32.read, which only checks arithmetic.
 def digits(s: String) -> Bool:

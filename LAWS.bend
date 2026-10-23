@@ -24,6 +24,9 @@ import ./src/router/spec-proofs.bend as SpecProof
 import ./src/router/methods.bend as Methods
 import ./src/router/methods-proofs.bend as MethodProof
 
+import ./src/router/trie.bend as Trie
+import ./src/router/router.bend as Router
+
 import ./src/data/hex.bend as Hex
 import ./src/data/base64.bend as Base64
 import ./src/crypto/octets.bend as Octets
@@ -830,3 +833,44 @@ law base64_roundtrip:
   for +padded: Bool
   for valid: {Octets.valid(xs) == True{} : Bool}
   {Base64.decode(Base64.encode(xs, url, padded), url, padded) == Some{xs} : Maybe<&2, List<&2, U32>>}
+
+# BND-17: the trie router equals the reference router.
+
+# For every table, including hand-built patterns that compile could never
+# produce, and every path, the trie built from that table returns the
+# reference router's exact result: index, tag and ordered params, or None.
+law trie_route_spec:
+  for -T: Data
+  for +table: Spec.Table(T)
+  for +path: String
+  {Trie.trie_route(T, Trie.build_trie(T, table), path) == Spec.route(T, table, path) : Maybe<&2, Spec.Match<T>>}
+
+# The trie's ordered match list is exactly every registration whose pattern
+# matches the path, ascending by index, with its tag and params. The
+# specification filters the whole table and never consults a router.
+law trie_matches_spec:
+  for -T: Data
+  for +table: Spec.Table(T)
+  for +path: String
+  {Trie.matches(T, Trie.build_trie(T, table), path) == SpecProof.matching(T, table, path) : List<&2, Spec.Match<T>>}
+
+# Every router kind, prepared from a table, routes like the reference router.
+law router_kind_spec:
+  for -T: Data
+  for +kind: Router.RouterKind
+  for +table: Spec.Table(T)
+  for +path: String
+  {Router.route(T, kind, Router.prepare(T, table), path) == Spec.route(T, table, path) : Maybe<&2, Spec.Match<T>>}
+
+# Method resolution through every router kind, for every valid table, path,
+# request method and option combination, returns exactly Methods.resolve.
+# Every BND-18 law about Found, HEAD fallback, 404 and the exact Allow set
+# therefore holds for the configured router too.
+law methods_router_resolve:
+  for -T: Data
+  for +kind: Router.RouterKind
+  for +table: Methods.Valid<T>
+  for +path: String
+  for +method: Request.Method
+  for +opts: Methods.Options
+  {Methods.resolve_with(T, kind, Methods.prepare(T, table), path, method, opts) == Methods.resolve(T, table, path, method, opts) : Methods.Resolution<T>}

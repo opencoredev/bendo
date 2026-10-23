@@ -67,10 +67,11 @@ context with the accessor API.
 
 `B` also exposes `Req`, `Res`, `ServerConfig`, `RouterKind`, `spec`, `trie`,
 `text`, `body`, `not_modified`, `get`, `head`, `post`, `put`, `patch`, `delete`,
-`options`, `all` and `on`. `spec()` and `trie()` construct router-kind values;
-method-aware dispatch currently uses the reference router. BND-17 integrates trie
-selection. Header limits, timeout fields, max requests and keep-alive are reserved
-for BND-11. Connections currently serve one request and close.
+`options`, `all` and `on`. `spec()` and `trie()` construct router-kind values.
+`B.config()` defaults `router` to `trie()`, and `B.serve` resolves methods with
+the configured kind. `B.handle` uses the trie. Both kinds return identical
+results ([trie router](router-trie.md#equivalence-proof)). Header limits, timeout
+fields, max requests and keep-alive are reserved for BND-11. Connections currently serve one request and close.
 
 The legacy byte-handler `Serve.serve` and two-field `Serve.Config` remain available
 for existing low-level consumers. New applications use `B.serve` and `B.config`.

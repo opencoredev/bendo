@@ -49,8 +49,8 @@ def method_text(+path: String, method: String, built: Result<&2, &2, M.BuildErro
       "error:" ++ Nat.show(index) ++ ":" ++ P.error_kind(kind)
     case Fail{M.InvalidMethod{index, source, token}}:
       "method-error:" ++ Nat.show(index)
-    case Done{table}:
-      resolution_text(M.resolve(U32, table, path, Q.method(method), M.defaults()))
+    case Done{+table}:
+      resolution_text(M.resolve_with(U32, R.default_kind(), M.prepare(U32, table), path, Q.method(method), M.defaults()))
 
 def run_table(+path: String, +method: String, +sources: List<&2, String>, built: Result<&2, &2, S.BuildError, S.Table(U32)>) -> IO(Unit):
   match built:

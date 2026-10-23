@@ -43,6 +43,11 @@ import ./src/router/spec-proofs.bend as SpecProof
 import ./src/router/methods.bend as Methods
 import ./src/router/methods-proofs.bend as MethodProof
 
+import ./src/router/trie.bend as Trie
+import ./src/router/router.bend as Router
+import ./src/router/trie-proofs.bend as TrieProof
+import ./src/router/methods-trie-proofs.bend as MethodTrieProof
+
 import ./proof/crypto-hex.bend as HexProof
 import ./proof/crypto-base64.bend as Base64Proof
 
@@ -356,3 +361,21 @@ def Laws.hex_roundtrip(xs, valid):
 
 def Laws.base64_roundtrip(xs, url, padded, valid):
   Base64Proof.roundtrip(xs, url, padded, valid)
+
+# BND-17: trie router equivalence.
+
+def Laws.trie_route_spec(T, table, path):
+  TrieProof.route_equal(T, table, path)
+
+def Laws.trie_matches_spec(T, table, path):
+  TrieProof.matches_equal(T, table, path)
+
+def Laws.router_kind_spec(T, kind, table, path):
+  match kind:
+    case Router.Spec{}:
+      {==}
+    case Router.Trie{}:
+      TrieProof.route_equal(T, table, path)
+
+def Laws.methods_router_resolve(T, kind, table, path, method, opts):
+  MethodTrieProof.resolve_equal(T, kind, table, path, method, opts)

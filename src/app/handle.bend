@@ -2,6 +2,7 @@
 import Base
 import ./table.bend as Table
 import ../router/methods.bend as Methods
+import ../router/router.bend as Router
 import ../router/spec.bend as Spec
 import ../router/pattern.bend as Pattern
 import ../http/request.bend as Request
@@ -38,7 +39,12 @@ def resolved(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Ctx -> Env -> IO(Response
         res : Response.Res <- dispatch(tag, Ctx{req, params, body}, env)
         return finish(method, res)
 
-def handle(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Ctx -> Env -> IO(Response.Res), table: Table.Table<Tag>, env: Env, +req: Request.Req, body: List<&2, U32>) -> IO(Response.Res):
+# Resolve through the configured router; every kind returns Methods.resolve's
+# result (law methods_router_resolve).
+def handle_with(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Ctx -> Env -> IO(Response.Res), kind: Router.RouterKind, table: Table.Table<Tag>, env: Env, +req: Request.Req, body: List<&2, U32>) -> IO(Response.Res):
   Table.Table{entries, compiled} = table
   Request.Req{+method, +path, query, version, headers} = req
-  resolved(~Tag, ~Env, ~dispatch, Methods.resolve(Tag, compiled, path, method, Methods.defaults()), req, body, env)
+  resolved(~Tag, ~Env, ~dispatch, Methods.resolve_with(Tag, kind, compiled, path, method, Methods.defaults()), req, body, env)
+
+def handle(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Ctx -> Env -> IO(Response.Res), table: Table.Table<Tag>, env: Env, req: Request.Req, body: List<&2, U32>) -> IO(Response.Res):
+  handle_with(~Tag, ~Env, ~dispatch, Router.default_kind(), table, env, req, body)
