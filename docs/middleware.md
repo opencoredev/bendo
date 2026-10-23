@@ -138,7 +138,9 @@ decision for callback forms, error semantics and the transport boundary.
 [Observability middleware](observability.md) provides logger, request ID,
 Server-Timing, powered-by and pretty JSON identifiers.
 [Authentication middleware](auth.md) provides basic auth, bearer auth, JWT and
-CSRF identifiers. Wrap `B.Builtin` in your
+CSRF identifiers. [Connection info, IP restriction and rate limiting](connection.md)
+covers the peer address, the IP allow/deny built-in and the store-backed rate
+limiter. Wrap `B.Builtin` in your
 app's tag and delegate that case to `B.builtin(Vars, id, c, next)` alongside your
 own middleware cases.
 

@@ -7,6 +7,10 @@ import ./proof/manifest-spec.bend as ManifestSpec
 import ./proof/manifest-built-spec.bend as ManifestBuiltSpec
 import ./proof/compose-laws.bend as ComposeLaws
 
+# BND-44
+import ./proof/ip-laws.bend as IpLaws
+import ./proof/rate-limit-laws.bend as RateLimitLaws
+
 # BND-32
 import ./proof/signed-cookie-laws.bend as SignedCookieLaws
 

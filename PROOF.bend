@@ -4,6 +4,10 @@ import ./proof/manifest.bend as ManifestProof
 import ./proof/manifest-built.bend as ManifestBuiltProof
 import ./proof/compose.bend as ComposeProof
 
+# BND-44
+import ./proof/ip.bend as IpProof
+import ./proof/rate-limit.bend as RateLimitProof
+
 # BND-32
 import ./proof/signed-cookie.bend as SignedCookieProof
 
