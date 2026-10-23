@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "files": {
+    "tests/multipart.test.ts": 155000,
+    "tests/router-methods.test.ts": 75000,
+    "tests/handle.test.ts": 65000,
+    "tests/json.test.ts": 56000,
+    "tests/crypto.test.ts": 55000,
+    "tests/http-body.test.ts": 53000,
+    "tests/router-trie.test.ts": 33000,
+    "tests/hello.test.ts": 29000,
+    "tests/forms.test.ts": 17000,
+    "tests/router-hono-cases.test.ts": 19000
+  }
+}

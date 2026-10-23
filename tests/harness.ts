@@ -1,6 +1,7 @@
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync } from "node:fs";
+import { release } from "node:os";
+import { dirname, extname, join, relative, resolve } from "node:path";
 import { findBend } from "../packages/bendo/src/bend.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
@@ -14,20 +15,111 @@ export const SLOW_TEST_TIMEOUT_MS = 120_000;
 
 export type RunningServer = { url: string; [Symbol.asyncDispose]: () => Promise<void> };
 
-/** Compiles a Bend entry file to a native binary and returns its path. */
-export function build(entry: string): string {
-  const bend = findBend();
-  if (bend.kind === "missing") throw new Error("bend is not installed");
-  const out = join(mkdtempSync(join(tmpdir(), "bendo-test-")), "server");
-  const run = Bun.spawnSync(
-    ["timeout", "--foreground", BEND_COMPILE_TIMEOUT, bend.path, join(ROOT, entry), "-o", out],
-    {
-      stdout: "pipe",
-      stderr: "pipe",
-    },
+type Target = "native" | "mjs";
+
+let compiler: ReturnType<typeof findBend> | undefined;
+let nativePlatform: string | undefined;
+
+function nativeIdentity(): string {
+  if (nativePlatform !== undefined) return nativePlatform;
+  const identity = [
+    process.platform === "linux" ? readFileSync("/etc/os-release", "utf8") : release(),
+  ];
+  for (const command of [
+    ["cc", "--version"],
+    ["clang", "--version"],
+    ...(process.platform === "linux" ? [["ldd", "--version"]] : []),
+  ]) {
+    const run = Bun.spawnSync(command, { stdout: "pipe", stderr: "pipe", timeout: 5000 });
+    if (run.exitCode !== 0) throw new Error(`Cannot identify native toolchain: ${command[0]}`);
+    identity.push(`${run.stdout}${run.stderr}`);
+  }
+  nativePlatform = identity.join("\n");
+  return nativePlatform;
+}
+
+/** Cache a complete dependency graph, including foreign effects and their twins. */
+export function compile(entry: string, target: Target): string {
+  compiler ??= findBend();
+  if (compiler.kind === "missing") throw new Error("bend is not installed");
+  const pinned = readFileSync(join(ROOT, ".bend-version"), "utf8").trim();
+  if (compiler.version !== pinned)
+    throw new Error(`Expected Bend ${pinned}, found ${compiler.version}`);
+  const source = resolve(ROOT, entry);
+  const graph = new Map<string, Buffer>();
+  function visit(path: string): void {
+    if (graph.has(path)) return;
+    const content = readFileSync(path);
+    graph.set(path, content);
+    if (extname(path) !== ".bend") return;
+    for (const match of content
+      .toString()
+      .matchAll(/^\s*import\s+(?:"([^"\n]+)"|(\.{1,2}\/[^\s]+))/gm)) {
+      const imported = match[1] ?? match[2];
+      if (!imported) continue;
+      const dependency = resolve(dirname(path), imported);
+      visit(dependency);
+      if (/\.(c|js)$/.test(dependency)) {
+        const twin = dependency.replace(/\.(c|js)$/, dependency.endsWith(".c") ? ".js" : ".c");
+        if (existsSync(twin)) visit(twin);
+      }
+    }
+  }
+  visit(source);
+  // Normalize generated fixtures against their entry directory so unique temp
+  // directories and separate checkouts can reuse identical graphs.
+  const base = source.startsWith(`${ROOT}/`) ? ROOT : dirname(source);
+  const hash = createHash("sha256");
+  hash.update(
+    JSON.stringify([
+      "bendo-fixture-v1",
+      pinned,
+      target,
+      process.platform,
+      process.arch,
+      relative(base, source),
+      target === "native" ? nativeIdentity() : "",
+    ]),
   );
-  if (run.exitCode !== 0) throw new Error(`bend build failed:\n${run.stdout}${run.stderr}`);
-  return out;
+  for (const [path, contents] of [...graph]
+    .map(([path, contents]): [string, Buffer] => [relative(base, path), contents])
+    .sort(([a], [b]) => a.localeCompare(b))) {
+    hash.update(JSON.stringify([path, contents.length]));
+    hash.update(contents);
+  }
+  const directory = join(ROOT, ".cache/bend", hash.digest("hex"));
+  mkdirSync(directory, { recursive: true });
+  const name = target === "mjs" ? "fixture.mjs" : "fixture";
+  const output = join(directory, name);
+  if (existsSync(output)) return output;
+  const temporary = mkdtempSync(join(directory, ".compile-"));
+  try {
+    const run = Bun.spawnSync(
+      [
+        "timeout",
+        "--foreground",
+        BEND_COMPILE_TIMEOUT,
+        compiler.path,
+        source,
+        "-o",
+        join(temporary, name),
+      ],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    if (run.exitCode !== 0)
+      throw new Error(`bend build failed (${entry}):\n${run.stdout}${run.stderr}`);
+    // Each writer publishes a complete file atomically. Another worker may have
+    // published the same graph meanwhile; replacing it is safe on POSIX.
+    if (!existsSync(output)) renameSync(join(temporary, name), output);
+    return output;
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
+}
+
+/** Compiles a Bend entry file to a cached native binary and returns its path. */
+export function build(entry: string): string {
+  return compile(entry, "native");
 }
 
 /** How long a compiled server may take to answer its first request. ms-a2 is shared and often loaded. */

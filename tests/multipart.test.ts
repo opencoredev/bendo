@@ -1,11 +1,7 @@
-import { afterAll, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { randomBytes } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { findBend } from "../packages/bendo/src/bend.ts";
-import { BEND_COMPILE_TIMEOUT, start } from "./harness.ts";
+import { compile, start } from "./harness.ts";
 
 type BendList<T> = { $: "Nil" } | { $: "Con"; head: T; tail: BendList<T> };
 function list(values: Uint8Array | readonly number[]): BendList<number> {
@@ -17,30 +13,9 @@ function list(values: Uint8Array | readonly number[]): BendList<number> {
   }
   return result;
 }
-const directory = mkdtempSync(join(tmpdir(), "bendo-multipart-"));
-afterAll(() => rmSync(directory, { recursive: true, force: true }));
-function compile(entry: string, output: string): string {
-  const bend = findBend();
-  if (bend.kind === "missing") throw new Error("bend is not installed");
-  const path = join(directory, output);
-  const run = Bun.spawnSync(
-    [
-      "timeout",
-      "--foreground",
-      BEND_COMPILE_TIMEOUT,
-      bend.path,
-      join(import.meta.dir, entry),
-      "-o",
-      path,
-    ],
-    { stdout: "pipe", stderr: "pipe" },
-  );
-  if (run.exitCode !== 0) throw new Error(`Bend compilation failed:\n${run.stdout}${run.stderr}`);
-  return path;
-}
-const binary = compile("servers/multipart.bend", "server");
+const binary = compile("tests/servers/multipart.bend", "native");
 const module: unknown = await import(
-  pathToFileURL(compile("fixtures/multipart/consumer.bend", "consumer.mjs")).href
+  pathToFileURL(compile("tests/fixtures/multipart/consumer.bend", "mjs")).href
 );
 if (typeof module !== "object" || module === null || !("default" in module)) {
   throw new Error("Missing Bend exports");
