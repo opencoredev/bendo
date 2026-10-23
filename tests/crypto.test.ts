@@ -1,3 +1,4 @@
+import { BEND_COMPILE_TIMEOUT } from "./harness.ts";
 import { afterAll, describe, expect, test } from "bun:test";
 import { createHash, createHmac } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -23,7 +24,7 @@ afterAll(() => rmSync(dir, { recursive: true, force: true }));
 const bend = findBend();
 if (bend.kind === "missing") throw new Error("bend is not installed");
 function command(args: string[], env = process.env): string {
-  const result = Bun.spawnSync(["timeout", "--foreground", "30s", ...args], {
+  const result = Bun.spawnSync(["timeout", "--foreground", BEND_COMPILE_TIMEOUT, ...args], {
     env,
     stdout: "pipe",
     stderr: "pipe",

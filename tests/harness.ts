@@ -5,6 +5,9 @@ import { findBend } from "../packages/bendo/src/bend.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 
+/** Wall-clock budget for one `bend` compile. CI runners are slower than ms-a2. */
+export const BEND_COMPILE_TIMEOUT = "180s";
+
 export type RunningServer = { url: string; [Symbol.asyncDispose]: () => Promise<void> };
 
 /** Compiles a Bend entry file to a native binary and returns its path. */
