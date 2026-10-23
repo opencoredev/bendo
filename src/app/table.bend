@@ -25,25 +25,50 @@ def stage_number(stage: Stage) -> U32:
     case AfterResponse{}: 7
     case NotFound{}: 8
 
+# Scope is provenance attached to an individual route, never a path predicate.
+# Prefixes are already applied by group; guard membership is structural.
+type Scope is Data:
+  GroupScope{prefix: String}
+  GuardScope{}
+  RouteScope{}
+
+type HookSpec<-Tag: Data> is Data:
+  HookSpec{stage: Stage, tag: Tag}
+
+type Placement<-Tag: Data> is Data:
+  Placement{scope: Scope, hook: HookSpec<Tag>}
+
+# BND-33/34 will supply schema descriptions. This closed slot deliberately
+# cannot carry an unchecked string or promise validation that does not exist.
+type SchemaSlot is Data:
+  NoSchemas{}
+
+type GuardOptions<-Tag: Data> is Data:
+  GuardOptions{hooks: List<&2, HookSpec<Tag>>, schemas: SchemaSlot}
+
 # Routes and middleware share app-owned identifiers, resolved by separate
 # closed dispatchers. No function or continuation is stored in this table.
 type Entry<-Tag: Data> is Data:
   Route{registration: Methods.Registration(Tag)}
+  ScopedRoute{registration: Methods.Registration(Tag), hooks: List<&2, Placement<Tag>>}
   Hook{stage: Stage, tag: Tag}
   Use{source: Maybe<&2, String>, tag: Tag}
 
 type Middleware<-Tag: Data> is Data:
   Staged{stage: Stage, tag: Tag}
+  Scoped{from_end: Nat, hooks: List<&2, Placement<Tag>>}
   Middleware{pattern: Maybe<&2, Pattern.Pattern>, tag: Tag}
 
-# The compiled index holds the validated table and its trie, built once.
+# The compiled index and route count are built once. Request-time scope
+# identity conversion must not traverse the registration list.
 type Table<-Tag: Data> is Data:
-  Table{entries: List<&2, Methods.Registration(Tag)>, compiled: Methods.Index<Tag>, middleware: List<&2, Middleware<Tag>>}
+  Table{entries: List<&2, Methods.Registration(Tag)>, compiled: Methods.Index<Tag>, middleware: List<&2, Middleware<Tag>>, count: Nat}
 
 def route_entries(-Tag: Data, xs: List<&2, Entry<Tag>>) -> List<&2, Methods.Registration(Tag)>:
   match xs:
     case Nil{}: []
     case Route{r} <> tail: r <> route_entries(Tag, tail)
+    case ScopedRoute{r, hooks} <> +tail: r <> route_entries(Tag, tail)
     case Hook{stage, tag} <> tail: route_entries(Tag, tail)
     case Use{source, tag} <> tail: route_entries(Tag, tail)
 
@@ -70,6 +95,8 @@ def middleware_entries(-Tag: Data, xs: List<&2, Entry<Tag>>, +index: Nat) -> Res
     case Nil{}: Done{[]}
     case Route{r} <> tail:
       route_checked(Tag, index, Methods.build_table(Tag, [r]), u => middleware_entries(Tag, tail, 1n+index))
+    case ScopedRoute{r, hooks} <> +tail:
+      route_checked(Tag, index, Methods.build_table(Tag, [r]), u => prepend(Tag, Scoped{List.length(&2, Methods.Registration(Tag), route_entries(Tag, tail)), hooks}, middleware_entries(Tag, tail, 1n+index)))
     case Hook{stage, tag} <> tail:
       prepend(Tag, Staged{stage, tag}, middleware_entries(Tag, tail, 1n+index))
     case Use{None{}, tag} <> tail:
@@ -77,10 +104,10 @@ def middleware_entries(-Tag: Data, xs: List<&2, Entry<Tag>>, +index: Nat) -> Res
     case Use{Some{+source}, tag} <> tail:
       pattern_built(Tag, index, source, tag, Pattern.compile(source), u => middleware_entries(Tag, tail, 1n+index))
 
-def built(-Tag: Data, entries: List<&2, Methods.Registration(Tag)>, middleware: List<&2, Middleware<Tag>>, result: Result<&2, &2, Methods.BuildError, Methods.Valid<Tag>>) -> Result<&2, &2, Methods.BuildError, Table<Tag>>:
+def built(-Tag: Data, +entries: List<&2, Methods.Registration(Tag)>, middleware: List<&2, Middleware<Tag>>, result: Result<&2, &2, Methods.BuildError, Methods.Valid<Tag>>) -> Result<&2, &2, Methods.BuildError, Table<Tag>>:
   match result:
     case Fail{error}: Fail{error}
-    case Done{table}: Done{Table{entries, Methods.prepare(Tag, table), middleware}}
+    case Done{table}: Done{Table{entries, Methods.prepare(Tag, table), middleware, List.length(&2, Methods.Registration(Tag), entries)}}
 
 def collected(-Tag: Data, +entries: List<&2, Methods.Registration(Tag)>, result: Result<&2, &2, Methods.BuildError, List<&2, Middleware<Tag>>>) -> Result<&2, &2, Methods.BuildError, Table<Tag>>:
   match result:
@@ -99,6 +126,7 @@ def selected(-Tag: Data, entries: List<&2, Middleware<Tag>>, +path: String) -> L
   match entries:
     case Nil{}: []
     case Staged{stage, tag} <> tail: selected(Tag, tail, path)
+    case Scoped{index, hooks} <> tail: selected(Tag, tail, path)
     case Middleware{None{}, tag} <> tail: tag <> selected(Tag, tail, path)
     case Middleware{Some{p}, tag} <> tail:
       include(Tag, tag, selected(Tag, tail, path), Maybe.is_some(&2, Pattern.Params, Pattern.match_path(p, path)))
@@ -108,6 +136,7 @@ def stage_ids(-Tag: Data, entries: List<&2, Middleware<Tag>>, +stage: Stage) -> 
   match entries:
     case Nil{}: []
     case Middleware{pattern, tag} <> tail: stage_ids(Tag, tail, stage)
+    case Scoped{index, hooks} <> tail: stage_ids(Tag, tail, stage)
     case Staged{kind, tag} <> tail:
       include(Tag, tag, stage_ids(Tag, tail, stage), U32.is_eq(stage_number(kind), stage_number(stage)))
 
@@ -148,3 +177,37 @@ def lifecycle_errors(-Tag: Data, plan: Lifecycle<Tag>) -> List<&2, Tag>:
 def lifecycle_observers(-Tag: Data, plan: Lifecycle<Tag>) -> List<&2, Tag>:
   Lifecycle{request, pre, after, map, errors, observers} = plan
   observers
+
+# The reversed ordinal is stable when a group/guard list is prepended to another
+# list. Convert the router's forward ordinal once at the runtime boundary.
+def hook_ids(-Tag: Data, hooks: List<&2, Placement<Tag>>, +stage: Stage) -> List<&2, Tag>:
+  match hooks:
+    case Nil{}: []
+    case Placement{scope, HookSpec{kind, tag}} <> tail:
+      include(Tag, tag, hook_ids(Tag, tail, stage), U32.is_eq(stage_number(kind), stage_number(stage)))
+
+def include_hooks(-Tag: Data, hooks: List<&2, Placement<Tag>>, stage: Stage, yes: Bool) -> List<&2, Tag>:
+  match yes:
+    case True{}: hook_ids(Tag, hooks, stage)
+    case False{}: []
+
+def route_stage_ids(-Tag: Data, layers: List<&2, Middleware<Tag>>, +route: Maybe<&2, Nat>, +stage: Stage) -> List<&2, Tag>:
+  match layers:
+    case Nil{}: []
+    case Scoped{index, hooks} <> tail:
+      match route:
+        case None{}: route_stage_ids(Tag, tail, None{}, stage)
+        case Some{n}: List.append(&2, Tag, include_hooks(Tag, hooks, stage, Nat.is_eq(index, n)), route_stage_ids(Tag, tail, Some{n}, stage))
+    case _ <> tail: route_stage_ids(Tag, tail, route, stage)
+
+def scoped_stage_ids(-Tag: Data, +layers: List<&2, Middleware<Tag>>, route: Maybe<&2, Nat>, +stage: Stage) -> List<&2, Tag>:
+  List.append(&2, Tag, stage_ids(Tag, layers, stage), route_stage_ids(Tag, layers, route, stage))
+
+def scoped_lifecycle(-Tag: Data, +layers: List<&2, Middleware<Tag>>, path: String, +route: Maybe<&2, Nat>) -> Lifecycle<Tag>:
+  Lifecycle{
+    scoped_stage_ids(Tag, layers, route, Request{}),
+    List.concat(&2, Tag, [selected(Tag, layers, path), scoped_stage_ids(Tag, layers, route, Parse{}), scoped_stage_ids(Tag, layers, route, Transform{}), scoped_stage_ids(Tag, layers, route, BeforeHandle{})]),
+    scoped_stage_ids(Tag, layers, route, AfterHandle{}),
+    scoped_stage_ids(Tag, layers, route, MapResponse{}),
+    scoped_stage_ids(Tag, layers, route, Error{}),
+    scoped_stage_ids(Tag, layers, route, AfterResponse{})}

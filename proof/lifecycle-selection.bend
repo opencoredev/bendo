@@ -141,6 +141,11 @@ def route_checked(-Tag: Data, +index: Nat, +checked: Result<&2, &2, M.BuildError
     case Fail{M.InvalidMethod{old, source, token}}: Unit{}
     case Done{table}: proof
 
+def prepend_scoped(-Tag: Data, +ordinal: Nat, +hooks: List<&2, T.Placement<Tag>>, +rest: Result<&2, &2, M.BuildError, List<&2, T.Middleware<Tag>>>, +expected: List<&2, Tag>, +stage: T.Stage, proof: Collected(Tag, rest, expected, stage)) -> Collected(Tag, T.prepend(Tag, T.Scoped{ordinal, hooks}, rest), expected, stage):
+  match rest:
+    case Fail{error}: Unit{}
+    case Done{layers}: proof
+
 def entries(-Tag: Data, +xs: List<&2, T.Entry<Tag>>, +index: Nat, +stage: T.Stage) -> Collected(Tag, T.middleware_entries(Tag, xs, index), S.hooks(Tag, xs, stage), stage):
   match xs:
     case Nil{}: {==}
@@ -148,6 +153,8 @@ def entries(-Tag: Data, +xs: List<&2, T.Entry<Tag>>, +index: Nat, +stage: T.Stag
       prepend_hook(Tag, kind, tag, T.middleware_entries(Tag, tail, 1n+index), S.hooks(Tag, tail, stage), stage, entries(Tag, tail, 1n+index, stage))
     case T.Route{r} <> tail:
       route_checked(Tag, index, M.build_table(Tag, [r]), T.middleware_entries(Tag, tail, 1n+index), S.hooks(Tag, tail, stage), stage, entries(Tag, tail, 1n+index, stage))
+    case T.ScopedRoute{r, hooks} <> tail:
+      route_checked(Tag, index, M.build_table(Tag, [r]), T.prepend(Tag, T.Scoped{List.length(&2, M.Registration(Tag), T.route_entries(Tag, tail)), hooks}, T.middleware_entries(Tag, tail, 1n+index)), S.hooks(Tag, tail, stage), stage, prepend_scoped(Tag, List.length(&2, M.Registration(Tag), T.route_entries(Tag, tail)), hooks, T.middleware_entries(Tag, tail, 1n+index), S.hooks(Tag, tail, stage), stage, entries(Tag, tail, 1n+index, stage)))
     case T.Use{None{}, tag} <> tail:
       prepend_use(Tag, None{}, tag, T.middleware_entries(Tag, tail, 1n+index), S.hooks(Tag, tail, stage), stage, entries(Tag, tail, 1n+index, stage))
     case T.Use{Some{source}, tag} <> tail:
@@ -156,7 +163,7 @@ def entries(-Tag: Data, +xs: List<&2, T.Entry<Tag>>, +index: Nat, +stage: T.Stag
 def Built(-Tag: Data, result: Result<&2, &2, M.BuildError, T.Table<Tag>>, expected: List<&2, Tag>, stage: T.Stage) -> Type:
   match result:
     case Fail{error}: Unit
-    case Done{T.Table{routes, compiled, layers}}: {T.stage_ids(Tag, layers, stage) == expected : List<&2, Tag>}
+    case Done{T.Table{routes, compiled, layers, count}}: {T.stage_ids(Tag, layers, stage) == expected : List<&2, Tag>}
 
 def built(-Tag: Data, +routes: List<&2, M.Registration(Tag)>, +layers: List<&2, T.Middleware<Tag>>, +result: Result<&2, &2, M.BuildError, M.Valid<Tag>>, +expected: List<&2, Tag>, +stage: T.Stage, proof: {T.stage_ids(Tag, layers, stage) == expected : List<&2, Tag>}) -> Built(Tag, T.built(Tag, routes, layers, result), expected, stage):
   match result:
@@ -168,6 +175,6 @@ def collected(-Tag: Data, +routes: List<&2, M.Registration(Tag)>, +result: Resul
     case Fail{error}: Unit{}
     case Done{layers}: built(Tag, routes, layers, M.build_table(Tag, routes), expected, stage, proof)
 
-def selection(-Tag: Data, +xs: List<&2, T.Entry<Tag>>, +routes: List<&2, M.Registration(Tag)>, +compiled: M.Index<Tag>, +layers: List<&2, T.Middleware<Tag>>, +stage: T.Stage, built: {T.build(Tag, xs) == Done{T.Table{routes, compiled, layers}} : Result<&2, &2, M.BuildError, T.Table<Tag>>}) -> {T.stage_ids(Tag, layers, stage) == S.hooks(Tag, xs, stage) : List<&2, Tag>}:
+def selection(-Tag: Data, +xs: List<&2, T.Entry<Tag>>, +routes: List<&2, M.Registration(Tag)>, +compiled: M.Index<Tag>, +layers: List<&2, T.Middleware<Tag>>, +count: Nat, +stage: T.Stage, built: {T.build(Tag, xs) == Done{T.Table{routes, compiled, layers, count}} : Result<&2, &2, M.BuildError, T.Table<Tag>>}) -> {T.stage_ids(Tag, layers, stage) == S.hooks(Tag, xs, stage) : List<&2, Tag>}:
   %built : Built(Tag, _, S.hooks(Tag, xs, stage), stage)
   collected(Tag, T.route_entries(Tag, xs), T.middleware_entries(Tag, xs, 0n), S.hooks(Tag, xs, stage), stage, entries(Tag, xs, 0n, stage))
