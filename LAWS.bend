@@ -9,6 +9,8 @@ import ./src/http/parse.bend as Parse
 import ./src/http/write.bend as Write
 import ./proof/support.bend as Support
 
+import ./src/router/pattern.bend as Pattern
+
 # LAW: a text response is a head with no blank line in it, then a blank
 # line, then the body. So the first blank line in the response is the one
 # that ends the head, and a client that cuts there reads the body back.
@@ -507,3 +509,20 @@ law method_recover:
   for +m: Request.Method
   for +ok: {Request.method_valid(m) == True{} : Bool}
   {Request.method(Request.method_text(m)) == m : Request.Method}
+
+# BND-14
+
+# Every successfully compiled pattern roundtrips every independently admissible
+# ordered assignment. Admissibility checks exactly the capture names in order,
+# nonempty present non-wildcard values, constraints and Unicode scalars; only a
+# final optional capture may be omitted, and a wildcard may hold an empty value.
+# It never invokes fill or match_path. Both filling success and matching success
+# are promised, so a filler that always fails cannot satisfy this law.
+law pattern_fill_match:
+  for +source: String
+  for +pattern: Pattern.Pattern
+  for compiled: {Pattern.compile(source) == Done{pattern} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+  for +params: Pattern.Params
+  for admitted: {Pattern.admissible(pattern, params) == True{} : Bool}
+  exs path: String
+  {Pattern.fill(pattern, params) == Some{path} : Maybe<&2, String>} & {Pattern.match_path(pattern, path) == Some{params} : Maybe<&2, Pattern.Params>}
