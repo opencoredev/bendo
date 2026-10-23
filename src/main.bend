@@ -7,7 +7,9 @@ import ./app/table.bend as Table
 import ./app/scopes.bend as Scopes
 import ./app/handle.bend as Handle
 import ./app/context.bend as Context
+import ./app/errors.bend as Errors
 import ./app/store.bend as Store
+import ./app/store_actor.bend as StoreActor
 import ./data/json.bend as Json
 import ./data/cookie.bend as Cookie
 import ./serve.bend as Serve
@@ -15,6 +17,11 @@ import ./http/request.bend as Request
 import ./http/response.bend as Response
 import ./router/methods.bend as Methods
 import ./router/router.bend as Router
+
+def HttpError() -> Data: Errors.HttpError
+def http_error(status: U32, message: String) -> Errors.HttpError: Errors.http_error(status, message)
+def error(c: Handle.Ctx, failure: Errors.HttpError) -> Response.Res: Context.error(Unit, c, failure)
+def result(c: Handle.Ctx, value: Result<&2, &2, Errors.HttpError, Response.Res>) -> Response.Res: Context.result(Unit, c, value)
 
 def Req() -> Data: Request.Req
 def Res() -> Data: Response.Res
@@ -70,6 +77,7 @@ def on_transform(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.Tran
 def before_handle(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.BeforeHandle{}, id}
 def after_handle(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.AfterHandle{}, id}
 def map_response(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.MapResponse{}, id}
+def on_not_found(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.NotFound{}, id}
 def on_error(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.Error{}, id}
 def on_after_response(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.AfterResponse{}, id}
 def routes(-Tag: Data, entries: List<&2, Table.Entry<Tag>>) -> Result<&2, &2, Methods.BuildError, Table.Table<Tag>>: Table.build(Tag, entries)
@@ -102,10 +110,10 @@ def Store(-S: Data) -> Data: Store.Store<S>
 def StoreError() -> Data: Store.Error
 
 def store(-S: Data, initial: S) -> IO(Store.Store<S>):
-  Store.store(S, initial)
+  StoreActor.store(S, initial)
 
 def store_with_timeout(-S: Data, initial: S, timeout_ms: U32) -> IO(Store.Store<S>):
-  Store.store_with_timeout(S, initial, timeout_ms)
+  StoreActor.store_with_timeout(S, initial, timeout_ms)
 
 def store_get(-S: Data, handle: Store.Store<S>) -> IO(Result<&2, &2, Store.Error, S>):
   Store.get(S, handle)

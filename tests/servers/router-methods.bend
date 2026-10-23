@@ -34,7 +34,8 @@ def registrations() -> List<&2, M.Registration(Tag)>:
     M.post(Tag, "/overlap/:id", Message{"overlap-post"}),
     M.get(Tag, "/overlap/new", Message{"overlap-get"}),
     M.on(Tag, [], "/empty", Message{"empty"}),
-    M.get(Tag, "/unicode", Message{"hé 🌍"})
+    M.get(Tag, "/unicode", Message{"hé 🌍"}),
+    M.on(Tag, M.standard_methods(), "/finite", Message{"finite"})
   ]
 
 def params_text(ps: P.Params) -> String:

@@ -93,8 +93,10 @@ the new state. A successful set or update precedes later reads sent after its
 acknowledgment. Multiple stores are independent; there is no transaction across
 stores.
 
-The direct module `src/app/store.bend` exports `Store<S>`, `Error`, `store`,
-`store_with_timeout`, `get`, `set`, and `update`. Public operation names have a
+The direct module `src/app/store.bend` exports `Store<S>`, `Error`, `get`, `set`,
+and `update`. `src/app/store_actor.bend` exports `store` and
+`store_with_timeout`; it holds the `@unsafe` actor loop apart from the pure
+types, so laws can import the request context. Public operation names have a
 `store_` prefix because `B.get` already registers routes.
 
 ## Failure and timeout behavior
