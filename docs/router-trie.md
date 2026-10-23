@@ -94,7 +94,9 @@ bun test tests/router-trie.test.ts
 
 The TypeScript generator uses seed `0xb0162026`. It creates 10,000 table/path
 pairs with 1–60 registrations, duplicates and overlaps, static routes,
-captures, optional captures, wildcards, and all supported constraint families.
+captures, consecutive trailing optionals, bare and prefix wildcards, interior
+wildcards, literal static colons, `{.+}` spans, and all other supported
+constraint families.
 Most paths fill a generated pattern; others mutate fills or use unrelated
 paths, including malformed escapes and Unicode. A native Bend driver receives
 250 pairs per invocation and prints the spec match, trie match, and both

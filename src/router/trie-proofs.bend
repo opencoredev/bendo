@@ -176,6 +176,12 @@ def key_prefix(+segs: List<&2, P.Segment>, +paths: List<&2, String>, +ps: P.Para
       matched => {==}
     case P.Wildcard{name} <> rest p:
       matched => {==}
+    case P.InteriorWildcard{} <> rest p:
+      matched => {==}
+    case P.PrefixWildcard{raw} <> rest p:
+      matched => {==}
+    case P.Span{name} <> rest p:
+      matched => {==}
 
 def pattern_prefix(+pattern: P.Pattern, +path: String, +ps: P.Params,
     matched: {P.match_path(pattern, path) == Some{ps} : Maybe<&2, P.Params>}) ->
@@ -188,6 +194,12 @@ def pattern_prefix(+pattern: P.Pattern, +path: String, +ps: P.Params,
     case P.Pattern{P.Capture{name, c, optional} <> rest}:
       {==}
     case P.Pattern{P.Wildcard{name} <> rest}:
+      {==}
+    case P.Pattern{P.InteriorWildcard{} <> rest}:
+      {==}
+    case P.Pattern{P.PrefixWildcard{raw} <> rest}:
+      {==}
+    case P.Pattern{P.Span{name} <> rest}:
       {==}
 
 # Trie lookup after building a fresh chain.

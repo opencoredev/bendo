@@ -8,6 +8,7 @@ import ../data/urlencoded.bend as Query
 import ../data/utf8.bend as Utf8
 import ../data/json.bend as Json
 import ./observability.bend as Obs
+import ./errors.bend as Errors
 
 import ../data/cookie.bend as Cookie
 import ../data/signed-cookie.bend as SignedCookie
@@ -163,8 +164,88 @@ def redirect_status(-Vars: Data, c: Ctx<Vars>, location: String, +code: U32) -> 
 def redirect(-Vars: Data, c: Ctx<Vars>, location: String) -> Response.Res:
   redirect_status(Vars, c, location, 302)
 
+# The exact text Json.stringify writes for {"error": message, "status": code},
+# with the writer's own escaping. The status digits match the status line.
+def error_json(message: String, code: U32) -> String:
+  "{\"error\":" ++ Json.quote(message, False{}) ++ ",\"status\":" ++ Nat.show(U32.to_nat(code)) ++ "}"
+
+# Errors validate the headers the client receives: the accumulated headers
+# after the Vary merge, with the negotiated Content-Type in place of any other.
+def respond(-Vars: Data, c: Ctx<Vars>, bytes: List<&2, U32>, content_type: String) -> Response.Res:
+  Ctx{r, p, b, q, s, hs, v, o} = c
+  finalize(Response.body(s, type_headers(hs, Some{content_type}), bytes))
+
+# Like Json.stringify, a message with a non-scalar Char renders the empty 500.
+def error_json_body(-Vars: Data, c: Ctx<Vars>, +code: U32, +message: String, scalars: Bool) -> Response.Res:
+  match scalars:
+    case True{}:
+      respond(Vars, status(Vars, c, code), Response.utf8(error_json(message, code)), "application/json; charset=utf-8")
+    case False{}: Response.body(500, [], [])
+
+def error_body(-Vars: Data, c: Ctx<Vars>, +code: U32, +message: String, json_body: Bool) -> Response.Res:
+  match json_body:
+    case True{}: error_json_body(Vars, c, code, message, Json.scalars(message))
+    case False{}: respond(Vars, status(Vars, c, code), Response.utf8(message), "text/plain; charset=utf-8")
+
+# Existing Vary values are copied byte for byte, then Accept is appended.
+def vary_join(values: List<&2, List<&2, U32>>) -> List<&2, U32>:
+  match values:
+    case Nil{}: Bytes.encode("Accept")
+    case value <> tail: List.append(&2, U32, value, List.append(&2, U32, Bytes.encode(", "), vary_join(tail)))
+
+# Scan a Vary value: only whitespace so far, exactly one * among whitespace,
+# or anything else.
+type Wild is Data:
+  Blank{}
+  Star{}
+  Other{}
+
+def wild_char(blank: Bool, star: Bool, state: Wild) -> Wild:
+  match blank star state:
+    case True{} _ s: s
+    case False{} True{} Blank{}: Star{}
+    case False{} _ _: Other{}
+
+def wild_go(xs: List<&2, U32>, state: Wild) -> Wild:
+  match xs:
+    case Nil{}: state
+    case +c <> t: wild_go(t, wild_char(Bytes.ows(c), U32.is_eq(c, 42), state))
+
+def wild_end(state: Wild) -> Bool:
+  match state:
+    case Star{}: True{}
+    case _: False{}
+
+def vary_wild(xs: List<&2, U32>) -> Bool:
+  wild_end(wild_go(xs, Blank{}))
+
+def vary_star(values: List<&2, List<&2, U32>>) -> Bool:
+  match values:
+    case Nil{}: False{}
+    case value <> tail: vary_wild(value) || vary_star(tail)
+
+def vary_value(values: List<&2, List<&2, U32>>, star: Bool) -> List<&2, U32>:
+  match star:
+    case True{}: Bytes.encode("*")
+    case False{}: vary_join(values)
+
+# Every Vary field becomes one field at the end; Vary: * stays *.
+def vary_accept(-Vars: Data, c: Ctx<Vars>) -> Ctx<Vars>:
+  Ctx{r, p, b, q, s, +hs, v, o} = c
+  +values = Request.lookup(hs, "vary")
+  Ctx{r, p, b, q, s, List.append(&2, Request.Header, without(hs, "vary"), [Request.Header{"vary", vary_value(values, vary_star(values))}]), v, o}
+
+def error(-Vars: Data, +c: Ctx<Vars>, +failure: Errors.HttpError) -> Response.Res:
+  Errors.HttpError{code, internal, expose} = failure
+  error_body(Vars, vary_accept(Vars, c), Errors.status(code), Errors.message(failure), Errors.accepts_json(request_header(Vars, c, "accept")))
+
+def result(-Vars: Data, c: Ctx<Vars>, value: Result<&2, &2, Errors.HttpError, Response.Res>) -> Response.Res:
+  match value:
+    case Done{res}: res
+    case Fail{failure}: error(Vars, c, failure)
+
 def not_found(-Vars: Data, c: Ctx<Vars>) -> Response.Res:
-  text(Vars, status(Vars, c, 404), "Not Found")
+  error(Vars, c, Errors.http_error(404, "Not Found"))
 
 # Framework metadata is independent of the app-owned Vars record.
 def observation(-Vars: Data, c: Ctx<Vars>) -> Obs.State:

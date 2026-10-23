@@ -76,8 +76,9 @@ They cannot change the response or observer snapshot already selected.
 
 ## Errors and transport boundary
 
-Until BND-25 introduces typed HTTP errors, an error is a returned `Res` with
-status 400 or higher. Invalid responses produced before `on_error` become an
+An error is a returned `Res` with status 400 or higher.
+[Typed HTTP errors](0011-crash.md) convert to safe negotiated responses before
+these stages; the dispatcher contract stays `IO(Res)`. Invalid responses produced before `on_error` become an
 empty 500 first. All error hooks then run once in registration order, even if
 an earlier one changes the status to success. Their output is validated again;
 an invalid recovery response fails closed to 500 without recursively calling

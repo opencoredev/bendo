@@ -1,142 +1,361 @@
 # Pure IMF-fixdate, Unix seconds from 1970-01-01 through 9999-12-31.
+#
+# The calendar counts days from 1600-01-01, the first day of a 400-year
+# Gregorian cycle. Each cycle splits into centuries, each century into
+# four-year groups, each group into years and each year into months. A layer
+# is a list of period lengths: decoding finds the period a day falls in and
+# the offset into it, and encoding adds the earlier lengths back. Leap days
+# fall in the first year of a group, so the lengths that vary come first.
+# Only Nat arithmetic is used, so the laws in LAWS.bend can be proven.
 import Base
 
+# 253402300799, the last second of 9999-12-31.
 def max_seconds() -> Nat:
   Nat.add(Nat.mul(253402300n, 1000n), 799n)
 
-def choose(flag: Bool, yes: U32, no: U32) -> U32:
-  match flag:
-    case True{}: yes
-    case False{}: no
-
-def weekday(n: U32) -> String:
+def is_zero(n: Nat) -> Bool:
   match n:
-    case 0: "Sun"
-    case 1: "Mon"
-    case 2: "Tue"
-    case 3: "Wed"
-    case 4: "Thu"
-    case 5: "Fri"
-    case _: "Sat"
+    case 0n:
+      True{}
+    case 1n+p:
+      False{}
 
-def month(n: U32) -> String:
-  match n:
-    case 1: "Jan"
-    case 2: "Feb"
-    case 3: "Mar"
-    case 4: "Apr"
-    case 5: "May"
-    case 6: "Jun"
-    case 7: "Jul"
-    case 8: "Aug"
-    case 9: "Sep"
-    case 10: "Oct"
-    case 11: "Nov"
-    case _: "Dec"
+def rep(k: Nat, +l: Nat) -> List<&2, Nat>:
+  match k:
+    case 0n:
+      []
+    case 1n+p:
+      l <> rep(p, l)
 
-def digit(n: U32) -> Char:
-  Chr{U32.add(48, n)}
+# A 400-year cycle has 146097 days. Only its first century, which starts on
+# a year divisible by 400, keeps its centennial leap day.
+def century_lengths() -> List<&2, Nat>:
+  [36525n, 36524n, 36524n, 36524n]
 
-def two(+n: U32) -> String:
-  SCon{digit(U32.div(n, 10)), SCon{digit(U32.mod(n, 10)), SNil{}}}
-
-def four(+n: U32) -> String:
-  two(U32.div(n, 100)) ++ two(U32.mod(n, 100))
-
-# Howard Hinnant's civil_from_days, with nonnegative March-based eras.
-# The supported domain keeps every intermediate below 4 million.
-def civil(days: U32) -> U32 & (U32 & U32):
-  +z = U32.add(days, 719468)
-  +era = U32.div(z, 146097)
-  +doe = U32.mod(z, 146097)
-  +yoe = U32.div(U32.sub(U32.add(U32.sub(doe, U32.div(doe, 1460)), U32.div(doe, 36524)), U32.div(doe, 146096)), 365)
-  +year = U32.add(U32.mul(era, 400), yoe)
-  +doy = U32.sub(doe, U32.sub(U32.add(U32.mul(365, yoe), U32.div(yoe, 4)), U32.div(yoe, 100)))
-  +mp = U32.div(U32.add(U32.mul(5, doy), 2), 153)
-  day = U32.add(U32.sub(doy, U32.div(U32.add(U32.mul(153, mp), 2), 5)), 1)
-  +mon = choose(U32.is_lt(mp, 10), U32.add(mp, 3), U32.sub(mp, 9))
-  (U32.add(year, choose(U32.is_le(mon, 2), 1, 0)), (mon, day))
-
-def render_civil(ds: U32, +time: U32, fields: U32 & (U32 & U32)) -> String:
-  (year, (mon, day)) = fields
-  weekday(U32.mod(U32.add(ds, 4), 7)) ++ ", " ++ two(day) ++ " " ++ month(mon) ++ " " ++ four(year) ++ " " ++ two(U32.div(time, 3600)) ++ ":" ++ two(U32.mod(U32.div(time, 60), 60)) ++ ":" ++ two(U32.mod(time, 60)) ++ " GMT"
-
-def render(+days: U32, time: U32) -> String:
-  render_civil(days, time, civil(days))
-
-def format_split(pair: Nat & Nat) -> String:
-  (days, time) = pair
-  render(U32.from_nat(days), U32.from_nat(time))
-
-def format_valid(s: Nat, valid: Bool) -> String:
-  match valid:
-    case False{}: ""
+def first_group(first_century: Bool) -> Nat:
+  match first_century:
     case True{}:
-      format_split(Nat.divmod(s, 86400n))
+      1461n
+    case False{}:
+      1460n
 
-# Out-of-range inputs have no IMF representation and format as the empty string.
-def format_imf(+s: Nat) -> String:
-  format_valid(s, Nat.is_le(s, max_seconds()))
+# The first group of a century lacks its leap day unless the century is the
+# first of its cycle.
+def group_lengths(first_century: Bool) -> List<&2, Nat>:
+  first_group(first_century) <> rep(24n, 1461n)
 
-# Inverse March-based civil algorithm. Call only after field validation.
-def epoch_days(+year: U32, +mon: U32, day: U32) -> U32:
-  +y = U32.sub(year, choose(U32.is_le(mon, 2), 1, 0))
-  +era = U32.div(y, 400)
-  +yoe = U32.mod(y, 400)
-  mp = choose(U32.is_gt(mon, 2), U32.sub(mon, 3), U32.add(mon, 9))
-  doy = U32.sub(U32.add(U32.div(U32.add(U32.mul(153, mp), 2), 5), day), 1)
-  doe = U32.add(U32.sub(U32.add(U32.mul(365, yoe), U32.div(yoe, 4)), U32.div(yoe, 100)), doy)
-  U32.sub(U32.add(U32.mul(era, 146097), doe), 719468)
+def long_group(c: Nat, q: Nat) -> Bool:
+  Bool.or(Bool.not(is_zero(q)), is_zero(c))
 
-def month_number(s: String) -> U32:
+def first_year(long: Bool) -> Nat:
+  match long:
+    case True{}:
+      366n
+    case False{}:
+      365n
+
+def year_lengths(long: Bool) -> List<&2, Nat>:
+  [first_year(long), 365n, 365n, 365n]
+
+def leap(c: Nat, q: Nat, yq: Nat) -> Bool:
+  Bool.and(is_zero(yq), long_group(c, q))
+
+def february(leap: Bool) -> Nat:
+  match leap:
+    case True{}:
+      29n
+    case False{}:
+      28n
+
+def month_lengths(leap: Bool) -> List<&2, Nat>:
+  [31n, february(leap), 31n, 30n, 31n, 30n, 31n, 31n, 30n, 31n, 30n, 31n]
+
+def index_pick(here: Bool, later: Nat) -> Nat:
+  match here:
+    case True{}:
+      0n
+    case False{}:
+      1n+later
+
+# The period that day x falls in.
+def index(lens: List<&2, Nat>, +x: Nat) -> Nat:
+  match lens:
+    case Nil{}:
+      0n
+    case +l <> t:
+      index_pick(Nat.is_lt(x, l), index(t, Nat.sub(x, l)))
+
+def offset_pick(x: Nat, here: Bool, later: Nat) -> Nat:
+  match here:
+    case True{}:
+      x
+    case False{}:
+      later
+
+# The offset of day x into its period.
+def offset(lens: List<&2, Nat>, +x: Nat) -> Nat:
+  match lens:
+    case Nil{}:
+      x
+    case +l <> t:
+      offset_pick(x, Nat.is_lt(x, l), offset(t, Nat.sub(x, l)))
+
+# Inverse of index and offset: the first i periods, then r more days.
+def before(i: Nat, lens: List<&2, Nat>, r: Nat) -> Nat:
+  match i lens:
+    case 0n _:
+      r
+    case 1n+j Nil{}:
+      r
+    case 1n+j l <> t:
+      Nat.add(l, before(j, t, r))
+
+# Decoding days since 1600-01-01 into (year, (month, day)).
+
+def date_of(e: Nat, c: Nat, q: Nat, yq: Nat, m: Nat, r: Nat) -> Nat & (Nat & Nat):
+  (Nat.add(1600n, Nat.add(Nat.mul(e, 400n), Nat.add(Nat.mul(c, 100n), Nat.add(Nat.mul(q, 4n), yq)))), (1n+m, 1n+r))
+
+def civil_month(+e: Nat, +c: Nat, +q: Nat, +yq: Nat, +doy: Nat) -> Nat & (Nat & Nat):
+  date_of(e, c, q, yq, index(month_lengths(leap(c, q, yq)), doy), offset(month_lengths(leap(c, q, yq)), doy))
+
+def civil_year(+e: Nat, +c: Nat, +q: Nat, +doq: Nat) -> Nat & (Nat & Nat):
+  civil_month(e, c, q, index(year_lengths(long_group(c, q)), doq), offset(year_lengths(long_group(c, q)), doq))
+
+def civil_group(+e: Nat, +c: Nat, +doc: Nat) -> Nat & (Nat & Nat):
+  civil_year(e, c, index(group_lengths(is_zero(c)), doc), offset(group_lengths(is_zero(c)), doc))
+
+def civil_century(+e: Nat, +doe: Nat) -> Nat & (Nat & Nat):
+  civil_group(e, index(century_lengths(), doe), offset(century_lengths(), doe))
+
+def civil(+z: Nat) -> Nat & (Nat & Nat):
+  civil_century(Nat.div(z, 146097n), Nat.mod(z, 146097n))
+
+# Encoding (year, month, day) into days since 1600-01-01.
+
+def days_of(+e: Nat, +c: Nat, +q: Nat, +yq: Nat, m: Nat, r: Nat) -> Nat:
+  Nat.add(Nat.mul(e, 146097n), before(c, century_lengths(), before(q, group_lengths(is_zero(c)), before(yq, year_lengths(long_group(c, q)), before(m, month_lengths(leap(c, q, yq)), r)))))
+
+def days_group(+e: Nat, +c: Nat, +a2: Nat, m: Nat, r: Nat) -> Nat:
+  days_of(e, c, Nat.div(a2, 4n), Nat.mod(a2, 4n), m, r)
+
+def days_century(+e: Nat, +a1: Nat, m: Nat, r: Nat) -> Nat:
+  days_group(e, Nat.div(a1, 100n), Nat.mod(a1, 100n), m, r)
+
+def days_from(year: Nat, month: Nat, day: Nat) -> Nat:
+  +a = Nat.sub(year, 1600n)
+  days_century(Nat.div(a, 400n), Nat.mod(a, 400n), Nat.sub(month, 1n), Nat.sub(day, 1n))
+
+# Text.
+
+def weekday_name(n: Nat) -> String:
+  match n:
+    case 0n:
+      "Sun"
+    case 1n:
+      "Mon"
+    case 2n:
+      "Tue"
+    case 3n:
+      "Wed"
+    case 4n:
+      "Thu"
+    case 5n:
+      "Fri"
+    case _:
+      "Sat"
+
+# 1 is January.
+def month_name(n: Nat) -> String:
+  match n:
+    case 1n:
+      "Jan"
+    case 2n:
+      "Feb"
+    case 3n:
+      "Mar"
+    case 4n:
+      "Apr"
+    case 5n:
+      "May"
+    case 6n:
+      "Jun"
+    case 7n:
+      "Jul"
+    case 8n:
+      "Aug"
+    case 9n:
+      "Sep"
+    case 10n:
+      "Oct"
+    case 11n:
+      "Nov"
+    case _:
+      "Dec"
+
+def at0(s: String) -> Char:
   match s:
-    case "Jan": 1
-    case "Feb": 2
-    case "Mar": 3
-    case "Apr": 4
-    case "May": 5
-    case "Jun": 6
-    case "Jul": 7
-    case "Aug": 8
-    case "Sep": 9
-    case "Oct": 10
-    case "Nov": 11
-    case "Dec": 12
-    case _: 0
+    case SCon{c, t}:
+      c
+    case SNil{}:
+      ' '
 
-def read_two(a: Char, b: Char) -> U32:
-  Chr{x} = a
-  Chr{y} = b
-  U32.add(U32.mul(U32.sub(x, 48), 10), U32.sub(y, 48))
+def at1(s: String) -> Char:
+  match s:
+    case SCon{a, SCon{c, t}}:
+      c
+    case _:
+      ' '
 
-def decimal(c: Char) -> Bool:
-  Chr{+x} = c
-  U32.is_ge(x, 48) && U32.is_le(x, 57)
+def at2(s: String) -> Char:
+  match s:
+    case SCon{a, SCon{b, SCon{c, t}}}:
+      c
+    case _:
+      ' '
+
+def digit(n: Nat) -> Char:
+  match n:
+    case 0n:
+      '0'
+    case 1n:
+      '1'
+    case 2n:
+      '2'
+    case 3n:
+      '3'
+    case 4n:
+      '4'
+    case 5n:
+      '5'
+    case 6n:
+      '6'
+    case 7n:
+      '7'
+    case 8n:
+      '8'
+    case _:
+      '9'
+
+def tens(+n: Nat) -> Char:
+  digit(Nat.div(n, 10n))
+
+def ones(+n: Nat) -> Char:
+  digit(Nat.mod(n, 10n))
+
+def thousands(+n: Nat) -> Char:
+  digit(Nat.div(Nat.div(Nat.div(n, 10n), 10n), 10n))
+
+def hundreds(+n: Nat) -> Char:
+  digit(Nat.mod(Nat.div(Nat.div(n, 10n), 10n), 10n))
+
+def decades(+n: Nat) -> Char:
+  digit(Nat.mod(Nat.div(n, 10n), 10n))
+
+def render(+wd: String, +year: Nat, +mon: String, +day: Nat, +hour: Nat, +minute: Nat, +second: Nat) -> String:
+  SCon{at0(wd), SCon{at1(wd), SCon{at2(wd), SCon{',', SCon{' ', SCon{tens(day), SCon{ones(day), SCon{' ', SCon{at0(mon), SCon{at1(mon), SCon{at2(mon), SCon{' ', SCon{thousands(year), SCon{hundreds(year), SCon{decades(year), SCon{ones(year), SCon{' ', SCon{tens(hour), SCon{ones(hour), SCon{':', SCon{tens(minute), SCon{ones(minute), SCon{':', SCon{tens(second), SCon{ones(second), SCon{' ', SCon{'G', SCon{'M', SCon{'T', SNil{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}
+
+def render_date(wd: Nat, date: Nat & (Nat & Nat), +rest: Nat) -> String:
+  (year, md) = date
+  (mon, day) = md
+  render(weekday_name(wd), year, month_name(mon), day, Nat.div(rest, 3600n), Nat.div(Nat.mod(rest, 3600n), 60n), Nat.mod(Nat.mod(rest, 3600n), 60n))
+
+# 1970-01-01 was a Thursday (0 is Sunday) and day 135140 after 1600-01-01.
+def render_day(+n: Nat, +rest: Nat) -> String:
+  render_date(Nat.mod(Nat.add(n, 4n), 7n), civil(Nat.add(n, 135140n)), rest)
+
+def format_valid(+s: Nat, valid: Bool) -> String:
+  match valid:
+    case False{}:
+      ""
+    case True{}:
+      render_day(Nat.div(s, 86400n), Nat.mod(s, 86400n))
+
+# Unix days 0 through 2932896 run from 1970-01-01 to 9999-12-31: 10957 days
+# to 2000-01-01, then twenty 400-year cycles of 146097 days. Later inputs have
+# no IMF-fixdate and format as the empty string.
+def format_imf(+s: Nat) -> String:
+  format_valid(s, Nat.is_lt(Nat.div(Nat.sub(Nat.div(s, 86400n), 10957n), 146097n), 20n))
+
+# Reading. Fields are decoded without validation; parse_imf accepts a value
+# only when formatting it reproduces the input exactly.
+
+def digit_cap(n: Nat, small: Bool) -> Nat:
+  match small:
+    case True{}:
+      n
+    case False{}:
+      10n
+
+# A character above '9' reads as 10 and one below '0' as 0; the canonical
+# check rejects both. Capping keeps every intermediate below 2^48, so
+# malformed text cannot overflow a native Nat before that check runs.
+def digit_bounded(+n: Nat) -> Nat:
+  digit_cap(n, Nat.is_lt(n, 10n))
+
+def digit_value(c: Char) -> Nat:
+  match c:
+    case Chr{x}:
+      digit_bounded(Nat.sub(U32.to_nat(x), 48n))
+
+def read2(a: Char, b: Char) -> Nat:
+  Nat.add(Nat.mul(digit_value(a), 10n), digit_value(b))
+
+def read4(a: Char, b: Char, c: Char, d: Char) -> Nat:
+  Nat.add(Nat.mul(Nat.add(Nat.mul(Nat.add(Nat.mul(digit_value(a), 10n), digit_value(b)), 10n), digit_value(c)), 10n), digit_value(d))
+
+def month_number(s: String) -> Nat:
+  match s:
+    case "Jan":
+      1n
+    case "Feb":
+      2n
+    case "Mar":
+      3n
+    case "Apr":
+      4n
+    case "May":
+      5n
+    case "Jun":
+      6n
+    case "Jul":
+      7n
+    case "Aug":
+      8n
+    case "Sep":
+      9n
+    case "Oct":
+      10n
+    case "Nov":
+      11n
+    case "Dec":
+      12n
+    case _:
+      0n
+
+def seconds_from(days: Nat, hour: Nat, minute: Nat, second: Nat) -> Nat:
+  Nat.add(Nat.mul(days, 86400n), Nat.add(Nat.mul(hour, 3600n), Nat.add(Nat.mul(minute, 60n), second)))
+
+def read_imf(s: String) -> Maybe<&2, Nat>:
+  match s:
+    case SCon{w0, SCon{w1, SCon{w2, SCon{',', SCon{' ', SCon{d0, SCon{d1, SCon{' ', SCon{m0, SCon{m1, SCon{m2, SCon{' ', SCon{y0, SCon{y1, SCon{y2, SCon{y3, SCon{' ', SCon{h0, SCon{h1, SCon{':', SCon{n0, SCon{n1, SCon{':', SCon{s0, SCon{s1, SCon{' ', SCon{'G', SCon{'M', SCon{'T', SNil{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}:
+      Some{seconds_from(Nat.sub(days_from(read4(y0, y1, y2, y3), month_number(SCon{m0, SCon{m1, SCon{m2, SNil{}}}}), read2(d0, d1)), 135140n), read2(h0, h1), read2(n0, n1), read2(s0, s1))}
+    case _:
+      None{}
 
 def parsed(s: Nat, valid: Bool) -> Maybe<&2, Nat>:
   match valid:
-    case True{}: Some{s}
-    case False{}: None{}
-
-def canonical(+s: Nat, original: String) -> Maybe<&2, Nat>:
-  parsed(s, String.eq(format_imf(s), original))
-
-def fields(original: String, year: U32, mon: U32, day: U32, hour: U32, minute: U32, second: U32, valid: Bool) -> Maybe<&2, Nat>:
-  match valid:
-    case False{}: None{}
     case True{}:
-      seconds = Nat.add(Nat.mul(U32.to_nat(epoch_days(year, mon, day)), 86400n), U32.to_nat(U32.add(U32.add(U32.mul(hour, 3600), U32.mul(minute, 60)), second)))
-      canonical(seconds, original)
+      Some{s}
+    case False{}:
+      None{}
+
+def canonical(found: Maybe<&2, Nat>, original: String) -> Maybe<&2, Nat>:
+  match found:
+    case None{}:
+      None{}
+    case Some{+s}:
+      parsed(s, String.eq(format_imf(s), original))
 
 # Only exact IMF-fixdate is accepted; obsolete HTTP date forms are rejected.
 def parse_imf(+s: String) -> Maybe<&2, Nat>:
-  match s:
-    case SCon{w0, SCon{w1, SCon{w2, SCon{',', SCon{' ', SCon{+d0, SCon{+d1, SCon{' ', SCon{m0, SCon{m1, SCon{m2, SCon{' ', SCon{+y0, SCon{+y1, SCon{+y2, SCon{+y3, SCon{' ', SCon{+h0, SCon{+h1, SCon{':', SCon{+n0, SCon{+n1, SCon{':', SCon{+s0, SCon{+s1, SCon{' ', SCon{'G', SCon{'M', SCon{'T', SNil{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}:
-      +year = U32.add(U32.mul(read_two(y0, y1), 100), read_two(y2, y3))
-      +mon = month_number(SCon{m0, SCon{m1, SCon{m2, SNil{}}}})
-      +day = read_two(d0, d1)
-      +hour = read_two(h0, h1)
-      +minute = read_two(n0, n1)
-      +second = read_two(s0, s1)
-      fields(s, year, mon, day, hour, minute, second, decimal(d0) && decimal(d1) && decimal(y0) && decimal(y1) && decimal(y2) && decimal(y3) && decimal(h0) && decimal(h1) && decimal(n0) && decimal(n1) && decimal(s0) && decimal(s1) && U32.is_ge(year, 1970) && U32.is_le(year, 9999) && U32.is_ge(mon, 1) && U32.is_le(mon, 12) && U32.is_ge(day, 1) && U32.is_le(day, 31) && U32.is_lt(hour, 24) && U32.is_lt(minute, 60) && U32.is_lt(second, 60))
-    case _: None{}
+  canonical(read_imf(s), s)

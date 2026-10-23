@@ -62,7 +62,8 @@ status and headers. The initial status is 200.
   preserves an accumulated Content-Type or leaves it absent. `Some{value}` sets it.
 - `redirect(c, location)` returns an empty 302 response and sets Location.
 - `redirect_status(c, location, code)` accepts only 301, 302, 303, 307 and 308.
-- `not_found(c)` forces 404 with plain-text `Not Found`.
+- `not_found(c)` forces 404 with negotiated `Not Found` (JSON for explicit
+  application/json Accept, otherwise plain text).
 - `status(c, code) -> B.Ctx` changes the pending status.
 - `set_cookie(c, name, value, options)` and `delete_cookie(c, name, options)` return
   `Result<&2, &2, Cookie.Error, B.Ctx>`. Successful calls append separate Set-Cookie
@@ -78,7 +79,9 @@ status framing; helpers cannot override those rules.
 Invalid status codes, header names, header values, body octets or redirect
 locations fail closed as an empty 500. Header validation follows the HTTP response
 model, including rejection of CR/LF and surrounding whitespace. Setters retain
-invalid data until finalization, so callers cannot accidentally emit it. Do not
+invalid data until finalization, so callers cannot accidentally emit it. Error
+responses validate the headers they would send, after merging Vary and
+replacing Content-Type; see [0011](decisions/0011-crash.md). Do not
 use `header` repeatedly to append Set-Cookie; use `set_cookie` instead.
 
 The request accessor is named `request_header` because Bend does not overload
@@ -140,3 +143,8 @@ With [request-ID middleware](observability.md#request-id), handlers read
 `C.request_id(Vars, c) -> Maybe<&2, String>`. Framework metadata lives separately
 from the app's typed variables. `B.timing_mark(Vars, c, name, duration_ms)` records
 a named duration in the active request's timing collector and returns `IO(Bool)`.
+
+[Typed HTTP errors and custom not-found handlers](decisions/0011-crash.md) use
+`B.error(c, B.http_error(status, message))`, `B.result(c, result)`, and
+`B.on_not_found(Tag, id)`. Private 5xx messages default to `Internal Server Error`;
+existing `on_error` hooks may replace their safe rendered responses.

@@ -11,6 +11,7 @@ type Stage is Data:
   MapResponse{}
   Error{}
   AfterResponse{}
+  NotFound{}
 
 def stage_number(stage: Stage) -> U32:
   match stage:
@@ -22,6 +23,7 @@ def stage_number(stage: Stage) -> U32:
     case MapResponse{}: 5
     case Error{}: 6
     case AfterResponse{}: 7
+    case NotFound{}: 8
 
 # Scope is provenance attached to an individual route, never a path predicate.
 # Prefixes are already applied by group; guard membership is structural.
