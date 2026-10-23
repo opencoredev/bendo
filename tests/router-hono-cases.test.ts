@@ -52,6 +52,7 @@ test("Hono fixture provenance and every difference remain documented", () => {
       "verbatim upstream request",
       "upstream registration rejection; Bendo probe request added",
       "ALL method matrix from this upstream registration table",
+      "greedy span regression queried against Hono TrieRouter 4.13.13",
     ]).toContain(entry.origin);
     if (entry.honoError) {
       expect(entry.honoError, entry.id).toBe("UnsupportedPathError");

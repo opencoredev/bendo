@@ -37,14 +37,18 @@ Patterns start with `/`; bare `*` is an alias for `/*`. Segments are separated b
 | `*path` | Final wildcard, captured under `path` |
 | `assets*` | Final prefix wildcard; matches `/assets`, `/assets-v2`, and `/assets/app.js`, without a capture |
 | interior `*` | Zero or more whole path segments, without a capture; `/a/*/b/*` matches `/a/x/b/c` |
-| `:prefix{.+}` | Nonempty decoded capture that can span segments before the remaining pattern |
+| `:prefix{.+}` | Nonempty decoded capture that spans one or more segments; a static segment must follow it |
 
 Names use ASCII `[A-Za-z_][A-Za-z0-9_]*` and cannot repeat within a pattern.
 Optional captures form a consecutive trailing chain: `/v1/:version?/:platform?`
 accepts zero, one, or two values, assigned from left to right. A present value
 cannot skip an earlier optional. Named wildcards and prefix wildcards must be
-last; unnamed wildcards may also appear inside a pattern. A wildcard captures the remaining
-path, including separators, and may be empty. `/files/*path` therefore matches
+last; unnamed wildcards may also appear inside a pattern. An interior wildcard
+takes as few whole segments as possible. A wildcard captures the remaining
+path, including separators, and may be empty. Each raw segment of the remainder
+decodes separately and the decoded values join with `/`; any invalid segment
+makes the match fail. This is the same result as decoding the joined
+remainder, because a slash cannot sit inside an escape or a UTF-8 sequence. `/files/*path` therefore matches
 both `/files` and `/files/`, returning `path=""` in either case. Filling that
 assignment produces `/files/`.
 
@@ -83,9 +87,19 @@ is either `+` or `{n}`, where decimal `n` is between 1 and 4294967295 (leading
 zeros are allowed). The additional constraint `{.+}` captures one or more decoded characters,
 including `/`, across raw path segments. For example,
 `/:prefix{.+}/contents/:id?` matches `/foo/bar/contents/123` with
-`prefix="foo/bar"` and `id="123"`. Matching chooses the shortest nonempty
-span that lets the remaining pattern match. Captures still decode exactly once.
-An optional `{.+}?` span is not supported. Other JavaScript regex syntax remains
+`prefix="foo/bar"` and `id="123"`. Spans are greedy, as in Hono: matching
+takes the longest raw prefix that lets the rest of the pattern match, so
+`/a/contents/contents` gives `prefix="a/contents"` and no `id`. The span
+decodes once, after its length is chosen.
+
+A span must be followed by a static segment, and only static segments and
+captures may follow it. Those static segments cannot contain `%`. A pattern
+with a span has no other span and no wildcard. Other forms, such as
+`/:a{.+}`, `/:a{.+}/:b`, `/:a{.+}/*` or `/*/:a{.+}/x`, fail with
+`InvalidSpan`. These rules keep matching linear in the path length, and they
+keep a filled path from matching back with a different span: every filled
+capture contains `%`, so it can never stand in for a static anchor. An optional
+`{.+}?` span is not supported. Other JavaScript regex syntax remains
 unsupported.
 
 A constraint failure returns `None`, exactly like a static mismatch. It does
@@ -125,7 +139,7 @@ an `ErrorKind` plus the offending segment, name, or constraint text.
 
 The kinds are `MissingSlash`, `EmptyName`, `InvalidName`, `DuplicateName`,
 `UnbalancedBraces`, `UnknownConstraint`, `InvalidClass`, `WildcardNotLast`,
-`OptionalNotLast`, and `InvalidStatic`. Constraint syntax is recognized only
+`OptionalNotLast`, `InvalidStatic`, and `InvalidSpan`. Constraint syntax is recognized only
 inside captures; braces in static text are `InvalidStatic`. Malformed classes
 are `InvalidClass`; unsupported non-class constraints are `UnknownConstraint`.
 An absent outer opening or closing brace is `UnbalancedBraces`.
@@ -144,6 +158,15 @@ bun run prove
 and every independently admissible assignment. It promises that filling
 succeeds and matching that path returns the exact assignment. The predicate
 `admissible` never calls `fill` or `match_path`.
+
+`pattern_match_spec` states that `match_path` returns exactly what
+[`proof/router-match-spec.bend`](../proof/router-match-spec.bend) gives, for
+every pattern value and every raw path. That specification is a plain
+backtracking reading of this page and calls no `Pattern` helper. The
+`compile_*` laws show that each syntax form above compiles, and the `spec_*`
+laws pin example results: `/assets*` matches `/assets-v2`, interior wildcards
+consume whole segments, optional captures fill from the left, and spans are
+greedy.
 
 The full roundtrip proof passes the strict Lean-backed kernel. Its helper
 lemmas cover Unicode and percent-codec inversion, compilation cleanliness,

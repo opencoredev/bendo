@@ -13,10 +13,11 @@ The source is [Hono](https://github.com/honojs/hono/tree/5ca49b0720755c585c9a983
 commit `5ca49b0720755c585c9a9835f0a479ceea36fb52`. The fixture header carries
 Hono’s copyright and full MIT license. No Hono implementation is vendored.
 
-`tests/fixtures/hono-router-cases.json` contains 173 distinct cases: 136 direct
+`tests/fixtures/hono-router-cases.json` contains 174 distinct cases: 136 direct
 upstream registration/request/result combinations, 15 upstream registration-error
-cases (151 upstream ports total), and 22 method-matrix expansions
-of upstream ALL registration tables. The `origin` field distinguishes them.
+cases (151 upstream ports total), 22 method-matrix expansions
+of upstream ALL registration tables, and one greedy-span regression (hono-181)
+queried against Hono's TrieRouter 4.13.13. The `origin` field distinguishes them.
 Direct cases come from `src/router/common.case.test.ts` and the RegExpRouter,
 PatternRouter and LinearRouter tests; TrieRouter’s specific file invokes the
 shared suite. Shared-suite repeats with identical inputs and outputs are removed, comparing
@@ -38,8 +39,8 @@ they are never silently rewritten or skipped.
 
 ## Result format and execution
 
-All 173 fixtures run through one compiled native Bend driver. After BND-78's
-pattern extensions, 131 tables are valid and exercise both engines; 42 still
+All 174 fixtures run through one compiled native Bend driver. After BND-78's
+pattern extensions, 132 tables are valid and exercise both engines; 42 still
 assert atomic construction errors for deliberately unsupported syntax. For valid
 tables the driver calls `Router.route` with both `Spec` and `Trie`, and
 `Methods.resolve` with the original method registrations and default options.
@@ -56,7 +57,7 @@ first pattern compilation failure. Invalid tables cannot be prepared or routed:
 the driver checks the shared path builder and method builder both reject them,
 and repeats the path build error in the two engine columns.
 
-The mutually exclusive case counts are 62 identical and 111 with principled differences only. No fixture retains a
+The mutually exclusive case counts are 63 identical and 111 with principled differences only. No fixture retains a
 BND-78 syntax-gap marker. These are assertions,
 not allowed failures. Every documented difference must continue producing its
 recorded result.
@@ -93,8 +94,27 @@ expectations. Cases with one handler and matching params become identical,
 including hono-031 through hono-037, hono-048 through hono-053, hono-061 through
 hono-064, hono-088, hono-092, hono-102, and hono-117 through hono-121. Cases with
 multiple Hono handlers retain the first-match difference. Bare and final
-wildcards retain Bendo's existing explicit `*` capture, including hono-015 and
-hono-054. Accepting these patterns does not remove those contracts.
+wildcards retain Bendo's existing explicit `*` capture. Accepting these patterns
+does not remove those contracts. Three cases that exercise the new syntax stay
+principled differences:
+
+- hono-015 registers `*`, `/a/*`, `/a/foo`, `/b/*` and `/b/bar`, then requests
+  `GET /b/bar`. Hono returns three handlers (`wildcard`, `star2`, `bar`), none
+  with params. Bendo returns only the first registration, `*`, with
+  `*="b/bar"`. This is first-match plus wildcard-capture.
+- hono-054 registers `/a/*/b/*` and requests `/a/x/b/c`. Both select the same
+  handler. Hono returns no params; Bendo also returns `*="c"` from the final
+  wildcard. The interior wildcard captures nothing. This is wildcard-capture
+  only.
+- hono-059 registers `GET /assets*`, `POST /assets/app.js` and `POST /assets*`,
+  then requests `POST /assets/app.js`. Hono returns both matching POST handlers.
+  Bendo's method resolution returns the first one, `/assets/app.js`, and the
+  path-only engines return the first path match, `GET /assets*`. This is
+  first-match only.
+
+Spans are greedy, as in Hono's TrieRouter: hono-181 requests
+`/a/contents/contents` against `/:prefix{.+}/contents/:id?`, and both give
+`prefix="a/contents"` with no `id`.
 
 | Category | Cases | Hono behavior | Bendo behavior | Reason |
 | --- | --- | --- | --- | --- |
