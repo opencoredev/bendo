@@ -80,6 +80,11 @@ jobs:
           curl -fsSL "https://github.com/bendlang/bend/releases/download/v${version}/bend-${version}-linux-x64.tar.gz" -o /tmp/bendo-bend.tar.gz
           mkdir -p "$HOME/.bend"
           tar -xzf /tmp/bendo-bend.tar.gz -C "$HOME/.bend" --strip-components=1
+      - name: Install elan without a Lean toolchain
+        if: steps.toolchains.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL https://elan.lean-lang.org/elan-init.sh -o /tmp/bendo-elan-init.sh
+          sh /tmp/bendo-elan-init.sh -y --no-modify-path --default-toolchain none
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Check the Bend pin

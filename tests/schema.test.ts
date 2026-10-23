@@ -298,7 +298,7 @@ describe("scalar schemas through real native and .mjs consumers", () => {
               code: { $: c.result.slice(6) },
               message:
                 c.result === "error:InvalidSchema"
-                  ? "invalid scalar schema"
+                  ? "invalid schema"
                   : c.result === "error:TypeMismatch"
                     ? "expected schema scalar kind"
                     : "value does not satisfy scalar checks",

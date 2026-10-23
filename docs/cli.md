@@ -35,7 +35,31 @@ Every command supports `--help`.
   the app directory. The entry defaults to `main.bend`.
 - `bendo start` runs `dist/server` without compiling or requiring Bend. It inherits
   your environment, including `PORT`. Run `build` first.
-- `bendo doctor` reports the installed Bend version and path.
+- `bendo routes [entry]` builds the app if needed, runs it with `--bendo-routes`,
+  validates its versioned JSON envelope, and prints a method/path table. The entry
+  defaults to `main.bend`. It reuses the `build` cache without publishing `dist/server`.
+- `bendo prove [file]` runs `bend <file> --verdict`, defaulting to `PROOF.bend`.
+  It prints `ALL PROOFS CHECK` on success, preserves Bend's failure exit code,
+  and shows law diagnostics and source locations without JavaScript stack traces.
+  Proof checks have a ten-minute limit.
+- `bendo gen [entry]` uses the same cached build and manifest validation as `routes`.
+  It reports the number of routes. Type generation lands in BND-56; this command
+  currently writes no type files or placeholders.
+- `bendo doctor` checks Bend, elan, Lean, clang, and Bun, printing versions and
+  paths. Bend must match `.bend-version`; Lean must match `lean-toolchain`. A
+  pin is resolved by elan itself (`elan dump-state --no-net` with the pin in
+  `ELAN_TOOLCHAIN`, run from the pin file's directory), so shorthand (`v4.34.0`),
+  channels, custom origins, linked toolchains and path toolchains mean what they
+  mean to `lake`, and an inherited `ELAN_TOOLCHAIN` or `elan override` cannot
+  stand in for the project's pin. An official release is compared with the version Lean reports;
+  anything else only has to be installed. Doctor runs the installed `lean`
+  binary directly and never downloads a toolchain.
+  Pins come from the current directory when present, otherwise the toolkit checkout.
+  Lean is selected explicitly from that pin, so no global elan default is needed.
+  Lean is selected explicitly from that pin, so no global elan default is needed.
+  Missing tools, failed version probes, and mismatches return a nonzero exit code
+  with installation commands from the agent guide. Add `~/.bend/bin`, `~/.elan/bin`,
+  and `~/.bun/bin` to `PATH`. Version probes have five-second limits.
 - `bendo --version` prints the toolkit version.
 
 `dev` keeps the previous server serving while Bend builds its replacement. A
@@ -96,20 +120,27 @@ All sampled requests during those six ms-a2 rebuilds received the old or new
 response, with no failures. The remaining delay is compiler work; the old server
 continues answering during it.
 
-## Schema generation and future commands
+## Generation stages
 
-The build pipeline calls the clearly named `generateSchemas` stage before
-compilation, including cache hits. There is no production schema generator on this
-base revision. BND-34 supplies object/array/optional/union schemas, BND-35 adds
-coercion, defaults and error paths, and BND-55 wires the production `gen` command
-into this seam. The stage reports that it is pending BND-34/35/55;
-it does not run the research generator in `prototypes/0003-typed-values` or claim
-to check generated-file freshness. Schema-dependent applications must wait for the
-production generator. The integration test checks that this stage precedes
-compilation in both `build` and `dev`.
+The build pipeline calls `generateSchemas` before compilation, including cache
+hits. Its precompile phase reports that production schema generation is pending
+BND-34/35. It does not run the research generator in `prototypes/0003-typed-values`
+or check generated-file freshness. Schema-dependent applications must wait for
+the production generator.
 
-[Decision 0003](decisions/0003-typed-values.md) specifies the implementation this
-stage will receive: evaluate schema metadata through `.mjs`, generate named Bend
-records and decoders, then compile handlers. Manifest-to-TypeScript generation
-(BND-56), `routes`/`prove`/`gen` (BND-55), and `build --shared` (BND-58) are separate
-steps. Unsupported options fail explicitly.
+`gen` builds the app, then calls the manifest phase of that same seam. A manifest
+requires an executable, so this phase runs after compilation. Both `routes` and
+`gen` require `{ "bendo": 1, "routes": [...] }` with a method and absolute path
+for every route. Invalid JSON, unsupported versions, and malformed routes fail
+with a readable error. Manifest export has a ten-second limit and an 8 MiB output
+limit. The app must exit without starting a server when passed `--bendo-routes`.
+
+[Decision 0003](decisions/0003-typed-values.md) specifies the precompile stage:
+evaluate schema metadata through `.mjs`, generate named Bend records and
+decoders, then compile handlers. BND-56 will use the validated manifest to write
+TypeScript route types. `build --shared` remains a separate step (BND-58).
+Unsupported options fail explicitly.
+
+Run the CLI integration tests with `bun test packages/bendo --timeout 30000`
+from the repository root. The ticket's `packages/bendo/cli` path corresponds to
+`packages/bendo/src/*test.ts` in this checkout.

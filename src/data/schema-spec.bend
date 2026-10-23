@@ -1,4 +1,5 @@
-# Independent specification of scalar schema acceptance (BND-33).
+# Independent specification of schema acceptance (BND-33 scalars, BND-34
+# arrays, objects, nullables and unions).
 #
 # Every rule here is restated from docs/data/schema.md. The module imports Base,
 # the JSON value type, and the schema and pattern modules for their data types
@@ -512,6 +513,12 @@ def optional_pattern_ok(p: Maybe<&2, P.Pattern>) -> Bool:
     case None{}: True{}
     case Some{x}: pattern_ok(x)
 
+def declares(fs: List<&2, S.Field>, +k: String) -> Bool:
+  match fs:
+    case Nil{}: False{}
+    case S.Field{key, c, p} <> t: String.eq(key, k) || declares(t, k)
+
+# Every part is well formed. Declared keys are well-formed text and distinct.
 def schema_ok(s: S.Schema) -> Bool:
   match s:
     case S.StringSchema{+min, max, p, f}: at_most(max, min) && optional_pattern_ok(p)
@@ -520,6 +527,12 @@ def schema_ok(s: S.Schema) -> Bool:
     case S.BooleanSchema{}: True{}
     case S.LiteralSchema{v}: literal_value(v)
     case S.EnumSchema{xs}: literal_values(xs)
+    case S.ArraySchema{i, +min, max}: at_most(max, min) && schema_ok(i)
+    case S.ObjectSchema{Nil{}, u}: True{}
+    case S.ObjectSchema{S.Field{+k, c, p} <> +t, u}: scalars(k) && Bool.not(declares(t, k)) && schema_ok(c) && schema_ok(S.ObjectSchema{t, u})
+    case S.NullableSchema{i}: schema_ok(i)
+    case S.UnionSchema{Nil{}}: True{}
+    case S.UnionSchema{m <> t}: schema_ok(m) && schema_ok(S.UnionSchema{t})
 
 # Strings and booleans compare by value, numbers numerically.
 def equal(a: J.Json, b: J.Json) -> Bool:
@@ -546,6 +559,121 @@ def accepts(s: S.Schema, v: J.Json) -> Bool:
     case S.EnumSchema{xs} +v: literal_value(v) && any_equal(xs, v)
     case _ _: False{}
 
+# Compound schemas (BND-34).
+
+def size(xs: List<&2, J.Json>) -> Nat:
+  match xs:
+    case Nil{}: 0n
+    case h <> t: 1n+size(t)
+
+def bump(same: Bool, n: Nat) -> Nat:
+  match same:
+    case True{}: 1n+n
+    case False{}: n
+
+# How many members of an object have this key. Bendo's JSON keeps duplicates.
+def named(input: List<&2, J.Field>, +k: String) -> Nat:
+  match input:
+    case Nil{}: 0n
+    case J.Field{key, v} <> t: bump(String.eq(key, k), named(t, k))
+
+# A required key appears exactly once, an optional key at most once.
+def presence(p: S.Presence, +n: Nat) -> Bool:
+  match p:
+    case S.Required{}: Nat.is_eq(n, 1n)
+    case S.Optional{}: Nat.is_le(n, 1n)
+
+def all_declared(input: List<&2, J.Field>, +fs: List<&2, S.Field>) -> Bool:
+  match input:
+    case Nil{}: True{}
+    case J.Field{k, v} <> t: declares(fs, k) && all_declared(t, fs)
+
+# Strict objects have no undeclared key; Strip ignores undeclared keys,
+# including repeated ones.
+def allowed(u: S.Unknown, +fs: List<&2, S.Field>, input: List<&2, J.Field>) -> Bool:
+  match u:
+    case S.Strict{}: all_declared(input, fs)
+    case S.Strip{}: True{}
+
+# What `meets(s, ask, v)` asks of the value v against the schema s.
+type Ask is Data:
+  # v satisfies s.
+  Holds{}
+  # v is an array and every item meets `ask` against s.
+  EveryItem{ask: Ask}
+  # v is an object and every member named `key` meets `ask` against s.
+  EveryNamed{key: String, ask: Ask}
+  # v is an object meeting every declared field of the object schema s.
+  EveryField{}
+
+# A value satisfies:
+# - a scalar schema when `accepts` says so;
+# - ArraySchema{i, min, max} when it is an array of min to max items (max
+#   None: no limit), each satisfying i;
+# - ObjectSchema{fs, u} when it is an object whose keys `allowed` permits and,
+#   for each declared Field{k, c, p}, the members named k number as `presence`
+#   requires and each satisfies c;
+# - NullableSchema{i} when it is null or satisfies i;
+# - UnionSchema{ms} when it satisfies at least one member.
+# The object rule checks its first field in the Holds case so that every
+# recursive call is on a smaller schema or a shorter list.
+def meets(s: S.Schema, ask: Ask, v: J.Json) -> Bool:
+  match s ask v:
+    case S.StringSchema{a, b, c, d} Holds{} x: accepts(S.StringSchema{a, b, c, d}, x)
+    case S.NumberSchema{a, b} Holds{} x: accepts(S.NumberSchema{a, b}, x)
+    case S.IntegerSchema{a, b} Holds{} x: accepts(S.IntegerSchema{a, b}, x)
+    case S.BooleanSchema{} Holds{} x: accepts(S.BooleanSchema{}, x)
+    case S.LiteralSchema{a} Holds{} x: accepts(S.LiteralSchema{a}, x)
+    case S.EnumSchema{a} Holds{} x: accepts(S.EnumSchema{a}, x)
+    case S.ArraySchema{i, +min, max} Holds{} J.JArray{+xs}: Nat.is_le(min, size(xs)) && at_most(max, size(xs)) && meets(i, EveryItem{Holds{}}, J.JArray{xs})
+    case S.ObjectSchema{Nil{}, u} Holds{} J.JObject{input}: allowed(u, [], input)
+    case S.ObjectSchema{S.Field{+k, +c, +p} <> +t, +u} Holds{} J.JObject{+input}: allowed(u, S.Field{k, c, p} <> t, input) && (presence(p, named(input, k)) && meets(c, EveryNamed{k, Holds{}}, J.JObject{input}) && meets(S.ObjectSchema{t, u}, EveryField{}, J.JObject{input}))
+    case S.ObjectSchema{Nil{}, u} EveryField{} J.JObject{input}: True{}
+    case S.ObjectSchema{S.Field{+k, c, p} <> t, u} EveryField{} J.JObject{+input}: presence(p, named(input, k)) && meets(c, EveryNamed{k, Holds{}}, J.JObject{input}) && meets(S.ObjectSchema{t, u}, EveryField{}, J.JObject{input})
+    case S.NullableSchema{i} Holds{} J.JNull{}: True{}
+    case S.NullableSchema{i} Holds{} x: meets(i, Holds{}, x)
+    case S.UnionSchema{Nil{}} Holds{} x: False{}
+    case S.UnionSchema{m <> t} Holds{} +x: meets(m, Holds{}, x) || meets(S.UnionSchema{t}, Holds{}, x)
+    case i EveryItem{a} J.JArray{Nil{}}: True{}
+    case +i EveryItem{+a} J.JArray{h <> t}: meets(i, a, h) && meets(i, EveryItem{a}, J.JArray{t})
+    case c EveryNamed{k, a} J.JObject{Nil{}}: True{}
+    case +c EveryNamed{+k, +a} J.JObject{J.Field{key, x} <> t}: (Bool.not(String.eq(key, k)) || meets(c, a, x)) && meets(c, EveryNamed{k, a}, J.JObject{t})
+    case _ _ _: False{}
+
 # A schema accepts a value when the schema is well formed and the value meets it.
 def satisfies(+s: S.Schema, v: J.Json) -> Bool:
-  schema_ok(s) && accepts(s, v)
+  schema_ok(s) && meets(s, Holds{}, v)
+
+# The immediate children of a value, each against its own schema: every
+# array item against the item schema, every object member with a declared key
+# against that field's schema, a non-null value against a nullable's inner
+# schema, and the value against at least one union member. Scalars and
+# mismatched kinds have no children here.
+def all_items(+i: S.Schema, xs: List<&2, J.Json>) -> Bool:
+  match xs:
+    case Nil{}: True{}
+    case h <> t: satisfies(i, h) && all_items(i, t)
+
+def all_named(+c: S.Schema, +k: String, input: List<&2, J.Field>) -> Bool:
+  match input:
+    case Nil{}: True{}
+    case J.Field{key, x} <> t: (Bool.not(String.eq(key, k)) || satisfies(c, x)) && all_named(c, k, t)
+
+def all_fields(fs: List<&2, S.Field>, +input: List<&2, J.Field>) -> Bool:
+  match fs:
+    case Nil{}: True{}
+    case S.Field{k, c, p} <> t: all_named(c, k, input) && all_fields(t, input)
+
+def some_member(ms: List<&2, S.Schema>, +v: J.Json) -> Bool:
+  match ms:
+    case Nil{}: False{}
+    case m <> t: satisfies(m, v) || some_member(t, v)
+
+def children(s: S.Schema, v: J.Json) -> Bool:
+  match s v:
+    case S.ArraySchema{i, m, n} J.JArray{xs}: all_items(i, xs)
+    case S.ObjectSchema{fs, u} J.JObject{input}: all_fields(fs, input)
+    case S.NullableSchema{i} J.JNull{}: True{}
+    case S.NullableSchema{i} x: satisfies(i, x)
+    case S.UnionSchema{ms} x: some_member(ms, x)
+    case _ _: True{}
