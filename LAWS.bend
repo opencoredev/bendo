@@ -2,6 +2,10 @@
 # Agents may add laws. Never delete or weaken one without a written reason
 # in the pull request.
 import Base
+import ./src/app/manifest.bend as Manifest
+import ./proof/manifest-spec.bend as ManifestSpec
+import ./proof/manifest-built-spec.bend as ManifestBuiltSpec
+import ./proof/compose-laws.bend as ComposeLaws
 
 # BND-32
 import ./proof/signed-cookie-laws.bend as SignedCookieLaws
@@ -1530,3 +1534,30 @@ law csrf_configured_decision_spec:
   for +referer: Maybe<&2, String>
   for +host: Maybe<&2, String>
   {CsrfPolicy.decide(CsrfPolicy.policy(origins, scheme), method, content_type, site, origin, referer, host) == CsrfSpec.allows(CsrfSpec.configured(origins), CsrfSpec.configured_scheme(scheme), method, content_type, site, origin, referer, host) : Bool}
+
+# BND-19: enumerate capture names from compiled segments, never source guessing.
+law manifest_capture_names:
+  for +segments: List<&2, Pattern.Segment>
+  {Manifest.names(segments) == ManifestSpec.names(segments) : List<&2, String>}
+
+# Exactly the explicit certified routes, normalized methods and ordered names.
+# ALL remains a distinct row; duplicates and registration order are preserved.
+law manifest_exact_routes:
+  for -Tag: Data
+  for +sources: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Index<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
+  {Manifest.rows(Tag, Table.Table{sources, compiled, layers, count}) == ManifestSpec.describe(Tag, sources, Methods.raw(Tag, Methods.index_valid(Tag, compiled))) : List<&2, Manifest.Row>}
+
+# A successful build lists exactly the route declarations of its entries, in
+# entry order with duplicates: each route's full assembled source path, its
+# methods as registration normalizes them (ALL as one distinct row, no implicit
+# HEAD) and the capture names of its own compiled source. Hooks and middleware
+# add no rows. The specification reads the entries, never the built table.
+law manifest_built_routes:
+  for -Tag: Data
+  for +entries: List<&2, Table.Entry<Tag>>
+  for +table: Table.Table<Tag>
+  for built: {Table.build(Tag, entries) == Done{table} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  {Manifest.rows(Tag, table) == ManifestBuiltSpec.enumerate(Tag, entries) : List<&2, Manifest.Row>}

@@ -12,9 +12,9 @@ describe("public B entrypoint", () => {
     expect(manifest).toEqual({
       bendo: 1,
       routes: [
-        { method: "GET", path: "/todos/:id{int}" },
-        { method: "GET", path: "/broken" },
-        { method: "X-TOKEN", path: "/escaped/%22" },
+        { method: "GET", path: "/todos/:id{int}", params: ["id"] },
+        { method: "GET", path: "/broken", params: [] },
+        { method: "X-TOKEN", path: "/escaped/%22", params: [] },
       ],
     });
   }, 30000);
@@ -33,7 +33,7 @@ describe("public B entrypoint", () => {
     expect(result.exitCode).toBe(0);
     expect(result.stderr.toString()).toBe("");
     const manifest: unknown = JSON.parse(result.stdout.toString());
-    expect(manifest).toEqual({ bendo: 1, routes: [{ method: "GET", path: "/*" }] });
+    expect(manifest).toEqual({ bendo: 1, routes: [{ method: "GET", path: "/*", params: ["*"] }] });
   });
 
   test("new serve API preserves GET and suppresses HEAD body with GET content length", async () => {
