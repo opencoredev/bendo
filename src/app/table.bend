@@ -53,6 +53,8 @@ type Entry<-Tag: Data> is Data:
   ScopedRoute{registration: Methods.Registration(Tag), hooks: List<&2, Placement<Tag>>}
   Hook{stage: Stage, tag: Tag}
   Use{source: Maybe<&2, String>, tag: Tag}
+  # Mounted middleware moves with member routes through subsequent groups.
+  PrefixedUse{source: String, tag: Tag}
 
 type Middleware<-Tag: Data> is Data:
   Staged{stage: Stage, tag: Tag}
@@ -71,11 +73,19 @@ def route_entries(-Tag: Data, xs: List<&2, Entry<Tag>>) -> List<&2, Methods.Regi
     case ScopedRoute{r, hooks} <> +tail: r <> route_entries(Tag, tail)
     case Hook{stage, tag} <> tail: route_entries(Tag, tail)
     case Use{source, tag} <> tail: route_entries(Tag, tail)
+    case PrefixedUse{source, tag} <> tail: route_entries(Tag, tail)
 
 def prepend(-Tag: Data, mw: Middleware<Tag>, rest: Result<&2, &2, Methods.BuildError, List<&2, Middleware<Tag>>>) -> Result<&2, &2, Methods.BuildError, List<&2, Middleware<Tag>>>:
   match rest:
     case Fail{e}: Fail{e}
     case Done{xs}: Done{mw <> xs}
+
+# A route without hooks needs no scoped record, so a hook-free mount or group
+# adds no per-route layer and never counts the routes after it.
+def prepend_scoped(-Tag: Data, hooks: List<&2, Placement<Tag>>, tail: List<&2, Entry<Tag>>, rest: Result<&2, &2, Methods.BuildError, List<&2, Middleware<Tag>>>) -> Result<&2, &2, Methods.BuildError, List<&2, Middleware<Tag>>>:
+  match hooks:
+    case Nil{}: rest
+    case h <> t: prepend(Tag, Scoped{List.length(&2, Methods.Registration(Tag), route_entries(Tag, tail)), h <> t}, rest)
 
 def pattern_built(-Tag: Data, index: Nat, source: String, tag: Tag, pattern: Result<&2, &2, Pattern.PatternError, Pattern.Pattern>, rest: Unit -> Result<&2, &2, Methods.BuildError, List<&2, Middleware<Tag>>>) -> Result<&2, &2, Methods.BuildError, List<&2, Middleware<Tag>>>:
   match pattern:
@@ -96,11 +106,13 @@ def middleware_entries(-Tag: Data, xs: List<&2, Entry<Tag>>, +index: Nat) -> Res
     case Route{r} <> tail:
       route_checked(Tag, index, Methods.build_table(Tag, [r]), u => middleware_entries(Tag, tail, 1n+index))
     case ScopedRoute{r, hooks} <> +tail:
-      route_checked(Tag, index, Methods.build_table(Tag, [r]), u => prepend(Tag, Scoped{List.length(&2, Methods.Registration(Tag), route_entries(Tag, tail)), hooks}, middleware_entries(Tag, tail, 1n+index)))
+      route_checked(Tag, index, Methods.build_table(Tag, [r]), u => prepend_scoped(Tag, hooks, tail, middleware_entries(Tag, tail, 1n+index)))
     case Hook{stage, tag} <> tail:
       prepend(Tag, Staged{stage, tag}, middleware_entries(Tag, tail, 1n+index))
     case Use{None{}, tag} <> tail:
       prepend(Tag, Middleware{None{}, tag}, middleware_entries(Tag, tail, 1n+index))
+    case PrefixedUse{+source, tag} <> tail:
+      pattern_built(Tag, index, source, tag, Pattern.compile(source), u => middleware_entries(Tag, tail, 1n+index))
     case Use{Some{+source}, tag} <> tail:
       pattern_built(Tag, index, source, tag, Pattern.compile(source), u => middleware_entries(Tag, tail, 1n+index))
 
