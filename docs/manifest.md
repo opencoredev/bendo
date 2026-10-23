@@ -20,7 +20,7 @@ The version 1 envelope is:
 
 `bendo` is the manifest format version, independent of the package version.
 `routes` is an array in registration order. Each explicitly registered method
-produces an entry with its case-sensitive HTTP token and the original path
+produces an entry with its canonical case-sensitive HTTP token and the original path
 pattern, including constraints such as `/todos/:id{int}`. Multiple methods on
 one registration produce adjacent entries in the method list's order. Duplicate
 registrations remain visible. Implicit HEAD fallback is not an extra registration.
@@ -44,7 +44,10 @@ are app-owned `Data` types. Startup state travels in `env`.
 
 - `B.routes(Tag, registrations)` returns
   `Result<&2, &2, Methods.BuildError, B.Routes(Tag)>`. It validates registrations
-  atomically and retains their source strings beside the compiled method table.
+  atomically and retains their source strings beside a proof-carrying
+  `Methods.Valid<Tag>`. `B.Routes(Tag)` wraps those registrations and the validated
+  table; `B.handle` and `B.serve` accept that same value. The manifest reads methods
+  through `Methods.raw(Tag, valid)`, so canonical method names match dispatch.
 - `B.handle(~Tag, ~Env, ~dispatch, table, env, req, body)` returns `IO(B.Res)`
   without opening a socket. Matching and response framing are pure; dispatcher IO
   still runs. `req` is `B.Req`; `body` is a list of octets. The returned response

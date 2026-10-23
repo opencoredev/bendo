@@ -77,4 +77,5 @@ def main() -> IO(Unit):
     assert(U32.is_eq(Config.port("12345", 8787), 12345) && U32.is_eq(Config.port("00080", 8787), 80) && U32.is_eq(Config.port("65535", 8787), 65535), "PORT valid overrides")
     assert(U32.is_eq(Config.port("0", 8787), 8787) && U32.is_eq(Config.port("65536", 8787), 8787) && U32.is_eq(Config.port("4294967296", 8787), 8787) && U32.is_eq(Config.port("1:", 8787), 8787) && U32.is_eq(Config.port("-1", 8787), 8787) && U32.is_eq(Config.port("", 8787), 8787), "PORT invalid falls back")
     assert(String.eq(Manifest.quote("\"\\\n\t"), "\"\\\"\\\\\\u000a\\u0009\""), "JSON escaping")
-    ready(B.routes(Tag, [B.get(Tag, "/todos/:id{int}", Todo{}), B.get(Tag, "/broken", Broken{}), B.on(Tag, [Request.Extension{"X-TOKEN"}], "/escaped/%22", Todo{})]))
+    assert(Result.is_fail(&2, &2, Methods.BuildError, B.Routes(Tag), B.routes(Tag, [B.on(Tag, [Request.Extension{"BAD TOKEN"}], "/invalid", Todo{})])), "invalid method rejected")
+    ready(B.routes(Tag, [B.on(Tag, [Request.Extension{"GET"}], "/todos/:id{int}", Todo{}), B.get(Tag, "/broken", Broken{}), B.on(Tag, [Request.Extension{"X-TOKEN"}], "/escaped/%22", Todo{})]))

@@ -7,7 +7,7 @@ describe("public B entrypoint", () => {
     const result = Bun.spawnSync([driver], { stdout: "pipe", stderr: "pipe", timeout: 5000 });
     expect(result.exitCode).toBe(0);
     const lines = result.stdout.toString().trim().split("\n");
-    expect(lines.filter((line) => line.startsWith("PASS "))).toHaveLength(28);
+    expect(lines.filter((line) => line.startsWith("PASS "))).toHaveLength(29);
     const manifest: unknown = JSON.parse(lines.at(-1) ?? "");
     expect(manifest).toEqual({
       bendo: 1,

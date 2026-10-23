@@ -51,15 +51,16 @@ def methods(xs: List<&2, Request.Method>, +path: String) -> List<&2, String>:
     case method <> tail:
       ("{\"method\":" ++ quote(Request.method_text(method)) ++ ",\"path\":" ++ quote(path) ++ "}") <> methods(tail, path)
 
-def entries(-Tag: Data, xs: List<&2, Methods.Registration(Tag)>) -> List<&2, String>:
-  match xs:
-    case Nil{}: []
-    case Spec.Registration{path, Methods.Binding{ms, tag}} <> tail:
-      List.append(&2, String, methods(ms, path), entries(Tag, tail))
+# Paths retain their source spelling; methods come from the certified table.
+def entries(-Tag: Data, xs: List<&2, Methods.Registration(Tag)>, table: Methods.Table(Tag)) -> List<&2, String>:
+  match xs table:
+    case Spec.Registration{path, binding} <> tail Spec.Route{pattern, Methods.Binding{ms, tag}} <> rest:
+      List.append(&2, String, methods(ms, path), entries(Tag, tail, rest))
+    case _ _: []
 
 def json(-Tag: Data, table: Table.Table<Tag>) -> String:
   Table.Table{xs, compiled} = table
-  "{\"bendo\":1,\"routes\":[" ++ String.join(entries(Tag, xs), ",") ++ "]}"
+  "{\"bendo\":1,\"routes\":[" ++ String.join(entries(Tag, xs, Methods.raw(Tag, compiled)), ",") ++ "]}"
 
 # IO.args is affine and includes argv[0]; callers skip that first item.
 def requested(args: List<String>) -> Bool:
