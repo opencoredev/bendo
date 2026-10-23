@@ -13,28 +13,71 @@ type Method is Data:
   Patch{}
   Extension{token: String}
 
-def method(s: String) -> Method:
-  match s:
-    case "GET":
-      Get{}
-    case "HEAD":
-      Head{}
-    case "POST":
-      Post{}
-    case "PUT":
-      Put{}
-    case "DELETE":
-      Delete{}
-    case "CONNECT":
-      Connect{}
-    case "OPTIONS":
-      Options{}
-    case "TRACE":
-      Trace{}
-    case "PATCH":
+def method_patch(+s: String, same: Bool) -> Method:
+  match same:
+    case True{}:
       Patch{}
-    case x:
-      Extension{x}
+    case False{}:
+      Extension{s}
+
+def method_trace(+s: String, same: Bool) -> Method:
+  match same:
+    case True{}:
+      Trace{}
+    case False{}:
+      method_patch(s, String.eq(s, "PATCH"))
+
+def method_options(+s: String, same: Bool) -> Method:
+  match same:
+    case True{}:
+      Options{}
+    case False{}:
+      method_trace(s, String.eq(s, "TRACE"))
+
+def method_connect(+s: String, same: Bool) -> Method:
+  match same:
+    case True{}:
+      Connect{}
+    case False{}:
+      method_options(s, String.eq(s, "OPTIONS"))
+
+def method_delete(+s: String, same: Bool) -> Method:
+  match same:
+    case True{}:
+      Delete{}
+    case False{}:
+      method_connect(s, String.eq(s, "CONNECT"))
+
+def method_put(+s: String, same: Bool) -> Method:
+  match same:
+    case True{}:
+      Put{}
+    case False{}:
+      method_delete(s, String.eq(s, "DELETE"))
+
+def method_post(+s: String, same: Bool) -> Method:
+  match same:
+    case True{}:
+      Post{}
+    case False{}:
+      method_put(s, String.eq(s, "PUT"))
+
+def method_head(+s: String, same: Bool) -> Method:
+  match same:
+    case True{}:
+      Head{}
+    case False{}:
+      method_post(s, String.eq(s, "POST"))
+
+def method_get(+s: String, same: Bool) -> Method:
+  match same:
+    case True{}:
+      Get{}
+    case False{}:
+      method_head(s, String.eq(s, "HEAD"))
+
+def method(+s: String) -> Method:
+  method_get(s, String.eq(s, "GET"))
 
 def method_text(m: Method) -> String:
   match m:
@@ -131,16 +174,29 @@ def query_valid(q: Maybe<&2, String>) -> Bool:
     case Some{s}:
       Bytes.uri(s, True{})
 
-def target_valid(m: Method, p: String, q: Maybe<&2, String>) -> Bool:
-  match m p q:
-    case Options{} "*" None{}:
-      True{}
-    case Connect{} _ _:
-      False{}
-    case _ SCon{Chr{47}, t} q:
+# Validate origin-form independently of the method's exceptional forms.
+def origin_valid(p: String, q: Maybe<&2, String>) -> Bool:
+  match p:
+    case SCon{Chr{47}, t}:
       Bytes.uri(t, False{}) && query_valid(q)
-    case _ _ _:
+    case _:
       False{}
+
+def options_valid(+p: String, q: Maybe<&2, String>) -> Bool:
+  match q:
+    case None{}:
+      String.eq(p, "*") || origin_valid(p, None{})
+    case Some{s}:
+      origin_valid(p, Some{s})
+
+def target_valid(m: Method, p: String, q: Maybe<&2, String>) -> Bool:
+  match m:
+    case Connect{}:
+      False{}
+    case Options{}:
+      options_valid(p, q)
+    case _:
+      origin_valid(p, q)
 
 def extension_valid(+s: String) -> Bool:
   Bytes.token(s) && Bool.not(String.eq(s, "GET") || String.eq(s, "HEAD") || String.eq(s, "POST") || String.eq(s, "PUT") || String.eq(s, "DELETE") || String.eq(s, "CONNECT") || String.eq(s, "OPTIONS") || String.eq(s, "TRACE") || String.eq(s, "PATCH"))

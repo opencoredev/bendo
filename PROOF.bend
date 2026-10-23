@@ -9,6 +9,7 @@ import ./LAWS.bend as Laws
 import ./proof/equality.bend as Equality
 import ./proof/tokens.bend as Tokens
 import ./proof/headers.bend as Headers
+import ./proof/line.bend as Line
 
 def Laws.text_body_after_blank(body):
   ("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nConnection: close", ({==}, {==}))
@@ -39,15 +40,13 @@ def Laws.request_head_roundtrip(req, valid):
     case Request.Req{m, p, q, v, hs}:
       ?TODO
 
-# ASCII conversion and splitting after the method token are checked.
-# Remaining: split target/version and recover the canonical method and target.
+# Token separation and target validation recover the entire request line.
 def Laws.parsed_request_line_path(method, path, query, version, valid):
-  +content = Request.method_text(method) ++ " " ++ path ++ Request.query_text(query) ++ " " ++ Request.version_text(version)
-  line_valid = Equality.and_left(Request.method_valid(method) && Request.target_valid(method, path, query), True{}, valid)
-  method_valid = Equality.and_left(Request.method_valid(method), Request.target_valid(method, path, query), line_valid)
-  %Equal.sym(String, Bytes.ascii(Bytes.encode(content)), content, ascii_encode(content)) : {Parse.request_line_parts(String.split(_, ' ')) == Parse.Headers{Request.Req{method, Bytes.prefix(path ++ Request.query_text(query)), query, version, []}, [], False{}} : Parse.State}
-  %Equal.sym(List<&2, String>, String.split(content, ' '), Request.method_text(method) <> String.split(path ++ Request.query_text(query) ++ " " ++ Request.version_text(version), ' '), Tokens.split_method(method, path ++ Request.query_text(query) ++ " " ++ Request.version_text(version), method_valid)) : {Parse.request_line_parts(_) == Parse.Headers{Request.Req{method, Bytes.prefix(path ++ Request.query_text(query)), query, version, []}, [], False{}} : Parse.State}
-  ?TODO
+  +line_valid = Equality.and_left(Request.method_valid(method) && Request.target_valid(method, path, query), True{}, valid)
+  mv = Equality.and_left(Request.method_valid(method), Request.target_valid(method, path, query), line_valid)
+  +tv = Equality.and_right(Request.method_valid(method), Request.target_valid(method, path, query), line_valid)
+  %Equal.sym(String, Bytes.prefix(path ++ Request.query_text(query)), path, Line.target_prefix(method, path, query, version, tv)) : {Parse.request_line(Write.line_content(method, path, query, version)) == Parse.Headers{Request.Req{method, _, query, version, []}, [], False{}} : Parse.State}
+  Line.line_recover(method, path, query, version, mv, tv)
 
 # The single-header obligation from the request-head round trip.
 def Laws.header_line_roundtrip(req, name, value, valid):
