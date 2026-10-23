@@ -2,6 +2,10 @@
 # Agents may add laws. Never delete or weaken one without a written reason
 # in the pull request.
 import Base
+import ./src/app/table.bend as Table
+import ./proof/middleware-selection-spec.bend as MiddlewareSelectionSpec
+import ./src/app/middleware.bend as Middleware
+
 import ./src/data/schema.bend as Schema
 import ./src/data/schema-spec.bend as SchemaSpec
 import ./src/data/json.bend as Json
@@ -847,6 +851,96 @@ law chunked_roundtrip:
   for +suffix: List<&2, U32>
   for valid: {Chunked.admissible(chunks, limit) == True{} : Bool}
   {Chunked.decode(Bytes.append(Chunked.encode(chunks), suffix), limit) == Chunked.Decoded{List.concat(&2, U32, chunks), [], suffix} : Chunked.DecodeResult}
+
+# BND-22: onion middleware. These equations quantify over every admissible
+# middleware function, context, continuation and result type. R is Type, so
+# the same pure algebra used at runtime also admits IO(Res); no equality of
+# foreign effects is assumed. Functions are erased here, never made copyable.
+
+law middleware_application:
+  for -C: Data
+  for -R: Type
+  for -a: Middleware.Value(C, R)
+  for -b: Middleware.Value(C, R)
+  for -ctx: C
+  for -next: C -> R
+  {Middleware.compose(C, R, a, b, ctx, next) == a(ctx, changed => b(changed, next)) : R}
+
+law middleware_identity_left:
+  for -C: Data
+  for -R: Type
+  for -mw: Middleware.Value(C, R)
+  for -ctx: C
+  for -next: C -> R
+  {Middleware.compose(C, R, Middleware.identity(C, R), mw, ctx, next) == mw(ctx, next) : R}
+
+law middleware_identity_right:
+  for -C: Data
+  for -R: Type
+  for -mw: Middleware.Value(C, R)
+  for -ctx: C
+  for -next: C -> R
+  {Middleware.compose(C, R, mw, Middleware.identity(C, R), ctx, next) == mw(ctx, next) : R}
+
+# An identity inserted between arbitrary prefix/suffix middleware changes no
+# result, including when the prefix short-circuits or changes the context.
+law middleware_identity_insert:
+  for -C: Data
+  for -R: Type
+  for -a: Middleware.Value(C, R)
+  for -b: Middleware.Value(C, R)
+  for -ctx: C
+  for -next: C -> R
+  {Middleware.compose(C, R, a, Middleware.compose(C, R, Middleware.identity(C, R), b), ctx, next) == Middleware.compose(C, R, a, b, ctx, next) : R}
+
+law middleware_associative:
+  for -C: Data
+  for -R: Type
+  for -a: Middleware.Value(C, R)
+  for -b: Middleware.Value(C, R)
+  for -c: Middleware.Value(C, R)
+  for -ctx: C
+  for -next: C -> R
+  {Middleware.compose(C, R, Middleware.compose(C, R, a, b), c, ctx, next) == Middleware.compose(C, R, a, Middleware.compose(C, R, b, c), ctx, next) : R}
+
+# Ordinary middleware only: successful construction preserves registration order,
+# duplicates, and selection at the supplied raw path, with global and matching
+# path-specific ids interleaved. Hook registrations contribute no ordinary ids.
+law middleware_registration_selection:
+  for -Tag: Data
+  for +entries: List<&2, Table.Entry<Tag>>
+  for +table: Table.Table<Tag>
+  for +path: String
+  for built: {Table.build(Tag, entries) == Done{table} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  {MiddlewareSelectionSpec.selected(Tag, table, path) == MiddlewareSelectionSpec.filter(Tag, entries, path) : List<&2, Tag>}
+
+# BND-23
+# Every stage selects exactly its registration-ordered, duplicate-preserving ids.
+law lifecycle_stage_selection:
+  for -Tag: Data
+  for +entries: List<&2, Table.Entry<Tag>>
+  for +routes: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Valid<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +stage: Table.Stage
+  for built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  {Table.stage_ids(Tag, layers, stage) == MiddlewareSelectionSpec.hooks(Tag, entries, stage) : List<&2, Tag>}
+
+# The exact plan consumed by Handle: request, ordinary/parse/transform/before,
+# after_handle, map_response, conditional on_error, deferred on_after_response.
+# path is the raw routing path AFTER on_request rewrites; only ordinary use_path
+# selection depends on it. Request and response ids are path-independent, so the
+# runtime may select them before rewrites. This is selection, not a promise that
+# short-circuited pre stages or conditional error hooks execute on every request.
+law lifecycle_ordered_selection:
+  for -Tag: Data
+  for +entries: List<&2, Table.Entry<Tag>>
+  for +routes: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Valid<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +path: String
+  for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  {Table.lifecycle(Tag, layers, path) == MiddlewareSelectionSpec.lifecycle(Tag, entries, path) : Table.Lifecycle<Tag>}
 
 # BND-33: scalar decoding agrees with an independent specification for EVERY
 # schema and Json tree, including malformed schemas and constructed data.

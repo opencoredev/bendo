@@ -9,6 +9,7 @@ import ./app/config.bend as Config
 import ./app/manifest.bend as Manifest
 import ./app/table.bend as Table
 import ./app/handle.bend as Handle
+import ./app/context.bend as Context
 import ./http/response.bend as Response
 import ./http/write_response.bend as Write
 import ./http/bytes.bend as Bytes
@@ -83,8 +84,8 @@ def interim(s: Socket, send: Bool) -> IO(Socket):
         out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- TCP.send(s, "HTTP/1.1 100 Continue\r\n\r\n")
         continue_result(out)
 
-type Reply is Data:
-  Reply{bytes: List<&2, U32>, close: Bool}
+type Reply is Type:
+  Reply{bytes: List<&2, U32>, close: Bool, after: IO(Unit)}
 
 type ConnectionEvent is Type:
   Tick{socket: Socket, state: Connection.State}
@@ -109,9 +110,10 @@ def talk(~Env: Data, ~app: R.Req -> List<&2, U32> -> Env -> Bool -> IO(Reply), e
       do IO<Unit>:
         reply : Reply <- app(req, body, env, closing(req, state, config))
         talk(~Env, ~app, Replied{s, state, rest, reply}, env, config)
-    case Replied{s, state, rest, Reply{bytes, close}}:
+    case Replied{s, state, rest, Reply{bytes, close, after}}:
       do IO<Unit>:
         out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- TCP.send_bytes(s, bytes)
+        after
         talk(~Env, ~app, Sent{out, state, rest, close}, env, config)
     case Work{s, state, Connection.Reject{status}}:
       reject(s, status)
@@ -196,7 +198,7 @@ def legacy_scan(fuel: Nat, xs: List<&2, U32>, line: List<&2, U32>, rev: List<&2,
       Write.write(R.Get{}, Response.body(500, Connection.headers([], True{}), []))
 
 def legacy(~app: R.Req -> List<&2, U32> -> List<&2, U32>, req: R.Req, body: List<&2, U32>, env: Unit, close: Bool) -> IO(Reply):
-  IO.pure(Reply, Reply{legacy_scan(65536n, app(req, body), [], []), True{}})
+  IO.pure(Reply, Reply{legacy_scan(65536n, app(req, body), [], []), True{}, IO.pure(Unit, Unit{})})
 
 def serve_config(~app: R.Req -> List<&2, U32> -> List<&2, U32>, config: Config) -> IO(Unit):
   Config{fallback, +limit} = config
@@ -220,20 +222,24 @@ type State<-Tag: Data, -Env: Data> is Data:
 
 # Handle returns a normalized response, including HEAD's representation length.
 # Do not re-run the writer on its already stripped HEAD payload.
-def prepared(res: Response.Res, +close: Bool) -> Reply:
+def prepared(res: Response.Res, +close: Bool, after: IO(Unit)) -> Reply:
   Response.Res{status, hs, body, rep} = res
-  Reply{encoded(Response.Res{status, Connection.headers(hs, close), body, rep}), close}
+  Reply{encoded(Response.Res{status, Connection.headers(hs, close), body, rep}), close, after}
 
-def prepare(+res: Response.Res, close: Bool) -> Reply:
-  prepared(res, Connection.response_closing(res, close))
+def prepare(+res: Response.Res, close: Bool, after: IO(Unit)) -> Reply:
+  prepared(res, Connection.response_closing(res, close), after)
 
-def respond(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Handle.Ctx -> Env -> IO(Response.Res), req: R.Req, body: List<&2, U32>, state: State<Tag, Env>, close: Bool) -> IO(Reply):
+def prepare_pending(result: Response.Res & IO(Unit), close: Bool) -> Reply:
+  (res, after) = result
+  prepare(res, close, after)
+
+def respond_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), req: R.Req, body: List<&2, U32>, state: State<Tag, Env>, close: Bool) -> IO(Reply):
   State{table, env} = state
   do IO<Reply>:
-    res : Response.Res <- Handle.handle(~Tag, ~Env, ~dispatch, table, env, req, body)
-    return prepare(res, close)
+    result : Response.Res & IO(Unit) <- Handle.pending_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, table, env, req, body)
+    return prepare_pending(result, close)
 
-def startup(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Handle.Ctx -> Env -> IO(Response.Res), +table: Table.Table<Tag>, env: Env, +config: Config.Config, manifest: Bool) -> IO(Unit):
+def startup_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +table: Table.Table<Tag>, env: Env, +config: Config.Config, manifest: Bool) -> IO(Unit):
   match config manifest:
     case _ True{}:
       do IO<Unit>:
@@ -245,9 +251,13 @@ def startup(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Handle.Ctx -> Env -> IO(Re
         +port : U32 = Config.port_env(port_env, fallback)
         listener : Listener <- IO.try(Listener, TCP.listen(host, port))
         IO.print("bendo listening on http://" ++ host ++ ":" ++ U32.show(port))
-        loop(~State<Tag, Env>, ~(req => body => state => close => respond(~Tag, ~Env, ~dispatch, req, body, state, close)), listener, State{table, env}, config)
+        loop(~State<Tag, Env>, ~(req => body => state => close => respond_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, req, body, state, close)), listener, State{table, env}, config)
 
-def run(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Handle.Ctx -> Env -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config) -> IO(Unit):
+def run_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config) -> IO(Unit):
   do IO<Unit>:
     args : List<String> <- IO.args()
-    startup(~Tag, ~Env, ~dispatch, table, env, config, Manifest.argv(args))
+    startup_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, table, env, config, Manifest.argv(args))
+
+# Compatibility entrypoint for apps without middleware.
+def run(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Handle.Ctx -> Env -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config) -> IO(Unit):
+  run_with(~Unit, ~Tag, ~Env, ~dispatch, ~(tag => ctx => env => next => Handle.unconfigured(Tag, Env, tag, ctx, env, next)), table, env, config)

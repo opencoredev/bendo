@@ -1,11 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { findBend } from "../packages/bendo/src/bend.ts";
 import { connect } from "node:net";
-import { build, start } from "./harness.ts";
+import { build, compile, start } from "./harness.ts";
 
 const binary = build("tests/fixtures/http-body/server.bend");
 const server = await start(binary);
@@ -248,17 +244,7 @@ describe("request body framing over real TCP", () => {
 
 // A native TCP write can be coalesced. Feed the real compiled pure decoder
 // at every boundary as well, including size digits, CRLF, data and trailers.
-const directory = mkdtempSync(join(tmpdir(), "bendo-body-pure-"));
-afterAll(() => rmSync(directory, { recursive: true, force: true }));
-const output = join(directory, "body.mjs");
-const bend = findBend();
-if (bend.kind === "missing") throw new Error("bend is not installed");
-const compiled = Bun.spawnSync(
-  [bend.path, join(import.meta.dir, "fixtures/http-body/consumer.bend"), "-o", output],
-  { stdout: "pipe", stderr: "pipe", timeout: 30000 },
-);
-if (compiled.exitCode !== 0)
-  throw new Error(`decoder compilation failed: ${compiled.stdout}${compiled.stderr}`);
+const output = compile("tests/fixtures/http-body/consumer.bend", "mjs");
 const loaded: unknown = await import(pathToFileURL(output).href);
 if (typeof loaded !== "object" || loaded === null || !("default" in loaded))
   throw new Error("missing Bend module");

@@ -1,10 +1,6 @@
-import { BEND_COMPILE_TIMEOUT } from "./harness.ts";
-import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { compile } from "./harness.ts";
+import { describe, expect, test } from "bun:test";
 import { pathToFileURL } from "node:url";
-import { findBend } from "../packages/bendo/src/bend.ts";
 
 type BendList<T> = { $: "Nil" } | { $: "Con"; head: T; tail: BendList<T> };
 
@@ -18,45 +14,8 @@ function list<T>(values: readonly T[]): BendList<T> {
   return result;
 }
 
-const directory = mkdtempSync(join(tmpdir(), "bendo-forms-"));
-afterAll(() => rmSync(directory, { recursive: true, force: true }));
-const output = join(directory, "forms.mjs");
-const bend = findBend();
-if (bend.kind === "missing") throw new Error("bend is not installed");
-const compilation = Bun.spawnSync(
-  [
-    "timeout",
-    "--foreground",
-    BEND_COMPILE_TIMEOUT,
-    bend.path,
-    join(import.meta.dir, "fixtures/forms/consumer.bend"),
-    "-o",
-    output,
-  ],
-  { stdout: "pipe", stderr: "pipe" },
-);
-if (compilation.exitCode !== 0) {
-  throw new Error(`Bend forms compilation failed:\n${compilation.stdout}${compilation.stderr}`);
-}
-
-const nativeOutput = join(directory, "forms-native");
-const nativeCompilation = Bun.spawnSync(
-  [
-    "timeout",
-    "--foreground",
-    BEND_COMPILE_TIMEOUT,
-    bend.path,
-    join(import.meta.dir, "fixtures/forms/native.bend"),
-    "-o",
-    nativeOutput,
-  ],
-  { stdout: "pipe", stderr: "pipe" },
-);
-if (nativeCompilation.exitCode !== 0) {
-  throw new Error(
-    `Native forms compilation failed:\n${nativeCompilation.stdout}${nativeCompilation.stderr}`,
-  );
-}
+const output = compile("tests/fixtures/forms/consumer.bend", "mjs");
+const nativeOutput = compile("tests/fixtures/forms/native.bend", "native");
 function native(...args: string[]): string {
   const result = Bun.spawnSync(["timeout", "--foreground", "30s", nativeOutput, ...args], {
     stdout: "pipe",

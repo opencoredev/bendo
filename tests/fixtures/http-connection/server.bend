@@ -1,7 +1,6 @@
 import Base
 import ../../../src/main.bend as B
 import ../../../src/app/config.bend as Config
-import ../../../src/app/handle.bend as Context
 import ../../../src/http/request.bend as R
 import ../../../src/http/response.bend as Response
 import ../../../src/http/bytes.bend as Bytes
@@ -22,8 +21,8 @@ def reply(path: String, body: List<&2, U32>) -> Response.Res:
         case c <> t: Response.body(200, [], c <> t)
 
 def dispatch(tag: Tag, ctx: B.Ctx, env: Unit) -> IO(B.Res):
-  Context.Ctx{R.Req{m, path, q, v, hs}, params, body} = ctx
-  IO.pure(B.Res, reply(path, body))
+  +c = ctx
+  IO.pure(B.Res, reply(B.path(c), B.raw_body(c)))
 
 def configured(mode: Result<&1, &1, U32 & String, String>) -> Config.Config:
   match mode:
