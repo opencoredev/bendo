@@ -1,0 +1,2279 @@
+{
+  "hardware": "Architecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           48 bits physical, 48 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  4\nOn-line CPU(s) list:                     0-3\nVendor ID:                               AuthenticAMD\nModel name:                              AMD Ryzen 9 9950X 16-Core Processor\nCPU family:                              26\nModel:                                   68\nThread(s) per core:                      1\nCore(s) per socket:                      4\nSocket(s):                               1\nStepping:                                0\nBogoMIPS:                                8583.84\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm rep_good nopl xtopology cpuid extd_apicid tsc_known_freq pni pclmulqdq ssse3 fma cx16 sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm cmp_legacy svm cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw perfctr_core ssbd ibrs ibpb stibp ibrs_enhanced vmmcall fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves avx_vnni avx512_bf16 clzero xsaveerptr wbnoinvd arat npt lbrv nrip_save tsc_scale vmcb_clean flushbyasid pausefilter pfthreshold v_vmsave_vmload vgif vnmi avx512vbmi umip pku ospke avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq rdpid movdiri movdir64b fsrm avx512_vp2intersect flush_l1d arch_capabilities\nVirtualization:                          AMD-V\nHypervisor vendor:                       KVM\nVirtualization type:                     full\nL1d cache:                               256 KiB (4 instances)\nL1i cache:                               256 KiB (4 instances)\nL2 cache:                                2 MiB (4 instances)\nL3 cache:                                64 MiB (4 instances)\nNUMA node(s):                            1\nNUMA node0 CPU(s):                       0-3\nVulnerability Gather data sampling:      Not affected\nVulnerability Ghostwrite:                Not affected\nVulnerability Indirect target selection: Not affected\nVulnerability Itlb multihit:             Not affected\nVulnerability L1tf:                      Not affected\nVulnerability Mds:                       Not affected\nVulnerability Meltdown:                  Not affected\nVulnerability Mmio stale data:           Not affected\nVulnerability Old microcode:             Not affected\nVulnerability Reg file data sampling:    Not affected\nVulnerability Retbleed:                  Not affected\nVulnerability Spec rstack overflow:      Vulnerable\nVulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl\nVulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:                Mitigation; Enhanced / Automatic IBRS; IBPB conditional; STIBP disabled; PBRSB-eIBRS Not affected; BHI Not affected\nVulnerability Srbds:                     Not affected\nVulnerability Tsa:                       Not affected\nVulnerability Tsx async abort:           Not affected\nVulnerability Vmscape:                   Not affected\n",
+  "memory": "MemTotal:        8127460 kB\nMemFree:         1328280 kB\nMemAvailable:    7016564 kB\nBuffers:          227048 kB\nCached:          5117944 kB\nSwapCached:           60 kB\nActive:           802892 kB\nInactive:        4985372 kB\nActive(anon):     266760 kB\nInactive(anon):   186704 kB\nActive(file):     536132 kB\nInactive(file):  4798668 kB\nUnevictable:       27284 kB\nMlocked:           27284 kB\nSwapTotal:       2097148 kB\nSwapFree:        2097088 kB\nZswap:                 0 kB\nZswapped:              0 kB\nDirty:            118436 kB\nWriteback:             0 kB\nAnonPages:        470436 kB\nMapped:           398244 kB\nShmem:              1448 kB\nKReclaimable:     658904 kB\nSlab:             806796 kB\nSReclaimable:     658904 kB\nSUnreclaim:       147892 kB\nKernelStack:        7600 kB\nPageTables:        15192 kB\nSecPageTables:         0 kB\nNFS_Unstable:          0 kB\nBounce:                0 kB\nWritebackTmp:          0 kB\nCommitLimit:     6160876 kB\nCommitted_AS:    3494336 kB\nVmallocTotal:   34359738367 kB\nVmallocUsed:       37792 kB\nVmallocChunk:          0 kB\nPercpu:             3280 kB\nHardwareCorrupted:     0 kB\nAnonHugePages:     26624 kB\nShmemHugePages:        0 kB\nShmemPmdMapped:        0 kB\nFileHugePages:    681984 kB\nFilePmdMapped:         0 kB\nCmaTotal:              0 kB\nCmaFree:          349052 kB\nUnaccepted:            0 kB\nBalloon:               0 kB\nGPUActive:             0 kB\nGPUReclaim:            0 kB\nHugePages_Total:       0\nHugePages_Free:        0\nHugePages_Rsvd:        0\nHugePages_Surp:        0\nHugepagesize:       2048 kB\nHugetlb:               0 kB\nDirectMap4k:      159744 kB\nDirectMap2M:     5083136 kB\nDirectMap1G:     5242880 kB\n",
+  "bend": "bend 2.0.38\n",
+  "clang": "Ubuntu clang version 18.1.3 (1ubuntu1)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /usr/bin\n",
+  "oha": "oha 1.8.0\n",
+  "samples": [
+    {
+      "repeat": 0,
+      "shape": "list",
+      "routes": 5,
+      "iterations": 2000000,
+      "checksums": [6000000, 10000000, 0],
+      "ms": [695, 862, 437],
+      "ns_per_request": [347.5, 431.0, 218.5],
+      "http": {
+        "summary": {
+          "successRate": 1.0,
+          "total": 3.00194483,
+          "slowest": 0.008580663,
+          "fastest": 1.5479e-5,
+          "average": 0.000674791903536312,
+          "requestsPerSec": 74010.35414764768,
+          "totalData": 222125,
+          "sizePerRequest": 1,
+          "sizePerSec": 73993.69827859229
+        },
+        "responseTimeHistogram": {
+          "0.000015479": 1,
+          "0.0008719974": 216869,
+          "0.0017285158000000002": 4971,
+          "0.0025850342000000004": 170,
+          "0.0034415526000000003": 52,
+          "0.004298071": 15,
+          "0.0051545894": 2,
+          "0.0060111078": 0,
+          "0.0068676262": 40,
+          "0.0077241446": 3,
+          "0.008580663": 2
+        },
+        "latencyPercentiles": {
+          "p10": 0.000585136,
+          "p25": 0.000617979,
+          "p50": 0.000660589,
+          "p75": 0.000713259,
+          "p90": 0.000772942,
+          "p95": 0.000818508,
+          "p99": 0.00096168,
+          "p99.9": 0.001766933,
+          "p99.99": 0.006235455
+        },
+        "rps": {
+          "mean": 73992.35601771867,
+          "stddev": 6657.592120681297,
+          "max": 88921.58126777384,
+          "min": 29426.068554132104,
+          "percentiles": {
+            "p10": 65562.41541947919,
+            "p25": 70355.90480195622,
+            "p50": 74064.80620295236,
+            "p75": 78459.51939140985,
+            "p90": 82189.28221727278,
+            "p95": 84216.715946629,
+            "p99": 87665.45102573583,
+            "p99.9": 88921.58126777384,
+            "p99.99": 88921.58126777384
+          }
+        },
+        "details": {
+          "DNSDialup": {
+            "average": 0.004639048899999998,
+            "fastest": 9.5591e-5,
+            "slowest": 0.00582013
+          },
+          "DNSLookup": {
+            "average": 3.991879999999999e-6,
+            "fastest": 4.6e-7,
+            "slowest": 5.308e-5
+          }
+        },
+        "statusCodeDistribution": {
+          "200": 222125
+        },
+        "errorDistribution": {
+          "aborted due to deadline": 50
+        }
+      },
+      "rps": 74010.35414764768
+    },
+    {
+      "repeat": 0,
+      "shape": "data",
+      "routes": 5,
+      "iterations": 2000000,
+      "checksums": [6000000, 10000000, 0],
+      "ms": [490, 797, 340],
+      "ns_per_request": [245.0, 398.5, 170.0],
+      "http": {
+        "summary": {
+          "successRate": 1.0,
+          "total": 3.002684069,
+          "slowest": 0.009199684,
+          "fastest": 1.7172e-5,
+          "average": 0.0007160483772373506,
+          "requestsPerSec": 69734.94220114038,
+          "totalData": 209343,
+          "sizePerRequest": 1,
+          "sizePerSec": 69718.62346800895
+        },
+        "responseTimeHistogram": {
+          "0.000017172": 1,
+          "0.0009354232": 201323,
+          "0.0018536744": 7522,
+          "0.0027719256": 326,
+          "0.0036901768": 69,
+          "0.004608428": 32,
+          "0.0055266792": 23,
+          "0.0064449304": 37,
+          "0.0073631816": 5,
+          "0.008281432799999999": 2,
+          "0.009199684": 3
+        },
+        "latencyPercentiles": {
+          "p10": 0.000592311,
+          "p25": 0.000633097,
+          "p50": 0.000694834,
+          "p75": 0.000763174,
+          "p90": 0.000839057,
+          "p95": 0.000907877,
+          "p99": 0.001219318,
+          "p99.9": 0.002586654,
+          "p99.99": 0.006320186
+        },
+        "rps": {
+          "mean": 69741.76521853179,
+          "stddev": 8522.294829604905,
+          "max": 86747.7286002762,
+          "min": 23015.56773001258,
+          "percentiles": {
+            "p10": 59075.5872138411,
+            "p25": 64916.51605600053,
+            "p50": 70318.52893237383,
+            "p75": 76217.41567948347,
+            "p90": 79337.20121364859,
+            "p95": 80839.0371710497,
+            "p99": 84530.66772625176,
+            "p99.9": 86747.7286002762,
+            "p99.99": 86747.7286002762
+          }
+        },
+        "details": {
+          "DNSDialup": {
+            "average": 0.00452591574,
+            "fastest": 0.000114005,
+            "slowest": 0.005591768
+          },
+          "DNSLookup": {
+            "average": 3.59792e-6,
+            "fastest": 5.51e-7,
+            "slowest": 3.2291e-5
+          }
+        },
+        "statusCodeDistribution": {
+          "200": 209343
+        },
+        "errorDistribution": {
+          "aborted due to deadline": 49
+        }
+      },
+      "rps": 69734.94220114038
+    },
+    {
+      "repeat": 0,
+      "shape": "chain",
+      "routes": 5,
+      "iterations": 2000000,
+      "checksums": [6000000, 10000000, 0],
+      "ms": [414, 648, 211],
+      "ns_per_request": [207.0, 324.0, 105.5],
+      "http": {
+        "summary": {
+          "successRate": 1.0,
+          "total": 3.001640069,
+          "slowest": 0.013183954,
+          "fastest": 1.6651e-5,
+          "average": 0.0006814533094549377,
+          "requestsPerSec": 73278.27285877026,
+          "totalData": 219906,
+          "sizePerRequest": 1,
+          "sizePerSec": 73261.94844982261
+        },
+        "responseTimeHistogram": {
+          "0.000016651": 1,
+          "0.0013333813": 219480,
+          "0.0026501116": 379,
+          "0.0039668419": 18,
+          "0.0052835722": 5,
+          "0.0066003025": 3,
+          "0.0079170328": 4,
+          "0.0092337631": 6,
+          "0.0105504934": 5,
+          "0.011867223699999999": 2,
+          "0.013183954": 3
+        },
+        "latencyPercentiles": {
+          "p10": 0.000589244,
+          "p25": 0.000623169,
+          "p50": 0.000669106,
+          "p75": 0.000728688,
+          "p90": 0.000785276,
+          "p95": 0.000817496,
+          "p99": 0.000925832,
+          "p99.9": 0.00150138,
+          "p99.99": 0.006013027
+        },
+        "rps": {
+          "mean": 73275.81118725067,
+          "stddev": 6562.347875445894,
+          "max": 93557.36001742679,
+          "min": 56099.20021574171,
+          "percentiles": {
+            "p10": 64356.28600774234,
+            "p25": 69216.84669437238,
+            "p50": 73212.02873632169,
+            "p75": 77438.85881935523,
+            "p90": 81368.75065197519,
+            "p95": 83317.18833595315,
+            "p99": 91020.98033596718,
+            "p99.9": 93557.36001742679,
+            "p99.99": 93557.36001742679
+          }
+        },
+        "details": {
+          "DNSDialup": {
+            "average": 0.00046932014000000005,
+            "fastest": 7.8278e-5,
+            "slowest": 0.00379502
+          },
+          "DNSLookup": {
+            "average": 3.534220000000001e-6,
+            "fastest": 5.21e-7,
+            "slowest": 3.8773e-5
+          }
+        },
+        "statusCodeDistribution": {
+          "200": 219906
+        },
+        "errorDistribution": {
+          "aborted due to deadline": 49
+        }
+      },
+      "rps": 73278.27285877026
+    },
+    {
+      "repeat": 0,
+      "shape": "list",
+      "routes": 50,
+      "iterations": 220550,
+      "checksums": [5624025, 11027500, 0],
+      "ms": [725, 927, 448],
+      "ns_per_request": [3287.2364543187487, 4203.128542280662, 2031.2854228066199],
+      "http": {
+        "summary": {
+          "successRate": 1.0,
+          "total": 3.00251144,
+          "slowest": 0.014821024,
+          "fastest": 2.1972e-5,
+          "average": 0.0009565276833704508,
+          "requestsPerSec": 52203.29818293715,
+          "totalData": 313382,
+          "sizePerRequest": 2,
+          "sizePerSec": 104373.2909140889
+        },
+        "responseTimeHistogram": {
+          "0.000021972": 1,
+          "0.0015018772": 155450,
+          "0.0029817824": 1112,
+          "0.0044616876": 78,
+          "0.0059415928": 1,
+          "0.007421498": 1,
+          "0.0089014032": 1,
+          "0.0103813084": 26,
+          "0.0118612136": 17,
+          "0.0133411188": 2,
+          "0.014821024": 2
+        },
+        "latencyPercentiles": {
+          "p10": 0.000784203,
+          "p25": 0.000844077,
+          "p50": 0.000936862,
+          "p75": 0.001033076,
+          "p90": 0.00113631,
+          "p95": 0.001196443,
+          "p99": 0.001409086,
+          "p99.9": 0.0026108,
+          "p99.99": 0.010553859
+        },
+        "rps": {
+          "mean": 52197.44447283667,
+          "stddev": 7220.529296723865,
+          "max": 66711.58914729946,
+          "min": 97.12460659678098,
+          "percentiles": {
+            "p10": 43673.55062661031,
+            "p25": 48521.77171896917,
+            "p50": 51707.916482013345,
+            "p75": 56147.304103707516,
+            "p90": 61714.45969790589,
+            "p95": 63737.98784075285,
+            "p99": 65885.8624559527,
+            "p99.9": 66711.58914729946,
+            "p99.99": 66711.58914729946
+          }
+        },
+        "details": {
+          "DNSDialup": {
+            "average": 0.007621804539999997,
+            "fastest": 0.000114797,
+            "slowest": 0.009310347
+          },
+          "DNSLookup": {
+            "average": 4.981940000000002e-6,
+            "fastest": 7.21e-7,
+            "slowest": 4.9013e-5
+          }
+        },
+        "statusCodeDistribution": {
+          "200": 156691
+        },
+        "errorDistribution": {
+          "aborted due to deadline": 50
+        }
+      },
+      "rps": 52203.29818293715
+    },
+    {
+      "repeat": 0,
+      "shape": "data",
+      "routes": 50,
+      "iterations": 394700,
+      "checksums": [10064850, 19735000, 0],
+      "ms": [767, 1421, 612],
+      "ns_per_request": [1943.248036483405, 3600.2026855839877, 1550.5447175069673],
+      "http": {
+        "summary": {
+          "successRate": 1.0,
+          "total": 3.00194648,
+          "slowest": 0.012871826,
+          "fastest": 2.0169e-5,
+          "average": 0.0008628453225871532,
+          "requestsPerSec": 57890.77225653936,
+          "totalData": 347472,
+          "sizePerRequest": 2,
+          "sizePerSec": 115748.89902767354
+        },
+        "responseTimeHistogram": {
+          "0.000020169": 1,
+          "0.0013053346999999998": 171804,
+          "0.0025905003999999996": 1530,
+          "0.0038756660999999994": 236,
+          "0.005160831799999999": 69,
+          "0.006445997499999999": 61,
+          "0.007731163199999998": 15,
+          "0.009016328899999999": 3,
+          "0.010301494599999999": 2,
+          "0.0115866603": 1,
+          "0.012871826": 14
+        },
+        "latencyPercentiles": {
+          "p10": 0.000719731,
+          "p25": 0.000758896,
+          "p50": 0.0008297,
+          "p75": 0.000925842,
+          "p90": 0.001022875,
+          "p95": 0.001076177,
+          "p99": 0.001355595,
+          "p99.9": 0.003641322,
+          "p99.99": 0.008891785
+        },
+        "rps": {
+          "mean": 57884.53995706297,
+          "stddev": 7781.890492053725,
+          "max": 70706.42721423328,
+          "min": 16903.838861805514,
+          "percentiles": {
+            "p10": 48324.969511747084,
+            "p25": 53387.967353809196,
+            "p50": 58301.73979842935,
+            "p75": 63002.56420436311,
+            "p90": 68537.05798725336,
+            "p95": 69348.96036601799,
+            "p99": 70158.30857025256,
+            "p99.9": 70706.42721423328,
+            "p99.99": 70706.42721423328
+          }
+        },
+        "details": {
+          "DNSDialup": {
+            "average": 0.0038499314,
+            "fastest": 0.000117421,
+            "slowest": 0.004837543
+          },
+          "DNSLookup": {
+            "average": 4.5605799999999995e-6,
+            "fastest": 5.91e-7,
+            "slowest": 4.6999e-5
+          }
+        },
+        "statusCodeDistribution": {
+          "200": 173736
+        },
+        "errorDistribution": {
+          "aborted due to deadline": 49
+        }
+      },
+      "rps": 57890.77225653936
+    },
+    {
+      "repeat": 0,
+      "shape": "chain",
+      "routes": 50,
+      "iterations": 441150,
+      "checksums": [11249325, 22057500, 0],
+      "ms": [769, 1568, 449],
+      "ns_per_request": [1743.1712569420831, 3554.346594128981, 1017.7944009973932],
+      "http": {
+        "summary": {
+          "successRate": 1.0,
+          "total": 3.001555777,
+          "slowest": 0.008716566,
+          "fastest": 1.8075e-5,
+          "average": 0.0008921808224268429,
+          "requestsPerSec": 55988.96455223194,
+          "totalData": 336008,
+          "sizePerRequest": 2,
+          "sizePerSec": 111944.6130485817
+        },
+        "responseTimeHistogram": {
+          "0.000018075": 1,
+          "0.0008879241": 90681,
+          "0.0017577732": 77031,
+          "0.0026276223": 193,
+          "0.0034974714000000004": 49,
+          "0.004367320500000001": 15,
+          "0.0052371696": 29,
+          "0.0061070187": 1,
+          "0.006976867800000001": 1,
+          "0.0078467169": 1,
+          "0.008716566": 2
+        },
+        "latencyPercentiles": {
+          "p10": 0.000790286,
+          "p25": 0.000826365,
+          "p50": 0.000878453,
+          "p75": 0.000946341,
+          "p90": 0.001004981,
+          "p95": 0.001044919,
+          "p99": 0.001198408,
+          "p99.9": 0.002163975,
+          "p99.99": 0.004976878
+        },
+        "rps": {
+          "mean": 55992.50855963255,
+          "stddev": 4395.175248888389,
+          "max": 66632.21001031937,
+          "min": 38706.54031669184,
+          "percentiles": {
+            "p10": 50547.681628079736,
+            "p25": 53079.32173840592,
+            "p50": 56069.97532921008,
+            "p75": 59220.620620099864,
+            "p90": 61360.77785046205,
+            "p95": 62693.811649332645,
+            "p99": 64355.35203828519,
+            "p99.9": 66632.21001031937,
+            "p99.99": 66632.21001031937
+          }
+        },
+        "details": {
+          "DNSDialup": {
+            "average": 0.0014933520799999998,
+            "fastest": 0.000101864,
+            "slowest": 0.004629422
+          },
+          "DNSLookup": {
+            "average": 3.99106e-6,
+            "fastest": 6.72e-7,
+            "slowest": 3.5248e-5
+          }
+        },
+        "statusCodeDistribution": {
+          "200": 168004
+        },
+        "errorDistribution": {
+          "aborted due to deadline": 50
+        }
+      },
+      "rps": 55988.96455223194
+    },
+    {
+      "repeat": 0,
+      "shape": "list",
+      "routes": 500,
+      "iterations": 22000,
+      "checksums": [5511000, 11000000, 0],
+      "ms": [753, 959, 501],
+      "ns_per_request": [34227.27272727273, 43590.90909090909, 22772.727272727272],
+      "http": {
+        "summary": {
+          "successRate": 1.0,
+          "total": 3.002201776,
+          "slowest": 0.062470111,
+          "fastest": 5.8832e-5,
+          "average": 0.0031658884039798083,
+          "requestsPerSec": 15784.7485065241,
+          "totalData": 142017,
+          "sizePerRequest": 3,
+          "sizePerSec": 47304.282188926394
+        },
+        "responseTimeHistogram": {
+          "0.000058832": 1,
+          "0.0062999599": 47285,
+          "0.0125410878": 35,
+          "0.0187822157": 3,
+          "0.0250233436": 2,
+          "0.0312644715": 4,
+          "0.0375055994": 2,
+          "0.0437467273": 1,
+          "0.0499878552": 2,
+          "0.0562289831": 2,
+          "0.062470111": 2
+        },
+        "latencyPercentiles": {
+          "p10": 0.002783247,
+          "p25": 0.002898646,
+          "p50": 0.003088765,
+          "p75": 0.00334971,
+          "p90": 0.003596968,
+          "p95": 0.003771228,
+          "p99": 0.004444631,
+          "p99.9": 0.0063404,
+          "p99.99": 0.047002236
+        },
+        "rps": {
+          "mean": 15773.430980594116,
+          "stddev": 1469.9408261308508,
+          "max": 18501.565232418747,
+          "min": 10129.568209603836,
+          "percentiles": {
+            "p10": 13847.481629760301,
+            "p25": 14777.34907828028,
+            "p50": 15855.526052235084,
+            "p75": 16854.90531373862,
+            "p90": 17636.636585178232,
+            "p95": 18000.20353302786,
+            "p99": 18327.037878982603,
+            "p99.9": 18501.565232418747,
+            "p99.99": 18501.565232418747
+          }
+        },
+        "details": {
+          "DNSDialup": {
+            "average": 0.0018094203600000005,
+            "fastest": 6.3761e-5,
+            "slowest": 0.00358738
+          },
+          "DNSLookup": {
+            "average": 3.4855999999999997e-6,
+            "fastest": 5.2e-7,
+            "slowest": 2.9927e-5
+          }
+        },
+        "statusCodeDistribution": {
+          "200": 47339
+        },
+        "errorDistribution": {
+          "aborted due to deadline": 50
+        }
+      },
+      "rps": 15784.7485065241
+    },
+    {
+      "repeat": 0,
+      "shape": "data",
+      "routes": 500,
+      "iterations": 38500,
+      "checksums": [9644250, 19250000, 0],
+      "ms": [732, 1436, 569],
+      "ns_per_request": [19012.987012987014, 37298.7012987013, 14779.22077922078],
+      "http": {
+        "summary": {
+          "successRate": 1.0,
+          "total": 3.001590251,
+          "slowest": 0.028436384,
+          "fastest": 5.1008e-5,
+          "average": 0.0025158287698285996,
+          "requestsPerSec": 19863.80385535174,
+          "totalData": 178719,
+          "sizePerRequest": 3,
+          "sizePerSec": 59541.438056196566
+        },
+        "responseTimeHistogram": {
+          "0.000051008": 1,
+          "0.0028895455999999996": 57106,
+          "0.005728083199999999": 2448,
+          "0.008566620799999999": 9,
+          "0.011405158399999999": 1,
+          "0.014243695999999998": 1,
+          "0.0170822336": 2,
+          "0.0199207712": 1,
+          "0.0227593088": 1,
+          "0.0255978464": 1,
+          "0.028436384": 2
+        },
+        "latencyPercentiles": {
+          "p10": 0.002304673,
+          "p25": 0.002358434,
+          "p50": 0.002466838,
+          "p75": 0.002612525,
+          "p90": 0.002750727,
+          "p95": 0.002844513,
+          "p99": 0.003615083,
+          "p99.9": 0.004656664,
+          "p99.99": 0.016639884
+        },
+        "rps": {
+          "mean": 19851.12608439025,
+          "stddev": 1600.3995388120434,
+          "max": 22504.8727068145,
+          "min": 12350.750468751196,
+          "percentiles": {
+            "p10": 18113.63231968374,
+            "p25": 19034.40850024631,
+            "p50": 20120.220821925985,
+            "p75": 20960.212402167468,
+            "p90": 21491.213006241138,
+            "p95": 21728.327220196938,
+            "p99": 22256.68778378528,
+            "p99.9": 22504.8727068145,
+            "p99.99": 22504.8727068145
+          }
+        },
+        "details": {
+          "DNSDialup": {
+            "average": 0.00027033229999999997,
+            "fastest": 7.4962e-5,
+            "slowest": 0.004107062
+          },
+          "DNSLookup": {
+            "average": 3.3857400000000016e-6,
+            "fastest": 4.71e-7,
+            "slowest": 3.5488e-5
+          }
+        },
+        "statusCodeDistribution": {
+          "200": 59573
+        },
+        "errorDistribution": {
+          "aborted due to deadline": 50
+        }
+      },
+      "rps": 19863.80385535174
+    },
+    {
+      "repeat": 0,
+      "shape": "chain",
+      "routes": 500,
+      "iterations": 46500,
+      "checksums": [11648250, 23250000, 0],
+      "ms": [750, 1521, 452],
+      "ns_per_request": [16129.032258064517, 32709.677419354837, 9720.430107526881],
+      "http": {
+        "summary": {
+          "successRate": 1.0,
+          "total": 3.001234284,
+          "slowest": 0.023555649,
+          "fastest": 4.6207e-5,
+          "average": 0.0023982475541879326,
+          "requestsPerSec": 20833.761740408,
+          "totalData": 187431,
+          "sizePerRequest": 3,
+          "sizePerSec": 62451.30578416383
+        },
+        "responseTimeHistogram": {
+          "0.000046207": 1,
+          "0.0023971512": 32388,
+          "0.004748095400000001": 30046,
+          "0.007099039600000002": 34,
+          "0.0094499838": 1,
+          "0.011800928": 1,
+          "0.014151872200000002": 1,
+          "0.016502816400000002": 2,
+          "0.0188537606": 0,
+          "0.0212047048": 0,
+          "0.023555649": 3
+        },
+        "latencyPercentiles": {
+          "p10": 0.002210032,
+          "p25": 0.002286018,
+          "p50": 0.002389663,
+          "p75": 0.002507677,
+          "p90": 0.002630068,
+          "p95": 0.002713426,
+          "p99": 0.002914105,
+          "p99.9": 0.003593673,
+          "p99.99": 0.010632656
+        },
+        "rps": {
+          "mean": 20821.746634395447,
+          "stddev": 1089.4851122944308,
+          "max": 23362.99129713523,
+          "min": 17709.45684995785,
+          "percentiles": {
+            "p10": 19335.93777394667,
+            "p25": 20123.711769578833,
+            "p50": 20831.203059061972,
+            "p75": 21572.277917161406,
+            "p90": 22364.129140309895,
+            "p95": 22634.331754405586,
+            "p99": 22934.860988702792,
+            "p99.9": 23362.99129713523,
+            "p99.99": 23362.99129713523
+          }
+        },
+        "details": {
+          "DNSDialup": {
+            "average": 0.0026328575399999997,
+            "fastest": 4.5215e-5,
+            "slowest": 0.005385834
+          },
+          "DNSLookup": {
+            "average": 2.8978799999999997e-6,
+            "fastest": 4.71e-7,
+            "slowest": 2.3294e-5
+          }
+        },
+        "statusCodeDistribution": {
+          "200": 62477
+        },
+        "errorDistribution": {
+          "aborted due to deadline": 50
+        }
+      },
+      "rps": 20833.761740408
+    },
+    {
+      "repeat": 1,
+      "shape": "data",
+      "routes": 5,
+      "iterations": 2000000,
+      "checksums": [6000000, 10000000, 0],
+      "ms": [510, 768, 392],
+      "ns_per_request": [255.0, 384.0, 196.0],
+      "http": {
+        "summary": {
+          "successRate": 1.0,
+          "total": 3.002303751,
+          "slowest": 0.012611092,
+          "fastest": 1.5371e-5,
+          "average": 0.0006962422086079773,
+          "requestsPerSec": 71724.58813611894,
+          "totalData": 215289,
+          "sizePerRequest": 1,
+          "sizePerSec": 71707.9342582482
+        },
+        "responseTimeHistogram": {
+          "0.000015371": 1,
+          "0.0012749431": 214072,
+          "0.0025345152000000003": 1117,
+          "0.0037940873000000003": 81,
+          "0.0050536594": 3,
+          "0.0063132315000000005": 2,
+          "0.0075728036000000006": 4,
+          "0.0088323757": 3,
+          "0.0100919478": 1,
+          "0.0113515199": 3,
+          "0.012611092": 2
+        },
+        "latencyPercentiles": {
+          "p10": 0.000593454,
+          "p25": 0.000627799,
+          "p50": 0.000676401,
+          "p75": 0.000744049,
+          "p90": 0.00080853,
+          "p95": 0.000859446,
+          "p99": 0.001113227,
+          "p99.9": 0.002002801,
+          "p99.99": 0.003495548
+        },
+        "rps": {
+          "mean": 71733.61277852162,
+          "stddev": 7142.714532732871,
+          "max": 88578.80856598163,
+          "min": 51407.412948947574,
+          "percentiles": {
+            "p10": 62484.51655709394,
+            "p25": 67406.6934846645,
+            "p50": 72244.95080839211,
+            "p75": 76848.8143668861,
+            "p90": 80701.53332913283,
+            "p95": 83016.63653396179,
+            "p99": 85720.87303258403,
+            "p99.9": 88578.80856598163,
+            "p99.99": 88578.80856598163
+          }
+        },
+        "details": {
+          "DNSDialup": {
+            "average": 0.0012670121599999997,
+            "fastest": 6.1806e-5,
+            "slowest": 0.002630539
+          },
+          "DNSLookup": {
+            "average": 4.05384e-6,
+            "fastest": 5.01e-7,
+            "slowest": 4.9835e-5
+          }
+        },
+        "statusCodeDistribution": {
+          "200": 215289
+        },
+        "errorDistribution": {
+          "aborted due to deadline": 50
+        }
+      },
+      "rps": 71724.58813611894
+    },
+    {
+      "repeat": 1,
+      "shape": "chain",
+      "routes": 5,
+      "iterations": 2000000,
+      "checksums": [6000000, 10000000, 0],
+      "ms": [409, 643, 215],
+      "ns_per_request": [204.5, 321.5, 107.5],
+      "http": {
+        "summary": {
+          "successRate": 1.0,
+          "total": 3.002127958,
+          "slowest": 0.009269468,
+          "fastest": 1.6761e-5,
+          "average": 0.0006374752449477957,
+          "requestsPerSec": 78309.45359058543,
+          "totalData": 235046,
+          "sizePerRequest": 1,
+          "sizePerSec": 78293.13183458918
+        },
+        "responseTimeHistogram": {
+          "0.000016761": 1,
+          "0.0009420316999999999": 233548,
+          "0.0018673023999999996": 1352,
+          "0.0027925730999999996": 76,
+          "0.0037178437999999996": 40,
+          "0.004643114499999999": 9,
+          "0.005568385199999999": 2,
+          "0.006493655899999999": 1,
+          "0.007418926599999999": 1,
+          "0.0083441973": 2,
+          "0.009269468": 14
+        },
+        "latencyPercentiles": {
+          "p10": 0.000560992,
+          "p25": 0.000580659,
+          "p50": 0.000619202,
+          "p75": 0.000671892,
+          "p90": 0.000736715,
+          "p95": 0.000782532,
+          "p99": 0.000890696,
+          "p99.9": 0.001583387,
+          "p99.99": 0.003810173
+        },
+        "rps": {
+          "mean": 78315.8032473408,
+          "stddev": 6938.876376639683,
+          "max": 91820.6780166896,
+          "min": 57683.39288108827,
+          "percentiles": {
+            "p10": 69033.19806494933,
+            "p25": 74070.41874710213,
+            "p50": 78532.48889065499,
+            "p75": 83954.57047080612,
+            "p90": 86750.2370622825,
+            "p95": 88105.55946080215,
+            "p99": 90453.2769801408,
+            "p99.9": 91820.6780166896,
+            "p99.99": 91820.6780166896
+          }
+        },
+        "details": {
+          "DNSDialup": {
+            "average": 0.0025516069000000013,
+            "fastest": 8.6142e-5,
+            "slowest": 0.008820788
+          },
+          "DNSLookup": {
+            "average": 1.717632e-5,
+            "fastest": 6.41e-7,
+            "slowest": 0.000700536
+          }
+        },
+        "statusCodeDistribution": {
+          "200": 235046
+        },
+        "errorDistribution": {
+          "aborted due to deadline": 49
+        }
+      },
+      "rps": 78309.45359058543
+    },
+    {
+      "repeat": 1,
+      "shape": "list",
+      "routes": 5,
+      "iterations": 2000000,
+      "checksums": [6000000, 10000000, 0],
+      "ms": [719, 935, 442],
+      "ns_per_request": [359.5, 467.5, 221.0],
+      "http": {
+        "summary": {
+          "successRate": 1.0,
+          "total": 3.002829478,
+          "slowest": 0.015482772,
+          "fastest": 1.5809e-5,
+          "average": 0.0006934797871209652,
+          "requestsPerSec": 72019.40755691488,
+          "totalData": 216212,
+          "sizePerRequest": 1,
+          "sizePerSec": 72002.75659475858
+        },
+        "responseTimeHistogram": {
+          "0.000015809": 1,
+          "0.0015625053000000002": 215353,
+          "0.0031092016": 738,
+          "0.004655897900000001": 50,
+          "0.006202594200000001": 50,
+          "0.0077492905": 3,
+          "0.009295986800000001": 2,
+          "0.0108426831": 6,
+          "0.0123893794": 4,
+          "0.013936075700000002": 2,
+          "0.015482772": 3
+        },
+        "latencyPercentiles": {
+          "p10": 0.00059168,
+          "p25": 0.000624602,
+          "p50": 0.000672884,
+          "p75": 0.00073925,
+          "p90": 0.000799323,
+          "p95": 0.000842805,
+          "p99": 0.001083462,
+          "p99.9": 0.002449707,
+          "p99.99": 0.005611914
+        },
+        "rps": {
+          "mean": 72029.6787989417,
+          "stddev": 7418.759643708506,
+          "max": 91634.12454798091,
+          "min": 29747.381629459538,
+          "percentiles": {
+            "p10": 62857.04276631123,
+            "p25": 66892.53678863926,
+            "p50": 73138.82208676345,
+            "p75": 77116.20211406435,
+            "p90": 80702.9617986975,
+            "p95": 82683.94283342468,
+            "p99": 85608.56085608673,
+            "p99.9": 91634.12454798091,
+            "p99.99": 91634.12454798091
+          }
+        },
+        "details": {
+          "DNSDialup": {
+            "average": 0.00115663082,
+            "fastest": 8.7857e-5,
+            "slowest": 0.003677223
+          },
+          "DNSLookup": {
+            "average": 4.585799999999999e-6,
+            "fastest": 6.31e-7,
+            "slowest": 3.6999e-5
+          }
+        },
+        "statusCodeDistribution": {
+          "200": 216212
+        },
+        "errorDistribution": {
+          "aborted due to deadline": 50
+        }
+      },
+      "rps": 72019.40755691488
+    },
+    {
+      "repeat": 1,
+      "shape": "data",
+      "routes": 50,
+      "iterations": 384600,
+      "checksums": [9807300, 19230000, 0],
+      "ms": [700, 1372, 568],
+      "ns_per_request": [1820.0728029121165, 3567.3426937077484, 1476.8590743629745],
+      "http": {
+        "summary": {
+          "successRate": 1.0,
+          "total": 3.002315385,
+          "slowest": 0.011307628,
+          "fastest": 1.8976e-5,
+          "average": 0.0008695642566340964,
+          "requestsPerSec": 57440.66757996512,
+          "totalData": 344810,
+          "sizePerRequest": 2,
+          "sizePerSec": 114848.02753325662
+        },
+        "responseTimeHistogram": {
+          "0.000018976": 1,
+          "0.0011478412": 169254,
+          "0.0022767064": 3027,
+          "0.0034055716000000002": 70,
+          "0.0045344368000000005": 18,
+          "0.005663302": 12,
+          "0.006792167200000001": 15,
+          "0.0079210324": 3,
+          "0.0090498976": 2,
+          "0.010178762800000001": 1,
+          "0.011307628": 2
+        },
+        "latencyPercentiles": {
+          "p10": 0.000761993,
+          "p25": 0.000798351,
+          "p50": 0.000846062,
+          "p75": 0.000916234,
+          "p90": 0.001005053,
+          "p95": 0.001055468,
+          "p99": 0.001236279,
+          "p99.9": 0.002120776,
+          "p99.99": 0.005909178
+        },
+        "rps": {
+          "mean": 57425.117771468,
+          "stddev": 5333.26106559351,
+          "max": 68432.54651912478,
+          "min": 39544.79722953581,
+          "percentiles": {
+            "p10": 49857.1312867425,
+            "p25": 54260.06046092431,
+            "p50": 58159.94545578083,
+            "p75": 61141.20917498392,
+            "p90": 63826.51353372313,
+            "p95": 64619.98696196734,
+            "p99": 67314.14270138134,
+            "p99.9": 68432.54651912478,
+            "p99.99": 68432.54651912478
+          }
+        },
+        "details": {
+          "DNSDialup": {
+            "average": 0.0028665349400000006,
+            "fastest": 7.8188e-5,
+            "slowest": 0.005413348
+          },
+          "DNSLookup": {
+            "average": 3.420379999999999e-6,
+            "fastest": 5e-7,
+            "slowest": 3.26e-5
+          }
+        },
+        "statusCodeDistribution": {
+          "200": 172405
+        },
+        "errorDistribution": {
+          "aborted due to deadline": 50
+        }
+      },
+      "rps": 57440.66757996512
+    },
+    {
+      "repeat": 1,
+      "shape": "chain",
+      "routes": 50,
+      "iterations": 454500,
+      "checksums": [11589750, 22725000, 0],
+      "ms": [731, 1464, 449],
+      "ns_per_request": [1608.3608360836083, 3221.122112211221, 987.8987898789879],
+      "http": {
+        "summary": {
+          "successRate": 1.0,
+          "total": 3.001848929,
+          "slowest": 0.00875145,
+          "fastest": 1.8235e-5,
+          "average": 0.0009143492037779067,
+          "requestsPerSec": 54633.995207291795,
+          "totalData": 327906,
+          "sizePerRequest": 2,
+          "sizePerSec": 109234.67761225236
+        },
+        "responseTimeHistogram": {
+          "0.000018235": 1,
+          "0.0008915564999999999": 82512,
+          "0.0017648779999999997": 80521,
+          "0.0026381994999999997": 529,
+          "0.0035115209999999997": 197,
+          "0.0043848425": 119,
+          "0.005258163999999999": 69,
+          "0.0061314855": 1,
+          "0.007004806999999999": 1,
+          "0.0078781285": 1,
+          "0.00875145": 2
+        },
+        "latencyPercentiles": {
+          "p10": 0.000763465,
+          "p25": 0.000820113,
+          "p50": 0.000890597,
+          "p75": 0.000969616,
+          "p90": 0.001074715,
+          "p95": 0.001154666,
+          "p99": 0.001438985,
+          "p99.9": 0.003760961,
+          "p99.99": 0.00500144
+        },
+        "rps": {
+          "mean": 54638.72471993454,
+          "stddev": 6425.446513919699,
+          "max": 67843.87463372677,
+          "min": 24611.967222485797,
+          "percentiles": {
+            "p10": 46049.76137213857,
+            "p25": 51363.58812209528,
+            "p50": 55147.382631156805,
+            "p75": 59019.84247103842,
+            "p90": 62460.54925644952,
+            "p95": 64608.961262926874,
+            "p99": 66534.70450186906,
+            "p99.9": 67843.87463372677,
+            "p99.99": 67843.87463372677
+          }
+        },
+        "details": {
+          "DNSDialup": {
+            "average": 0.0021623576600000006,
+            "fastest": 9.2726e-5,
+            "slowest": 0.003076865
+          },
+          "DNSLookup": {
+            "average": 3.4994799999999996e-6,
+            "fastest": 5.3e-7,
+            "slowest": 3.5046e-5
+          }
+        },
+        "statusCodeDistribution": {
+          "200": 163953
+        },
+        "errorDistribution": {
+          "aborted due to deadline": 50
+        }
+      },
+      "rps": 54633.995207291795
+    },
+    {
+      "repeat": 1,
+      "shape": "list",
+      "routes": 50,
+      "iterations": 200000,
+      "checksums": [5100000, 10000000, 0],
+      "ms": [749, 852, 467],
+      "ns_per_request": [3745.0, 4260.0, 2335.0],
+      "http": {
+        "summary": {
+          "successRate": 1.0,
+          "total": 3.002576024,
+          "slowest": 0.017518131,
+          "fastest": 2.0419e-5,
+          "average": 0.0009261767981185605,
+          "requestsPerSec": 53936.01983947634,
+          "totalData": 323794,
+          "sizePerRequest": 2,
+          "sizePerSec": 107838.73494355191
+        },
+        "responseTimeHistogram": {
+          "0.000020419": 1,
+          "0.0017701902": 161453,
+          "0.0035199613999999995": 403,
+          "0.005269732599999999": 22,
+          "0.007019503799999999": 3,
+          "0.008769275": 5,
+          "0.0105190462": 5,
+          "0.0122688174": 2,
+          "0.0140185886": 2,
+          "0.0157683598": 0,
+          "0.017518131": 1
+        },
+        "latencyPercentiles": {
+          "p10": 0.000821013,
+          "p25": 0.000856411,
+          "p50": 0.000908259,
+          "p75": 0.000974064,
+          "p90": 0.001042534,
+          "p95": 0.001109982,
+          "p99": 0.001226383,
+          "p99.9": 0.002220865,
+          "p99.99": 0.005686848
+        },
+        "rps": {
+          "mean": 53932.2851343076,
+          "stddev": 4648.029369244511,
+          "max": 64601.90575622,
+          "min": 38155.75700771543,
+          "percentiles": {
+            "p10": 48378.88176671922,
+            "p25": 51004.77911774145,
+            "p50": 54298.04124583639,
+            "p75": 57067.72226601429,
+            "p90": 59130.89589310408,
+            "p95": 60570.3039517956,
+            "p99": 64238.51741504384,
+            "p99.9": 64601.90575622,
+            "p99.99": 64601.90575622
+          }
+        },
+        "details": {
+          "DNSDialup": {
+            "average": 0.0025165469200000004,
+            "fastest": 6.1636e-5,
+            "slowest": 0.004595382
+          },
+          "DNSLookup": {
+            "average": 3.3608000000000005e-6,
+            "fastest": 4.91e-7,
+            "slowest": 3.7011e-5
+          }
+        },
+        "statusCodeDistribution": {
+          "200": 161897
+        },
+        "errorDistribution": {
+          "aborted due to deadline": 50
+        }
+      },
+      "rps": 53936.01983947634
+    },
+    {
+      "repeat": 1,
+      "shape": "data",
+      "routes": 500,
+      "iterations": 38000,
+      "checksums": [9519000, 19000000, 0],
+      "ms": [660, 1325, 611],
+      "ns_per_request": [17368.42105263158, 34868.42105263158, 16078.947368421053],
+      "http": {
+        "summary": {
+          "successRate": 1.0,
+          "total": 3.002537928,
+          "slowest": 0.034325099,
+          "fastest": 5.4493e-5,
+          "average": 0.0028363882029550248,
+          "requestsPerSec": 17621.426029826325,
+          "totalData": 158577,
+          "sizePerRequest": 3,
+          "sizePerSec": 52814.32035252545
+        },
+        "responseTimeHistogram": {
+          "0.000054493": 1,
+          "0.0034815535999999994": 51251,
+          "0.006908614199999999": 1555,
+          "0.010335674799999996": 28,
+          "0.013762735399999997": 12,
+          "0.017189795999999997": 4,
+          "0.020616856599999994": 2,
+          "0.024043917199999994": 2,
+          "0.027470977799999994": 1,
+          "0.030898038399999994": 1,
+          "0.034325099": 2
+        },
+        "latencyPercentiles": {
+          "p10": 0.002564767,
+          "p25": 0.002670257,
+          "p50": 0.002794422,
+          "p75": 0.002933104,
+          "p90": 0.003072378,
+          "p95": 0.003206733,
+          "p99": 0.004090445,
+          "p99.9": 0.006884696,
+          "p99.99": 0.021962719
+        },
+        "rps": {
+          "mean": 17604.54564160826,
+          "stddev": 1459.6995578877513,
+          "max": 20548.0166052033,
+          "min": 6700.2170870336195,
+          "percentiles": {
+            "p10": 16057.116770062707,
+            "p25": 16918.43093866435,
+            "p50": 17852.140747480513,
+            "p75": 18401.924841337885,
+            "p90": 18962.148441517027,
+            "p95": 19527.220945998903,
+            "p99": 20341.99197403195,
+            "p99.9": 20548.0166052033,
+            "p99.99": 20548.0166052033
+          }
+        },
+        "details": {
+          "DNSDialup": {
+            "average": 0.0036336256599999992,
+            "fastest": 8.7575e-5,
+            "slowest": 0.004511474
+          },
+          "DNSLookup": {
+            "average": 3.2912199999999996e-6,
+            "fastest": 6.61e-7,
+            "slowest": 2.9496e-5
+          }
+        },
+        "statusCodeDistribution": {
+          "200": 52859
+        },
+        "errorDistribution": {
+          "aborted due to deadline": 50
+        }
+      },
+      "rps": 17621.426029826325
+    },
+    {
+      "repeat": 1,
+      "shape": "chain",
+      "routes": 500,
+      "iterations": 43500,
+      "checksums": [10896750, 21750000, 0],
+      "ms": [718, 1468, 415],
+      "ns_per_request": [16505.74712643678, 33747.12643678161, 9540.229885057472],
+      "http": {
+        "summary": {
+          "successRate": 1.0,
+          "total": 3.002047546,
+          "slowest": 0.028083473,
+          "fastest": 4.8923e-5,
+          "average": 0.0024649042103012963,
+          "requestsPerSec": 20272.163937272962,
+          "totalData": 182424,
+          "sizePerRequest": 3,
+          "sizePerSec": 60766.525914310085
+        },
+        "responseTimeHistogram": {
+          "0.000048923": 1,
+          "0.0028523780000000005": 56904,
+          "0.005655833000000001": 3857,
+          "0.008459288": 37,
+          "0.011262743": 1,
+          "0.014066198": 3,
+          "0.016869653000000002": 1,
+          "0.019673108": 1,
+          "0.022476563": 1,
+          "0.025280018": 0,
+          "0.028083473": 2
+        },
+        "latencyPercentiles": {
+          "p10": 0.002163817,
+          "p25": 0.002251324,
+          "p50": 0.002420354,
+          "p75": 0.002623739,
+          "p90": 0.002770086,
+          "p95": 0.002918276,
+          "p99": 0.003835193,
+          "p99.9": 0.005369608,
+          "p99.99": 0.012696114
+        },
+        "rps": {
+          "mean": 20258.62153062422,
+          "stddev": 2054.7495912825525,
+          "max": 24270.668906655406,
+          "min": 8719.114915629534,
+          "percentiles": {
+            "p10": 17810.691758262426,
+            "p25": 18903.264593795346,
+            "p50": 20334.74394350264,
+            "p75": 21833.558178921136,
+            "p90": 22630.38581903885,
+            "p95": 23152.33817567994,
+            "p99": 23680.5517648836,
+            "p99.9": 24270.668906655406,
+            "p99.99": 24270.668906655406
+          }
+        },
+        "details": {
+          "DNSDialup": {
+            "average": 0.0038544915400000003,
+            "fastest": 9.3307e-5,
+            "slowest": 0.004917473
+          },
+          "DNSLookup": {
+            "average": 4.03166e-6,
+            "fastest": 7e-7,
+            "slowest": 3.0619e-5
+          }
+        },
+        "statusCodeDistribution": {
+          "200": 60808
+        },
+        "errorDistribution": {
+          "aborted due to deadline": 50
+        }
+      },
+      "rps": 20272.163937272962
+    },
+    {
+      "repeat": 1,
+      "shape": "list",
+      "routes": 500,
+      "iterations": 20000,
+      "checksums": [5010000, 10000000, 0],
+      "ms": [781, 1038, 579],
+      "ns_per_request": [39050.0, 51900.0, 28950.0],
+      "http": {
+        "summary": {
+          "successRate": 1.0,
+          "total": 3.002145136,
+          "slowest": 0.009175868,
+          "fastest": 6.0134e-5,
+          "average": 0.003610232325092761,
+          "requestsPerSec": 13840.769888747976,
+          "totalData": 124506,
+          "sizePerRequest": 3,
+          "sizePerSec": 41472.34539296437
+        },
+        "responseTimeHistogram": {
+          "0.000060134": 1,
+          "0.0009717074000000001": 250,
+          "0.0018832808000000003": 9,
+          "0.0027948542000000003": 128,
+          "0.0037064276": 26594,
+          "0.004618001": 13227,
+          "0.005529574400000001": 1116,
+          "0.006441147800000001": 121,
+          "0.0073527212000000005": 34,
+          "0.008264294600000001": 12,
+          "0.009175868": 10
+        },
+        "latencyPercentiles": {
+          "p10": 0.003125881,
+          "p25": 0.003335718,
+          "p50": 0.003566043,
+          "p75": 0.003829072,
+          "p90": 0.00417684,
+          "p95": 0.00443075,
+          "p99": 0.005106972,
+          "p99.9": 0.006728182,
+          "p99.99": 0.008714984
+        },
+        "rps": {
+          "mean": 13829.218496850805,
+          "stddev": 1428.312850204542,
+          "max": 16942.248886047597,
+          "min": 4710.345803522858,
+          "percentiles": {
+            "p10": 12159.452426695167,
+            "p25": 12928.394633132755,
+            "p50": 13888.36052734721,
+            "p75": 14727.134745768968,
+            "p90": 15679.537590334257,
+            "p95": 16085.124085171452,
+            "p99": 16620.344591115372,
+            "p99.9": 16942.248886047597,
+            "p99.99": 16942.248886047597
+          }
+        },
+        "details": {
+          "DNSDialup": {
+            "average": 0.004366999620000002,
+            "fastest": 7.3839e-5,
+            "slowest": 0.006805029
+          },
+          "DNSLookup": {
+            "average": 3.81062e-6,
+            "fastest": 5.21e-7,
+            "slowest": 3.751e-5
+          }
+        },
+        "statusCodeDistribution": {
+          "200": 41502
+        },
+        "errorDistribution": {
+          "aborted due to deadline": 50
+        }
+      },
+      "rps": 13840.769888747976
+    },
+    {
+      "repeat": 2,
+      "shape": "chain",
+      "routes": 5,
+      "iterations": 2000000,
+      "checksums": [6000000, 10000000, 0],
+      "ms": [442, 746, 258],
+      "ns_per_request": [221.0, 373.0, 129.0],
+      "http": {
+        "summary": {
+          "successRate": 1.0,
+          "total": 3.001979764,
+          "slowest": 0.01429812,
+          "fastest": 1.6952e-5,
+          "average": 0.000699169970859081,
+          "requestsPerSec": 71426.86388874672,
+          "totalData": 214372,
+          "sizePerRequest": 1,
+          "sizePerSec": 71410.20821351546
+        },
+        "responseTimeHistogram": {
+          "0.000016952": 1,
+          "0.0014450688": 213053,
+          "0.0028731856": 1181,
+          "0.004301302399999999": 89,
+          "0.0057294191999999996": 2,
+          "0.007157536": 39,
+          "0.0085856528": 4,
+          "0.0100137696": 1,
+          "0.0114418864": 1,
+          "0.0128700032": 0,
+          "0.014298120000000001": 1
+        },
+        "latencyPercentiles": {
+          "p10": 0.000574949,
+          "p25": 0.000616237,
+          "p50": 0.000684416,
+          "p75": 0.000751182,
+          "p90": 0.000810144,
+          "p95": 0.000863676,
+          "p99": 0.001127524,
+          "p99.9": 0.002379115,
+          "p99.99": 0.006442061
+        },
+        "rps": {
+          "mean": 71452.11901458078,
+          "stddev": 8716.440679439494,
+          "max": 92732.32648901395,
+          "min": 18404.647173411286,
+          "percentiles": {
+            "p10": 62111.888215404666,
+            "p25": 66310.6362260507,
+            "p50": 70643.85188466354,
+            "p75": 77135.09646889236,
+            "p90": 83389.82024783037,
+            "p95": 86012.33416871847,
+            "p99": 90320.08718739185,
+            "p99.9": 92732.32648901395,
+            "p99.99": 92732.32648901395
+          }
+        },
+        "details": {
+          "DNSDialup": {
+            "average": 0.00478512894,
+            "fastest": 0.000111692,
+            "slowest": 0.006153794
+          },
+          "DNSLookup": {
+            "average": 4.67466e-6,
+            "fastest": 5.61e-7,
+            "slowest": 4.1189e-5
+          }
+        },
+        "statusCodeDistribution": {
+          "200": 214372
+        },
+        "errorDistribution": {
+          "aborted due to deadline": 50
+        }
+      },
+      "rps": 71426.86388874672
+    },
+    {
+      "repeat": 2,
+      "shape": "list",
+      "routes": 5,
+      "iterations": 1875000,
+      "checksums": [5625000, 9375000, 0],
+      "ms": [680, 806, 421],
+      "ns_per_request": [362.6666666666667, 429.8666666666667, 224.53333333333333],
+      "http": {
+        "summary": {
+          "successRate": 1.0,
+          "total": 3.002538676,
+          "slowest": 0.009852631,
+          "fastest": 1.4548e-5,
+          "average": 0.0006777925582379501,
+          "requestsPerSec": 73686.31144320354,
+          "totalData": 221196,
+          "sizePerRequest": 1,
+          "sizePerSec": 73669.65886836757
+        },
+        "responseTimeHistogram": {
+          "0.000014548": 1,
+          "0.0009983563000000003": 219248,
+          "0.0019821646000000004": 1549,
+          "0.0029659729000000006": 224,
+          "0.0039497812": 85,
+          "0.0049335895": 42,
+          "0.005917397800000001": 40,
+          "0.006901206100000001": 2,
+          "0.007885014400000001": 2,
+          "0.0088688227": 1,
+          "0.009852631": 2
+        },
+        "latencyPercentiles": {
+          "p10": 0.000588434,
+          "p25": 0.000618691,
+          "p50": 0.00065993,
+          "p75": 0.000710586,
+          "p90": 0.000776622,
+          "p95": 0.000827947,
+          "p99": 0.000976399,
+          "p99.9": 0.002617327,
+          "p99.99": 0.005380931
+        },
+        "rps": {
+          "mean": 73685.72150744307,
+          "stddev": 6903.433370758212,
+          "max": 88150.77484631012,
+          "min": 38803.80665343271,
+          "percentiles": {
+            "p10": 64747.34973686257,
+            "p25": 69934.61063880686,
+            "p50": 74277.16654832699,
+            "p75": 78252.13157005096,
+            "p90": 81324.00283953118,
+            "p95": 83647.0012500038,
+            "p99": 86489.50799182036,
+            "p99.9": 88150.77484631012,
+            "p99.99": 88150.77484631012
+          }
+        },
+        "details": {
+          "DNSDialup": {
+            "average": 0.0014716331800000003,
+            "fastest": 5.8741e-5,
+            "slowest": 0.003420147
+          },
+          "DNSLookup": {
+            "average": 3.15632e-6,
+            "fastest": 4.8e-7,
+            "slowest": 2.9715e-5
+          }
+        },
+        "statusCodeDistribution": {
+          "200": 221196
+        },
+        "errorDistribution": {
+          "aborted due to deadline": 50
+        }
+      },
+      "rps": 73686.31144320354
+    },
+    {
+      "repeat": 2,
+      "shape": "data",
+      "routes": 5,
+      "iterations": 2000000,
+      "checksums": [6000000, 10000000, 0],
+      "ms": [487, 767, 335],
+      "ns_per_request": [243.5, 383.5, 167.5],
+      "http": {
+        "summary": {
+          "successRate": 1.0,
+          "total": 3.002411419,
+          "slowest": 0.013555787,
+          "fastest": 1.5931e-5,
+          "average": 0.0007131657628731405,
+          "requestsPerSec": 70015.72092009154,
+          "totalData": 210166,
+          "sizePerRequest": 1,
+          "sizePerSec": 69999.06763943733
+        },
+        "responseTimeHistogram": {
+          "0.000015931": 1,
+          "0.0013699166": 209008,
+          "0.0027239022": 1068,
+          "0.004077887800000001": 40,
+          "0.0054318734": 1,
+          "0.006785859": 1,
+          "0.008139844600000001": 0,
+          "0.009493830200000001": 40,
+          "0.0108478158": 3,
+          "0.0122018014": 2,
+          "0.013555787": 2
+        },
+        "latencyPercentiles": {
+          "p10": 0.000608301,
+          "p25": 0.00064431,
+          "p50": 0.000693804,
+          "p75": 0.00076065,
+          "p90": 0.000820645,
+          "p95": 0.000863455,
+          "p99": 0.001095245,
+          "p99.9": 0.002118551,
+          "p99.99": 0.00899646
+        },
+        "rps": {
+          "mean": 70006.02095033138,
+          "stddev": 7984.560344425139,
+          "max": 83988.75932085197,
+          "min": 3204.1185740150386,
+          "percentiles": {
+            "p10": 60846.02393250225,
+            "p25": 65421.22264462631,
+            "p50": 70927.96824029906,
+            "p75": 75336.98292491733,
+            "p90": 78650.5728600759,
+            "p95": 80167.46894186149,
+            "p99": 83660.84653368227,
+            "p99.9": 83988.75932085197,
+            "p99.99": 83988.75932085197
+          }
+        },
+        "details": {
+          "DNSDialup": {
+            "average": 0.006772839680000001,
+            "fastest": 0.00013193,
+            "slowest": 0.008313487
+          },
+          "DNSLookup": {
+            "average": 4.730839999999999e-6,
+            "fastest": 5.51e-7,
+            "slowest": 4.1189e-5
+          }
+        },
+        "statusCodeDistribution": {
+          "200": 210166
+        },
+        "errorDistribution": {
+          "aborted due to deadline": 50
+        }
+      },
+      "rps": 70015.72092009154
+    },
+    {
+      "repeat": 2,
+      "shape": "chain",
+      "routes": 50,
+      "iterations": 416650,
+      "checksums": [10624575, 20832500, 0],
+      "ms": [763, 1428, 382],
+      "ns_per_request": [1831.2732509300372, 3427.3370934837394, 916.8366734669387],
+      "http": {
+        "summary": {
+          "successRate": 1.0,
+          "total": 3.001678136,
+          "slowest": 0.020943651,
+          "fastest": 2.0529e-5,
+          "average": 0.0009250737975656373,
+          "requestsPerSec": 53990.79869901147,
+          "totalData": 324026,
+          "sizePerRequest": 2,
+          "sizePerSec": 107948.28270022085
+        },
+        "responseTimeHistogram": {
+          "0.000020529": 1,
+          "0.0021128412000000004": 160873,
+          "0.004205153400000001": 883,
+          "0.006297465600000001": 117,
+          "0.008389777800000001": 82,
+          "0.010482090000000001": 30,
+          "0.012574402200000003": 18,
+          "0.014666714400000003": 3,
+          "0.0167590266": 2,
+          "0.018851338800000002": 2,
+          "0.020943651": 2
+        },
+        "latencyPercentiles": {
+          "p10": 0.000785338,
+          "p25": 0.000833098,
+          "p50": 0.000878084,
+          "p75": 0.00095549,
+          "p90": 0.001053747,
+          "p95": 0.001132846,
+          "p99": 0.001898567,
+          "p99.9": 0.005727309,
+          "p99.99": 0.010778176
+        },
+        "rps": {
+          "mean": 53956.58598110632,
+          "stddev": 7456.007970225675,
+          "max": 67637.38318168525,
+          "min": 8082.29305714019,
+          "percentiles": {
+            "p10": 46307.043301286874,
+            "p25": 51152.72823225957,
+            "p50": 55823.81443923928,
+            "p75": 58295.71573566661,
+            "p90": 60347.87396841784,
+            "p95": 61989.23970948555,
+            "p99": 64921.97608890582,
+            "p99.9": 67637.38318168525,
+            "p99.99": 67637.38318168525
+          }
+        },
+        "details": {
+          "DNSDialup": {
+            "average": 0.0003295417400000001,
+            "fastest": 8.2726e-5,
+            "slowest": 0.003484139
+          },
+          "DNSLookup": {
+            "average": 2.0831140000000004e-5,
+            "fastest": 6.71e-7,
+            "slowest": 0.000896077
+          }
+        },
+        "statusCodeDistribution": {
+          "200": 162013
+        },
+        "errorDistribution": {
+          "aborted due to deadline": 50
+        }
+      },
+      "rps": 53990.79869901147
+    },
+    {
+      "repeat": 2,
+      "shape": "list",
+      "routes": 50,
+      "iterations": 230750,
+      "checksums": [5884125, 11537500, 0],
+      "ms": [800, 1057, 542],
+      "ns_per_request": [3466.955579631636, 4580.715059588299, 2348.8624052004334],
+      "http": {
+        "summary": {
+          "successRate": 1.0,
+          "total": 3.002554728,
+          "slowest": 0.016227951,
+          "fastest": 1.9487e-5,
+          "average": 0.000982521371611003,
+          "requestsPerSec": 50824.052789754845,
+          "totalData": 305104,
+          "sizePerRequest": 2,
+          "sizePerSec": 101614.80060789088
+        },
+        "responseTimeHistogram": {
+          "0.000019487": 1,
+          "0.0016403334000000002": 151984,
+          "0.0032611798": 500,
+          "0.0048820262": 33,
+          "0.006502872600000001": 1,
+          "0.008123719000000001": 10,
+          "0.0097445654": 19,
+          "0.011365411800000001": 3,
+          "0.012986258200000001": 0,
+          "0.014607104600000002": 0,
+          "0.016227951": 1
+        },
+        "latencyPercentiles": {
+          "p10": 0.000817028,
+          "p25": 0.00087619,
+          "p50": 0.000965178,
+          "p75": 0.001067253,
+          "p90": 0.00116748,
+          "p95": 0.001231754,
+          "p99": 0.00137311,
+          "p99.9": 0.002487502,
+          "p99.99": 0.00856301
+        },
+        "rps": {
+          "mean": 50820.54932481954,
+          "stddev": 6002.678321472239,
+          "max": 63742.70761410156,
+          "min": 32402.193628508816,
+          "percentiles": {
+            "p10": 43329.26868427996,
+            "p25": 46721.04783204902,
+            "p50": 51082.431720066765,
+            "p75": 54931.359901634154,
+            "p90": 58733.12351385101,
+            "p95": 61274.20305990555,
+            "p99": 62651.26753222188,
+            "p99.9": 63742.70761410156,
+            "p99.99": 63742.70761410156
+          }
+        },
+        "details": {
+          "DNSDialup": {
+            "average": 0.004652618680000001,
+            "fastest": 8.2827e-5,
+            "slowest": 0.009210166
+          },
+          "DNSLookup": {
+            "average": 5.27676e-6,
+            "fastest": 5.21e-7,
+            "slowest": 6.4322e-5
+          }
+        },
+        "statusCodeDistribution": {
+          "200": 152552
+        },
+        "errorDistribution": {
+          "aborted due to deadline": 50
+        }
+      },
+      "rps": 50824.052789754845
+    },
+    {
+      "repeat": 2,
+      "shape": "data",
+      "routes": 50,
+      "iterations": 365850,
+      "checksums": [9329175, 18292500, 0],
+      "ms": [785, 1447, 620],
+      "ns_per_request": [2145.6881235479023, 3955.172885062184, 1694.6836135028018],
+      "http": {
+        "summary": {
+          "successRate": 1.0,
+          "total": 3.002756751,
+          "slowest": 0.024030712,
+          "fastest": 2.0018e-5,
+          "average": 0.0009803773015289237,
+          "requestsPerSec": 50898.56177963847,
+          "totalData": 305576,
+          "sizePerRequest": 2,
+          "sizePerSec": 101765.15293762468
+        },
+        "responseTimeHistogram": {
+          "0.000020018": 1,
+          "0.0024210874": 151604,
+          "0.0048221568": 1060,
+          "0.007223226199999999": 48,
+          "0.009624295599999999": 42,
+          "0.012025365": 3,
+          "0.014426434399999999": 13,
+          "0.016827503799999997": 7,
+          "0.019228573199999998": 4,
+          "0.0216296426": 3,
+          "0.024030712": 3
+        },
+        "latencyPercentiles": {
+          "p10": 0.000805877,
+          "p25": 0.000867794,
+          "p50": 0.000944329,
+          "p75": 0.001022416,
+          "p90": 0.001115213,
+          "p95": 0.001221584,
+          "p99": 0.002209516,
+          "p99.9": 0.00449243,
+          "p99.99": 0.015172242
+        },
+        "rps": {
+          "mean": 50886.67114988115,
+          "stddev": 6165.632639225204,
+          "max": 62556.569906167046,
+          "min": 22641.48338064338,
+          "percentiles": {
+            "p10": 42887.19209655937,
+            "p25": 48119.647251973416,
+            "p50": 51225.74093482023,
+            "p75": 54883.01055346087,
+            "p90": 57845.00920165967,
+            "p95": 60022.94677255051,
+            "p99": 61841.23573598862,
+            "p99.9": 62556.569906167046,
+            "p99.99": 62556.569906167046
+          }
+        },
+        "details": {
+          "DNSDialup": {
+            "average": 0.003209650439999999,
+            "fastest": 7.1405e-5,
+            "slowest": 0.006233018
+          },
+          "DNSLookup": {
+            "average": 3.93668e-6,
+            "fastest": 5.1e-7,
+            "slowest": 3.5346e-5
+          }
+        },
+        "statusCodeDistribution": {
+          "200": 152788
+        },
+        "errorDistribution": {
+          "aborted due to deadline": 48
+        }
+      },
+      "rps": 50898.56177963847
+    },
+    {
+      "repeat": 2,
+      "shape": "chain",
+      "routes": 500,
+      "iterations": 40500,
+      "checksums": [10145250, 20250000, 0],
+      "ms": [784, 1385, 435],
+      "ns_per_request": [19358.024691358023, 34197.53086419753, 10740.74074074074],
+      "http": {
+        "summary": {
+          "successRate": 1.0,
+          "total": 3.00147091,
+          "slowest": 0.0239746,
+          "fastest": 4.8663e-5,
+          "average": 0.0024726781810397304,
+          "requestsPerSec": 20210.42409503146,
+          "totalData": 181833,
+          "sizePerRequest": 3,
+          "sizePerSec": 60581.29678824706
+        },
+        "responseTimeHistogram": {
+          "0.000048663": 1,
+          "0.0024412567": 30223,
+          "0.0048338504": 30258,
+          "0.0072264441": 119,
+          "0.009619037799999999": 3,
+          "0.0120116315": 2,
+          "0.014404225199999999": 1,
+          "0.0167968189": 1,
+          "0.0191894126": 1,
+          "0.0215820063": 0,
+          "0.023974600000000002": 2
+        },
+        "latencyPercentiles": {
+          "p10": 0.002198175,
+          "p25": 0.002299376,
+          "p50": 0.002442017,
+          "p75": 0.002597782,
+          "p90": 0.002755008,
+          "p95": 0.002931212,
+          "p99": 0.003713124,
+          "p99.9": 0.005308927,
+          "p99.99": 0.009996688
+        },
+        "rps": {
+          "mean": 20199.24453874285,
+          "stddev": 1677.32425798096,
+          "max": 23492.162101138958,
+          "min": 12909.591826727143,
+          "percentiles": {
+            "p10": 18338.630324778904,
+            "p25": 19104.604209614517,
+            "p50": 20430.568216165135,
+            "p75": 21285.206811386517,
+            "p90": 22243.936222826902,
+            "p95": 22650.82391870881,
+            "p99": 23162.485436963292,
+            "p99.9": 23492.162101138958,
+            "p99.99": 23492.162101138958
+          }
+        },
+        "details": {
+          "DNSDialup": {
+            "average": 0.00036668948,
+            "fastest": 6.8239e-5,
+            "slowest": 0.005080827
+          },
+          "DNSLookup": {
+            "average": 2.780340000000001e-6,
+            "fastest": 6.11e-7,
+            "slowest": 2.118e-5
+          }
+        },
+        "statusCodeDistribution": {
+          "200": 60611
+        },
+        "errorDistribution": {
+          "aborted due to deadline": 50
+        }
+      },
+      "rps": 20210.42409503146
+    },
+    {
+      "repeat": 2,
+      "shape": "list",
+      "routes": 500,
+      "iterations": 20000,
+      "checksums": [5010000, 10000000, 0],
+      "ms": [753, 942, 506],
+      "ns_per_request": [37650.0, 47100.0, 25300.0],
+      "http": {
+        "summary": {
+          "successRate": 1.0,
+          "total": 3.003177177,
+          "slowest": 0.081153411,
+          "fastest": 6.4813e-5,
+          "average": 0.003675635549657812,
+          "requestsPerSec": 13591.27270698488,
+          "totalData": 122307,
+          "sizePerRequest": 3,
+          "sizePerSec": 40725.86890200651
+        },
+        "responseTimeHistogram": {
+          "0.000064813": 1,
+          "0.0081736728": 40619,
+          "0.0162825326": 119,
+          "0.0243913924": 5,
+          "0.032500252199999996": 4,
+          "0.040609111999999996": 4,
+          "0.048717971799999996": 3,
+          "0.056826831599999995": 5,
+          "0.0649356914": 3,
+          "0.0730445512": 3,
+          "0.081153411": 3
+        },
+        "latencyPercentiles": {
+          "p10": 0.003060228,
+          "p25": 0.003324798,
+          "p50": 0.003573711,
+          "p75": 0.003798427,
+          "p90": 0.00427574,
+          "p95": 0.004921684,
+          "p99": 0.006754758,
+          "p99.9": 0.015251104,
+          "p99.99": 0.068322621
+        },
+        "rps": {
+          "mean": 13570.333770506006,
+          "stddev": 1811.9890694426672,
+          "max": 17122.272652266114,
+          "min": 4208.99209070256,
+          "percentiles": {
+            "p10": 11460.8387162412,
+            "p25": 13010.901173221931,
+            "p50": 13818.6136726171,
+            "p75": 14564.269207157336,
+            "p90": 15347.61847649985,
+            "p95": 16107.138683864672,
+            "p99": 16850.01421218455,
+            "p99.9": 17122.272652266114,
+            "p99.99": 17122.272652266114
+          }
+        },
+        "details": {
+          "DNSDialup": {
+            "average": 0.0021528033000000005,
+            "fastest": 0.000108557,
+            "slowest": 0.007480813
+          },
+          "DNSLookup": {
+            "average": 4.683479999999998e-6,
+            "fastest": 5.01e-7,
+            "slowest": 3.3604e-5
+          }
+        },
+        "statusCodeDistribution": {
+          "200": 40769
+        },
+        "errorDistribution": {
+          "aborted due to deadline": 48
+        }
+      },
+      "rps": 13591.27270698488
+    },
+    {
+      "repeat": 2,
+      "shape": "data",
+      "routes": 500,
+      "iterations": 35500,
+      "checksums": [8892750, 17750000, 0],
+      "ms": [721, 1485, 583],
+      "ns_per_request": [20309.859154929578, 41830.98591549296, 16422.535211267605],
+      "http": {
+        "summary": {
+          "successRate": 1.0,
+          "total": 3.002080281,
+          "slowest": 0.029316094,
+          "fastest": 5.1748e-5,
+          "average": 0.0026007926447286305,
+          "requestsPerSec": 19213.67671779461,
+          "totalData": 172896,
+          "sizePerRequest": 3,
+          "sizePerSec": 57592.064107761944
+        },
+        "responseTimeHistogram": {
+          "0.000051748": 1,
+          "0.0029781826": 52479,
+          "0.0059046172": 5110,
+          "0.008831051800000001": 33,
+          "0.011757486400000001": 2,
+          "0.014683921": 0,
+          "0.017610355600000002": 1,
+          "0.020536790200000002": 3,
+          "0.0234632248": 1,
+          "0.0263896594": 0,
+          "0.029316094": 2
+        },
+        "latencyPercentiles": {
+          "p10": 0.002329615,
+          "p25": 0.002418742,
+          "p50": 0.002547456,
+          "p75": 0.002732277,
+          "p90": 0.002953005,
+          "p95": 0.003074366,
+          "p99": 0.00366287,
+          "p99.9": 0.005586985,
+          "p99.99": 0.017903511
+        },
+        "rps": {
+          "mean": 19197.312438229856,
+          "stddev": 1667.1092806457223,
+          "max": 22761.328122493036,
+          "min": 8819.60156447705,
+          "percentiles": {
+            "p10": 16774.492164805353,
+            "p25": 18347.063888286295,
+            "p50": 19308.379836849268,
+            "p75": 20356.193271526,
+            "p90": 21226.43965323227,
+            "p95": 21600.39744731328,
+            "p99": 22407.12098304825,
+            "p99.9": 22761.328122493036,
+            "p99.99": 22761.328122493036
+          }
+        },
+        "details": {
+          "DNSDialup": {
+            "average": 0.00381865812,
+            "fastest": 7.3148e-5,
+            "slowest": 0.004926525
+          },
+          "DNSLookup": {
+            "average": 4.4246e-6,
+            "fastest": 6.11e-7,
+            "slowest": 3.8534e-5
+          }
+        },
+        "statusCodeDistribution": {
+          "200": 57632
+        },
+        "errorDistribution": {
+          "aborted due to deadline": 49
+        }
+      },
+      "rps": 19213.67671779461
+    }
+  ],
+  "builds": [
+    {
+      "shape": "list",
+      "routes": 5,
+      "seconds": 1.5681909729999006,
+      "bytes": 183600
+    },
+    {
+      "shape": "data",
+      "routes": 5,
+      "seconds": 1.6203133349999916,
+      "bytes": 183784
+    },
+    {
+      "shape": "chain",
+      "routes": 5,
+      "seconds": 1.5189919819999886,
+      "bytes": 178776
+    },
+    {
+      "shape": "list",
+      "routes": 50,
+      "seconds": 1.7191745990000982,
+      "bytes": 210208
+    },
+    {
+      "shape": "data",
+      "routes": 50,
+      "seconds": 2.425284710000142,
+      "bytes": 215024
+    },
+    {
+      "shape": "chain",
+      "routes": 50,
+      "seconds": 2.7217801809999855,
+      "bytes": 186992
+    },
+    {
+      "shape": "list",
+      "routes": 500,
+      "seconds": 4.28543672700016,
+      "bytes": 476864
+    },
+    {
+      "shape": "data",
+      "routes": 500,
+      "seconds": 11.85749097200005,
+      "bytes": 532104
+    },
+    {
+      "shape": "chain",
+      "routes": 500,
+      "seconds": 14.565187935999802,
+      "bytes": 277544
+    }
+  ]
+}

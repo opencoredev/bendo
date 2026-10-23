@@ -35,7 +35,7 @@ Run on ms-a2 with Bend 2.0.38 on 2026-10-22. The scratch code is in `~/scratch-b
 
 These hold for every ticket. Changing one needs a written reason in `docs/decisions/`.
 
-1. **The app is a template, and state reaches it as an argument.** `Serve.serve(~app, env, config)` takes the app as compile-time syntax. Handlers are top-level defs. Templates must be closed, so anything created at startup (store channels, config) travels in a runtime `env` argument; `Chan` is `Data`, so every connection gets its own copy. How a route table of many handlers is expressed is the first prototype (0.3).
+1. **The app is a template, and state reaches it as an argument.** `Serve.serve(~app, env, config)` takes the app as compile-time syntax. Handlers are top-level defs. Templates must be closed, so anything created at startup (store channels, config) travels in a runtime `env` argument; `Chan` is `Data`, so every connection gets its own copy. Decided in 0.3 ([0001](decisions/0001-route-table.md)): routes are a reusable data table mapping patterns to an app-owned `Data` tag, and one closed dispatcher def matches the tag to a top-level handler. The router only ever returns a tag and params, never a function.
 2. **Parse bytes, not strings.** Bend's `String` is a list of characters, and `Content-Length` counts bytes. The HTTP layer works on `TCP.recv_bytes` and UTF-8 encodes bodies itself, unless the M0 prototype shows a better path.
 3. **Pure core, thin IO shell.** Parsing, routing, middleware composition, JSON and validation are pure functions with laws. The accept loop and connection handling are `@unsafe` IO and are covered by integration tests instead of proofs.
 4. **One event loop for IO, all cores for compute.** Each connection runs in its own `IO.spawn` computation. Heavy handler work uses Bend's parallel calls, and `!` calls can move it to the GPU.
@@ -73,30 +73,46 @@ bendo/
 
 ## API sketch
 
-The final shape depends on the M0 route-table prototype. This is the target feel.
+This follows decision [0001](decisions/0001-route-table.md): a data route table with app-owned tags, and one closed dispatcher. Exact names settle in M2 and M3. This is the target feel.
 
 ```python
 import Base
 import bendo@0.1/main.bend as B
 
-def list_todos(c: B.Ctx) -> IO(B.Res):
-  B.json(c, Todos.to_json(Todos.all()))
+type Route is Data:
+  ListTodos{}
+  GetTodo{}
+  CreateTodo{}
 
-def get_todo(c: B.Ctx) -> IO(B.Res):
-  B.json(c, Todo.to_json(Todos.find(B.param(c, "id"))))
+def routes() -> B.Routes<Route>:
+  B.routes([
+    B.use(B.logger),
+    B.use(B.cors(B.cors_defaults)),
+    B.get("/todos", ListTodos{}),
+    B.get("/todos/:id{int}", GetTodo{}),
+    B.post("/todos", CreateTodo{}, B.body(TodoInput.schema)),
+  ])
 
-def app(req: B.Req) -> IO(B.Res):
-  B.app(~[
-    B.use(~B.logger),
-    B.use(~B.cors(B.cors_defaults)),
-    B.get("/todos", ~list_todos),
-    B.get("/todos/:id{int}", ~get_todo),
-    B.post("/todos", ~create_todo, B.body(TodoInput.schema)),
-  ], req)
+def list_todos(c: B.Ctx, env: Env) -> IO(B.Res):
+  B.json(c, Todos.to_json(Todos.all(env.todos)))
+
+def get_todo(c: B.Ctx, env: Env) -> IO(B.Res):
+  B.json(c, Todo.to_json(Todos.find(env.todos, B.param(c, "id"))))
+
+def handle(tag: Route, c: B.Ctx, env: Env) -> IO(B.Res):
+  match tag:
+    case ListTodos{}:
+      list_todos(c, env)
+    case GetTodo{}:
+      get_todo(c, env)
+    case CreateTodo{}:
+      create_todo(c, env)
 
 def main() -> IO(Unit):
-  B.serve(~app, B.env_empty, B.config_defaults)
+  B.serve(~handle, routes(), env_at_startup(), B.config_defaults)
 ```
+
+Middleware and schemas are data in the route table, so the spec router, the trie proof, `--bendo-routes` and `bendo gen` all read one description. Built-in middleware resolves through Bendo's own closed dispatcher; user middleware follows the same tag pattern. The tag type and the `handle` match repeat the route list once. Generating both from one declaration is a possible later convenience, not a v1 promise.
 
 ```ts
 import { createClient } from "bendo/client";
