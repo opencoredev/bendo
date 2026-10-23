@@ -57,6 +57,9 @@ import ./src/data/hex.bend as Hex
 import ./src/data/base64.bend as Base64
 import ./src/crypto/octets.bend as Octets
 
+import ./src/http/date.bend as HttpDate
+import ./proof/date-spec.bend as HttpDateSpec
+
 # LAW: a text response is a head with no blank line in it, then a blank
 # line, then the body. So the first blank line in the response is the one
 # that ends the head, and a client that cuts there reads the body back.
@@ -1241,3 +1244,43 @@ law http_error_private_message:
   for code: U32
   for message: String
   {Errors.message(Errors.HttpError{code, message, False{}}) == "Internal Server Error" : String}
+
+# BND-80: HTTP dates (docs/decisions/0007-http-date.md).
+#
+# Both laws cover every Unix second from 1970-01-01T00:00:00Z through
+# 9999-12-31T23:59:59Z, that is 0 <= second <= 253402300799. The bound avoids
+# that constant, which Bend's checkers would expand in unary. Let
+# d = second / 86400, the Unix day. Then d - 10957 (0 when negative) counts
+# days since 2000-01-01, and fewer than 20 whole 400-year Gregorian cycles of
+# 146097 days means d < 10957 + 20 * 146097 = 2932897, the day of
+# 10000-01-01. That holds exactly when second < 2932897 * 86400 =
+# 253402300800, so the bound selects the same seconds as
+# second <= 253402300799, no more and no fewer.
+
+# LAW: parsing the formatted IMF-fixdate of any supported second returns it.
+law http_date_roundtrip:
+  for +second: Nat
+  for bound: {Nat.is_lt(Nat.div(Nat.sub(Nat.div(second, 86400n), 10957n), 146097n), 20n) == True{} : Bool}
+  {HttpDate.parse_imf(HttpDate.format_imf(second)) == Some{second} : Maybe<&2, Nat>}
+
+# LAW: the formatted text is exact IMF-fixdate for that second. The spec in
+# proof/date-spec.bend shares no code with the codec: it checks the 29-byte
+# grammar, English day and month names, decimal fields, and that the fields
+# are the Gregorian date (counted day by day from 1970-01-01, century leap
+# rules included), weekday (counted from Thursday) and time of day of second.
+# The round trip alone cannot catch a wrong weekday, because the parser checks
+# the weekday through the formatter.
+law http_date_imf_spec:
+  for +second: Nat
+  for bound: {Nat.is_lt(Nat.div(Nat.sub(Nat.div(second, 86400n), 10957n), 146097n), 20n) == True{} : Bool}
+  {HttpDateSpec.denotes(HttpDate.format_imf(second), second) == True{} : Bool}
+
+# LAW: parsing is strict. Any text parse_imf accepts is exactly the formatted
+# IMF-fixdate of the second it returns, so malformed, obsolete or
+# non-canonical dates are never accepted.
+law http_date_parse_strict:
+  for +text: String
+  for +second: Nat
+  for ok: {HttpDate.parse_imf(text) == Some{second} : Maybe<&2, Nat>}
+  {HttpDate.format_imf(second) == text : String}
+
