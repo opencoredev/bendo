@@ -24,12 +24,17 @@ type Tag is Data:
   HookLogger{}
   HookMap{}
   HookId{}
+  HandlerError{}
+  HookAfter{}
+  HookError{}
   Builtin{id: B.Builtin}
 
 def handle(tag: Tag, +c: B.Context(Vars), env: Unit) -> IO(B.Res):
   match tag:
     case HookId{}: IO.pure(B.Res, C.text(Vars, c, Maybe.default(&2, String, C.request_id(Vars, c), "none") ++ ":" ++ Maybe.default(&2, String, C.param(Vars, c, "id"), "none")))
     case Id{}: IO.pure(B.Res, C.text(Vars, c, Maybe.default(&2, String, C.request_id(Vars, c), "none")))
+    case Hello{}: IO.pure(B.Res, C.text(Vars, c, "hello"))
+    case HandlerError{}: IO.pure(B.Res, Response.text(500, "handler error"))
     case Broken{}: IO.pure(B.Res, Response.body(200, [Request.Header{"bad", [13]}], []))
     case Json{}:
       do IO<B.Res>:
@@ -62,8 +67,28 @@ def accepted(res: B.Res) -> B.Res:
 
 def mapped(res: B.Res, path: String) -> B.Res:
   match path:
+    case "/hook-map": Response.text(201, "mapped")
+    case "/hook-explicit": Response.body(200, [Request.Header{"x-request-id", Response.utf8("explicit")}, Request.Header{"server-timing", Response.utf8("custom;dur=7")}], [])
+    case "/hook-invalid-map": Response.body(200, [Request.Header{"bad", [13]}], [])
     case "/hook-target/42": accepted(res)
     case _: res
+
+def after_response(res: B.Res, path: String) -> B.Res:
+  match path:
+    case "/hook-after": Response.text(202, "after")
+    case _: res
+
+def recover_hook(res: B.Res, active: Bool) -> B.Res:
+  match active:
+    case True{}: Response.text(503, "recovered")
+    case False{}: res
+
+def error_response(res: B.Res, path: String) -> B.Res:
+  match path:
+    case "/hook-invalid": res
+    case "/hook-invalid-map": res
+    case "/hook-invalid-recovery": Response.body(200, [Request.Header{"bad", [13]}], [])
+    case _: recover_hook(res, String.starts_with(path, "/hook"))
 
 def middleware_go(tag: Tag, +c: B.Context(Vars), env: Unit, next: B.Context(Vars) -> IO(B.Res)) -> IO(B.Res):
   match tag:
@@ -72,6 +97,14 @@ def middleware_go(tag: Tag, +c: B.Context(Vars), env: Unit, next: B.Context(Vars
     case HookTiming{}: optional_builtin(B.server_timing(), c, next, String.starts_with(C.path(Vars, c), "/hook"))
     case HookRewrite{}: rewritten(c, next, C.path(Vars, c))
     case HookLogger{}: optional_builtin(B.logger(), c, next, String.starts_with(C.path(Vars, c), "/hook-target") || String.eq(C.path(Vars, c), "/json"))
+    case HookAfter{}:
+      do IO<B.Res>:
+        res : B.Res <- next(c)
+        return after_response(res, C.path(Vars, c))
+    case HookError{}:
+      do IO<B.Res>:
+        res : B.Res <- next(c)
+        return error_response(res, C.path(Vars, c))
     case HookMap{}:
       do IO<B.Res>:
         res : B.Res <- next(c)
@@ -92,7 +125,9 @@ def main() -> IO(Unit):
     B.on_request(Tag, HookRequest{}),
     B.on_request(Tag, HookTiming{}),
     B.on_request(Tag, HookRewrite{}),
+    B.after_handle(Tag, HookAfter{}),
     B.map_response(Tag, HookMap{}),
+    B.on_error(Tag, HookError{}),
     B.on_after_response(Tag, HookLogger{}),
     B.use(Tag, Builtin{B.logger()}),
     B.use(Tag, Custom{}),
@@ -104,6 +139,14 @@ def main() -> IO(Unit):
     B.use(Tag, Builtin{B.pretty_json()}),
     B.use_path(Tag, "/powered", Builtin{B.powered_by("Bendo")} ),
     B.get(Tag, "/hook-target/:id", HookId{}),
+    B.get(Tag, "/hook-method", Hello{}),
+    B.get(Tag, "/hook-handler-error", HandlerError{}),
+    B.get(Tag, "/hook-invalid", Broken{}),
+    B.get(Tag, "/hook-invalid-recovery", Broken{}),
+    B.get(Tag, "/hook-invalid-map", Hello{}),
+    B.get(Tag, "/hook-map", Hello{}),
+    B.get(Tag, "/hook-after", Hello{}),
+    B.get(Tag, "/hook-explicit", Hello{}),
     B.get(Tag, "/", Hello{}),
     B.get(Tag, "/id", Id{}),
     B.get(Tag, "/reverse", Id{}),

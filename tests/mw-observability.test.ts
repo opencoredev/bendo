@@ -179,3 +179,30 @@ test("timing started in on_request retains handler marks after routing and rewri
     /^total;dur=\d+, mark_db;dur=4, mark_cache_59__32_hit_13__10_;dur=2$/,
   );
 });
+
+test.each([
+  ["/hook-missing", "GET", 503, "recovered"],
+  ["/hook-method", "POST", 503, "recovered"],
+  ["/hook-handler-error", "GET", 503, "recovered"],
+  ["/hook-map", "GET", 201, "mapped"],
+  ["/hook-after", "GET", 202, "after"],
+  ["/hook-invalid", "GET", 500, ""],
+  ["/hook-invalid-map", "GET", 500, ""],
+  ["/hook-invalid-recovery", "GET", 500, ""],
+])(
+  "final observability survives response replacement: %s %s",
+  async (path, method, status, body) => {
+    const res = await fetch(url + path, { method, headers: { "x-request-id": "final-42" } });
+    expect(res.status).toBe(status);
+    expect(await res.text()).toBe(body);
+    expect(res.headers.get("x-request-id")).toBe("final-42");
+    expect(res.headers.get("server-timing")).toMatch(/^total;dur=\d+$/);
+  },
+);
+
+test("explicit final response headers take precedence without duplicates", async () => {
+  const res = await fetch(url + "/hook-explicit", { headers: { "x-request-id": "incoming" } });
+  expect(res.status).toBe(200);
+  expect(res.headers.get("x-request-id")).toBe("explicit");
+  expect(res.headers.get("server-timing")).toBe("custom;dur=7");
+});

@@ -4,7 +4,6 @@ import ../app/observability.bend as Obs
 import ../app/store.bend as Store
 import ../http/response.bend as Response
 import ../http/bytes.bend as Bytes
-import ./common.bend as Common
 
 # Encode each non-alphanumeric UTF-32 code point as _<decimal>_. Encode the
 # underscore too, so distinct names never collide with this escape syntax.
@@ -43,10 +42,15 @@ def fields(marks: List<&2, Obs.Mark>) -> String:
     case Nil{}: ""
     case Obs.Mark{label, ms} <> t: ", " ++ label ++ ";dur=" ++ Nat.show(ms) ++ fields(t)
 
-def finish(res: Response.Res, ms: Nat, result: Result<&2, &2, Store.Error, List<&2, Obs.Mark>>) -> Response.Res:
+def final_value(ms: Nat, result: Result<&2, &2, Store.Error, List<&2, Obs.Mark>>) -> Maybe<&2, String>:
   match result:
-    case Fail{error}: Response.body(500, [], [])
-    case Done{marks}: Common.header(res, "server-timing", "total;dur=" ++ Nat.show(ms) ++ fields(List.reverse(&2, Obs.Mark, marks)))
+    case Fail{error}: None{}
+    case Done{marks}: Some{"total;dur=" ++ Nat.show(ms) ++ fields(List.reverse(&2, Obs.Mark, marks))}
+
+def finished(res: Response.Res, value: Maybe<&2, String>) -> Response.Res:
+  match value:
+    case None{}: Response.body(500, [], [])
+    case Some{text}: Obs.header(res, "server-timing", Some{text})
 
 def close(store: Store.Store<List<&2, Obs.Mark>>) -> IO(Unit):
   Store.Store{requests, timeout_ms} = store
@@ -55,18 +59,21 @@ def close(store: Store.Store<List<&2, Obs.Mark>>) -> IO(Unit):
 def run(-Vars: Data, c: C.Ctx<Vars>, id: Maybe<&2, String>, next: C.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
   do IO<Response.Res>:
     +store : Store.Store<List<&2, Obs.Mark>> <- Store.store(List<&2, Obs.Mark>, [])
+    +finalized : Chan(Maybe<&2, String>) <- Chan.new(Maybe<&2, String>, 1)
     before : Nat <- IO.now()
-    res : Response.Res <- next(C.with_observation(Vars, c, Obs.State{id, Some{store}}))
+    res : Response.Res <- next(C.with_observation(Vars, c, Obs.State{id, Some{store}, Some{finalized}}))
     after : Nat <- IO.now()
     marks : Result<&2, &2, Store.Error, List<&2, Obs.Mark>> <- Store.get(List<&2, Obs.Mark>, store)
     close(store)
-    return finish(res, Nat.sub(after, before), marks)
+    +value : Maybe<&2, String> = final_value(Nat.sub(after, before), marks)
+    sent : Result<&1, &1, Maybe<&2, String>, Unit> <- Chan.send(Maybe<&2, String>, finalized, value)
+    return finished(res, value)
 
 # Nested registrations share the outer owner's collector and never close it.
 def existing(-Vars: Data, c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res), state: Obs.State) -> IO(Response.Res):
   match state:
-    case Obs.State{id, None{}}: run(Vars, c, id, next)
-    case Obs.State{id, Some{store}}: next(c)
+    case Obs.State{id, None{}, finalized}: run(Vars, c, id, next)
+    case Obs.State{id, Some{store}, finalized}: next(c)
 
 def middleware(-Vars: Data, +c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
   existing(Vars, c, next, C.observation(Vars, c))

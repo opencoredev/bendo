@@ -26,8 +26,8 @@ def empty_500(res: B.Res, label: String) -> IO(Unit):
 
 def closed(state: Obs.State, +c: B.Ctx) -> IO(B.Res):
   match state:
-    case Obs.State{id, None{}}: IO.die(B.Res, 1, "timing collector missing")
-    case Obs.State{id, Some{store}}:
+    case Obs.State{id, None{}, finalized}: IO.die(B.Res, 1, "timing collector missing")
+    case Obs.State{id, Some{store}, finalized}:
       do IO<B.Res>:
         Timing.close(store)
         late : Bool <- B.timing_mark(Unit, c, "late", 1n)

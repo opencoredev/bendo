@@ -4,6 +4,7 @@ import ./table.bend as Table
 import ./context.bend as Context
 import ./middleware.bend as Middleware
 import ./hooks.bend as Hooks
+import ./observability.bend as Obs
 import ../data/urlencoded.bend as Query
 import ../router/methods.bend as Methods
 import ../router/router.bend as Router
@@ -97,7 +98,7 @@ def parsed_pending(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Contex
         +mapped : Response.Res <- Hooks.post(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_map(Tag, plan), latest, env, after)
         +checked : Response.Res = validated(mapped, Response.valid(mapped))
         recovered : Response.Res <- recover(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_errors(Tag, plan), latest, env, checked, error_response(checked))
-        +final : Response.Res = finish(method, recovered)
+        +final : Response.Res <- Obs.finalize(Context.observation(Vars, latest), finish(method, recovered))
         return (final, Hooks.observe(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_observers(Tag, plan), latest, env, final))
 
 def pending_routed(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), kind: Router.RouterKind, table: Table.Table<Tag>, env: Env, +req: Request.Req, body: List<&2, U32>) -> IO(Response.Res & IO(Unit)):

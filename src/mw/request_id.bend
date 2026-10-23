@@ -4,7 +4,6 @@ import ../app/observability.bend as Obs
 import ../http/response.bend as Response
 import ../crypto/random.bend as Random
 import ../data/json.bend as Json
-import ./common.bend as Common
 
 def safe_char(+c: U32) -> Bool:
   ((c >= 48 : U32) && (c <= 57 : U32)) || ((c >= 65 : U32) && (c <= 90 : U32)) || ((c >= 97 : U32) && (c <= 122 : U32)) || String.contains("._-", Char.show(Chr{c}))
@@ -21,10 +20,10 @@ def hex(bytes: List<&2, U32>) -> String:
     case +b <> t: SCon{Json.nibble(U32.div(b, 16)), SCon{Json.nibble(U32.mod(b, 16)), hex(t)}}
 
 def run(-Vars: Data, +c: C.Ctx<Vars>, +id: String, next: C.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
-  timing = Obs.timing(C.observation(Vars, c))
+  state = Obs.with_id(C.observation(Vars, c), id)
   do IO<Response.Res>:
-    res : Response.Res <- next(C.with_observation(Vars, c, Obs.State{Some{id}, timing}))
-    return Common.header(res, "x-request-id", id)
+    res : Response.Res <- next(C.with_observation(Vars, c, state))
+    return Obs.header(res, "x-request-id", Some{id})
 
 def generated(-Vars: Data, c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res), result: Result<&1, &1, Random.RandomError(), List<&2, U32>>) -> IO(Response.Res):
   match result:
