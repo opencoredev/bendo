@@ -150,3 +150,9 @@ hooks from outer to inner scope, then local hooks. Guard membership follows the
 selected registration, including its method and first-match priority.
 See [hook scopes and guards](decisions/0011-hook-scopes.md) for the typed API,
 request-rewrite behavior, schema extension slot and Elysia comparison.
+
+## Plugins
+
+A [plugin](guides/plugins.md) packages routes, middleware and hooks as a
+function over a `B.Builder(Tag)`. Named plugins apply once per app; their
+middleware and hooks follow the ordering and scope rules above.
