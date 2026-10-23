@@ -1,9 +1,12 @@
 # serve_static: the IO shell around the pure static modules (BND-45).
 # Path resolution, ranges, MIME types and entity tags are pure; this file
-# only opens, reads and closes the file. See docs/static.md.
+# only opens, reads, streams and closes the file. See docs/static.md.
 import Base
 import ../app/context.bend as C
 import ../app/errors.bend as Errors
+import ../app/observability.bend as Observation
+import ../stream.bend as Stream
+import ../http/stream_types.bend as T
 import ../http/request.bend as Request
 import ../http/response.bend as Response
 import ../http/date.bend as HttpDate
@@ -17,13 +20,14 @@ import ./mime.bend as Mime
 # root: the directory to serve, absolute or relative to the working directory.
 # prefix: the mount path stripped from the request path, "" at the site root.
 # index: the file served for a path ending in '/', "" for none.
-# max_bytes: the largest body read into memory for one response.
+# buffer_bytes: the largest body read into memory and sent with a
+# Content-Length. A longer body streams in 64 KiB reads.
 # cache_control: an optional Cache-Control value for served files.
 type Options is Data:
-  Options{root: String, prefix: String, index: String, max_bytes: Nat, cache_control: Maybe<&2, String>}
+  Options{root: String, prefix: String, index: String, buffer_bytes: Nat, cache_control: Maybe<&2, String>}
 
 def defaults(root: String) -> Options:
-  Options{root, "", "index.html", 8388608n, None{}}
+  Options{root, "", "index.html", 1048576n, None{}}
 
 def mounted(options: Options, prefix: String) -> Options:
   Options{root, old, index, max, cache} = options
@@ -33,7 +37,7 @@ def with_index(options: Options, index: String) -> Options:
   Options{root, prefix, old, max, cache} = options
   Options{root, prefix, index, max, cache}
 
-def with_max_bytes(options: Options, max: Nat) -> Options:
+def with_buffer_bytes(options: Options, max: Nat) -> Options:
   Options{root, prefix, index, old, cache} = options
   Options{root, prefix, index, max, cache}
 
@@ -102,6 +106,44 @@ def read_go(k: Nat, got: File & Result<&1, &1, U32 & String, List<&2, U32>>, s: 
 # Bytes start..start+length-1, read in 64 KiB chunks.
 def read_range(file: File, start: Nat, +length: Nat) -> IO(File & Result<&1, &1, U32 & String, List<&2, U32>>):
   read_go(Nat.div(Nat.add(length, Nat.sub(chunk(), 1n)), chunk()), (file, Done{[]}), Reading{start, length, 0n, []})
+
+# Streaming: the producer owns the file and reads the next chunk only when
+# the previous one has been sent. Cleanup closes the file exactly once,
+# whether the stream ends, fails, is cancelled or is never pulled (HEAD).
+type Pump is Type:
+  Pump{file: File, next: Nat, left: Nat}
+
+def pump_chunk(file: File, +next: Nat, +left: Nat, +size: Nat, bytes: List<&2, U32>, full: Bool) -> T.Step<Pump>:
+  match full:
+    case True{}: T.Chunk{bytes, Pump{file, Nat.add(next, size), Nat.sub(left, size)}}
+    case False{}: T.Failed{Pump{file, next, left}}
+
+# A short read means the file shrank after it was measured.
+def pump_result(file: File, +next: Nat, +left: Nat, +size: Nat, r: Result<&1, &1, U32 & String, List<&2, U32>>) -> T.Step<Pump>:
+  match r:
+    case Fail{e}: T.Failed{Pump{file, next, left}}
+    case Done{+bytes}: pump_chunk(file, next, left, size, bytes, Nat.is_eq(List.length(&2, U32, bytes), size))
+
+def pumped(+next: Nat, +left: Nat, +size: Nat, got: File & Result<&1, &1, U32 & String, List<&2, U32>>) -> T.Step<Pump>:
+  (file, r) = got
+  pump_result(file, next, left, size, r)
+
+def pump_at(file: File, +next: Nat, left: Nat) -> IO(T.Step<Pump>):
+  match left:
+    case 0n: IO.pure(T.Step<Pump>, T.End{Pump{file, next, 0n}})
+    case 1n+(+l):
+      +size = request(1n+l)
+      do IO<T.Step<Pump>>:
+        got : File & Result<&1, &1, U32 & String, List<&2, U32>> <- File.read_at(file, U32.from_nat(next), U32.from_nat(size))
+        return pumped(next, 1n+l, size, got)
+
+def pump_step(p: Pump) -> IO(T.Step<Pump>):
+  match p:
+    case Pump{file, next, left}: pump_at(file, next, left)
+
+def pump_close(p: Pump) -> IO(Unit):
+  match p:
+    case Pump{file, next, left}: File.close(file)
 
 # Request fields.
 
@@ -172,39 +214,73 @@ def maybe_header(-Vars: Data, c: C.Ctx<Vars>, name: String, value: Maybe<&2, Str
 def nonempty(+s: String) -> Maybe<&2, String>:
   E.choose(Maybe<&2, String>, String.is_empty(s), u => None{}, u => Some{s})
 
+# Validators exist only for a settled file, one whose mtime and ctime are at
+# least two seconds old (see static_file.bend). A file still being written
+# gets no ETag or Last-Modified and every conditional field is ignored, so a
+# change within the same second can never produce a stale 304.
+# changed is the later of mtime and ctime, in seconds.
+type Validators is Data:
+  Settled{tag: String, modified: String, mtime: Nat, changed: Nat}
+  Unsettled{}
+
+def validators_of(stamp: Maybe<&2, String>, +mtime: Nat, changed: Nat) -> Validators:
+  match stamp:
+    case None{}: Unsettled{}
+    case Some{s}: Settled{Etag.strong(s), HttpDate.format_imf(mtime), mtime, changed}
+
+def validator_headers(-Vars: Data, c: C.Ctx<Vars>, v: Validators) -> C.Ctx<Vars>:
+  match v:
+    case Unsettled{}: c
+    case Settled{tag, modified, mtime, changed}: C.header(Vars, C.header(Vars, c, "etag", tag), "last-modified", modified)
+
 # Validators and fixed fields on every file response, 304 included.
-def validated(-Vars: Data, c: C.Ctx<Vars>, +tag: String, +modified: String, cache: Maybe<&2, String>) -> C.Ctx<Vars>:
-  +a = C.header(Vars, c, "etag", tag)
-  +b = maybe_header(Vars, a, "last-modified", nonempty(modified))
-  +d = C.header(Vars, C.header(Vars, b, "accept-ranges", "bytes"), "x-content-type-options", "nosniff")
+def validated(-Vars: Data, c: C.Ctx<Vars>, v: Validators, cache: Maybe<&2, String>) -> C.Ctx<Vars>:
+  +d = C.header(Vars, C.header(Vars, validator_headers(Vars, c, v), "accept-ranges", "bytes"), "x-content-type-options", "nosniff")
   maybe_header(Vars, d, "cache-control", cache)
 
-def since_parsed(+mtime: Nat, parsed: Maybe<&2, Nat>) -> Bool:
+def since_parsed(+changed: Nat, parsed: Maybe<&2, Nat>) -> Bool:
   match parsed:
     case None{}: False{}
-    case Some{t}: Nat.is_le(mtime, t)
+    case Some{t}: Nat.is_le(changed, t)
 
-# A date that does not parse as IMF-fixdate is ignored.
-def since(+mtime: Nat, value: Maybe<&2, String>) -> Bool:
+# If-Modified-Since holds when neither the content nor the inode changed
+# after the date: ctime counts too, so a copy that restored an old mtime
+# (cp -p, rsync -t) is not reported unmodified. A date that does not parse
+# as IMF-fixdate is ignored.
+def since(+changed: Nat, value: Maybe<&2, String>) -> Bool:
   match value:
     case None{}: False{}
-    case Some{v}: since_parsed(mtime, HttpDate.parse_imf(v))
+    case Some{v}: since_parsed(changed, HttpDate.parse_imf(v))
 
-# If-None-Match decides when present; If-Modified-Since only without it.
-def fresh(+tags: List<&2, String>, +tag: String, +mtime: Nat, modified_since: Maybe<&2, String>) -> Bool:
+def fresh_settled(+tags: List<&2, String>, +tag: String, +changed: Nat, modified_since: Maybe<&2, String>) -> Bool:
   match tags:
-    case Nil{}: since(mtime, modified_since)
+    case Nil{}: since(changed, modified_since)
     case h <> t: Etag.none_match(tags, tag)
 
-# If-Range: a strong tag that matches, or the exact Last-Modified date. The
-# tags here are weak, so only the date form can keep a range.
-def range_holds(value: Maybe<&2, String>, +tag: String, +modified: String) -> Bool:
+# If-None-Match decides when present; If-Modified-Since only without it.
+def fresh(+tags: List<&2, String>, v: Validators, modified_since: Maybe<&2, String>) -> Bool:
+  match v:
+    case Unsettled{}: False{}
+    case Settled{+tag, modified, mtime, +changed}: fresh_settled(tags, tag, changed, modified_since)
+
+# If-Range: a strong tag that matches, or the exact Last-Modified date of a
+# file whose ctime is no later than that date. Anything else, including any
+# If-Range on an unsettled file, sends the whole file.
+def range_settled(+v: String, +tag: String, +modified: String, +mtime: Nat, +changed: Nat) -> Bool:
+  Etag.strong_eq(v, tag) || (String.eq(v, modified) && Nat.is_le(changed, mtime))
+
+def range_validated(+field: String, v: Validators) -> Bool:
+  match v:
+    case Unsettled{}: False{}
+    case Settled{+tag, +modified, +mtime, +changed}: range_settled(field, tag, modified, mtime, changed)
+
+def range_holds(value: Maybe<&2, String>, v: Validators) -> Bool:
   match value:
     case None{}: True{}
-    case Some{+v}: Etag.strong_eq(String.trim(v), tag) || (Bool.not(String.is_empty(modified)) && String.eq(String.trim(v), modified))
+    case Some{+field}: range_validated(String.trim(field), v)
 
-def range_field(-Vars: Data, +c: C.Ctx<Vars>, +tag: String, +modified: String) -> Maybe<&2, String>:
-  E.choose(Maybe<&2, String>, range_holds(C.request_header(Vars, c, "if-range"), tag, modified), u => C.request_header(Vars, c, "range"), u => None{})
+def range_field(-Vars: Data, +c: C.Ctx<Vars>, +v: Validators) -> Maybe<&2, String>:
+  E.choose(Maybe<&2, String>, range_holds(C.request_header(Vars, c, "if-range"), v), u => C.request_header(Vars, c, "range"), u => None{})
 
 def closed(file: File, res: Response.Res) -> IO(Response.Res):
   do IO<Response.Res>:
@@ -217,18 +293,42 @@ def sent(-Vars: Data, c: C.Ctx<Vars>, +media: String, read: File & Result<&1, &1
     case Fail{e}: closed(file, C.error(Vars, c, Errors.http_error(500, "")))
     case Done{bytes}: closed(file, C.body(Vars, c, bytes, Some{media}))
 
-def body_fits(-Vars: Data, +c: C.Ctx<Vars>, +media: String, file: File, +start: Nat, +length: Nat, fits: Bool) -> IO(Response.Res):
-  match fits:
-    case True{}:
-      do IO<Response.Res>:
-        read : File & Result<&1, &1, U32 & String, List<&2, U32>> <- read_range(file, start, length)
-        sent(Vars, c, media, read)
-    case False{}: closed(file, C.error(Vars, c, Errors.http_error(500, "")))
+def buffered(-Vars: Data, +c: C.Ctx<Vars>, +media: String, file: File, +start: Nat, +length: Nat) -> IO(Response.Res):
+  do IO<Response.Res>:
+    read : File & Result<&1, &1, U32 & String, List<&2, U32>> <- read_range(file, start, length)
+    sent(Vars, c, media, read)
 
-# Without streaming (BND-48), a body above max_bytes is refused with 500
-# instead of being buffered. Ranges within the cap still work.
+# Hand the file to the stream transport, which pulls one 64 KiB chunk per
+# send and never runs ahead of the socket.
+def streamed(-Vars: Data, +c: C.Ctx<Vars>, +media: String, file: File, +start: Nat, +length: Nat) -> IO(Response.Res):
+  Stream.register(Observation.stream(C.observation(Vars, c)), C.body(Vars, c, [], Some{media}), Stream.plan(~Pump, ~pump_step, ~pump_close, Pump{file, start, length}, Stream.defaults()))
+
+def body_by(-Vars: Data, +c: C.Ctx<Vars>, +media: String, file: File, +start: Nat, +length: Nat, stream: Bool) -> IO(Response.Res):
+  match stream:
+    case True{}: streamed(Vars, c, media, file, start, length)
+    case False{}: buffered(Vars, c, media, file, start, length)
+
+def http11(v: Request.Version) -> Bool:
+  match v:
+    case Request.Http11{}: True{}
+    case Request.Http10{}: False{}
+
+def is_head(m: Request.Method) -> Bool:
+  match m:
+    case Request.Head{}: True{}
+    case _: False{}
+
+def head_request(r: Request.Req) -> Bool:
+  Request.Req{m, p, q, v, hs} = r
+  is_head(m) && http11(v)
+
+# A body up to buffer_bytes is read and sent with Content-Length. A longer
+# one streams with chunked encoding, so memory stays at one chunk whatever
+# the file size. HEAD over HTTP/1.1 also goes through the stream, which the
+# transport never pulls for HEAD, so its body is never read. HTTP/1.0 cannot
+# carry a stream: a body above buffer_bytes is answered 505 there.
 def body(-Vars: Data, +c: C.Ctx<Vars>, +max: Nat, +media: String, file: File, +start: Nat, +length: Nat) -> IO(Response.Res):
-  body_fits(Vars, c, media, file, start, length, Nat.is_le(length, max))
+  body_by(Vars, c, media, file, start, length, head_request(C.request(Vars, c)) || Nat.is_lt(max, length))
 
 def content_range(+first: Nat, +last: Nat, +size: Nat) -> String:
   "bytes " ++ Nat.show(first) ++ "-" ++ Nat.show(last) ++ "/" ++ Nat.show(size)
@@ -241,21 +341,20 @@ def respond_range(-Vars: Data, +c: C.Ctx<Vars>, +max: Nat, +media: String, file:
     case Range.Unsatisfiable{}:
       closed(file, C.error(Vars, C.header(Vars, c, "content-range", "bytes */" ++ Nat.show(size)), Errors.http_error(416, "")))
 
-def respond_fresh(-Vars: Data, +c: C.Ctx<Vars>, +max: Nat, +media: String, file: File, +size: Nat, +tag: String, +modified: String, is_fresh: Bool) -> IO(Response.Res):
+def respond_fresh(-Vars: Data, +c: C.Ctx<Vars>, +max: Nat, +media: String, file: File, +size: Nat, +v: Validators, is_fresh: Bool) -> IO(Response.Res):
   match is_fresh:
     case True{}: closed(file, Response.not_modified(headers_of(Vars, c), None{}))
-    case False{}: respond_range(Vars, c, max, media, file, size, Range.select(range_field(Vars, c, tag, modified), size))
+    case False{}: respond_range(Vars, c, max, media, file, size, Range.select(range_field(Vars, c, v), size))
 
-def respond(-Vars: Data, +c: C.Ctx<Vars>, +max: Nat, cache: Maybe<&2, String>, +media: String, file: File, +size: Nat, +mtime: Nat) -> IO(Response.Res):
-  +tag = Etag.weak(size, mtime)
-  +modified = HttpDate.format_imf(mtime)
-  +conditional = fresh(ascii_all(C.header_bytes(Vars, c, "if-none-match")), tag, mtime, C.request_header(Vars, c, "if-modified-since"))
-  respond_fresh(Vars, validated(Vars, c, tag, modified, cache), max, media, file, size, tag, modified, conditional)
+def respond(-Vars: Data, +c: C.Ctx<Vars>, +max: Nat, cache: Maybe<&2, String>, +media: String, file: File, +size: Nat, +mtime: Nat, +changed: Nat, +stamp: String) -> IO(Response.Res):
+  +v = validators_of(nonempty(stamp), mtime, changed)
+  +conditional = fresh(ascii_all(C.header_bytes(Vars, c, "if-none-match")), v, C.request_header(Vars, c, "if-modified-since"))
+  respond_fresh(Vars, validated(Vars, c, v, cache), max, media, file, size, v, conditional)
 
-def opened(-Vars: Data, +c: C.Ctx<Vars>, +rest: String, +index: String, +max: Nat, cache: Maybe<&2, String>, +media: String, result: Result<&1, &1, U32 & String, File & (Nat & Nat)>) -> IO(Response.Res):
+def opened(-Vars: Data, +c: C.Ctx<Vars>, +rest: String, +index: String, +max: Nat, cache: Maybe<&2, String>, +media: String, result: Result<&1, &1, U32 & String, File & (Nat & (Nat & (Nat & String)))>) -> IO(Response.Res):
   match result:
     case Fail{(code, message)}: open_failed(Vars, c, rest, index, code)
-    case Done{(file, (size, mtime))}: respond(Vars, c, max, cache, media, file, size, mtime)
+    case Done{(file, (size, (mtime, (changed, stamp))))}: respond(Vars, c, max, cache, media, file, size, mtime, changed, stamp)
 
 def located(-Vars: Data, +c: C.Ctx<Vars>, +rest: String, target: Maybe<&2, String>, +options: Options) -> IO(Response.Res):
   match target:
@@ -263,7 +362,7 @@ def located(-Vars: Data, +c: C.Ctx<Vars>, +rest: String, target: Maybe<&2, Strin
     case Some{+full}:
       Options{+root, prefix, +index, +max, cache} = options
       do IO<Response.Res>:
-        result : Result<&1, &1, U32 & String, File & (Nat & Nat)> <- StaticFile.open_beneath(root, full)
+        result : Result<&1, &1, U32 & String, File & (Nat & (Nat & (Nat & String)))> <- StaticFile.open_beneath(root, full)
         opened(Vars, c, rest, index, max, cache, Mime.content_type(full), result)
 
 # The mount path itself ("" after the prefix) is treated as its directory.

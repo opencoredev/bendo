@@ -13,7 +13,11 @@ export const COMPILE_TEST_TIMEOUT_MS = 200_000;
 /** Per-test timeout for tests that push megabyte inputs through `.mjs` builds. */
 export const SLOW_TEST_TIMEOUT_MS = 120_000;
 
-export type RunningServer = { url: string; [Symbol.asyncDispose]: () => Promise<void> };
+export type RunningServer = {
+  url: string;
+  pid: number;
+  [Symbol.asyncDispose]: () => Promise<void>;
+};
 
 type Target = "native" | "mjs" | "js";
 
@@ -161,6 +165,7 @@ async function attempt(
         kind: "up",
         server: {
           url,
+          pid: proc.pid,
           [Symbol.asyncDispose]: async () => {
             proc.kill();
             await proc.exited;

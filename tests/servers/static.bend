@@ -19,7 +19,7 @@ def static_opts(env: Env) -> B.StaticOptions:
 
 def small_opts(env: Env) -> B.StaticOptions:
   Env{root, app} = env
-  B.static_max_bytes(B.static_mounted(B.static_options(root), "/small"), 1000n)
+  B.static_buffer_bytes(B.static_mounted(B.static_options(root), "/small"), 1000n)
 
 def noindex_opts(env: Env) -> B.StaticOptions:
   Env{root, app} = env

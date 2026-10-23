@@ -2,10 +2,12 @@
 # cache middleware (BND-41) can reuse it.
 import Base
 
-# A weak tag from a file's size and modification second. Two versions with
-# the same size written within one second would share it, so it is weak.
-def weak(size: Nat, mtime: Nat) -> String:
-  "W/\"" ++ Nat.show(size) ++ "-" ++ Nat.show(mtime) ++ "\""
+# A strong tag from a settled file's change stamp (src/effects/static_file.bend):
+# device, inode, size, mtime and ctime in nanoseconds. ctime moves on every
+# write and cannot be set back, so the tag changes whenever the content does,
+# barring a wall clock stepped backwards onto the same nanosecond.
+def strong(+stamp: String) -> String:
+  "\"" ++ stamp ++ "\""
 
 def opaque_of(weak_prefix: Bool, +tag: String) -> String:
   match weak_prefix:
@@ -39,6 +41,8 @@ def any_field(values: List<&2, String>, +tag: String) -> Bool:
 # If-None-Match: True when any field lists the current tag or "*", so the
 # answer is 304 for GET and HEAD. Repeated fields are read as one list.
 # Splitting on ',' cannot invent a match for a tag without a comma, which
-# every tag from `weak` is.
+# every tag from `strong` is. This is the one place static files compare
+# If-None-Match; when BND-41's Conditional.matches (the canonical RFC 9110
+# weak comparison) reaches main, this becomes `any field matches` over it.
 def none_match(values: List<&2, String>, +tag: String) -> Bool:
   any_field(values, tag)

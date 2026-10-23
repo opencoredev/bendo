@@ -216,7 +216,7 @@ def StaticOptions() -> Data: Static.Options
 def static_options(root: String) -> Static.Options: Static.defaults(root)
 def static_mounted(options: Static.Options, prefix: String) -> Static.Options: Static.mounted(options, prefix)
 def static_index(options: Static.Options, index: String) -> Static.Options: Static.with_index(options, index)
-def static_max_bytes(options: Static.Options, max: Nat) -> Static.Options: Static.with_max_bytes(options, max)
+def static_buffer_bytes(options: Static.Options, max: Nat) -> Static.Options: Static.with_buffer_bytes(options, max)
 def static_cache_control(options: Static.Options, value: String) -> Static.Options: Static.with_cache_control(options, value)
 def serve_static(c: Handle.Ctx, options: Static.Options) -> IO(Response.Res): Static.serve(Unit, c, options)
 def serve_static_with(-Vars: Data, c: Context.Ctx<Vars>, options: Static.Options) -> IO(Response.Res): Static.serve(Vars, c, options)

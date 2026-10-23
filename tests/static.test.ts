@@ -8,6 +8,7 @@ import {
   rmSync,
   statSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { connect } from "node:net";
@@ -26,7 +27,7 @@ const outside = join(base, "outside");
 
 // 2000 bytes, every value distinct from its neighbours, so a wrong offset shows.
 const data = Buffer.from(Array.from({ length: 2000 }, (_, i) => (i * 7 + 3) % 256));
-// Larger than one 64 KiB read, smaller than the default cap.
+// Larger than one 64 KiB read, smaller than the default 1 MiB buffer.
 const large = Buffer.from(Array.from({ length: 200_000 }, (_, i) => (i * 31 + (i >> 8)) % 256));
 
 function setup(): void {
@@ -62,10 +63,15 @@ function setup(): void {
   if (fifo.exitCode !== 0) throw new Error("mkfifo failed");
 }
 setup();
+const setupDone = Date.now();
+
+/** Files get validators only once their mtime and ctime are two seconds old. */
+const SETTLE_MS = 2200;
 
 let server: RunningServer;
 beforeAll(async () => {
   server = await start(binary, "127.0.0.1", { BENDO_STATIC_ROOT: root, BENDO_STATIC_APP: APP });
+  await Bun.sleep(Math.max(0, setupDone + SETTLE_MS - Date.now()));
 });
 afterAll(async () => {
   await server[Symbol.asyncDispose]();
@@ -75,7 +81,7 @@ afterAll(async () => {
 type RawResponse = { status: number; head: string; body: Buffer };
 
 /** Sends a request target byte for byte; fetch would normalize dot segments. */
-async function raw(target: string, method = "GET"): Promise<RawResponse> {
+async function raw(target: string, method = "GET", version = "1.1"): Promise<RawResponse> {
   const port = Number(new URL(server.url).port);
   const bytes = await new Promise<Buffer>((done, fail) => {
     const socket = connect(port, "127.0.0.1");
@@ -86,7 +92,7 @@ async function raw(target: string, method = "GET"): Promise<RawResponse> {
         Buffer.concat([
           Buffer.from(`${method} `, "latin1"),
           Buffer.from(target, "latin1"),
-          Buffer.from(" HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n", "latin1"),
+          Buffer.from(` HTTP/${version}\r\nHost: test\r\nConnection: close\r\n\r\n`, "latin1"),
         ]),
       ),
     );
@@ -104,9 +110,19 @@ async function get(path: string, headers: Record<string, string> = {}): Promise<
   return fetch(server.url + path, { headers, redirect: "manual" });
 }
 
+/** The strong tag static_file.c builds: dev, inode, size, mtime and ctime in hex. */
 function tagOf(path: string): string {
-  const st = statSync(path);
-  return `W/"${st.size}-${Math.floor(st.mtimeMs / 1000)}"`;
+  const st = statSync(path, { bigint: true });
+  const time = (ns: bigint): string =>
+    `${(ns / 1_000_000_000n).toString(16)}.${(ns % 1_000_000_000n).toString(16)}`;
+  const ids = [st.dev, st.ino, st.size].map((n) => n.toString(16)).join("-");
+  return `"${ids}-${time(st.mtimeNs)}-${time(st.ctimeNs)}"`;
+}
+
+/** Open descriptors of the server process, or undefined off Linux. */
+function openFds(): number | undefined {
+  if (process.platform !== "linux") return undefined;
+  return readdirSync(`/proc/${server.pid}/fd`).length;
 }
 
 function modifiedOf(path: string): string {
@@ -127,11 +143,21 @@ describe("serving files", () => {
     expect(response.headers.get("last-modified")).toBe(modifiedOf(join(root, "hello.txt")));
   });
 
-  test("HEAD sends the GET length and no body", async () => {
+  test("HEAD sends the GET validators and no body, without reading the file", async () => {
     const response = await raw("/static/hello.txt", "HEAD");
     expect(response.status).toBe(200);
+    expect(response.head).toContain(`\r\netag: ${tagOf(join(root, "hello.txt"))}`);
+    expect(response.head).toContain("\r\ncontent-type: text/plain; charset=utf-8");
+    // The transport derives Content-Length from a body; HEAD never reads one.
+    expect(response.head).not.toContain("content-length");
+    expect(response.head).not.toContain("transfer-encoding");
+    expect(response.body.length).toBe(0);
+  });
+
+  test("HTTP/1.0 HEAD reads a buffered body to send its length", async () => {
+    const response = await raw("/static/hello.txt", "HEAD", "1.0");
+    expect(response.status).toBe(200);
     expect(response.head).toContain("\r\ncontent-length: 11");
-    expect(response.head).toContain("\r\netag: ");
     expect(response.body.length).toBe(0);
   });
 
@@ -203,7 +229,7 @@ describe("conditional requests", () => {
   test("If-None-Match with the current tag gives 304 with validators and no body", async () => {
     const response = await raw("/static/hello.txt", "GET");
     expect(response.status).toBe(200);
-    for (const value of [tagOf(file()), tagOf(file()).slice(2), `"other", ${tagOf(file())}`, "*"]) {
+    for (const value of [tagOf(file()), `W/${tagOf(file())}`, `"other", ${tagOf(file())}`, "*"]) {
       const cached = await get("/static/hello.txt", { "if-none-match": value });
       expect(cached.status).toBe(304);
       expect(cached.headers.get("etag")).toBe(tagOf(file()));
@@ -231,6 +257,52 @@ describe("conditional requests", () => {
     expect((await get("/static/hello.txt", { "if-modified-since": earlier })).status).toBe(200);
     expect((await get("/static/hello.txt", { "if-modified-since": "yesterday" })).status).toBe(200);
   });
+});
+
+describe("validators follow content", () => {
+  test("a file changed in the last two seconds has no validators and ignores conditionals", async () => {
+    const path = join(root, "fresh.txt");
+    writeFileSync(path, "fresh");
+    const response = await get("/static/fresh.txt", {
+      "if-none-match": "*",
+      "if-modified-since": new Date(Date.now() + 3_600_000).toUTCString(),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("fresh");
+    expect(response.headers.get("etag")).toBeNull();
+    expect(response.headers.get("last-modified")).toBeNull();
+  });
+
+  test("a same-size rewrite that restores mtime still changes the tag", async () => {
+    const path = join(root, "swap.txt");
+    writeFileSync(path, "hello world");
+    const old = statSync(path);
+    await Bun.sleep(SETTLE_MS);
+    const first = await get("/static/swap.txt");
+    const tag = first.headers.get("etag");
+    const modified = first.headers.get("last-modified");
+    expect(tag).toBe(tagOf(path));
+    expect(modified).not.toBeNull();
+    // Same size, same mtime: only ctime records the change.
+    writeFileSync(path, "other bytes");
+    utimesSync(path, old.atime, old.mtime);
+    const soon = await get("/static/swap.txt", { "if-none-match": tag ?? "" });
+    expect(soon.status).toBe(200);
+    expect(await soon.text()).toBe("other bytes");
+    await Bun.sleep(SETTLE_MS);
+    const later = await get("/static/swap.txt", { "if-none-match": tag ?? "" });
+    expect(later.status).toBe(200);
+    expect(await later.text()).toBe("other bytes");
+    expect(later.headers.get("etag")).not.toBe(tag);
+    expect(later.headers.get("last-modified")).toBe(modified);
+    // The restored mtime matches, but ctime is newer, so not 304.
+    expect((await get("/static/swap.txt", { "if-modified-since": modified ?? "" })).status).toBe(
+      200,
+    );
+    expect(
+      (await get("/static/swap.txt", { "if-none-match": later.headers.get("etag") ?? "" })).status,
+    ).toBe(304);
+  }, 30_000);
 });
 
 describe("range requests", () => {
@@ -311,10 +383,14 @@ describe("range requests", () => {
     const full = await range("bytes=0-9", { "if-range": stale });
     expect(full.status).toBe(200);
     expect(full.body.equals(data)).toBe(true);
-    // Weak tags never pass the strong comparison If-Range requires.
+    // The tags are strong, so the current tag keeps the range too.
     expect((await range("bytes=0-9", { "if-range": tagOf(join(root, "data.bin")) })).status).toBe(
-      200,
+      206,
     );
+    expect(
+      (await range("bytes=0-9", { "if-range": `W/${tagOf(join(root, "data.bin"))}` })).status,
+    ).toBe(200);
+    expect((await range("bytes=0-9", { "if-range": '"other"' })).status).toBe(200);
   });
 
   test("HEAD with a range sends 206 headers and no body", async () => {
@@ -324,7 +400,7 @@ describe("range requests", () => {
     });
     expect(response.status).toBe(206);
     expect(response.headers.get("content-range")).toBe("bytes 0-9/2000");
-    expect(response.headers.get("content-length")).toBe("10");
+    expect(await response.text()).toBe("");
   });
 });
 
@@ -378,12 +454,59 @@ describe("confinement", () => {
     expect(response.status).toBe(405);
     expect(response.headers.get("allow")).toBe("GET, HEAD");
   });
+});
 
-  test("a body over max_bytes is refused, and a range under it is served", async () => {
-    expect((await get("/small/data.bin")).status).toBe(500);
+describe("streaming bodies above buffer_bytes", () => {
+  test("a body over buffer_bytes streams chunked; a range under it is buffered", async () => {
+    const whole = await raw("/small/data.bin");
+    expect(whole.status).toBe(200);
+    expect(whole.head).toContain("\r\ntransfer-encoding: chunked");
+    expect(whole.head).not.toContain("content-length");
+    expect(whole.head).toContain(`\r\netag: ${tagOf(join(root, "data.bin"))}`);
+    const streamed = await get("/small/data.bin");
+    expect(Buffer.from(await streamed.arrayBuffer()).equals(data)).toBe(true);
     const part = await get("/small/data.bin", { range: "bytes=0-99" });
     expect(part.status).toBe(206);
+    expect(part.headers.get("content-length")).toBe("100");
     expect(Buffer.from(await part.arrayBuffer()).equals(data.subarray(0, 100))).toBe(true);
+  });
+
+  test("a long range streams across 64 KiB reads", async () => {
+    const response = await get("/small/large.bin", { range: "bytes=1000-150000" });
+    expect(response.status).toBe(206);
+    expect(response.headers.get("content-range")).toBe(`bytes 1000-150000/${large.length}`);
+    expect(response.headers.get("content-length")).toBeNull();
+    expect(Buffer.from(await response.arrayBuffer()).equals(large.subarray(1000, 150001))).toBe(
+      true,
+    );
+    const whole = await get("/small/large.bin");
+    expect(
+      createHash("sha256")
+        .update(Buffer.from(await whole.arrayBuffer()))
+        .digest("hex"),
+    ).toBe(createHash("sha256").update(large).digest("hex"));
+  });
+
+  test("HTTP/1.0 cannot carry a stream and gets 505", async () => {
+    expect((await raw("/small/data.bin", "GET", "1.0")).status).toBe(505);
+    expect((await raw("/small/data.bin", "HEAD", "1.0")).status).toBe(505);
+    expect((await raw("/static/data.bin", "GET", "1.0")).status).toBe(200);
+  });
+
+  test("streams, HEADs and aborted downloads leave no descriptor open", async () => {
+    const before = openFds();
+    for (let i = 0; i < 20; i++) {
+      await (await get("/small/large.bin")).arrayBuffer();
+      await raw("/small/large.bin", "HEAD");
+      await raw("/static/hello.txt", "HEAD");
+      // Read the first chunk, then drop the download mid-stream.
+      const reader = (await get("/small/large.bin")).body?.getReader();
+      await reader?.read();
+      await reader?.cancel();
+    }
+    await Bun.sleep(500);
+    const after = openFds();
+    if (before !== undefined && after !== undefined) expect(after).toBeLessThanOrEqual(before + 2);
   });
 });
 
@@ -413,9 +536,15 @@ describe("open effect twins", () => {
     const native = run([openNative, root, ...paths]);
     const js = run([process.execPath, openJs, root, ...paths]);
     expect(js).toEqual(native);
-    expect(native[0]).toBe(`${root}/hello.txt file 11 hello world`);
+    const hello = statSync(join(root, "hello.txt"));
+    const seconds = Math.floor(hello.mtimeMs / 1000);
+    const changed = Math.max(seconds, Math.floor(hello.ctimeMs / 1000));
+    const stamp = tagOf(join(root, "hello.txt")).slice(1, -1);
+    expect(native[0]).toBe(
+      `${root}/hello.txt file 11 ${seconds} ${changed} [${stamp}] hello world`,
+    );
     expect(native[5]).toBe(`${root}/dir fail 21`);
-    expect(native[6]).toStartWith(`${root}/dir/index.html file 16`);
+    expect(native[6]).toStartWith(`${root}/dir/index.html file 16 `);
     for (const index of [1, 2, 3, 4, 7, 8, 9, 10, 11, 12, 13]) {
       expect(native[index]).toMatch(/ fail \d+$/);
     }
@@ -440,6 +569,19 @@ describe("a Vite build", () => {
       expect(
         Buffer.from(await response.arrayBuffer()).equals(readFileSync(join(APP, "assets", asset))),
       ).toBe(true);
+    }
+  });
+
+  test("the bundle names its third-party licenses and their texts are served", async () => {
+    const notices = await get("/THIRD_PARTY_LICENSES.txt");
+    expect(notices.status).toBe(200);
+    const text = await notices.text();
+    for (const name of ["react@", "react-dom@", "scheduler@"]) expect(text).toContain(name);
+    expect(text).toContain("Permission is hereby granted");
+    for (const asset of readdirSync(join(APP, "assets")).filter((a) => a.endsWith(".js"))) {
+      const code = readFileSync(join(APP, "assets", asset), "utf8");
+      expect(code).toStartWith("/*! Bundles react@");
+      expect(code).toContain("/THIRD_PARTY_LICENSES.txt");
     }
   });
 });
