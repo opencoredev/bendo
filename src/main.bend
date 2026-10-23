@@ -20,6 +20,7 @@ def ServerConfig() -> Data: Config.Config
 def RouterKind() -> Data: Router.RouterKind
 def Registration(-Tag: Data) -> Data: Table.Entry<Tag>
 def Routes(-Tag: Data) -> Data: Table.Table<Tag>
+def RouteError() -> Data: Methods.BuildError
 
 def config() -> Config.Config: Config.defaults()
 def spec() -> Router.RouterKind: Router.Spec{}
