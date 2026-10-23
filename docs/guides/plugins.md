@@ -118,6 +118,12 @@ identity wins, along with its configuration and the scope it was used in. Any
 later use is skipped entirely: its body never runs, so plugins it would have
 used are not reserved either.
 
+Identities are global to the app, so two unrelated plugins that pick the same
+name and seed collide: the second one is silently dropped, routes and hooks
+included. Give published plugins a package-qualified name, such as
+`@acme/auth`, and keep short names like `health` for plugins private to one
+app.
+
 To apply the same plugin once per configuration, put the configuration in the
 seed. This is the role of `seed` in Elysia. Added to the program above, this
 plugin reuses its `Say` tag (the larger example's `plugin_seeded` has the same

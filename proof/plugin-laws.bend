@@ -14,8 +14,10 @@ law plugin_first_use_assembly:
   for +entries: List<&2, T.Entry<Tag>>
   {S.run(Tag, steps, P.Builder{ids, entries}) == S.follow(Tag, entries, S.assemble(Tag, steps, ids)) : P.Builder<Tag>}
 
-# A second use of an identity is a no-op whatever its body (or config) and
-# whatever the first body did, at any position and from any starting app.
+# A second use of an identity directly after the first is a no-op whatever its
+# body (or config) and whatever the first body did, from any starting app.
+# Repeats at any position, including nested ones, follow from
+# plugin_first_use_assembly.
 law plugin_named_repeat:
   for -Tag: Data
   for +id: P.Identity
