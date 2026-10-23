@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "schemas": {
+    "Todo": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "done": {
+          "type": "boolean",
+          "default": false
+        },
+        "due": {
+          "type": "string"
+        }
+      },
+      "required": ["title"],
+      "additionalProperties": false
+    },
+    "TodoResponse": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "done": {
+          "type": "boolean",
+          "default": false
+        },
+        "due": {
+          "type": "string"
+        }
+      },
+      "required": ["title", "done"],
+      "additionalProperties": false
+    }
+  },
+  "routes": [
+    {
+      "method": "POST",
+      "path": "/todos",
+      "handler": "CreateTodo",
+      "bodyDecoder": "Todo:body",
+      "responseDecoder": "Todo:response",
+      "body": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "done": {
+            "type": "boolean",
+            "default": false
+          },
+          "due": {
+            "type": "string"
+          }
+        },
+        "required": ["title"],
+        "additionalProperties": false
+      },
+      "response": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "done": {
+            "type": "boolean",
+            "default": false
+          },
+          "due": {
+            "type": "string"
+          }
+        },
+        "required": ["title", "done"],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "validators": {
+    "Todo": {
+      "module": "./todo.mjs",
+      "export": "decode",
+      "inputAbi": "JsonValue",
+      "extraFields": "reject",
+      "body": {
+        "defaults": true,
+        "coerce": false
+      },
+      "query": {
+        "defaults": true,
+        "booleanStrings": ["true", "1", "false", "0"]
+      },
+      "response": {
+        "defaults": false,
+        "coerce": false
+      }
+    }
+  }
+}
