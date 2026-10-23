@@ -13,6 +13,7 @@ import ../src/http/response.bend as Response
 import ../src/http/bytes.bend as Bytes
 import ../src/http/write_response.bend as WriteResponse
 import ./error-spec.bend as Spec
+import ./accept-spec.bend as AcceptSpec
 
 # Two private errors with the same code render the same response and the same
 # wire bytes, whatever their messages, request, method and accumulated headers.
@@ -175,6 +176,50 @@ law http_error_inadmissible_fallback:
 law http_error_validity_spec:
   for +r: Response.Res
   {Response.valid(r) == Spec.res_ok(r) : Bool}
+
+# Negotiation follows the documented Accept policy (proof/accept-spec.bend),
+# stated without the Errors module, for every field value.
+law http_error_accept_policy:
+  for +field: Maybe<&2, String>
+  {Errors.accepts_json(field) == AcceptSpec.accepts_json(field) : Bool}
+
+# The field it reads is the request's first accept field, decoded as UTF-8.
+law http_error_accept_field:
+  for -Vars: Data
+  for +c: C.Ctx<Vars>
+  {C.request_header(Vars, c, "accept") == AcceptSpec.accept_field(C.request(Vars, c)) : Maybe<&2, String>}
+
+# End to end, with no hypothesis on negotiation: for any request and any
+# accumulated headers, the rendered error is the spec's, in the
+# representation the Accept policy picks from that request.
+law http_error_private_negotiated:
+  for -Vars: Data
+  for +req: Request.Req
+  for +params: List<&2, Pattern.Param>
+  for +body: List<&2, U32>
+  for +pairs: List<&2, Query.Entry>
+  for +status: U32
+  for +headers: List<&2, Request.Header>
+  for +vars: Maybe<&2, Vars>
+  for +observation: Obs.State
+  for +code: U32
+  for message: String
+  {C.error(Vars, C.Ctx{req, params, body, pairs, status, headers, vars, observation}, Errors.HttpError{code, message, False{}}) == Spec.private_with(AcceptSpec.accepts_json(AcceptSpec.accept_field(req)), code, headers) : Response.Res}
+
+law http_error_exposed_negotiated:
+  for -Vars: Data
+  for +req: Request.Req
+  for +params: List<&2, Pattern.Param>
+  for +body: List<&2, U32>
+  for +pairs: List<&2, Query.Entry>
+  for +status: U32
+  for +headers: List<&2, Request.Header>
+  for +vars: Maybe<&2, Vars>
+  for +observation: Obs.State
+  for +code: U32
+  for +message: String
+  for in_range: {(code >= 400 : U32) && (code <= 599 : U32) == True{} : Bool}
+  {C.error(Vars, C.Ctx{req, params, body, pairs, status, headers, vars, observation}, Errors.HttpError{code, message, True{}}) == Spec.exposed_with(AcceptSpec.accepts_json(AcceptSpec.accept_field(req)), code, message, headers) : Response.Res}
 
 # A HEAD request's error response is written with no payload.
 law http_error_head_no_payload:

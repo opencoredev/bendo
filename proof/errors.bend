@@ -17,6 +17,8 @@ import ../src/data/urlencoded.bend as Query
 import ../src/app/observability.bend as Obs
 import ./chunked-arith.bend as Arith
 import ./error-headers.bend as Hd
+import ./accept.bend as AcceptProof
+import ./accept-spec.bend as AcceptSpec
 
 def distinguish(b: Bool) -> Type:
   match b:
@@ -389,6 +391,18 @@ def note_bad(j: Bool) -> {Spec.admissible(Spec.headers(j, [Request.Header{"x-not
 
 def Laws.http_error_invalid_header_fallback(Vars, req, params, body, pairs, st, vars, obs, failure):
   Laws.http_error_inadmissible_fallback(Vars, req, params, body, pairs, st, [Request.Header{"x-note", Bytes.encode("a\nb")}], vars, obs, failure, Errors.accepts_json(C.request_header(Vars, C.Ctx{req, params, body, pairs, st, [Request.Header{"x-note", Bytes.encode("a\nb")}], vars, obs}, "accept")), {==}, note_bad(Errors.accepts_json(C.request_header(Vars, C.Ctx{req, params, body, pairs, st, [Request.Header{"x-note", Bytes.encode("a\nb")}], vars, obs}, "accept"))))
+
+def Laws.http_error_accept_policy(field):
+  AcceptProof.accepts_spec(field)
+
+def Laws.http_error_accept_field(Vars, c):
+  AcceptProof.field_spec(Vars, c)
+
+def Laws.http_error_private_negotiated(Vars, req, params, body, pairs, st, hs, vars, obs, code, message):
+  Laws.http_error_private_with_headers(Vars, req, params, body, pairs, st, hs, vars, obs, code, message, AcceptSpec.accepts_json(AcceptSpec.accept_field(req)), Equal.trans(Bool, Errors.accepts_json(C.request_header(Vars, C.Ctx{req, params, body, pairs, st, hs, vars, obs}, "accept")), AcceptSpec.accepts_json(C.request_header(Vars, C.Ctx{req, params, body, pairs, st, hs, vars, obs}, "accept")), AcceptSpec.accepts_json(AcceptSpec.accept_field(req)), AcceptProof.accepts_spec(C.request_header(Vars, C.Ctx{req, params, body, pairs, st, hs, vars, obs}, "accept")), Equal.cong(Maybe<&2, String>, Bool, f => AcceptSpec.accepts_json(f), C.request_header(Vars, C.Ctx{req, params, body, pairs, st, hs, vars, obs}, "accept"), AcceptSpec.accept_field(req), AcceptProof.field_spec(Vars, C.Ctx{req, params, body, pairs, st, hs, vars, obs}))))
+
+def Laws.http_error_exposed_negotiated(Vars, req, params, body, pairs, st, hs, vars, obs, code, message, in_range):
+  Laws.http_error_exposed_with_headers(Vars, req, params, body, pairs, st, hs, vars, obs, code, message, AcceptSpec.accepts_json(AcceptSpec.accept_field(req)), in_range, Equal.trans(Bool, Errors.accepts_json(C.request_header(Vars, C.Ctx{req, params, body, pairs, st, hs, vars, obs}, "accept")), AcceptSpec.accepts_json(C.request_header(Vars, C.Ctx{req, params, body, pairs, st, hs, vars, obs}, "accept")), AcceptSpec.accepts_json(AcceptSpec.accept_field(req)), AcceptProof.accepts_spec(C.request_header(Vars, C.Ctx{req, params, body, pairs, st, hs, vars, obs}, "accept")), Equal.cong(Maybe<&2, String>, Bool, f => AcceptSpec.accepts_json(f), C.request_header(Vars, C.Ctx{req, params, body, pairs, st, hs, vars, obs}, "accept"), AcceptSpec.accept_field(req), AcceptProof.field_spec(Vars, C.Ctx{req, params, body, pairs, st, hs, vars, obs}))))
 
 def head_payload(+r: Response.Res) -> {WriteResponse.payload(Request.Head{}, r) == [] : List<&2, U32>}:
   match r:

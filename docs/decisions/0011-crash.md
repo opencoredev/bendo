@@ -86,8 +86,24 @@ that the error replaces cannot fail the response. An accumulated Vary value of
 body helpers keep their stricter rule: they reject any invalid accumulated
 header, including one they replace.
 
-The laws above take the JSON-or-text choice as a hypothesis on
-`Errors.accepts_json`, or use the listed samples.
+- `http_error_accept_policy`: `Errors.accepts_json` equals the Accept policy
+  in `proof/accept-spec.bend` for every field value, absent or present. The
+  spec restates the policy below without calling the Errors module: its own
+  quote-aware segmenter, the RFC 9110 qvalue grammar, and the range and
+  parameter rules. It shares the byte tests for `0`, `1`, digits, `.`, `"`,
+  `\` and the delimiter, plus the shared SP/HTAB trimmer and ASCII lowercasing.
+  `http_error_accept_field` proves the field read is the request's first
+  `accept` field decoded as UTF-8, and none when it is absent or invalid.
+- `http_error_private_negotiated` and `http_error_exposed_negotiated` combine
+  these: for any request and any accumulated headers, with no hypothesis on
+  negotiation, the error renders `Spec.private_with` or `Spec.exposed_with`
+  in the representation the spec's policy picks from that request.
+
+The earlier laws take the JSON-or-text choice as a hypothesis on
+`Errors.accepts_json`, or use the listed samples. With
+`http_error_accept_policy` that hypothesis is the spec's policy. The spec also
+pins 24 example fields and the absent field, including every Accept value
+the integration tests send.
 
 These laws cover `C.error` and everything built on it: `B.error`,
 `B.result` on `Fail`, and the default 404 from `B.not_found` and route misses.
@@ -108,10 +124,15 @@ Server-Timing finalization remains after error recovery and validation.
 ## Body negotiation
 
 An explicit, case-insensitive `application/json` range in the first Accept
-field opts into JSON, provided its quality is positive. Parameters are allowed;
-`q` accepts HTTP's zero-to-one grammar with up to three decimal places. A
-zero or malformed quality excludes that range. Wildcards, missing Accept,
-invalid UTF-8, and other media types use `text/plain; charset=utf-8`.
+field opts into JSON, provided its quality is positive. Elements are split at
+commas and parameters at semicolons, outside quoted strings; a backslash
+inside a quoted string escapes the next character. Each parameter is a name
+or a single `name=value`. The `q` parameter must match HTTP's qvalue grammar
+(`0` or `1`, then optionally a dot and at most three digits, only zeros after
+`1`). A zero quality, a malformed quality, a bare `q`, or a parameter with two
+`=` signs excludes that range, and an unterminated quoted string excludes the
+whole field. Wildcards (`*/*`, `application/*`), missing Accept, invalid
+UTF-8, and other media types use `text/plain; charset=utf-8`.
 This is an explicit JSON opt-in, not a full preference ranking: a positive JSON
 range selects JSON even if text has higher quality. Repeated Accept fields
 follow the context accessor's first-field policy.
