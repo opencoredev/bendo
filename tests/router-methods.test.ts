@@ -203,7 +203,7 @@ test("public construction normalizes standards, rejects invalid tokens atomicall
     "405:GET, HEAD, get",
     "first:0:direct",
     "0:/a:InvalidMethod:BAD TOKEN",
-    '{"bendo":1,"routes":[{"method":"ALL","all":true,"path":"/all"},{"method":"ALL","path":"/literal"},{"method":"*","path":"/literal"}]}',
+    '{"bendo":1,"routes":[{"method":"ALL","all":true,"path":"/all","params":[]},{"method":"ALL","path":"/literal","params":[]},{"method":"*","path":"/literal","params":[]}]}',
   ]);
 }, 30000);
 

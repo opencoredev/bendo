@@ -14,25 +14,28 @@ The version 1 envelope is:
 ```json
 {
   "bendo": 1,
-  "routes": [{ "method": "GET", "path": "/*" }]
+  "routes": [{ "method": "GET", "path": "/*", "params": ["*"] }]
 }
 ```
 
 `bendo` is the manifest format version, independent of the package version.
 `routes` is an array in registration order. Each explicitly registered method
-produces an entry with its canonical case-sensitive HTTP token and the original path
+produces an entry with its canonical case-sensitive HTTP token and the full assembled path
 pattern, including constraints such as `/todos/:id{int}`. Multiple methods on
 one registration produce adjacent entries in the method list's order. Duplicate
 registrations remain visible. Implicit HEAD fallback is not an extra registration.
-`B.all` expands to the nine standard methods. An empty app exports `routes: []`.
+`B.all` emits one row with `"method": "ALL"` and `"all": true`; an extension
+method literally named `ALL` has no `all` flag. An empty app exports `routes: []`.
 
 Consumers must check `bendo`, accept unknown object fields and preserve route
-order. BND-19 extends this envelope for composition, BND-37 adds route schemas,
-and BND-56 consumes it for TypeScript generation. Additive fields keep version 1;
+order. `params` lists compiled capture names in segment order, including optional
+captures, spans and terminal wildcards. Interior and prefix wildcards have no names.
+See [composition](router-compose.md) for base paths, mounting and `B.show_routes`.
+BND-37 adds route schemas, and BND-56 consumes this envelope for TypeScript generation. Additive fields keep version 1;
 a change to existing field meanings requires a new version. Schemas are absent
 until BND-37.
 
-BND-28's JSON module is not in this branch's base. The exporter uses a local
+The exporter currently uses a local
 writer that escapes quotation marks, backslashes and every JSON control character.
 Its source has a TODO to adopt BND-28's shared writer.
 

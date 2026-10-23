@@ -1,5 +1,6 @@
 # Request-local framework metadata; separate from application variables.
 import Base
+import ../http/stream_types.bend as StreamTypes
 import ./store.bend as Store
 import ../http/request.bend as Request
 import ../http/response.bend as Response
@@ -11,22 +12,22 @@ type Mark is Data:
   Mark{name: String, duration_ms: Nat}
 
 type State is Data:
-  State{id: Maybe<&2, String>, timing: Maybe<&2, Store.Store<List<&2, Mark>>>, finalized: Maybe<&2, Chan(Maybe<&2, String>)>}
+  State{id: Maybe<&2, String>, timing: Maybe<&2, Store.Store<List<&2, Mark>>>, finalized: Maybe<&2, Chan(Maybe<&2, String>)>, stream: Maybe<&2, Chan(StreamTypes.Registration)>}
 
 def empty() -> State:
-  State{None{}, None{}, None{}}
+  State{None{}, None{}, None{}, None{}}
 
 def id(state: State) -> Maybe<&2, String>:
-  State{id, timing, finalized} = state
+  State{id, timing, finalized, stream} = state
   id
 
 def timing(state: State) -> Maybe<&2, Store.Store<List<&2, Mark>>>:
-  State{id, timing, finalized} = state
+  State{id, timing, finalized, stream} = state
   timing
 
 def with_id(state: State, id: String) -> State:
-  State{old, timing, finalized} = state
-  State{Some{id}, timing, finalized}
+  State{old, timing, finalized, stream} = state
+  State{Some{id}, timing, finalized, stream}
 
 # Final response fields win, including mixed-case names. Only fill missing fields.
 def has_header(hs: List<&2, Request.Header>, +name: String) -> Bool:
@@ -97,7 +98,7 @@ def timed(res: Response.Res, got: Poll<&1, &1, Maybe<&1, Maybe<&2, String>>, Uni
 # The timing owner publishes once after next returns. Consume and close its
 # request-local mailbox after hooks and validation, before observers or transport.
 def finalize(state: State, res: Response.Res) -> IO(Response.Res):
-  State{id, timing, finalized} = state
+  State{id, timing, finalized, stream} = state
   match finalized:
     case None{}: IO.pure(Response.Res, request_id(res, id))
     case Some{+channel}:
@@ -105,3 +106,12 @@ def finalize(state: State, res: Response.Res) -> IO(Response.Res):
         got : Poll<&1, &1, Maybe<&1, Maybe<&2, String>>, Unit> <- Chan.try_recv(Maybe<&2, String>, channel, 0)
         Chan.close(Maybe<&2, String>, channel)
         return timed(request_id(res, id), got)
+
+# Transport metadata survives every context copy and timing collector.
+def stream(state: State) -> Maybe<&2, Chan(StreamTypes.Registration)>:
+  State{id, timing, finalized, stream} = state
+  stream
+
+def with_stream(state: State, stream: Chan(StreamTypes.Registration)) -> State:
+  State{id, timing, finalized, old} = state
+  State{id, timing, finalized, Some{stream}}

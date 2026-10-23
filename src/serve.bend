@@ -1,6 +1,8 @@
 # Connection IO shell. Pure parsing, deadlines and persistence policy live
 # in http/connection.bend. Each socket is owned by one spawned computation.
 import Base
+import ./stream.bend as Stream
+import ./http/stream_types.bend as StreamTypes
 import ./http/request.bend as R
 import ./http/connection.bend as Connection
 import ./http/parse.bend as Parse
@@ -88,6 +90,7 @@ def interim(s: Socket, send: Bool) -> IO(Socket):
 
 type Reply is Type:
   Reply{bytes: List<&2, U32>, close: Bool, after: IO(Unit)}
+  Streaming{bytes: List<&2, U32>, close: Bool, plan: StreamTypes.Plan, after: IO(Unit)}
 
 type ConnectionEvent is Type:
   Tick{socket: Socket, state: Connection.State}
@@ -95,6 +98,8 @@ type ConnectionEvent is Type:
   Fed{socket: Socket, pair: Connection.State & Bool}
   Read{read: Socket & Poll<&1, &1, Result<&1, &1, U32 & String, Maybe<&1, List<&2, U32>>>, Unit>, state: Connection.State}
   Replied{socket: Socket, state: Connection.State, rest: List<&2, U32>, reply: Reply}
+  StreamHead{result: Socket & Bool, state: Connection.State, rest: List<&2, U32>, close: Bool, plan: StreamTypes.Plan, after: IO(Unit)}
+  StreamBody{outcome: StreamTypes.Outcome, state: Connection.State, rest: List<&2, U32>, close: Bool}
   Sent{sent: Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>, state: Connection.State, rest: List<&2, U32>, close: Bool}
 
 def closing(+req: R.Req, state: Connection.State, config: Config.Config) -> Bool:
@@ -118,6 +123,27 @@ def talk(~Env: Data, ~app: R.Req -> List<&2, U32> -> Env -> Bool -> IO(Reply), e
         out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- TCP.send_bytes(s, dated)
         after
         talk(~Env, ~app, Sent{out, state, rest, close}, env, config)
+    case Replied{s, state, rest, Streaming{bytes, close, StreamTypes.Plan{+timeout, action}, after}}:
+      do IO<Unit>:
+        dated : List<&2, U32> <- DateWire.ensure(bytes)
+        result : Socket & Bool <- Stream.send(s, dated, timeout)
+        talk(~Env, ~app, StreamHead{result, state, rest, close, StreamTypes.Plan{timeout, action}, after}, env, config)
+    case StreamHead{(s, True{}), state, rest, close, StreamTypes.Plan{timeout, action}, after}:
+      do IO<Unit>:
+        result : StreamTypes.Outcome <- action(StreamTypes.Start{s})
+        after
+        talk(~Env, ~app, StreamBody{result, state, rest, close}, env, config)
+    case StreamHead{(s, False{}), state, rest, close, plan, after}:
+      do IO<Unit>:
+        Stream.cancel(plan)
+        after
+        Socket.close(s)
+    case StreamBody{StreamTypes.Written{s, True{}}, state, rest, close}:
+      talk(~Env, ~app, Sent{(s, Done{Unit{}}), state, rest, close}, env, config)
+    case StreamBody{StreamTypes.Written{s, False{}}, state, rest, close}:
+      Socket.close(s)
+    case StreamBody{StreamTypes.Cancelled{}, state, rest, close}:
+      IO.pure(Unit, Unit{})
     case Work{s, state, Connection.Reject{status}}:
       reject(s, status)
     case Work{s, state, Connection.Stop{}}:
@@ -236,11 +262,22 @@ def prepare_pending(result: Response.Res & IO(Unit), close: Bool) -> Reply:
   (res, after) = result
   prepare(res, close, after)
 
+def prepare_stream(+res: Response.Res, close: Bool, stream: Maybe<&1, StreamTypes.Plan>, after: IO(Unit)) -> Reply:
+  match res stream:
+    case res None{}: prepare(res, close, after)
+    case Response.Res{status, hs, body, rep} Some{plan}:
+      +closing = Connection.response_closing(res, close)
+      Streaming{encoded(Response.Res{status, Connection.headers(hs, closing), body, rep}), closing, plan, after}
+
+def prepare_transport(result: Response.Res & (Maybe<&1, StreamTypes.Plan> & IO(Unit)), close: Bool) -> Reply:
+  (res, (stream, after)) = result
+  prepare_stream(res, close, stream, after)
+
 def respond_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), req: R.Req, body: List<&2, U32>, state: State<Tag, Env>, close: Bool) -> IO(Reply):
   State{table, env, router} = state
   do IO<Reply>:
-    result : Response.Res & IO(Unit) <- Handle.pending_routed(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, router, table, env, req, body)
-    return prepare_pending(result, close)
+    result : Response.Res & (Maybe<&1, StreamTypes.Plan> & IO(Unit)) <- Handle.transport_routed(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, router, table, env, req, body)
+    return prepare_transport(result, close)
 
 def startup_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +table: Table.Table<Tag>, env: Env, +config: Config.Config, manifest: Bool) -> IO(Unit):
   match config manifest:
