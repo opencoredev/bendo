@@ -87,23 +87,37 @@ describe("native Bend route patterns", () => {
     expect(fixtures.filter((fixture) => "path" in fixture).length).toBeGreaterThanOrEqual(60);
   });
 
-  // Each pattern has an adversarial 4096-segment path: repeated anchors for
-  // spans, repeated statics for interior wildcards, and a final invalid escape
-  // so every alternative fails. Quadratic matching took seconds here.
+  // Each pattern gets adversarial paths: repeated anchors for spans, repeated
+  // statics for interior wildcards, and a final invalid escape so every
+  // alternative fails. Quadratic matching took seconds at 4096 segments. The
+  // check compares growth rather than wall time, because CI runners are slow:
+  // a path 4x longer must cost well under 16x (quadratic) or 64x (cubic).
+  const SHORT = 1024;
   const LONG = 4096;
-  const repeated = (segment: string) => `/${Array.from({ length: LONG }, () => segment).join("/")}`;
-  for (const [pattern, path] of [
-    ["/:prefix{.+}/contents/:id?", `${repeated("contents")}/%GG`],
-    ["/:prefix{.+}/contents/:id?", `/a${repeated("contents")}`],
-    ["/a/*/b/*", `/a${repeated("b")}/%GG`],
-    ["/*/b/*/b/:x", `${repeated("b")}/%GG`],
-  ] as const) {
-    test(`linear matching: ${pattern} over ${LONG} segments`, () => {
-      const start = performance.now();
-      const lines = run(pattern, ["match", path]);
-      const elapsed = performance.now() - start;
-      expect(lines[0]).toBe(path.endsWith("%GG") ? "none" : "match");
-      expect(elapsed).toBeLessThan(1000);
+  const repeated = (segment: string, length: number) =>
+    `/${Array.from({ length }, () => segment).join("/")}`;
+  const shapes: readonly (readonly [string, (length: number) => string])[] = [
+    ["/:prefix{.+}/contents/:id?", (n) => `${repeated("contents", n)}/%GG`],
+    ["/:prefix{.+}/contents/:id?", (n) => `/a${repeated("contents", n)}`],
+    ["/a/*/b/*", (n) => `/a${repeated("b", n)}/%GG`],
+    ["/*/b/*/b/:x", (n) => `${repeated("b", n)}/%GG`],
+  ];
+  for (const [pattern, pathOf] of shapes) {
+    test(`linear matching: ${pattern} from ${SHORT} to ${LONG} segments`, () => {
+      const time = (length: number): number => {
+        const path = pathOf(length);
+        const runs = [0, 1].map(() => {
+          const start = performance.now();
+          const lines = run(pattern, ["match", path]);
+          const elapsed = performance.now() - start;
+          expect(lines[0]).toBe(path.endsWith("%GG") ? "none" : "match");
+          return elapsed;
+        });
+        return Math.min(...runs);
+      };
+      const short = time(SHORT);
+      const long = time(LONG);
+      expect(long).toBeLessThan(6 * short + 200);
     });
   }
 
