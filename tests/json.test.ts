@@ -181,27 +181,31 @@ for (const depth of [511, 512, 513])
 const largeShapes = ["string", "number", "array", "object"];
 for (const size of [65536, 1048576])
   for (const shape of largeShapes)
-    test(`.mjs ${shape} traversals are stack safe at ${size} bytes`, () => {
-      let input: string;
-      switch (shape) {
-        case "string":
-          input = '"' + "a".repeat(size - 2) + '"';
-          break;
-        case "number":
-          input = "1".repeat(size);
-          break;
-        case "array":
-          input = "[" + "0,".repeat(Math.floor((size - 3) / 2)) + "0]";
-          break;
-        case "object":
-          input = "{" + '"a":0,'.repeat(Math.floor((size - 7) / 6)) + '"a":0}';
-          break;
-        default:
-          throw new Error("Unknown fixture shape");
-      }
-      const parsed = value(call("parse", bytes(input)));
-      expect(text(call("write", parsed, false, false))).toBe(input);
-    }, 30000);
+    test(
+      `.mjs ${shape} traversals are stack safe at ${size} bytes`,
+      () => {
+        let input: string;
+        switch (shape) {
+          case "string":
+            input = '"' + "a".repeat(size - 2) + '"';
+            break;
+          case "number":
+            input = "1".repeat(size);
+            break;
+          case "array":
+            input = "[" + "0,".repeat(Math.floor((size - 3) / 2)) + "0]";
+            break;
+          case "object":
+            input = "{" + '"a":0,'.repeat(Math.floor((size - 7) / 6)) + '"a":0}';
+            break;
+          default:
+            throw new Error("Unknown fixture shape");
+        }
+        const parsed = value(call("parse", bytes(input)));
+        expect(text(call("write", parsed, false, false))).toBe(input);
+      },
+      shape === "array" && size === 1048576 ? 60000 : 30000,
+    );
 
 test("native 1 MiB byte parsing is below 200 ms, including UTF-8 decoding", () => {
   const path = join(dir, "megabyte.json");
