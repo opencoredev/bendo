@@ -748,7 +748,8 @@ law methods_default_path_identity:
   {Methods.match_path(pattern, path, Methods.defaults()) == Pattern.match_path(pattern, path) : Maybe<&2, Pattern.Params>}
 
 # The default first-match statement uses direct Pattern.match_path and an
-# independent token-membership predicate at each List.get registration.
+# independent selector predicate at each List.get registration: AllMethods
+# accepts every method; OnlyMethods uses literal token membership.
 law methods_default_found_first:
   for -T: Data
   for +table: Methods.Valid<T>
@@ -803,7 +804,9 @@ law methods_not_found_iff_all_paths_miss:
 # iff present in ANY path-matching registration or HEAD supplied by GET.
 # Registrations and the request use canonical Method constructors. Output
 # methods are valid too. Every admissible table, pattern, path, option
-# combination and query-method token is covered.
+# combination and query-method token is covered. ExactAllow additionally
+# requires every AllMethods registration to miss the path, so a matching all
+# cannot produce 405. Finite registrations retain the same exact set guarantee.
 law methods_allow_exact:
   for -T: Data
   for +table: Methods.Valid<T>

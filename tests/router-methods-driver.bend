@@ -3,6 +3,8 @@ import ../src/router/methods.bend as M
 import ../src/router/spec.bend as S
 import ../src/router/pattern.bend as P
 import ../src/http/request.bend as R
+import ../src/app/table.bend as Table
+import ../src/app/manifest.bend as Manifest
 
 type Tag is Data:
   First{}
@@ -61,6 +63,11 @@ def constructed(result: Result<&2, &2, M.BuildError, M.Valid<Tag>>) -> IO(Unit):
 def construction(entries: List<&2, M.Registration(Tag)>) -> IO(Unit):
   constructed(M.build_table(Tag, entries))
 
+def manifest(result: Result<&2, &2, M.BuildError, Table.Table<Tag>>) -> IO(Unit):
+  match result:
+    case Fail{error}: IO.print("manifest failed")
+    case Done{table}: IO.print(Manifest.json(Tag, table))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     built(M.build_table(Tag, [
@@ -72,7 +79,7 @@ def main() -> IO(Unit):
       M.head(Tag, "/head-only", First{})
     ]))
     built(M.build_table(Tag, [M.get(Tag, "/ok", First{}), M.post(Tag, "bad", Later{}), M.get(Tag, "/later", Later{})]))
-    show(M.Valid{[S.Route{P.Pattern{[P.Static{"a"}]}, M.Binding{[R.Get{}], First{}}}], {==}}, "/a", R.Post{})
+    show(M.Valid{[S.Route{P.Pattern{[P.Static{"a"}]}, M.Binding{M.OnlyMethods{[R.Get{}]}, First{}}}], {==}}, "/a", R.Post{})
     construction([M.get(Tag, "/a", First{})])
     construction([M.on(Tag, [R.Extension{"GET"}], "/a", First{})])
     construction([M.on(Tag, [R.Extension{"get"}], "/a", First{})])
@@ -80,3 +87,7 @@ def main() -> IO(Unit):
     construction([M.get(Tag, "/ok", First{}), M.on(Tag, [R.Extension{"BAD TOKEN"}], "/a", Later{})])
     construction([M.on(Tag, [R.Extension{"GET"}, R.Get{}, R.Extension{"get"}, R.Extension{"get"}], "/a", First{})])
     construction([M.on(Tag, [R.Extension{"BAD TOKEN"}], "/a", First{}), M.get(Tag, "bad", Later{})])
+    manifest(Table.build(Tag, [
+      Table.Route{M.all(Tag, "/all", First{})},
+      Table.Route{M.on(Tag, [R.Extension{"ALL"}, R.Extension{"*"}], "/literal", Later{})}
+    ]))
