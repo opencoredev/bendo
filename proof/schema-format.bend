@@ -195,5 +195,87 @@ def email_equiv(+s: String) -> {T.email(s) == Spec.email(s) : Bool}:
   %email_domain_equiv(T.before(s, [64]), T.from(s, [64])) : {T.email(s) == Nat.is_le(D.length(s), 254n) && _ : Bool}
   {==}
 
+def strip_transition(+ok: Bool, +same: Bool, +rest: Maybe<&2, String>) -> {Bool.pick(Maybe<&2, String>, ok && same, rest, None{}) == Bool.pick(Maybe<&2, String>, ok, Bool.pick(Maybe<&2, String>, same, rest, None{}), None{}) : Maybe<&2, String>}:
+  match ok same:
+    case False{} _: {==}
+    case True{} _: {==}
+
+def strip_none(+ok: Bool) -> {None{} == Bool.pick(Maybe<&2, String>, ok, None{}, None{}) : Maybe<&2, String>}:
+  match ok:
+    case False{}: {==}
+    case True{}: {==}
+
+def strip_go_equiv(+prefix: String, +s: String, +ok: Bool) -> {T.strip_go(prefix, s, ok) == Bool.pick(Maybe<&2, String>, ok, Spec.strip(prefix, s), None{}) : Maybe<&2, String>}:
+  match prefix s:
+    case SNil{} _: {==}
+    case SCon{Chr{x}, p} SCon{Chr{y}, t}:
+      %strip_transition(ok, U32.is_eq(x, y), Spec.strip(p, t)) : {T.strip_go(prefix, s, ok) == _ : Maybe<&2, String>}
+      strip_go_equiv(p, t, ok && U32.is_eq(x, y))
+    case SCon{c, p} SNil{}: strip_none(ok)
+
+def strip_equiv(+prefix: String, +s: String) -> {T.strip(prefix, s) == Spec.strip(prefix, s) : Maybe<&2, String>}:
+  strip_go_equiv(prefix, s, True{})
+
+# Generalize the suffix law over both accumulated validity and hex digits owed.
+def suffix_transition(+percent: Bool, +ok: Bool, +uri: Bool, +t: String) -> {(ok && (percent || uri)) && Spec.suffix(t, Bool.pick(Nat, percent, 2n, 0n)) == ok && Bool.pick(Bool, percent, Spec.suffix(t, 2n), uri && Spec.suffix(t, 0n)) : Bool}:
+  match percent:
+    case True{}: Equal.cong(Bool, Bool, b => b && Spec.suffix(t, 2n), ok && True{}, ok, and_true(ok))
+    case False{}: and_assoc(ok, uri, Spec.suffix(t, 0n))
+
+def suffix_equiv(+s: String, +due: Nat, +ok: Bool) -> {T.suffix(s, due, ok) == ok && Spec.suffix(s, due) : Bool}:
+  match s:
+    case SNil{}: {==}
+    case SCon{Chr{c}, t}:
+      match due:
+        case 0n:
+          %uri_equiv(c) : {T.suffix(s, 0n, ok) == ok && Bool.pick(Bool, U32.is_eq(c, 37), Spec.suffix(t, 2n), _ && Spec.suffix(t, 0n)) : Bool}
+          %suffix_transition(U32.is_eq(c, 37), ok, T.uri_char(c), t) : {T.suffix(s, 0n, ok) == _ : Bool}
+          suffix_equiv(t, T.suffix_due(0n, c), ok && T.suffix_ok(0n, c))
+        case 1n+k:
+          %and_assoc(ok, T.hex(c), Spec.suffix(t, k)) : {T.suffix(s, 1n+k, ok) == _ : Bool}
+          suffix_equiv(t, k, ok && T.hex(c))
+
+def value_equiv(+s: String, +acc: Nat) -> {T.value(s, acc) == Spec.value(s, acc) : Nat}:
+  match s:
+    case SNil{}: {==}
+    case SCon{Chr{c}, t}: value_equiv(t, Nat.add(Nat.mul(acc, 10n), Spec.digit_value(c)))
+
+def port_gate_equiv(+p: String, +valid: Bool) -> {T.port_gate(p, valid) == valid && Nat.is_le(Spec.value(p, 0n), 65535n) : Bool}:
+  match valid:
+    case False{}: {==}
+    case True{}:
+      %value_equiv(p, 0n) : {T.port_gate(p, True{}) == Nat.is_le(_, 65535n) : Bool}
+      {==}
+
+def port_equiv(+p: String) -> {T.port(p) == Spec.port(p) : Bool}:
+  %Text.length_equiv(p) : {T.port(p) == Nat.is_le(1n, _) && Nat.is_le(_, 5n) && Spec.digits(p) && Nat.is_le(Spec.value(p, 0n), 65535n) : Bool}
+  %chars_equiv(p, T.Digits{}, True{}) : {T.port(p) == Nat.is_le(1n, D.length(p)) && Nat.is_le(D.length(p), 5n) && _ && Nat.is_le(Spec.value(p, 0n), 65535n) : Bool}
+  port_gate_equiv(p, Nat.is_le(1n, D.length(p)) && Nat.is_le(D.length(p), 5n) && T.chars(p, T.Digits{}, True{}))
+
+def after_host_equiv(+s: String) -> {T.after_host(s) == Spec.after_host(s) : Bool}:
+  match s:
+    case SNil{}: {==}
+    case SCon{Chr{c}, t}:
+      %before_equiv(t, [47, 63, 35]) : {T.after_host(s) == Bool.pick(Bool, U32.is_eq(c, 58), Spec.port(_) && Spec.suffix(Spec.from(t, [47, 63, 35]), 0n), Spec.suffix(s, 0n)) : Bool}
+      %from_equiv(t, [47, 63, 35]) : {T.after_host(s) == Bool.pick(Bool, U32.is_eq(c, 58), Spec.port(T.before(t, [47, 63, 35])) && Spec.suffix(_, 0n), Spec.suffix(s, 0n)) : Bool}
+      %port_equiv(T.before(t, [47, 63, 35])) : {T.after_host(s) == Bool.pick(Bool, U32.is_eq(c, 58), _ && Spec.suffix(T.from(t, [47, 63, 35]), 0n), Spec.suffix(s, 0n)) : Bool}
+      %suffix_equiv(T.from(t, [47, 63, 35]), 0n, True{}) : {T.after_host(s) == Bool.pick(Bool, U32.is_eq(c, 58), T.port(T.before(t, [47, 63, 35])) && _, Spec.suffix(s, 0n)) : Bool}
+      %suffix_equiv(s, 0n, True{}) : {T.after_host(s) == Bool.pick(Bool, U32.is_eq(c, 58), T.port(T.before(t, [47, 63, 35])) && T.suffix(T.from(t, [47, 63, 35]), 0n, True{}), _) : Bool}
+      {==}
+
+def authority_equiv(+rest: Maybe<&2, String>) -> {T.authority(rest) == Spec.authority(rest) : Bool}:
+  match rest:
+    case None{}: {==}
+    case Some{x}:
+      %before_equiv(x, [58, 47, 63, 35]) : {T.authority(rest) == Spec.hostname(_) && Spec.after_host(Spec.from(x, [58, 47, 63, 35])) : Bool}
+      %from_equiv(x, [58, 47, 63, 35]) : {T.authority(rest) == Spec.hostname(T.before(x, [58, 47, 63, 35])) && Spec.after_host(_) : Bool}
+      %host_equiv(T.before(x, [58, 47, 63, 35])) : {T.authority(rest) == _ && Spec.after_host(T.from(x, [58, 47, 63, 35])) : Bool}
+      %after_host_equiv(T.from(x, [58, 47, 63, 35])) : {T.authority(rest) == T.host(T.before(x, [58, 47, 63, 35])) && _ : Bool}
+      {==}
+
 def url_equiv(+s: String) -> {T.url(s) == Spec.url(s) : Bool}:
-  ?TODO
+  %strip_equiv("http://", s) : {T.url(s) == Spec.authority(_) || Spec.authority(Spec.strip("https://", s)) : Bool}
+  %strip_equiv("https://", s) : {T.url(s) == Spec.authority(T.strip("http://", s)) || Spec.authority(_) : Bool}
+  %authority_equiv(T.strip("http://", s)) : {T.url(s) == _ || Spec.authority(T.strip("https://", s)) : Bool}
+  %authority_equiv(T.strip("https://", s)) : {T.url(s) == T.authority(T.strip("http://", s)) || _ : Bool}
+  {==}
