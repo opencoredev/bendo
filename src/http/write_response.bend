@@ -45,14 +45,22 @@ def representation_length(rep: Maybe<&2, List<&2, U32>>, hs: List<&2, Request.He
     case Some{b}:
       length_header(List.length(&2, U32, b)) <> hs
 
-def normal_headers(+status: U32, body: List<&2, U32>, rep: Maybe<&2, List<&2, U32>>, hs: List<&2, Request.Header>) -> List<&2, Request.Header>:
-  match status:
-    case 304:
-      representation_length(rep, hs)
-    case 205:
+def reset_headers(body: List<&2, U32>, hs: List<&2, Request.Header>, reset: Bool) -> List<&2, Request.Header>:
+  match reset:
+    case True{}:
       length_header(0n) <> hs
-    case _:
+    case False{}:
       length_header(List.length(&2, U32, body)) <> hs
+
+def modified_headers(body: List<&2, U32>, rep: Maybe<&2, List<&2, U32>>, hs: List<&2, Request.Header>, reset: Bool, unmodified: Bool) -> List<&2, Request.Header>:
+  match unmodified:
+    case True{}:
+      representation_length(rep, hs)
+    case False{}:
+      reset_headers(body, hs, reset)
+
+def normal_headers(+status: U32, body: List<&2, U32>, rep: Maybe<&2, List<&2, U32>>, hs: List<&2, Request.Header>) -> List<&2, Request.Header>:
+  modified_headers(body, rep, hs, U32.is_eq(status, 205), U32.is_eq(status, 304))
 
 def framing_headers(status: U32, body: List<&2, U32>, rep: Maybe<&2, List<&2, U32>>, hs: List<&2, Request.Header>, none: Bool) -> List<&2, Request.Header>:
   match none:
@@ -66,26 +74,30 @@ def response_headers(+method: Request.Method, r: Response.Res) -> List<&2, Reque
     case Response.Res{+s, hs, b, rep}:
       framing_headers(s, b, rep, headers(hs), forbidden(s) || tunnel(method, s))
 
-def status_line(+status: U32) -> List<&2, U32>:
-  Bytes.encode("HTTP/1.1 " ++ U32.show(status) ++ " " ++ Response.reason(status))
+# Render complete lines before encoding the head; body bytes stay untouched.
+def status_text(+status: U32) -> String:
+  "HTTP/1.1 " ++ Nat.show(U32.to_nat(status)) ++ " " ++ Response.reason(status)
 
-def prefix_header(h: Request.Header, tail: List<&2, U32>) -> List<&2, U32>:
+def header_text(h: Request.Header) -> String:
   match h:
     case Request.Header{n, v}:
-      13 <> 10 <> Bytes.append(Bytes.encode(n), 58 <> 32 <> Bytes.append(v, tail))
+      n ++ ": " ++ Bytes.ascii(v)
 
-def prefix_headers(hs: List<&2, Request.Header>) -> List<&2, U32>:
+def headers_text(hs: List<&2, Request.Header>) -> String:
   match hs:
     case Nil{}:
-      []
+      ""
     case h <> t:
-      prefix_header(h, prefix_headers(t))
+      "\r\n" ++ header_text(h) ++ headers_text(t)
 
 # Content before the terminating CRLFCRLF, with neither trailing CRLF.
-def prefix(+method: Request.Method, +r: Response.Res) -> List<&2, U32>:
+def prefix_text(+method: Request.Method, +r: Response.Res) -> String:
   match r:
     case Response.Res{s, hs, b, rep}:
-      Bytes.append(status_line(s), prefix_headers(response_headers(method, r)))
+      status_text(s) ++ headers_text(response_headers(method, r))
+
+def prefix(method: Request.Method, r: Response.Res) -> List<&2, U32>:
+  Bytes.encode(prefix_text(method, r))
 
 def head(method: Request.Method, r: Response.Res) -> List<&2, U32>:
   Bytes.append(prefix(method, r), [13, 10, 13, 10])

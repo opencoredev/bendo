@@ -15,6 +15,9 @@ import ./proof/line.bend as Line
 import ./proof/scanner.bend as Scanner
 import ./proof/printable.bend as Printable
 import ./proof/support.bend as Support
+import ./proof/response-lines.bend as ResponseLines
+import ./proof/response-framing.bend as ResponseFraming
+import ./proof/response-absence.bend as ResponseAbsence
 
 import ./src/router/proofs.bend as PatternProof
 import ./src/router/pattern.bend as Pattern
@@ -150,17 +153,28 @@ def response_forbidden_bytes(+method: Request.Method, +status: U32, +headers: Li
   Laws.append_nil(U32, WriteResponse.head(method, r))
 
 def response_prefix_safe(+method: Request.Method, +res: Response.Res, valid: {Response.valid(res) == True{} : Bool}) -> {String.contains(Bytes.ascii(WriteResponse.prefix(method, res)), "\r\n\r\n") == False{} : Bool}:
-  ?response_prefix_safe
+  match res:
+    case Response.Res{s, hs, b, rep}:
+      +r = {Response.Res{s, hs, b, rep} : Response.Res}
+      %Equal.sym(String, Bytes.ascii(Bytes.encode(WriteResponse.prefix_text(method, r))), WriteResponse.prefix_text(method, r), Line.ascii_encode(WriteResponse.prefix_text(method, r))) : {String.contains(_, "\r\n\r\n") == False{} : Bool}
+      Equal.trans(Bool, String.contains(WriteResponse.status_text(s) ++ WriteResponse.headers_text(WriteResponse.response_headers(method, r)), "\r\n\r\n"), String.contains(WriteResponse.headers_text(WriteResponse.response_headers(method, r)), "\r\n\r\n"), False{}, ResponseLines.clear_scan(WriteResponse.status_text(s), WriteResponse.headers_text(WriteResponse.response_headers(method, r)), "\n\r\n", ResponseFraming.status_value(s)), ResponseLines.headers_blank(WriteResponse.response_headers(method, r), ResponseFraming.response_scannable(method, r, valid)))
 
 def response_length_present(+method: Request.Method, +status: U32, +headers: List<&2, Request.Header>, +body: List<&2, U32>, +representation: Maybe<&2, List<&2, U32>>, valid: {Response.valid(Response.Res{status, headers, body, representation}) == True{} : Bool}, allowed: {WriteResponse.allows_body(status) == True{} : Bool}, not_tunnel: {WriteResponse.tunnel(method, status) == False{} : Bool}) -> {String.contains(Bytes.ascii(Bytes.append(WriteResponse.prefix(method, Response.Res{status, headers, body, representation}), [13, 10])), "\r\ncontent-length: " ++ Nat.show(List.length(&2, U32, body)) ++ "\r\n") == True{} : Bool}:
-  ?response_length_present
+  +r = {Response.Res{status, headers, body, representation} : Response.Res}
+  %Equal.sym(String, Bytes.ascii(Bytes.append(WriteResponse.prefix(method, r), [13, 10])), WriteResponse.prefix_text(method, r) ++ "\r\n", ResponseLines.ascii_prefix_suffix(method, r)) : {String.contains(_, "\r\ncontent-length: " ++ Nat.show(List.length(&2, U32, body)) ++ "\r\n") == True{} : Bool}
+  %Equal.sym(String, (WriteResponse.status_text(status) ++ WriteResponse.headers_text(WriteResponse.response_headers(method, r))) ++ "\r\n", WriteResponse.status_text(status) ++ (WriteResponse.headers_text(WriteResponse.response_headers(method, r)) ++ "\r\n"), Line.string_assoc(WriteResponse.status_text(status), WriteResponse.headers_text(WriteResponse.response_headers(method, r)), "\r\n")) : {String.contains(_, "\r\ncontent-length: " ++ Nat.show(List.length(&2, U32, body)) ++ "\r\n") == True{} : Bool}
+  %Equal.sym(List<&2, Request.Header>, WriteResponse.response_headers(method, r), WriteResponse.length_header(List.length(&2, U32, body)) <> WriteResponse.headers(headers), ResponseFraming.body_headers(method, status, headers, body, representation, allowed, not_tunnel)) : {String.contains(WriteResponse.status_text(status) ++ (WriteResponse.headers_text(_) ++ "\r\n"), "\r\ncontent-length: " ++ Nat.show(List.length(&2, U32, body)) ++ "\r\n") == True{} : Bool}
+  ResponseLines.contains_prepend(WriteResponse.status_text(status), WriteResponse.headers_text(WriteResponse.length_header(List.length(&2, U32, body)) <> WriteResponse.headers(headers)) ++ "\r\n", "\r\ncontent-length: " ++ Nat.show(List.length(&2, U32, body)) ++ "\r\n", ResponseLines.length_present(List.length(&2, U32, body), WriteResponse.headers(headers)))
 
 def Laws.response_body_after_first_blank(method, status, headers, body, representation, valid, allowed, not_head, not_tunnel):
   +r = {Response.Res{status, headers, body, representation} : Response.Res}
   (WriteResponse.prefix(method, r), (response_prefix_safe(method, r, valid), response_body_bytes(method, status, headers, body, representation, valid, allowed, not_head, not_tunnel), response_length_present(method, status, headers, body, representation, valid, allowed, not_tunnel)))
 
 def response_length_absent(+method: Request.Method, +status: U32, +headers: List<&2, Request.Header>, +body: List<&2, U32>, +representation: Maybe<&2, List<&2, U32>>, valid: {Response.valid(Response.Res{status, headers, body, representation}) == True{} : Bool}, forbidden: {WriteResponse.forbidden(status) == True{} : Bool}) -> {String.contains(Bytes.ascii(WriteResponse.prefix(method, Response.Res{status, headers, body, representation})), "\r\ncontent-length:") == False{} : Bool}:
-  ?response_length_absent
+  +r = {Response.Res{status, headers, body, representation} : Response.Res}
+  %Equal.sym(String, Bytes.ascii(Bytes.encode(WriteResponse.prefix_text(method, r))), WriteResponse.prefix_text(method, r), Line.ascii_encode(WriteResponse.prefix_text(method, r))) : {String.contains(_, "\r\ncontent-length:") == False{} : Bool}
+  %Equal.sym(List<&2, Request.Header>, WriteResponse.response_headers(method, r), WriteResponse.headers(headers), ResponseFraming.forbidden_headers(method, status, headers, body, representation, forbidden)) : {String.contains(WriteResponse.status_text(status) ++ WriteResponse.headers_text(_), "\r\ncontent-length:") == False{} : Bool}
+  Equal.trans(Bool, String.contains(WriteResponse.status_text(status) ++ WriteResponse.headers_text(WriteResponse.headers(headers)), "\r\ncontent-length:"), String.contains(WriteResponse.headers_text(WriteResponse.headers(headers)), "\r\ncontent-length:"), False{}, ResponseLines.clear_scan(WriteResponse.status_text(status), WriteResponse.headers_text(WriteResponse.headers(headers)), "\ncontent-length:", ResponseFraming.status_value(status)), ResponseAbsence.filtered_headers_absent(headers, ResponseFraming.valid_headers(status, headers, body, representation, valid)))
 
 def Laws.response_forbidden_has_no_body_or_length(method, status, headers, body, representation, valid, forbidden):
   +r = {Response.Res{status, headers, body, representation} : Response.Res}
