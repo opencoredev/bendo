@@ -416,3 +416,38 @@ def search_equal(+segs: List<&2, P.Segment>, +paths: List<&2, String>) ->
       {==}
     case P.Span{name} <> rest p:
       {==}
+
+def some_bool(-A: Data, value: Maybe<&2, A>) -> Bool:
+  match value:
+    case None{}:
+      False{}
+    case Some{x}:
+      True{}
+
+def none_some(-A: Data, +value: A, e: {None{} == Some{value} : Maybe<&2, A>}) -> Empty:
+  false_true(Equal.cong(Maybe<&2, A>, Bool, x => some_bool(A, x), None{}, Some{value}, e))
+
+def first_head(+hits: Rows, +ps: P.Params,
+    found: {P.row_head(hits) == Some{ps} : Maybe<&2, P.Params>}) ->
+    {P.first_result(hits) == Some{ps} : Maybe<&2, P.Params>}:
+  match hits:
+    case Nil{}:
+      absurd({P.first_result(Nil{}) == Some{ps} : Maybe<&2, P.Params>}, none_some(P.Params, ps, found))
+    case Some{qs} <> tail:
+      found
+    case None{} <> tail:
+      absurd({P.first_result(None{} <> tail) == Some{ps} : Maybe<&2, P.Params>}, none_some(P.Params, ps, found))
+
+def interior_match(+rest: List<&2, P.Segment>, +paths: List<&2, String>, +ps: P.Params,
+    matched: {P.match_segments(rest, paths) == Some{ps} : Maybe<&2, P.Params>}) ->
+    {P.match_segments(P.InteriorWildcard{} <> rest, paths) == Some{ps} : Maybe<&2, P.Params>}:
+  %Equal.sym(Maybe<&2, P.Params>, P.search_segments(P.InteriorWildcard{} <> rest, paths), P.row_one(~String.eq, ~String.starts_with, P.InteriorWildcard{}, List.is_empty(&2, P.Segment, rest), paths, P.match_rows(~String.eq, ~String.starts_with, rest, paths)), rows_head(P.InteriorWildcard{}, rest, paths)) : {_ == Some{ps} : Maybe<&2, P.Params>}
+  first_head(P.match_rows(~String.eq, ~String.starts_with, rest, paths), ps, Equal.trans(Maybe<&2, P.Params>, P.search_segments(rest, paths), P.match_segments(rest, paths), Some{ps}, search_equal(rest, paths), matched))
+
+def rows_nil(+segs: List<&2, P.Segment>) ->
+    {P.match_rows(~String.eq, ~String.starts_with, segs, Nil{}) == [P.search_segments(segs, Nil{})] : Rows}:
+  match segs:
+    case Nil{}:
+      {==}
+    case seg <> rest:
+      {==}
