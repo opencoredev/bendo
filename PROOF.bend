@@ -14,6 +14,7 @@ import ./proof/line.bend as Line
 import ./proof/scanner.bend as Scanner
 import ./proof/printable.bend as Printable
 import ./proof/support.bend as Support
+import ./proof/chunked.bend as ChunkedProof
 
 import ./src/router/proofs.bend as PatternProof
 import ./src/router/pattern.bend as Pattern
@@ -104,11 +105,7 @@ def Laws.pattern_fill_match(source, pattern, compiled, params, admitted):
 def Laws.chunked_roundtrip(chunks, limit, suffix, valid):
   match chunks:
     case Nil{}:
-      match suffix:
-        case Nil{}:
-          {==}
-        case c <> t:
-          {==}
+      Equal.cong(Chunked.State & Chunked.DecodeResult, Chunked.DecodeResult, pair => Chunked.result(pair), Chunked.feed(48 <> 13 <> 10 <> 13 <> 10 <> suffix, Chunked.initial(limit)), (Chunked.Complete{[], []}, Chunked.Decoded{[], [], suffix}), ChunkedProof.scan_terminal(limit, [], suffix))
     case Nil{} <> rest:
       Laws.chunked_roundtrip(rest, limit, suffix, valid)
     case (c <> tail) <> rest:
