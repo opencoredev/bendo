@@ -1,8 +1,10 @@
 # Proofs of LAWS.bend. Run: bend PROOF.bend --verdict
 import Base
+import ./proof/limits.bend as LimitsProof
 import ./proof/manifest.bend as ManifestProof
 import ./proof/manifest-built.bend as ManifestBuiltProof
 import ./proof/compose.bend as ComposeProof
+import ./proof/plugin.bend as PluginProof
 
 # BND-32
 import ./proof/signed-cookie.bend as SignedCookieProof
@@ -25,6 +27,8 @@ import ./src/app/scopes.bend as Scopes
 import ./proof/middleware-selection.bend as MiddlewareSelection
 
 import ./proof/schema-compound.bend as SchemaProof
+import ./proof/schema-errors.bend as SchemaErrors
+import ./proof/schema-coerce.bend as SchemaCoerce
 import ./src/http/response.bend as Response
 import ./src/http/write_response.bend as WriteResponse
 
@@ -513,6 +517,27 @@ def Laws.schema_preserves_typed_value(schema, value):
 def Laws.schema_children_satisfy(schema, value, accepted):
   SchemaProof.children_law(schema, value, accepted)
 
+def Laws.schema_errors_name_failing_paths(schema, value):
+  SchemaErrors.errors_located(schema, value)
+
+def Laws.schema_errors_complete(schema, value, path, fault):
+  SchemaErrors.errors_complete(schema, value, path, fault)
+
+def Laws.schema_coerce_matches_spec(schema, value):
+  SchemaCoerce.coerce_spec(schema, value)
+
+def Laws.schema_coerced_acceptance_iff(schema, value):
+  SchemaCoerce.text_acceptance(schema, value)
+
+def Laws.schema_coerced_preserves_typed_value(schema, value):
+  SchemaCoerce.text_preservation(schema, value)
+
+def Laws.schema_coerced_errors_name_failing_paths(schema, value):
+  SchemaCoerce.text_located(schema, value)
+
+def Laws.schema_coerced_errors_complete(schema, value, path, fault):
+  SchemaCoerce.text_complete(schema, value, path, fault)
+
 # BND-24
 
 def Laws.scoped_stage_selection(Tag, entries, routes, compiled, layers, count, route, stage, built):
@@ -630,3 +655,10 @@ def Laws.stream_rfc_roundtrip(chunks, limit, suffix, valid):
 
 def Laws.stream_rfc_last_chunk(limit, suffix):
   StreamRfcProof.last_chunk(limit, suffix)
+
+# BND-41
+def Laws.conditional_if_none_match_spec(field, tag): LimitsProof.matches(field, tag)
+def Laws.conditional_304_spec(res): LimitsProof.response(res)
+def Laws.body_limit_spec(length, limit): LimitsProof.within(length, limit)
+
+def Laws.etag_middleware_spec(method, field, res): LimitsProof.etag(method, field, res)

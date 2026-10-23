@@ -6,6 +6,7 @@ import ../src/data/schema-spec.bend as Spec
 import ./schema.bend as SP
 import ./chunked-arith.bend as A
 import ./utf8.bend as UP
+import ./schema-text.bend as TP
 
 # Boolean and list steps.
 
@@ -121,11 +122,13 @@ def absent_ok(p: S.Presence) -> Bool:
   match p:
     case S.Required{}: False{}
     case S.Optional{}: True{}
+    case S.Default{d}: True{}
 
-def absent_eq(+rev: List<&2, S.VField>, +k: String, +p: S.Presence) -> {ok(List<&2, S.VField>, S.absent(rev, k, p)) == absent_ok(p) : Bool}:
+def absent_eq(+rev: List<&2, S.VField>, +k: String, +c: S.Schema, +p: S.Presence, okd: {S.default_ok(c, p) == True{} : Bool}) -> {ok(List<&2, S.VField>, S.absent(rev, k, p, S.at(S.PathKey{k}, S.decode_go(c, S.default_of(p), S.start(c, S.default_of(p)))))) == absent_ok(p) : Bool}:
   match p:
     case S.Required{}: {==}
     case S.Optional{}: {==}
+    case S.Default{d}: Equal.trans(Bool, ok(List<&2, S.VField>, S.push_field(rev, k, S.at(S.PathKey{k}, S.decode_go(c, d, S.start(c, d))))), S.accepted(S.decode_go(c, d, S.start(c, d))), True{}, push_field_ok(rev, k, S.PathKey{k}, S.decode_go(c, d, S.start(c, d))), okd)
 
 # What an object's precomputed member slots promise about its declared fields.
 
@@ -154,6 +157,7 @@ def absent_nil(+p: S.Presence) -> {absent_ok(p) == (Spec.presence(p, 0n) && True
   match p:
     case S.Required{}: {==}
     case S.Optional{}: {==}
+    case S.Default{d}: {==}
 
 def step_absent(+c: S.Schema, +k: String, +key: String, +y: J.Json, +t: List<&2, J.Field>, b: Bool, +p: S.Presence) -> {slot_meets(c, p, S.find(t, k, S.found(b, S.Absent{}, y))) == find_claim(c, p, k, t, S.found(b, S.Absent{}, y)) : Bool} -> {slot_meets(c, p, S.find(t, k, S.found(b, S.Absent{}, y))) == (Spec.presence(p, Spec.bump(b, Spec.named(t, k))) && ((Bool.not(b) || Spec.meets(c, Spec.Holds{}, y)) && every(c, k, t))) : Bool}:
   match b p:
@@ -162,6 +166,9 @@ def step_absent(+c: S.Schema, +k: String, +key: String, +y: J.Json, +t: List<&2,
     case True{} S.Optional{}: ih =>
       %Equal.sym(Bool, Nat.is_le(Spec.named(t, k), 0n), Nat.is_eq(Spec.named(t, k), 0n), le_zero(Spec.named(t, k))) : {slot_meets(c, S.Optional{}, S.find(t, k, S.Once{y})) == (_ && (Spec.meets(c, Spec.Holds{}, y) && every(c, k, t))) : Bool}
       Equal.trans(Bool, slot_meets(c, S.Optional{}, S.find(t, k, S.Once{y})), ((Nat.is_eq(Spec.named(t, k), 0n) && Spec.meets(c, Spec.Holds{}, y)) && every(c, k, t)), (Nat.is_eq(Spec.named(t, k), 0n) && (Spec.meets(c, Spec.Holds{}, y) && every(c, k, t))), ih, SP.and_assoc(Nat.is_eq(Spec.named(t, k), 0n), Spec.meets(c, Spec.Holds{}, y), every(c, k, t)))
+    case True{} S.Default{d}: ih =>
+      %Equal.sym(Bool, Nat.is_le(Spec.named(t, k), 0n), Nat.is_eq(Spec.named(t, k), 0n), le_zero(Spec.named(t, k))) : {slot_meets(c, S.Default{d}, S.find(t, k, S.Once{y})) == (_ && (Spec.meets(c, Spec.Holds{}, y) && every(c, k, t))) : Bool}
+      Equal.trans(Bool, slot_meets(c, S.Default{d}, S.find(t, k, S.Once{y})), ((Nat.is_eq(Spec.named(t, k), 0n) && Spec.meets(c, Spec.Holds{}, y)) && every(c, k, t)), (Nat.is_eq(Spec.named(t, k), 0n) && (Spec.meets(c, Spec.Holds{}, y) && every(c, k, t))), ih, SP.and_assoc(Nat.is_eq(Spec.named(t, k), 0n), Spec.meets(c, Spec.Holds{}, y), every(c, k, t)))
 
 def step_once(+c: S.Schema, +p: S.Presence, +k: String, +key: String, +y: J.Json, +z: J.Json, +t: List<&2, J.Field>, b: Bool) -> {slot_meets(c, p, S.find(t, k, S.found(b, S.Once{z}, y))) == find_claim(c, p, k, t, S.found(b, S.Once{z}, y)) : Bool} -> {slot_meets(c, p, S.find(t, k, S.found(b, S.Once{z}, y))) == ((Nat.is_eq(Spec.bump(b, Spec.named(t, k)), 0n) && Spec.meets(c, Spec.Holds{}, z)) && ((Bool.not(b) || Spec.meets(c, Spec.Holds{}, y)) && every(c, k, t))) : Bool}:
   match b:
@@ -266,10 +273,13 @@ def item_valid(+i: S.Schema, +m: Nat, +n: Maybe<&2, Nat>, okv: {S.valid(S.ArrayS
   UP.and_right(S.max_length(n, m), S.valid(i), okv)
 
 def field_valid(+k: String, +c: S.Schema, +p: S.Presence, +t: List<&2, S.Field>, +u: S.Unknown, okv: {S.valid(S.ObjectSchema{S.Field{k, c, p} <> t, u}) == True{} : Bool}) -> {S.valid(c) == True{} : Bool}:
-  UP.and_right(J.scalars(k) && Bool.not(S.declared(t, k)), S.valid(c), UP.and_left(J.scalars(k) && Bool.not(S.declared(t, k)) && S.valid(c), S.valid(S.ObjectSchema{t, u}), okv))
+  UP.and_right(J.scalars(k) && Bool.not(S.declared(t, k)), S.valid(c), UP.and_left(J.scalars(k) && Bool.not(S.declared(t, k)) && S.valid(c), S.default_ok(c, p), UP.and_left(J.scalars(k) && Bool.not(S.declared(t, k)) && S.valid(c) && S.default_ok(c, p), S.valid(S.ObjectSchema{t, u}), okv)))
+
+def default_valid(+k: String, +c: S.Schema, +p: S.Presence, +t: List<&2, S.Field>, +u: S.Unknown, okv: {S.valid(S.ObjectSchema{S.Field{k, c, p} <> t, u}) == True{} : Bool}) -> {S.default_ok(c, p) == True{} : Bool}:
+  UP.and_right(J.scalars(k) && Bool.not(S.declared(t, k)) && S.valid(c), S.default_ok(c, p), UP.and_left(J.scalars(k) && Bool.not(S.declared(t, k)) && S.valid(c) && S.default_ok(c, p), S.valid(S.ObjectSchema{t, u}), okv))
 
 def rest_valid(+k: String, +c: S.Schema, +p: S.Presence, +t: List<&2, S.Field>, +u: S.Unknown, okv: {S.valid(S.ObjectSchema{S.Field{k, c, p} <> t, u}) == True{} : Bool}) -> {S.valid(S.ObjectSchema{t, u}) == True{} : Bool}:
-  UP.and_right(J.scalars(k) && Bool.not(S.declared(t, k)) && S.valid(c), S.valid(S.ObjectSchema{t, u}), okv)
+  UP.and_right(J.scalars(k) && Bool.not(S.declared(t, k)) && S.valid(c) && S.default_ok(c, p), S.valid(S.ObjectSchema{t, u}), okv)
 
 def member_valid(+m: S.Schema, +t: List<&2, S.Schema>, okv: {S.valid(S.UnionSchema{m <> t}) == True{} : Bool}) -> {S.valid(m) == True{} : Bool}:
   UP.and_left(S.valid(m), S.valid(S.UnionSchema{t}), okv)
@@ -329,7 +339,7 @@ def agree(+s: S.Schema, +v: J.Json, +acc: S.Acc, +okv: {S.valid(s) == True{} : B
     case S.ObjectSchema{fs, u} x S.AFields{Fail{e}, ss}: {==}
     case S.ObjectSchema{Nil{}, u} x S.AFields{Done{rev}, ss}: {==}
     case S.ObjectSchema{S.Field{k, c, p} <> t, u} x S.AFields{Done{rev}, S.Once{y} <> rest}: and_head(S.accepted(S.decode_go(S.ObjectSchema{S.Field{k, c, p} <> t, u}, x, S.AFields{Done{rev}, S.Once{y} <> rest})), ok(List<&2, S.VField>, S.push_field(rev, k, S.at(S.PathKey{k}, S.decode_go(c, y, S.start(c, y))))), Spec.meets(c, Spec.Holds{}, y), slots_meet(t, rest), agree(S.ObjectSchema{t, u}, x, S.AFields{S.push_field(rev, k, S.at(S.PathKey{k}, S.decode_go(c, y, S.start(c, y)))), rest}, rest_valid(k, c, p, t, u, okv)), Equal.trans(Bool, ok(List<&2, S.VField>, S.push_field(rev, k, S.at(S.PathKey{k}, S.decode_go(c, y, S.start(c, y))))), S.accepted(S.decode_go(c, y, S.start(c, y))), Spec.meets(c, Spec.Holds{}, y), push_field_ok(rev, k, S.PathKey{k}, S.decode_go(c, y, S.start(c, y))), child(c, y, agree(c, y, S.start(c, y), field_valid(k, c, p, t, u, okv)))))
-    case S.ObjectSchema{S.Field{k, c, p} <> t, u} x S.AFields{Done{rev}, S.Absent{} <> rest}: and_head(S.accepted(S.decode_go(S.ObjectSchema{S.Field{k, c, p} <> t, u}, x, S.AFields{Done{rev}, S.Absent{} <> rest})), ok(List<&2, S.VField>, S.absent(rev, k, p)), absent_ok(p), slots_meet(t, rest), agree(S.ObjectSchema{t, u}, x, S.AFields{S.absent(rev, k, p), rest}, rest_valid(k, c, p, t, u, okv)), absent_eq(rev, k, p))
+    case S.ObjectSchema{S.Field{k, c, p} <> t, u} x S.AFields{Done{rev}, S.Absent{} <> rest}: and_head(S.accepted(S.decode_go(S.ObjectSchema{S.Field{k, c, p} <> t, u}, x, S.AFields{Done{rev}, S.Absent{} <> rest})), ok(List<&2, S.VField>, S.absent(rev, k, p, S.at(S.PathKey{k}, S.decode_go(c, S.default_of(p), S.start(c, S.default_of(p)))))), absent_ok(p), slots_meet(t, rest), agree(S.ObjectSchema{t, u}, x, S.AFields{S.absent(rev, k, p, S.at(S.PathKey{k}, S.decode_go(c, S.default_of(p), S.start(c, S.default_of(p))))), rest}, rest_valid(k, c, p, t, u, okv)), absent_eq(rev, k, c, p, default_valid(k, c, p, t, u, okv)))
     case S.ObjectSchema{S.Field{k, c, p} <> t, u} x S.AFields{Done{rev}, S.Repeated{y} <> rest}: {==}
     case S.ObjectSchema{S.Field{k, c, p} <> t, u} x S.AFields{Done{rev}, Nil{}}: {==}
     case S.ObjectSchema{fs, u} x S.AScalar{}: {==}
@@ -353,10 +363,52 @@ def spec_go(+s: S.Schema, +v: J.Json, c: Bool) -> {S.valid(s) == c : Bool} -> {S
     case False{}: e => {==}
     case True{}: e => child(s, v, agree(s, v, S.start(s, v), e))
 
+def guarded(+x: Bool, +v: Bool, -d: Bool, -e: Bool, h: {v == True{} : Bool} -> {d == e : Bool}) -> {((x && v) && d) == ((x && v) && e) : Bool}:
+  match x v:
+    case True{} True{}: h({==})
+    case True{} False{}: {==}
+    case False{} y: {==}
+
+def default_eq(+c: S.Schema, +p: S.Presence, okc: {S.valid(c) == True{} : Bool}) -> {S.default_ok(c, p) == Spec.default_fits(c, p) : Bool}:
+  match p:
+    case S.Required{}: {==}
+    case S.Optional{}: {==}
+    case S.Default{d}: child(c, d, agree(c, d, S.start(c, d), okc))
+
+# Validity agrees with the specification's well-formedness, defaults included.
+def valid_equiv(+s: S.Schema) -> {S.valid(s) == Spec.schema_ok(s) : Bool}:
+  match s:
+    case S.StringSchema{min, max, p, f}: SP.and_eq(S.max_length(max, min), Spec.at_most(max, min), S.optional_pattern_valid(p), Spec.optional_pattern_ok(p), SP.max_equiv(max, min), SP.optional_pattern_equiv(p))
+    case S.NumberSchema{min, max}: SP.bounds_equiv(min, max)
+    case S.IntegerSchema{min, max}: SP.bounds_equiv(min, max)
+    case S.BooleanSchema{}: {==}
+    case S.LiteralSchema{v}: SP.scalar_equiv(v)
+    case S.EnumSchema{xs}: SP.literals_go(xs, True{})
+    case S.ArraySchema{i, min, max}: SP.and_eq(S.max_length(max, min), Spec.at_most(max, min), S.valid(i), Spec.schema_ok(i), SP.max_equiv(max, min), valid_equiv(i))
+    case S.ObjectSchema{Nil{}, u}: {==}
+    case S.ObjectSchema{S.Field{k, c, p} <> t, u}:
+      %TP.scalars_equiv(k) : {S.valid(S.ObjectSchema{S.Field{k, c, p} <> t, u}) == (_ && Bool.not(Spec.declares(t, k)) && Spec.schema_ok(c) && Spec.default_fits(c, p) && Spec.schema_ok(S.ObjectSchema{t, u})) : Bool}
+      %SP.declared_equiv(t, k) : {S.valid(S.ObjectSchema{S.Field{k, c, p} <> t, u}) == (J.scalars(k) && Bool.not(_) && Spec.schema_ok(c) && Spec.default_fits(c, p) && Spec.schema_ok(S.ObjectSchema{t, u})) : Bool}
+      %valid_equiv(c) : {S.valid(S.ObjectSchema{S.Field{k, c, p} <> t, u}) == (J.scalars(k) && Bool.not(S.declared(t, k)) && _ && Spec.default_fits(c, p) && Spec.schema_ok(S.ObjectSchema{t, u})) : Bool}
+      %valid_equiv(S.ObjectSchema{t, u}) : {S.valid(S.ObjectSchema{S.Field{k, c, p} <> t, u}) == (J.scalars(k) && Bool.not(S.declared(t, k)) && S.valid(c) && Spec.default_fits(c, p) && _) : Bool}
+      %guarded(J.scalars(k) && Bool.not(S.declared(t, k)), S.valid(c), S.default_ok(c, p), Spec.default_fits(c, p), okc => default_eq(c, p, okc)) : {S.valid(S.ObjectSchema{S.Field{k, c, p} <> t, u}) == (_ && S.valid(S.ObjectSchema{t, u})) : Bool}
+      {==}
+    case S.NullableSchema{i}: valid_equiv(i)
+    case S.UnionSchema{Nil{}}: {==}
+    case S.UnionSchema{m <> t}: SP.and_eq(S.valid(m), Spec.schema_ok(m), S.valid(S.UnionSchema{t}), Spec.schema_ok(S.UnionSchema{t}), valid_equiv(m), valid_equiv(S.UnionSchema{t}))
+
+def report_accepted(r: Result<&2, &2, S.Errors(), S.Value>, +s: S.Schema, +v: J.Json) -> {S.accepted(S.report(r, s, v)) == S.accepted(r) : Bool}:
+  match r:
+    case Done{x}: {==}
+    case Fail{e}: {==}
+
+def first_spec(+s: S.Schema, +v: J.Json) -> {S.accepted(S.decode_first(s, v)) == Spec.satisfies(s, v) : Bool}:
+  %valid_equiv(s) : {S.accepted(S.decode_first(s, v)) == (_ && Spec.meets(s, Spec.Holds{}, v)) : Bool}
+  spec_go(s, v, S.valid(s))({==})
+
 # The BND-33 law over the whole schema language.
 def acceptance_spec(+s: S.Schema, +v: J.Json) -> {S.accepted(S.decode(s, v)) == Spec.satisfies(s, v) : Bool}:
-  %SP.valid_equiv(s) : {S.accepted(S.decode(s, v)) == (_ && Spec.meets(s, Spec.Holds{}, v)) : Bool}
-  spec_go(s, v, S.valid(s))({==})
+  Equal.trans(Bool, S.accepted(S.decode(s, v)), S.accepted(S.decode_first(s, v)), Spec.satisfies(s, v), report_accepted(S.decode_first(s, v), s, v), first_spec(s, v))
 
 # BND-34 preservation: every success carries exactly `value_for`.
 
@@ -375,16 +427,22 @@ def shift_by(n: Nat, m: Maybe<&2, S.Value>) -> Maybe<&2, S.Value>:
     case Some{S.VUnion{j, x}}: Some{S.VUnion{Nat.add(j, n), x}}
     case _: None{}
 
-def slot_value(+k: String, +c: S.Schema, slot: S.Slot) -> Maybe<&2, S.VField>:
+def absent_value(+k: String, +c: S.Schema, p: S.Presence) -> Maybe<&2, S.VField>:
+  match p:
+    case S.Default{+d}: S.field_value(k, Some{d}, S.value_for(c, d))
+    case S.Required{}: Some{S.VField{k, None{}}}
+    case S.Optional{}: Some{S.VField{k, None{}}}
+
+def slot_value(+k: String, +c: S.Schema, p: S.Presence, slot: S.Slot) -> Maybe<&2, S.VField>:
   match slot:
-    case S.Absent{}: Some{S.VField{k, None{}}}
+    case S.Absent{}: absent_value(k, c, p)
     case S.Once{+y}: S.field_value(k, Some{y}, S.value_for(c, y))
     case S.Repeated{+y}: S.field_value(k, Some{y}, S.value_for(c, y))
 
 def slot_values(fs: List<&2, S.Field>, ss: List<&2, S.Slot>) -> Maybe<&2, S.Value>:
   match fs ss:
     case Nil{} _: Some{S.VObject{[]}}
-    case S.Field{k, c, p} <> t x <> rest: S.cons_field(slot_value(k, c, x), slot_values(t, rest))
+    case S.Field{k, c, p} <> t x <> rest: S.cons_field(slot_value(k, c, p, x), slot_values(t, rest))
     case S.Field{k, c, p} <> t Nil{}: None{}
 
 def want(s: S.Schema, acc: S.Acc, +v: J.Json) -> Maybe<&2, S.Value>:
@@ -511,28 +569,34 @@ def first_go(+input: List<&2, J.Field>, +k: String, +acc: S.Slot) -> {first_of(S
     case J.Field{key, y} <> t S.Absent{}: first_absent(k, y, t, String.eq(key, k))(first_go(t, k, S.found(String.eq(key, k), S.Absent{}, y)))
     case J.Field{key, y} <> t S.Once{z}: first_once(k, y, z, t, String.eq(key, k))(first_go(t, k, S.found(String.eq(key, k), S.Once{z}, y)))
 
-def slot_shape(+k: String, +c: S.Schema, +slot: S.Slot) -> {slot_value(k, c, slot) == S.field_value(k, first_of(slot), S.value_for(c, S.or_null(first_of(slot)))) : Maybe<&2, S.VField>}:
-  match slot:
-    case S.Absent{}: {==}
-    case S.Once{y}: {==}
-    case S.Repeated{y}: {==}
+def slot_shape(+k: String, +c: S.Schema, +p: S.Presence, +slot: S.Slot) -> {slot_value(k, c, p, slot) == S.field_value(k, S.fill(p, first_of(slot)), S.value_for(c, S.or_null(S.fill(p, first_of(slot))))) : Maybe<&2, S.VField>}:
+  match p slot:
+    case S.Required{} S.Absent{}: {==}
+    case S.Required{} S.Once{y}: {==}
+    case S.Required{} S.Repeated{y}: {==}
+    case S.Optional{} S.Absent{}: {==}
+    case S.Optional{} S.Once{y}: {==}
+    case S.Optional{} S.Repeated{y}: {==}
+    case S.Default{d} S.Absent{}: {==}
+    case S.Default{d} S.Once{y}: {==}
+    case S.Default{d} S.Repeated{y}: {==}
 
-def slot_value_eq(+k: String, +c: S.Schema, +input: List<&2, J.Field>) -> {slot_value(k, c, S.find(input, k, S.Absent{})) == S.field_value(k, S.first(input, k), S.value_for(c, S.or_null(S.first(input, k)))) : Maybe<&2, S.VField>}:
-  %first_go(input, k, S.Absent{}) : {slot_value(k, c, S.find(input, k, S.Absent{})) == S.field_value(k, _, S.value_for(c, S.or_null(_))) : Maybe<&2, S.VField>}
-  slot_shape(k, c, S.find(input, k, S.Absent{}))
+def slot_value_eq(+k: String, +c: S.Schema, +p: S.Presence, +input: List<&2, J.Field>) -> {slot_value(k, c, p, S.find(input, k, S.Absent{})) == S.field_value(k, S.fill(p, S.first(input, k)), S.value_for(c, S.or_null(S.fill(p, S.first(input, k))))) : Maybe<&2, S.VField>}:
+  %first_go(input, k, S.Absent{}) : {slot_value(k, c, p, S.find(input, k, S.Absent{})) == S.field_value(k, S.fill(p, _), S.value_for(c, S.or_null(S.fill(p, _)))) : Maybe<&2, S.VField>}
+  slot_shape(k, c, p, S.find(input, k, S.Absent{}))
 
 def slot_values_eq(+fs: List<&2, S.Field>, +u: S.Unknown, +input: List<&2, J.Field>) -> {slot_values(fs, S.slots(fs, input)) == S.value_for(S.ObjectSchema{fs, u}, J.JObject{input}) : Maybe<&2, S.Value>}:
   match fs:
     case Nil{}: {==}
     case S.Field{k, c, p} <> t:
-      %slot_value_eq(k, c, input) : {slot_values(S.Field{k, c, p} <> t, S.slots(S.Field{k, c, p} <> t, input)) == S.cons_field(_, S.value_for(S.ObjectSchema{t, u}, J.JObject{input})) : Maybe<&2, S.Value>}
-      %slot_values_eq(t, u, input) : {slot_values(S.Field{k, c, p} <> t, S.slots(S.Field{k, c, p} <> t, input)) == S.cons_field(slot_value(k, c, S.find(input, k, S.Absent{})), _) : Maybe<&2, S.Value>}
+      %slot_value_eq(k, c, p, input) : {slot_values(S.Field{k, c, p} <> t, S.slots(S.Field{k, c, p} <> t, input)) == S.cons_field(_, S.value_for(S.ObjectSchema{t, u}, J.JObject{input})) : Maybe<&2, S.Value>}
+      %slot_values_eq(t, u, input) : {slot_values(S.Field{k, c, p} <> t, S.slots(S.Field{k, c, p} <> t, input)) == S.cons_field(slot_value(k, c, p, S.find(input, k, S.Absent{})), _) : Maybe<&2, S.Value>}
       {==}
 
 def after_slot_values(+fs: List<&2, S.Field>, +ss: List<&2, S.Slot>) -> {fields_after([], slot_values(fs, ss)) == slot_values(fs, ss) : Maybe<&2, S.Value>}:
   match fs ss:
     case Nil{} x: {==}
-    case S.Field{k, c, p} <> t x <> rest: after_cons_field(slot_value(k, c, x), slot_values(t, rest))
+    case S.Field{k, c, p} <> t x <> rest: after_cons_field(slot_value(k, c, p, x), slot_values(t, rest))
     case S.Field{k, c, p} <> t Nil{}: {==}
 
 def obj_entry(+fs: List<&2, S.Field>, +u: S.Unknown, +input: List<&2, J.Field>, b: Bool) -> {want(S.ObjectSchema{fs, u}, S.AFields{S.fields_gate(b), S.slots(fs, input)}, J.JObject{input}) == S.value_for(S.ObjectSchema{fs, u}, J.JObject{input}) : Maybe<&2, S.Value>}:
@@ -570,13 +634,13 @@ def entry2(+s: S.Schema, +v: J.Json) -> {want(s, S.start(s, v), v) == S.value_fo
     case S.ObjectSchema{fs, u} J.JArray{b0}: {==}
     case S.NullableSchema{i} x: {==}
     case S.UnionSchema{Nil{}} x: {==}
-    case S.UnionSchema{m <> t} x: shift_zero(S.accepted(S.decode(m, x)), S.value_for(m, x), S.value_for(S.UnionSchema{t}, x))
+    case S.UnionSchema{m <> t} x: shift_zero(S.accepted(S.decode_first(m, x)), S.value_for(m, x), S.value_for(S.UnionSchema{t}, x))
 
 def child2(+s: S.Schema, +v: J.Json, ih: S.Preserves(want(s, S.start(s, v), v), S.decode_go(s, v, S.start(s, v)))) -> S.Preserves(S.value_for(s, v), S.decode_go(s, v, S.start(s, v))):
   %entry2(s, v) : S.Preserves(_, S.decode_go(s, v, S.start(s, v)))
   ih
 
-def decode_eq(+m: S.Schema, +x: J.Json, okm: {S.valid(m) == True{} : Bool}) -> {S.decode(m, x) == S.decode_go(m, x, S.start(m, x)) : Result<&2, &2, S.Errors(), S.Value>}:
+def decode_eq(+m: S.Schema, +x: J.Json, okm: {S.valid(m) == True{} : Bool}) -> {S.decode_first(m, x) == S.decode_go(m, x, S.start(m, x)) : Result<&2, &2, S.Errors(), S.Value>}:
   %Equal.sym(Bool, S.valid(m), True{}, okm) : {S.decode_valid(m, x, _) == S.decode_go(m, x, S.start(m, x)) : Result<&2, &2, S.Errors(), S.Value>}
   {==}
 
@@ -598,25 +662,26 @@ def obj_step(+k: String, +c: S.Schema, +u: S.Unknown, +x: J.Json, +y: J.Json, +r
       %after_field(rev, S.VField{k, Some{z}}, slot_values(g, rest)) : S.Preserves(_, S.decode_go(S.ObjectSchema{g, u}, x, S.AFields{Done{S.VField{k, Some{z}} <> rev}, rest}))
       ih2
 
-def absent_step(+k: String, +u: S.Unknown, +x: J.Json, +rest: List<&2, S.Slot>, +rev: List<&2, S.VField>, p: S.Presence, t: List<&2, S.Field>) -> S.Preserves(want(S.ObjectSchema{t, u}, S.AFields{S.absent(rev, k, p), rest}, x), S.decode_go(S.ObjectSchema{t, u}, x, S.AFields{S.absent(rev, k, p), rest})) -> S.Preserves(fields_after(rev, S.cons_field(Some{S.VField{k, None{}}}, slot_values(t, rest))), S.decode_go(S.ObjectSchema{t, u}, x, S.AFields{S.absent(rev, k, p), rest})):
+def absent_step(+k: String, +c: S.Schema, +u: S.Unknown, +x: J.Json, +rest: List<&2, S.Slot>, +rev: List<&2, S.VField>, p: S.Presence, t: List<&2, S.Field>) -> S.Preserves(S.value_for(c, S.default_of(p)), S.decode_go(c, S.default_of(p), S.start(c, S.default_of(p)))) -> S.Preserves(want(S.ObjectSchema{t, u}, S.AFields{S.absent(rev, k, p, S.at(S.PathKey{k}, S.decode_go(c, S.default_of(p), S.start(c, S.default_of(p))))), rest}, x), S.decode_go(S.ObjectSchema{t, u}, x, S.AFields{S.absent(rev, k, p, S.at(S.PathKey{k}, S.decode_go(c, S.default_of(p), S.start(c, S.default_of(p))))), rest})) -> S.Preserves(fields_after(rev, S.cons_field(absent_value(k, c, p), slot_values(t, rest))), S.decode_go(S.ObjectSchema{t, u}, x, S.AFields{S.absent(rev, k, p, S.at(S.PathKey{k}, S.decode_go(c, S.default_of(p), S.start(c, S.default_of(p))))), rest})):
   match p t:
-    case S.Required{} Nil{}: ih => Unit{}
-    case S.Required{} S.Field{k2, c2, p2} <> t2: ih => Unit{}
-    case S.Optional{} +g: ih =>
+    case S.Required{} Nil{}: ih1 => ih2 => Unit{}
+    case S.Required{} S.Field{k2, c2, p2} <> t2: ih1 => ih2 => Unit{}
+    case S.Optional{} +g: ih1 => ih2 =>
       %after_field(rev, S.VField{k, None{}}, slot_values(g, rest)) : S.Preserves(_, S.decode_go(S.ObjectSchema{g, u}, x, S.AFields{Done{S.VField{k, None{}} <> rev}, rest}))
-      ih
+      ih2
+    case S.Default{+d} g: ih1 => ih2 => obj_step(k, c, u, x, d, rest, rev, S.decode_go(c, d, S.start(c, d)), g)(ih1)(ih2)
 
-def uni_done(+m: S.Schema, +x: J.Json, +n: Nat, +z: S.Value, +later: Maybe<&2, S.Value>, hr: {S.decode(m, x) == Done{z} : Result<&2, &2, S.Errors(), S.Value>}, ih1: {Some{z} == S.value_for(m, x) : Maybe<&2, S.Value>}) -> {Some{S.VUnion{n, z}} == shift_by(n, S.first_member(S.accepted(S.decode(m, x)), S.value_for(m, x), later)) : Maybe<&2, S.Value>}:
-  %Equal.sym(Result<&2, &2, S.Errors(), S.Value>, S.decode(m, x), Done{z}, hr) : {Some{S.VUnion{n, z}} == shift_by(n, S.first_member(S.accepted(_), S.value_for(m, x), later)) : Maybe<&2, S.Value>}
+def uni_done(+m: S.Schema, +x: J.Json, +n: Nat, +z: S.Value, +later: Maybe<&2, S.Value>, hr: {S.decode_first(m, x) == Done{z} : Result<&2, &2, S.Errors(), S.Value>}, ih1: {Some{z} == S.value_for(m, x) : Maybe<&2, S.Value>}) -> {Some{S.VUnion{n, z}} == shift_by(n, S.first_member(S.accepted(S.decode_first(m, x)), S.value_for(m, x), later)) : Maybe<&2, S.Value>}:
+  %Equal.sym(Result<&2, &2, S.Errors(), S.Value>, S.decode_first(m, x), Done{z}, hr) : {Some{S.VUnion{n, z}} == shift_by(n, S.first_member(S.accepted(_), S.value_for(m, x), later)) : Maybe<&2, S.Value>}
   %ih1 : {Some{S.VUnion{n, z}} == shift_by(n, S.first_member(True{}, _, later)) : Maybe<&2, S.Value>}
   {==}
 
-def uni_step(+m: S.Schema, +x: J.Json, +n: Nat, r: Result<&2, &2, S.Errors(), S.Value>, t: List<&2, S.Schema>) -> {S.decode(m, x) == r : Result<&2, &2, S.Errors(), S.Value>} -> S.Preserves(S.value_for(m, x), r) -> S.Preserves(want(S.UnionSchema{t}, S.AMembers{1n+n, n, r}, x), S.decode_go(S.UnionSchema{t}, x, S.AMembers{1n+n, n, r})) -> S.Preserves(shift_by(n, S.first_member(S.accepted(S.decode(m, x)), S.value_for(m, x), S.value_for(S.UnionSchema{t}, x))), S.decode_go(S.UnionSchema{t}, x, S.AMembers{1n+n, n, r})):
+def uni_step(+m: S.Schema, +x: J.Json, +n: Nat, r: Result<&2, &2, S.Errors(), S.Value>, t: List<&2, S.Schema>) -> {S.decode_first(m, x) == r : Result<&2, &2, S.Errors(), S.Value>} -> S.Preserves(S.value_for(m, x), r) -> S.Preserves(want(S.UnionSchema{t}, S.AMembers{1n+n, n, r}, x), S.decode_go(S.UnionSchema{t}, x, S.AMembers{1n+n, n, r})) -> S.Preserves(shift_by(n, S.first_member(S.accepted(S.decode_first(m, x)), S.value_for(m, x), S.value_for(S.UnionSchema{t}, x))), S.decode_go(S.UnionSchema{t}, x, S.AMembers{1n+n, n, r})):
   match r t:
     case Done{z} Nil{}: hr => ih1 => ih2 => uni_done(m, x, n, z, S.value_for(S.UnionSchema{[]}, x), hr, ih1)
     case Done{z} g <> h: hr => ih1 => ih2 => uni_done(m, x, n, z, S.value_for(S.UnionSchema{g <> h}, x), hr, ih1)
     case Fail{e} +g: hr => ih1 => ih2 =>
-      %Equal.sym(Result<&2, &2, S.Errors(), S.Value>, S.decode(m, x), Fail{e}, hr) : S.Preserves(shift_by(n, S.first_member(S.accepted(_), S.value_for(m, x), S.value_for(S.UnionSchema{g}, x))), S.decode_go(S.UnionSchema{g}, x, S.AMembers{1n+n, n, Fail{e}}))
+      %Equal.sym(Result<&2, &2, S.Errors(), S.Value>, S.decode_first(m, x), Fail{e}, hr) : S.Preserves(shift_by(n, S.first_member(S.accepted(_), S.value_for(m, x), S.value_for(S.UnionSchema{g}, x))), S.decode_go(S.UnionSchema{g}, x, S.AMembers{1n+n, n, Fail{e}}))
       %shift_fail(n, S.value_for(m, x), S.value_for(S.UnionSchema{g}, x)) : S.Preserves(_, S.decode_go(S.UnionSchema{g}, x, S.AMembers{1n+n, n, Fail{e}}))
       ih2
 
@@ -667,7 +732,7 @@ def keep(+s: S.Schema, +v: J.Json, +acc: S.Acc, +okv: {S.valid(s) == True{} : Bo
     case S.ObjectSchema{fs, u} x S.AFields{Fail{e}, ss}: Unit{}
     case S.ObjectSchema{Nil{}, u} x S.AFields{Done{rev}, ss}: {==}
     case S.ObjectSchema{S.Field{k, c, p} <> t, u} x S.AFields{Done{rev}, S.Once{y} <> rest}: obj_step(k, c, u, x, y, rest, rev, S.decode_go(c, y, S.start(c, y)), t)(child2(c, y, keep(c, y, S.start(c, y), field_valid(k, c, p, t, u, okv))))(keep(S.ObjectSchema{t, u}, x, S.AFields{S.push_field(rev, k, S.at(S.PathKey{k}, S.decode_go(c, y, S.start(c, y)))), rest}, rest_valid(k, c, p, t, u, okv)))
-    case S.ObjectSchema{S.Field{k, c, p} <> t, u} x S.AFields{Done{rev}, S.Absent{} <> rest}: absent_step(k, u, x, rest, rev, p, t)(keep(S.ObjectSchema{t, u}, x, S.AFields{S.absent(rev, k, p), rest}, rest_valid(k, c, p, t, u, okv)))
+    case S.ObjectSchema{S.Field{k, c, p} <> t, u} x S.AFields{Done{rev}, S.Absent{} <> rest}: absent_step(k, c, u, x, rest, rev, p, t)(child2(c, S.default_of(p), keep(c, S.default_of(p), S.start(c, S.default_of(p)), field_valid(k, c, p, t, u, okv))))(keep(S.ObjectSchema{t, u}, x, S.AFields{S.absent(rev, k, p, S.at(S.PathKey{k}, S.decode_go(c, S.default_of(p), S.start(c, S.default_of(p))))), rest}, rest_valid(k, c, p, t, u, okv)))
     case S.ObjectSchema{S.Field{k, c, p} <> t, u} x S.AFields{Done{rev}, S.Repeated{y} <> rest}: Unit{}
     case S.ObjectSchema{S.Field{k, c, p} <> t, u} x S.AFields{Done{rev}, Nil{}}: Unit{}
     case S.ObjectSchema{fs, u} x S.AScalar{}: Unit{}
@@ -691,9 +756,17 @@ def pres_go(+s: S.Schema, +v: J.Json, c: Bool) -> {S.valid(s) == c : Bool} -> S.
     case False{}: e => Unit{}
     case True{}: e => child2(s, v, keep(s, v, S.start(s, v), e))
 
+def first_preservation(+s: S.Schema, +v: J.Json) -> S.Preserves(S.value_for(s, v), S.decode_first(s, v)):
+  pres_go(s, v, S.valid(s))({==})
+
+def report_preserves(-m: Maybe<&2, S.Value>, r: Result<&2, &2, S.Errors(), S.Value>, +s: S.Schema, +v: J.Json) -> S.Preserves(m, r) -> S.Preserves(m, S.report(r, s, v)):
+  match r:
+    case Done{x}: h => h
+    case Fail{e}: h => Unit{}
+
 # The BND-33 preservation law over the whole schema language.
 def preservation(+s: S.Schema, +v: J.Json) -> S.Preserves(S.value_for(s, v), S.decode(s, v)):
-  pres_go(s, v, S.valid(s))({==})
+  report_preserves(S.value_for(s, v), S.decode_first(s, v), s, v)(first_preservation(s, v))
 
 # BND-34 ticket law: the children of an accepted value satisfy their schemas.
 
@@ -724,10 +797,10 @@ def some_eq(+ms: List<&2, S.Schema>, +v: J.Json, +ok: {Spec.schema_ok(S.UnionSch
       {==}
 
 def spec_field_ok(+k: String, +c: S.Schema, +p: S.Presence, +t: List<&2, S.Field>, +u: S.Unknown, ok: {Spec.schema_ok(S.ObjectSchema{S.Field{k, c, p} <> t, u}) == True{} : Bool}) -> {Spec.schema_ok(c) == True{} : Bool}:
-  UP.and_right(Spec.scalars(k) && Bool.not(Spec.declares(t, k)), Spec.schema_ok(c), UP.and_left(Spec.scalars(k) && Bool.not(Spec.declares(t, k)) && Spec.schema_ok(c), Spec.schema_ok(S.ObjectSchema{t, u}), ok))
+  UP.and_right(Spec.scalars(k) && Bool.not(Spec.declares(t, k)), Spec.schema_ok(c), UP.and_left(Spec.scalars(k) && Bool.not(Spec.declares(t, k)) && Spec.schema_ok(c), Spec.default_fits(c, p), UP.and_left(Spec.scalars(k) && Bool.not(Spec.declares(t, k)) && Spec.schema_ok(c) && Spec.default_fits(c, p), Spec.schema_ok(S.ObjectSchema{t, u}), ok)))
 
 def spec_rest_ok(+k: String, +c: S.Schema, +p: S.Presence, +t: List<&2, S.Field>, +u: S.Unknown, ok: {Spec.schema_ok(S.ObjectSchema{S.Field{k, c, p} <> t, u}) == True{} : Bool}) -> {Spec.schema_ok(S.ObjectSchema{t, u}) == True{} : Bool}:
-  UP.and_right(Spec.scalars(k) && Bool.not(Spec.declares(t, k)) && Spec.schema_ok(c), Spec.schema_ok(S.ObjectSchema{t, u}), ok)
+  UP.and_right(Spec.scalars(k) && Bool.not(Spec.declares(t, k)) && Spec.schema_ok(c) && Spec.default_fits(c, p), Spec.schema_ok(S.ObjectSchema{t, u}), ok)
 
 def fields_all(+fs: List<&2, S.Field>, +u: S.Unknown, +input: List<&2, J.Field>, +ok: {Spec.schema_ok(S.ObjectSchema{fs, u}) == True{} : Bool}, +e: {Spec.meets(S.ObjectSchema{fs, u}, Spec.EveryField{}, J.JObject{input}) == True{} : Bool}) -> {Spec.all_fields(fs, input) == True{} : Bool}:
   match fs:

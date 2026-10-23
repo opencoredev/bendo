@@ -150,26 +150,6 @@ def declared_equiv(+fs: List<&2, S.Field>, +k: String) -> {S.declared(fs, k) == 
       %declared_equiv(t, k) : {S.declared(S.Field{key, c, p} <> t, k) == (String.eq(key, k) || _) : Bool}
       {==}
 
-def valid_equiv(+s: S.Schema) -> {S.valid(s) == Spec.schema_ok(s) : Bool}:
-  match s:
-    case S.StringSchema{min, max, p, f}: and_eq(S.max_length(max, min), Spec.at_most(max, min), S.optional_pattern_valid(p), Spec.optional_pattern_ok(p), max_equiv(max, min), optional_pattern_equiv(p))
-    case S.NumberSchema{min, max}: bounds_equiv(min, max)
-    case S.IntegerSchema{min, max}: bounds_equiv(min, max)
-    case S.BooleanSchema{}: {==}
-    case S.LiteralSchema{v}: scalar_equiv(v)
-    case S.EnumSchema{xs}: literals_go(xs, True{})
-    case S.ArraySchema{i, min, max}: and_eq(S.max_length(max, min), Spec.at_most(max, min), S.valid(i), Spec.schema_ok(i), max_equiv(max, min), valid_equiv(i))
-    case S.ObjectSchema{Nil{}, u}: {==}
-    case S.ObjectSchema{S.Field{k, c, p} <> t, u}:
-      %TP.scalars_equiv(k) : {S.valid(S.ObjectSchema{S.Field{k, c, p} <> t, u}) == (_ && Bool.not(Spec.declares(t, k)) && Spec.schema_ok(c) && Spec.schema_ok(S.ObjectSchema{t, u})) : Bool}
-      %declared_equiv(t, k) : {S.valid(S.ObjectSchema{S.Field{k, c, p} <> t, u}) == (J.scalars(k) && Bool.not(_) && Spec.schema_ok(c) && Spec.schema_ok(S.ObjectSchema{t, u})) : Bool}
-      %valid_equiv(c) : {S.valid(S.ObjectSchema{S.Field{k, c, p} <> t, u}) == (J.scalars(k) && Bool.not(S.declared(t, k)) && _ && Spec.schema_ok(S.ObjectSchema{t, u})) : Bool}
-      %valid_equiv(S.ObjectSchema{t, u}) : {S.valid(S.ObjectSchema{S.Field{k, c, p} <> t, u}) == (J.scalars(k) && Bool.not(S.declared(t, k)) && S.valid(c) && _) : Bool}
-      {==}
-    case S.NullableSchema{i}: valid_equiv(i)
-    case S.UnionSchema{Nil{}}: {==}
-    case S.UnionSchema{m <> t}: and_eq(S.valid(m), Spec.schema_ok(m), S.valid(S.UnionSchema{t}), Spec.schema_ok(S.UnionSchema{t}), valid_equiv(m), valid_equiv(S.UnionSchema{t}))
-
 def format_after_and(+ok: Bool, +f: S.Format, +x: String) -> {S.format_after(ok, f, x) == (ok && S.format_check(f, x)) : Bool}:
   match ok:
     case True{}: {==}
