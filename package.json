@@ -4,10 +4,11 @@
   "type": "module",
   "workspaces": ["packages/*"],
   "scripts": {
-    "prove": "bend PROOF.bend",
+    "check:bend": "sh scripts/check-bend-version.sh",
+    "prove": "bend PROOF.bend --verdict",
     "test": "bun test --timeout 30000 tests",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "check": "bun run prove && bun run typecheck && bun run test"
+    "check": "bun run check:bend && bun run prove && bun run typecheck && bun run test"
   },
   "devDependencies": {
     "@types/bun": "latest",
