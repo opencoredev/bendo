@@ -4,6 +4,7 @@ import ./mw/builtin.bend as Builtin
 import ./mw/server_timing.bend as Timing
 import ./app/config.bend as Config
 import ./app/table.bend as Table
+import ./app/scopes.bend as Scopes
 import ./app/handle.bend as Handle
 import ./app/context.bend as Context
 import ./app/store.bend as Store
@@ -70,6 +71,16 @@ def map_response(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.MapR
 def on_error(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.Error{}, id}
 def on_after_response(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.AfterResponse{}, id}
 def routes(-Tag: Data, entries: List<&2, Table.Entry<Tag>>) -> Result<&2, &2, Methods.BuildError, Table.Table<Tag>>: Table.build(Tag, entries)
+
+# Typed hook data for group/guard/route options; on_* entries are global until assembled into a scope.
+def Hook(-Tag: Data) -> Data: Table.HookSpec<Tag>
+def GuardOptions(-Tag: Data) -> Data: Table.GuardOptions<Tag>
+def hook(-Tag: Data, stage: Table.Stage, id: Tag) -> Table.HookSpec<Tag>: Table.HookSpec{stage, id}
+def guard_options(-Tag: Data, hooks: List<&2, Table.HookSpec<Tag>>) -> Table.GuardOptions<Tag>: Table.GuardOptions{hooks, Table.NoSchemas{}}
+def guard(-Tag: Data, options: Table.GuardOptions<Tag>, entries: List<&2, Table.Entry<Tag>>) -> List<&2, Table.Entry<Tag>>: Scopes.guard(Tag, options, entries)
+def group(-Tag: Data, prefix: String, hooks: List<&2, Table.HookSpec<Tag>>, entries: List<&2, Table.Entry<Tag>>) -> List<&2, Table.Entry<Tag>>: Scopes.group(Tag, prefix, hooks, entries)
+def route_hooks(-Tag: Data, registration: Methods.Registration(Tag), hooks: List<&2, Table.HookSpec<Tag>>) -> Table.Entry<Tag>:
+  Scopes.local(Tag, registration, hooks)
 
 def handle(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Handle.Ctx -> Env -> IO(Response.Res), table: Table.Table<Tag>, env: Env, req: Request.Req, body: List<&2, U32>) -> IO(Response.Res):
   Handle.handle(~Tag, ~Env, ~dispatch, table, env, req, body)

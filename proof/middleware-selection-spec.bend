@@ -19,6 +19,7 @@ def filter(-Tag: Data, entries: List<&2, Table.Entry<Tag>>, +path: String) -> Li
     case Nil{}: []
     case Table.Hook{stage, tag} <> rest: filter(Tag, rest, path)
     case Table.Route{registration} <> rest: filter(Tag, rest, path)
+    case Table.ScopedRoute{registration, placements} <> rest: filter(Tag, rest, path)
     case Table.Use{None{}, tag} <> rest: tag <> filter(Tag, rest, path)
     case Table.Use{Some{source}, tag} <> rest:
       compiled(Tag, tag, filter(Tag, rest, path), path, Pattern.compile(source))

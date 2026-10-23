@@ -139,3 +139,12 @@ decision for callback forms, error semantics and the transport boundary.
 Server-Timing, powered-by and pretty JSON identifiers. Wrap `B.Builtin` in your
 app's tag and delegate that case to `B.builtin(Vars, id, c, next)` alongside your
 own middleware cases.
+
+## Scoped lifecycle hooks
+
+Use `B.group`, `B.guard` and `B.route_hooks` to attach lifecycle hooks to a
+route set or one route. Global hooks run first within each stage, then inherited
+hooks from outer to inner scope, then local hooks. Guard membership follows the
+selected registration, including its method and first-match priority.
+See [hook scopes and guards](decisions/0011-hook-scopes.md) for the typed API,
+request-rewrite behavior, schema extension slot and Elysia comparison.

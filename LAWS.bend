@@ -3,7 +3,11 @@
 # in the pull request.
 import Base
 import ./src/app/table.bend as Table
+import ./src/app/route-slot.bend as RouteSlot
 import ./proof/middleware-selection-spec.bend as MiddlewareSelectionSpec
+import ./proof/scoped-selection-spec.bend as ScopedSelectionSpec
+import ./proof/scoped-assembly-spec.bend as AssemblySpec
+import ./src/app/scopes.bend as Scopes
 import ./src/app/middleware.bend as Middleware
 import ./src/http/response.bend as Response
 import ./src/http/write_response.bend as WriteResponse
@@ -981,3 +985,132 @@ law methods_router_resolve:
   for +method: Request.Method
   for +opts: Methods.Options
   {Methods.resolve_with(T, kind, Methods.prepare(T, table), path, method, opts) == Methods.resolve(T, table, path, method, opts) : Methods.Resolution<T>}
+
+# BND-24: selection from source memberships, independent of runtime helpers.
+# Globals precede inherited group/guard placements and then route-local hooks;
+# each source order and every duplicate is retained. None denotes no selected
+# route, including routing misses and method failures.
+law scoped_stage_selection:
+  for -Tag: Data
+  for +entries: List<&2, Table.Entry<Tag>>
+  for +routes: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Index<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +route: Maybe<&2, Nat>
+  for +stage: Table.Stage
+  for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  {Table.scoped_stage_ids(Tag, layers, route, stage) == ScopedSelectionSpec.stage_ids(Tag, entries, route, stage) : List<&2, Tag>}
+
+law scoped_lifecycle_selection:
+  for -Tag: Data
+  for +entries: List<&2, Table.Entry<Tag>>
+  for +routes: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Index<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +path: String
+  for +route: Maybe<&2, Nat>
+  for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  {Table.scoped_lifecycle(Tag, layers, path, route) == ScopedSelectionSpec.lifecycle(Tag, entries, path, route) : Table.Lifecycle<Tag>}
+
+# Even a matching path grants no scoped hook without route membership.
+law scoped_nonmember_global_only:
+  for -Tag: Data
+  for +entries: List<&2, Table.Entry<Tag>>
+  for +routes: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Index<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +route: Maybe<&2, Nat>
+  for +stage: Table.Stage
+  for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  for no: {ScopedSelectionSpec.member(Tag, entries, route) == False{} : Bool}
+  {Table.scoped_stage_ids(Tag, layers, route, stage) == Table.stage_ids(Tag, layers, stage) : List<&2, Tag>}
+
+law scoped_miss_global_only:
+  for -Tag: Data
+  for +entries: List<&2, Table.Entry<Tag>>
+  for +routes: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Index<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +stage: Table.Stage
+  for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  {Table.scoped_stage_ids(Tag, layers, None{}, stage) == Table.stage_ids(Tag, layers, stage) : List<&2, Tag>}
+
+# The real runtime boundary: every path, method, router kind and option set.
+# This checks forward-router-index to reversed-source-ordinal conversion too;
+# source hook filtering still never consults runtime selection helpers.
+law scoped_resolved_stage_selection:
+  for -Tag: Data
+  for +entries: List<&2, Table.Entry<Tag>>
+  for +routes: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Index<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +kind: Router.RouterKind
+  for +path: String
+  for +method: Request.Method
+  for +opts: Methods.Options
+  for +stage: Table.Stage
+  for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  {Table.scoped_stage_ids(Tag, layers, RouteSlot.identity(Tag, List.length(&2, Methods.Registration(Tag), routes), Methods.resolve_with(Tag, kind, compiled, path, method, opts)), stage) == ScopedSelectionSpec.stage_ids(Tag, entries, ScopedSelectionSpec.resolved_route(Tag, entries, Methods.resolve_with(Tag, kind, compiled, path, method, opts)), stage) : List<&2, Tag>}
+
+# BND-24: assembly from raw public declarations. Equality includes scope
+# provenance, route paths/tags/order, every duplicate and every placement.
+# The independent fused map puts explicit hooks before direct declarations,
+# and new outer placements before every existing inner/local placement.
+law scoped_guard_assembly:
+  for -Tag: Data
+  for +options: Table.GuardOptions<Tag>
+  for +entries: List<&2, Table.Entry<Tag>>
+  {Scopes.guard(Tag, options, entries) == AssemblySpec.guard(Tag, options, entries) : List<&2, Table.Entry<Tag>>}
+
+law scoped_group_assembly:
+  for -Tag: Data
+  for +prefix: String
+  for +hooks: List<&2, Table.HookSpec<Tag>>
+  for +entries: List<&2, Table.Entry<Tag>>
+  {Scopes.group(Tag, prefix, hooks, entries) == AssemblySpec.group(Tag, prefix, hooks, entries) : List<&2, Table.Entry<Tag>>}
+
+law scoped_local_assembly:
+  for -Tag: Data
+  for +registration: Methods.Registration(Tag)
+  for +hooks: List<&2, Table.HookSpec<Tag>>
+  {Scopes.local(Tag, registration, hooks) == AssemblySpec.local(Tag, registration, hooks) : Table.Entry<Tag>}
+
+# Arbitrary neighbours, including identical paths and hook tags, are untouched.
+# Inside may itself contain any nesting or route-local hooks. Both outer and
+# inner scope constructors retain their provenance and structural order.
+law scoped_nested_assembly_isolation:
+  for -Tag: Data
+  for +before: List<&2, Table.Entry<Tag>>
+  for +options: Table.GuardOptions<Tag>
+  for +prefix: String
+  for +hooks: List<&2, Table.HookSpec<Tag>>
+  for +inside: List<&2, Table.Entry<Tag>>
+  for +after: List<&2, Table.Entry<Tag>>
+  {List.append(&2, Table.Entry<Tag>, before, List.append(&2, Table.Entry<Tag>, Scopes.guard(Tag, options, Scopes.group(Tag, prefix, hooks, inside)), after)) == List.append(&2, Table.Entry<Tag>, before, List.append(&2, Table.Entry<Tag>, AssemblySpec.guard(Tag, options, AssemblySpec.group(Tag, prefix, hooks, inside)), after)) : List<&2, Table.Entry<Tag>>}
+
+law scoped_guard_built_selection:
+  for -Tag: Data
+  for +options: Table.GuardOptions<Tag>
+  for +inside: List<&2, Table.Entry<Tag>>
+  for +outside: List<&2, Table.Entry<Tag>>
+  for +routes: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Index<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +route: Maybe<&2, Nat>
+  for +stage: Table.Stage
+  for +built: {Table.build(Tag, List.append(&2, Table.Entry<Tag>, Scopes.guard(Tag, options, inside), outside)) == Done{Table.Table{routes, compiled, layers}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  {Table.scoped_stage_ids(Tag, layers, route, stage) == ScopedSelectionSpec.stage_ids(Tag, List.append(&2, Table.Entry<Tag>, AssemblySpec.guard(Tag, options, inside), outside), route, stage) : List<&2, Tag>}
+
+law scoped_group_built_selection:
+  for -Tag: Data
+  for +prefix: String
+  for +hooks: List<&2, Table.HookSpec<Tag>>
+  for +inside: List<&2, Table.Entry<Tag>>
+  for +outside: List<&2, Table.Entry<Tag>>
+  for +routes: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Index<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +route: Maybe<&2, Nat>
+  for +stage: Table.Stage
+  for +built: {Table.build(Tag, List.append(&2, Table.Entry<Tag>, Scopes.group(Tag, prefix, hooks, inside), outside)) == Done{Table.Table{routes, compiled, layers}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  {Table.scoped_stage_ids(Tag, layers, route, stage) == ScopedSelectionSpec.stage_ids(Tag, List.append(&2, Table.Entry<Tag>, AssemblySpec.group(Tag, prefix, hooks, inside), outside), route, stage) : List<&2, Tag>}

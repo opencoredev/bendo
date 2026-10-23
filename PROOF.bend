@@ -3,6 +3,10 @@ import Base
 import ./src/app/table.bend as Table
 import ./proof/middleware-selection-spec.bend as MiddlewareSelectionSpec
 import ./proof/lifecycle-selection.bend as LifecycleSelection
+import ./proof/scoped-selection.bend as ScopedSelection
+import ./proof/scoped-assembly.bend as Assembly
+import ./proof/scoped-assembly-spec.bend as AssemblySpec
+import ./src/app/scopes.bend as Scopes
 import ./proof/middleware-selection.bend as MiddlewareSelection
 import ./src/http/response.bend as Response
 import ./src/http/write_response.bend as WriteResponse
@@ -420,3 +424,38 @@ def Laws.router_kind_spec(T, kind, table, path):
 
 def Laws.methods_router_resolve(T, kind, table, path, method, opts):
   MethodTrieProof.resolve_equal(T, kind, table, path, method, opts)
+
+# BND-24
+
+def Laws.scoped_stage_selection(Tag, entries, routes, compiled, layers, route, stage, built):
+  ScopedSelection.stage_selection(Tag, entries, routes, compiled, layers, route, stage, built)
+
+def Laws.scoped_lifecycle_selection(Tag, entries, routes, compiled, layers, path, route, built):
+  ScopedSelection.lifecycle_selection(Tag, entries, routes, compiled, layers, path, route, built)
+
+def Laws.scoped_nonmember_global_only(Tag, entries, routes, compiled, layers, route, stage, built, no):
+  ScopedSelection.nonmember_selection(Tag, entries, routes, compiled, layers, route, stage, built, no)
+
+def Laws.scoped_miss_global_only(Tag, entries, routes, compiled, layers, stage, built):
+  ScopedSelection.nonmember_selection(Tag, entries, routes, compiled, layers, None{}, stage, built, ScopedSelection.none_member(Tag, entries))
+
+def Laws.scoped_resolved_stage_selection(Tag, entries, routes, compiled, layers, kind, path, method, opts, stage, built):
+  ScopedSelection.resolved_selection(Tag, entries, routes, compiled, layers, kind, path, method, opts, stage, built)
+
+def Laws.scoped_guard_assembly(Tag, options, entries):
+  Assembly.guard(Tag, options, entries)
+
+def Laws.scoped_group_assembly(Tag, prefix, hooks, entries):
+  Assembly.group(Tag, prefix, hooks, entries)
+
+def Laws.scoped_local_assembly(Tag, registration, hooks):
+  Assembly.local(Tag, registration, hooks)
+
+def Laws.scoped_nested_assembly_isolation(Tag, before, options, prefix, hooks, inside, after):
+  Assembly.context(Tag, before, Scopes.guard(Tag, options, Scopes.group(Tag, prefix, hooks, inside)), AssemblySpec.guard(Tag, options, AssemblySpec.group(Tag, prefix, hooks, inside)), after, Assembly.nested(Tag, options, prefix, hooks, inside))
+
+def Laws.scoped_guard_built_selection(Tag, options, inside, outside, routes, compiled, layers, route, stage, built):
+  Assembly.selection(Tag, List.append(&2, Table.Entry<Tag>, Scopes.guard(Tag, options, inside), outside), List.append(&2, Table.Entry<Tag>, AssemblySpec.guard(Tag, options, inside), outside), routes, compiled, layers, route, stage, built, Assembly.context(Tag, [], Scopes.guard(Tag, options, inside), AssemblySpec.guard(Tag, options, inside), outside, Assembly.guard(Tag, options, inside)))
+
+def Laws.scoped_group_built_selection(Tag, prefix, hooks, inside, outside, routes, compiled, layers, route, stage, built):
+  Assembly.selection(Tag, List.append(&2, Table.Entry<Tag>, Scopes.group(Tag, prefix, hooks, inside), outside), List.append(&2, Table.Entry<Tag>, AssemblySpec.group(Tag, prefix, hooks, inside), outside), routes, compiled, layers, route, stage, built, Assembly.context(Tag, [], Scopes.group(Tag, prefix, hooks, inside), AssemblySpec.group(Tag, prefix, hooks, inside), outside, Assembly.group(Tag, prefix, hooks, inside)))
