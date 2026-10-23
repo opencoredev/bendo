@@ -4,6 +4,7 @@
     "tests/multipart.test.ts": 90940,
     "tests/http-body.test.ts": 59598,
     "tests/http-connection.test.ts": 54611,
+    "tests/mandelbrot.test.ts": 51000,
     "tests/json.test.ts": 44463,
     "tests/router-methods.test.ts": 42719,
     "tests/handle.test.ts": 35694,

@@ -1,9 +1,17 @@
 # Proofs of LAWS.bend. Run: bend PROOF.bend --verdict
 import Base
+
+# BND-31
+import ./proof/cookie-ows.bend as CookieOwsProof
+import ./proof/cookie-serialization.bend as CookieSerializationProof
+import ./proof/cookies.bend as CookieProof
 import ./src/app/table.bend as Table
 import ./proof/middleware-selection-spec.bend as MiddlewareSelectionSpec
 import ./proof/lifecycle-selection.bend as LifecycleSelection
 import ./proof/middleware-selection.bend as MiddlewareSelection
+
+import ./proof/schema.bend as SchemaProof
+import ./src/data/schema.bend as Schema
 import ./src/http/response.bend as Response
 import ./src/http/write_response.bend as WriteResponse
 
@@ -420,3 +428,23 @@ def Laws.router_kind_spec(T, kind, table, path):
 
 def Laws.methods_router_resolve(T, kind, table, path, method, opts):
   MethodTrieProof.resolve_equal(T, kind, table, path, method, opts)
+
+# BND-31: universal cookie roundtrip and checked default serialization.
+
+def Laws.cookies_pair_roundtrip(name, value, name_valid, value_valid):
+  CookieProof.roundtrip(name, value, name_valid, value_valid)
+
+def Laws.cookies_defaults_checked(name, value, name_valid, value_valid):
+  CookieProof.defaults_checked(name, value, name_valid, value_valid)
+
+# BND-31
+def Laws.cookies_ordered_list_roundtrip(entries, valid):
+  CookieProof.list_roundtrip(entries, valid)
+
+# BND-33
+
+def Laws.schema_acceptance_iff(schema, value):
+  SchemaProof.acceptance_spec(schema, value)
+
+def Laws.schema_preserves_typed_value(schema, value):
+  SchemaProof.preservation(schema, value, Schema.valid(schema))

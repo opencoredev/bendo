@@ -1,11 +1,14 @@
 # Public Bendo entrypoint. Route tags and startup environments are app-owned Data.
 import Base
+import ./mw/builtin.bend as Builtin
+import ./mw/server_timing.bend as Timing
 import ./app/config.bend as Config
 import ./app/table.bend as Table
 import ./app/handle.bend as Handle
 import ./app/context.bend as Context
 import ./app/store.bend as Store
 import ./data/json.bend as Json
+import ./data/cookie.bend as Cookie
 import ./serve.bend as Serve
 import ./http/request.bend as Request
 import ./http/response.bend as Response
@@ -20,6 +23,7 @@ def ServerConfig() -> Data: Config.Config
 def RouterKind() -> Data: Router.RouterKind
 def Registration(-Tag: Data) -> Data: Table.Entry<Tag>
 def Routes(-Tag: Data) -> Data: Table.Table<Tag>
+def RouteError() -> Data: Methods.BuildError
 
 def config() -> Config.Config: Config.defaults()
 def spec() -> Router.RouterKind: Router.Spec{}
@@ -100,3 +104,21 @@ def store_set(-S: Data, handle: Store.Store<S>, value: S) -> IO(Result<&2, &2, S
 
 def store_update(-S: Data, handle: Store.Store<S>, change: S -> S) -> IO(Result<&2, &2, Store.Error, S>):
   Store.update(S, handle, change)
+
+# Built-in identifiers are wrapped in the application's own middleware Tag.
+def Builtin() -> Data: Builtin.Builtin
+def logger() -> Builtin.Builtin: Builtin.Logger{}
+def request_id() -> Builtin.Builtin: Builtin.RequestId{}
+def server_timing() -> Builtin.Builtin: Builtin.ServerTiming{}
+def powered_by(name: String) -> Builtin.Builtin: Builtin.PoweredBy{name}
+def pretty_json() -> Builtin.Builtin: Builtin.PrettyJson{}
+def builtin(-Vars: Data, id: Builtin.Builtin, c: Context.Ctx<Vars>, next: Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
+  Builtin.dispatch(Vars, id, c, next)
+def timing_mark(-Vars: Data, c: Context.Ctx<Vars>, name: String, duration_ms: Nat) -> IO(Bool):
+  Timing.mark(Vars, c, name, duration_ms)
+
+# Cookie setters append fields and return validation failures explicitly.
+def cookies(c: Handle.Ctx) -> List<&2, Cookie.Entry>: Context.cookies(Unit, c)
+def cookie(c: Handle.Ctx, name: String) -> Maybe<&2, String>: Context.cookie(Unit, c, name)
+def set_cookie(c: Handle.Ctx, name: String, value: String, options: Cookie.Options) -> Result<&2, &2, Cookie.Error, Handle.Ctx>: Context.set_cookie(Unit, c, name, value, options)
+def delete_cookie(c: Handle.Ctx, name: String, options: Cookie.Options) -> Result<&2, &2, Cookie.Error, Handle.Ctx>: Context.delete_cookie(Unit, c, name, options)
