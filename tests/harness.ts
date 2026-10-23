@@ -7,6 +7,8 @@ const ROOT = resolve(import.meta.dir, "..");
 
 /** Wall-clock budget for one `bend` compile. CI runners are slower than ms-a2. */
 export const BEND_COMPILE_TIMEOUT = "180s";
+/** Per-test timeout for a test whose body runs one `bend` compile. Above BEND_COMPILE_TIMEOUT. */
+export const COMPILE_TEST_TIMEOUT_MS = 200_000;
 
 export type RunningServer = { url: string; [Symbol.asyncDispose]: () => Promise<void> };
 
