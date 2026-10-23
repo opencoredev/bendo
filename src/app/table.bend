@@ -34,8 +34,9 @@ type Middleware<-Tag: Data> is Data:
   Staged{stage: Stage, tag: Tag}
   Middleware{pattern: Maybe<&2, Pattern.Pattern>, tag: Tag}
 
+# The compiled index holds the validated table and its trie, built once.
 type Table<-Tag: Data> is Data:
-  Table{entries: List<&2, Methods.Registration(Tag)>, compiled: Methods.Valid<Tag>, middleware: List<&2, Middleware<Tag>>}
+  Table{entries: List<&2, Methods.Registration(Tag)>, compiled: Methods.Index<Tag>, middleware: List<&2, Middleware<Tag>>}
 
 def route_entries(-Tag: Data, xs: List<&2, Entry<Tag>>) -> List<&2, Methods.Registration(Tag)>:
   match xs:
@@ -77,7 +78,7 @@ def middleware_entries(-Tag: Data, xs: List<&2, Entry<Tag>>, +index: Nat) -> Res
 def built(-Tag: Data, entries: List<&2, Methods.Registration(Tag)>, middleware: List<&2, Middleware<Tag>>, result: Result<&2, &2, Methods.BuildError, Methods.Valid<Tag>>) -> Result<&2, &2, Methods.BuildError, Table<Tag>>:
   match result:
     case Fail{error}: Fail{error}
-    case Done{table}: Done{Table{entries, table, middleware}}
+    case Done{table}: Done{Table{entries, Methods.prepare(Tag, table), middleware}}
 
 def collected(-Tag: Data, +entries: List<&2, Methods.Registration(Tag)>, result: Result<&2, &2, Methods.BuildError, List<&2, Middleware<Tag>>>) -> Result<&2, &2, Methods.BuildError, Table<Tag>>:
   match result:

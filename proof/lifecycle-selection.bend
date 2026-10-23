@@ -149,6 +149,6 @@ def collected(-Tag: Data, +routes: List<&2, M.Registration(Tag)>, +result: Resul
     case Fail{error}: Unit{}
     case Done{layers}: built(Tag, routes, layers, M.build_table(Tag, routes), expected, stage, proof)
 
-def selection(-Tag: Data, +xs: List<&2, T.Entry<Tag>>, +routes: List<&2, M.Registration(Tag)>, +compiled: M.Valid<Tag>, +layers: List<&2, T.Middleware<Tag>>, +stage: T.Stage, built: {T.build(Tag, xs) == Done{T.Table{routes, compiled, layers}} : Result<&2, &2, M.BuildError, T.Table<Tag>>}) -> {T.stage_ids(Tag, layers, stage) == S.hooks(Tag, xs, stage) : List<&2, Tag>}:
+def selection(-Tag: Data, +xs: List<&2, T.Entry<Tag>>, +routes: List<&2, M.Registration(Tag)>, +compiled: M.Index<Tag>, +layers: List<&2, T.Middleware<Tag>>, +stage: T.Stage, built: {T.build(Tag, xs) == Done{T.Table{routes, compiled, layers}} : Result<&2, &2, M.BuildError, T.Table<Tag>>}) -> {T.stage_ids(Tag, layers, stage) == S.hooks(Tag, xs, stage) : List<&2, Tag>}:
   %built : Built(Tag, _, S.hooks(Tag, xs, stage), stage)
   collected(Tag, T.route_entries(Tag, xs), T.middleware_entries(Tag, xs, 0n), S.hooks(Tag, xs, stage), stage, entries(Tag, xs, 0n, stage))

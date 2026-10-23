@@ -218,7 +218,7 @@ def encoded(res: Response.Res) -> List<&2, U32>:
   Bytes.append(Bytes.encode(Write.status_text(status) ++ Write.headers_text(headers) ++ "\r\n\r\n"), body)
 
 type State<-Tag: Data, -Env: Data> is Data:
-  State{table: Table.Table<Tag>, env: Env}
+  State{table: Table.Table<Tag>, env: Env, router: Router.RouterKind}
 
 # Handle returns a normalized response, including HEAD's representation length.
 # Do not re-run the writer on its already stripped HEAD payload.
@@ -234,9 +234,9 @@ def prepare_pending(result: Response.Res & IO(Unit), close: Bool) -> Reply:
   prepare(res, close, after)
 
 def respond_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), req: R.Req, body: List<&2, U32>, state: State<Tag, Env>, close: Bool) -> IO(Reply):
-  State{table, env} = state
+  State{table, env, router} = state
   do IO<Reply>:
-    result : Response.Res & IO(Unit) <- Handle.pending_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, table, env, req, body)
+    result : Response.Res & IO(Unit) <- Handle.pending_routed(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, router, table, env, req, body)
     return prepare_pending(result, close)
 
 def startup_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +table: Table.Table<Tag>, env: Env, +config: Config.Config, manifest: Bool) -> IO(Unit):
@@ -251,7 +251,7 @@ def startup_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.
         +port : U32 = Config.port_env(port_env, fallback)
         listener : Listener <- IO.try(Listener, TCP.listen(host, port))
         IO.print("bendo listening on http://" ++ host ++ ":" ++ U32.show(port))
-        loop(~State<Tag, Env>, ~(req => body => state => close => respond_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, req, body, state, close)), listener, State{table, env}, config)
+        loop(~State<Tag, Env>, ~(req => body => state => close => respond_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, req, body, state, close)), listener, State{table, env, router}, config)
 
 def run_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config) -> IO(Unit):
   do IO<Unit>:

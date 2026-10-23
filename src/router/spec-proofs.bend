@@ -250,3 +250,22 @@ def filled_roundtrip(-T: Data, +table: R.Table(T), +i: Nat, +pattern: P.Pattern,
     &path: String -> Filled(T, table, i, pattern, tag, ps, path):
   (+path, (filled, matched)) = roundtrip
   (path, filled_route(T, table, i, pattern, tag, ps, path, entry, filled, matched))
+
+# BND-17: every registration that matches, ascending by index, with its tag
+# and params. Like match_at, this never calls a router.
+def found(-T: Data, i: Nat, tag: T, hit: Maybe<&2, P.Params>, rest: List<&2, R.Match<T>>) -> List<&2, R.Match<T>>:
+  match hit:
+    case None{}:
+      rest
+    case Some{ps}:
+      R.Match{i, tag, ps} <> rest
+
+def matching_from(-T: Data, table: R.Table(T), +path: String, +i: Nat) -> List<&2, R.Match<T>>:
+  match table:
+    case Nil{}:
+      Nil{}
+    case R.Route{pattern, tag} <> rest:
+      found(T, i, tag, P.match_path(pattern, path), matching_from(T, rest, path, 1n+i))
+
+def matching(-T: Data, table: R.Table(T), +path: String) -> List<&2, R.Match<T>>:
+  matching_from(T, table, path, 0n)

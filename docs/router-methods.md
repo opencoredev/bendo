@@ -114,11 +114,41 @@ constraint still rejects `ABC`. Non-ASCII text is unchanged. Static segments
 remain raw rather than percent-decoded, following the
 [pattern grammar](router-patterns.md).
 
+## Router selection
+
+`resolve` is the reference resolver. Applications resolve through the
+configured router instead:
+
+```python
++index = M.prepare(Tag, valid)
+M.resolve_with(Tag, Router.Trie{}, index, path, method, M.defaults())
+```
+
+`prepare(T, valid)` returns `Index<T>`, which holds the validated table and its
+[trie](router-trie.md), built once. `index_valid(T, index)` returns the
+`Valid<T>`. `resolve_with(T, kind, index, path, method, opts)` takes a
+`Router.RouterKind`. With `Spec{}` it calls `resolve`. With `Trie{}` it takes the
+trie's ordered candidates for the path and walks them like `find`: it stops at
+the first candidate that allows the method and whose pattern matches. A HEAD
+request that finds no direct match walks them again for GET. Only when both
+miss does it collect the matching registrations once and read the 404 decision
+and `Allow` set from that list. The trie keys raw static segments, so it prefilters only under the
+default strict, case-sensitive options. The other three option combinations
+scan every registration, as `resolve` does.
+
+The law `methods_router_resolve` proves `resolve_with(T, kind, prepare(T,
+valid), path, method, opts) == resolve(T, valid, path, method, opts)` for every
+kind, valid table, path, method and option combination. Every BND-18 law above
+therefore also holds for the trie path. `B.routes` builds the index, `B.handle`
+uses `Router.default_kind()` (`Trie`), and `B.serve` uses the configured
+`router` field.
+
 ## Verification
 
 `bun test tests/router-methods.test.ts` compiles a native Bend server and checks
 method dispatch, exact Allow values, raw HEAD bytes, 404/405, extension methods,
-and all four option combinations. `bun run prove` checks the BND-18 laws;
+and all four option combinations through `resolve_with` with the default
+trie. `bun run prove` checks the BND-18 laws and `methods_router_resolve`;
 `methods_build_valid` proves that successful builds carry valid method-token
 evidence. All table-based BND-18 laws quantify over `Valid<T>`;
 `methods_allow_exact` obtains table validity from the value and has no separate
