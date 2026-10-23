@@ -1,0 +1,94 @@
+# Pure connection input state. Only new octets are scanned on each feed.
+import Base
+import ./bytes.bend as Bytes
+import ./request.bend as R
+import ./parse.bend as Parse
+import ./framing.bend as F
+import ./chunked.bend as C
+
+type State is Data:
+  Head{parser: Parse.State, bytes: U32}
+  Fixed{req: R.Req, left: U32, reverse: List<&2, U32>}
+  Chunks{req: R.Req, decoder: C.State}
+  Complete{req: R.Req, body: List<&2, U32>, trailers: List<&2, R.Header>, rest: List<&2, U32>}
+  Bad{status: U32}
+
+def fixed(left: Nat, xs: List<&2, U32>, r: R.Req, rev: List<&2, U32>) -> State:
+  match left xs:
+    case 0n xs:
+      Complete{r, List.reverse(&2, U32, rev), [], xs}
+    case 1n+n Nil{}:
+      Fixed{r, U32.from_nat(1n+n), rev}
+    case 1n+n c <> t:
+      fixed(n, t, r, c <> rev)
+
+def chunks_result(r: R.Req, pair: C.State & C.DecodeResult) -> State:
+  (s, got) = pair
+  match got:
+    case C.NeedMore{}:
+      Chunks{r, s}
+    case C.Decoded{body, trailers, rest}:
+      Complete{r, body, trailers, rest}
+    case C.Error{status}:
+      Bad{status}
+
+def begin(r: R.Req, xs: List<&2, U32>, frame: F.Framing, limit: U32) -> State:
+  match frame:
+    case F.NoBody{}:
+      Complete{r, [], [], xs}
+    case F.Length{n}:
+      fixed(U32.to_nat(n), xs, r, [])
+    case F.Chunked{}:
+      chunks_result(r, C.feed(xs, C.initial(limit)))
+    case F.Reject{status}:
+      Bad{status}
+
+def can_continue(s: State, expect: U32, rest_empty: Bool) -> State & Bool:
+  match s:
+    case Fixed{r, n, rev}:
+      (Fixed{r, n, rev}, U32.is_eq(expect, 100) && rest_empty)
+    case Chunks{r, d}:
+      (Chunks{r, d}, U32.is_eq(expect, 100) && rest_empty)
+    case s:
+      (s, False{})
+
+def expected(+r: R.Req, +xs: List<&2, U32>, +limit: U32, expect: U32) -> State & Bool:
+  match expect:
+    case 417:
+      (Bad{417}, False{})
+    case e:
+      can_continue(begin(r, xs, F.framing(r, limit), limit), e, List.is_empty(&2, U32, xs))
+
+def head_advance(s: Parse.State, c: U32, over: Bool) -> Parse.State:
+  match over:
+    case True{}:
+      Parse.Bad{R.InvalidHeaderValue{}}
+    case False{}:
+      Parse.advance(s, c)
+
+# Count only consumed head octets. Body bytes coalesced in the same receive
+# must not change whether the head fits the limit.
+def head_feed(xs: List<&2, U32>, s: Parse.State, +bytes: U32, +limit: U32) -> State & Bool:
+  match xs s:
+    case xs Parse.Complete{+r}:
+      expected(r, xs, limit, F.expectation(r))
+    case _ Parse.Bad{e}:
+      (Bad{400}, False{})
+    case Nil{} s:
+      (Head{s, bytes}, False{})
+    case c <> t s:
+      head_feed(t, head_advance(s, c, (bytes >= 65536 : U32)), (bytes + 1 : U32), limit)
+
+def feed(+xs: List<&2, U32>, state: State, limit: U32) -> State & Bool:
+  match state:
+    case Head{s, +bytes}:
+      head_feed(xs, s, bytes, limit)
+    case Fixed{r, n, rev}:
+      (fixed(U32.to_nat(n), xs, r, rev), False{})
+    case Chunks{r, s}:
+      (chunks_result(r, C.feed(xs, s)), False{})
+    case s:
+      (s, False{})
+
+def initial() -> State:
+  Head{Parse.initial(), 0}
