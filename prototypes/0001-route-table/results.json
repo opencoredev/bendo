@@ -10,27 +10,15 @@
       "shape": "list",
       "routes": 5,
       "iterations": 1875000,
-      "checksums": [
-        5625000,
-        9375000,
-        0
-      ],
-      "ms": [
-        649,
-        845,
-        428
-      ],
-      "ns_per_request": [
-        346.1333333333333,
-        450.6666666666667,
-        228.26666666666668
-      ],
+      "checksums": [5625000, 9375000, 0],
+      "ms": [649, 845, 428],
+      "ns_per_request": [346.1333333333333, 450.6666666666667, 228.26666666666668],
       "http": {
         "summary": {
           "successRate": 1.0,
           "total": 3.002251381,
           "slowest": 0.004929508,
-          "fastest": 1.5058e-05,
+          "fastest": 1.5058e-5,
           "average": 0.0006228794273946727,
           "requestsPerSec": 80200.812471539,
           "totalData": 240733,
@@ -81,13 +69,13 @@
         "details": {
           "DNSDialup": {
             "average": 0.0017840865199999997,
-            "fastest": 6.0564e-05,
+            "fastest": 6.0564e-5,
             "slowest": 0.003753776
           },
           "DNSLookup": {
-            "average": 3.1767599999999995e-06,
-            "fastest": 4.61e-07,
-            "slowest": 2.9946e-05
+            "average": 3.1767599999999995e-6,
+            "fastest": 4.61e-7,
+            "slowest": 2.9946e-5
           }
         },
         "statusCodeDistribution": {
@@ -104,27 +92,15 @@
       "shape": "data",
       "routes": 5,
       "iterations": 2000000,
-      "checksums": [
-        6000000,
-        10000000,
-        0
-      ],
-      "ms": [
-        455,
-        716,
-        305
-      ],
-      "ns_per_request": [
-        227.5,
-        358.0,
-        152.5
-      ],
+      "checksums": [6000000, 10000000, 0],
+      "ms": [455, 716, 305],
+      "ns_per_request": [227.5, 358.0, 152.5],
       "http": {
         "summary": {
           "successRate": 1.0,
           "total": 3.001987459,
           "slowest": 0.008865459,
-          "fastest": 1.7182e-05,
+          "fastest": 1.7182e-5,
           "average": 0.0006445465570896605,
           "requestsPerSec": 77486.66614266492,
           "totalData": 232564,
@@ -175,13 +151,13 @@
         "details": {
           "DNSDialup": {
             "average": 0.005252059480000002,
-            "fastest": 7.1274e-05,
+            "fastest": 7.1274e-5,
             "slowest": 0.008561757
           },
           "DNSLookup": {
-            "average": 2.8425199999999996e-06,
-            "fastest": 4.41e-07,
-            "slowest": 1.9456e-05
+            "average": 2.8425199999999996e-6,
+            "fastest": 4.41e-7,
+            "slowest": 1.9456e-5
           }
         },
         "statusCodeDistribution": {
@@ -198,27 +174,15 @@
       "shape": "chain",
       "routes": 5,
       "iterations": 2000000,
-      "checksums": [
-        6000000,
-        10000000,
-        0
-      ],
-      "ms": [
-        400,
-        621,
-        207
-      ],
-      "ns_per_request": [
-        200.0,
-        310.5,
-        103.5
-      ],
+      "checksums": [6000000, 10000000, 0],
+      "ms": [400, 621, 207],
+      "ns_per_request": [200.0, 310.5, 103.5],
       "http": {
         "summary": {
           "successRate": 1.0,
           "total": 3.002110023,
           "slowest": 0.006778071,
-          "fastest": 1.4898e-05,
+          "fastest": 1.4898e-5,
           "average": 0.0006531852317677106,
           "requestsPerSec": 76461.55478692794,
           "totalData": 229497,
@@ -269,13 +233,13 @@
         "details": {
           "DNSDialup": {
             "average": 0.00263149908,
-            "fastest": 5.847e-05,
+            "fastest": 5.847e-5,
             "slowest": 0.00538576
           },
           "DNSLookup": {
-            "average": 4.341979999999999e-06,
-            "fastest": 4.7e-07,
-            "slowest": 4.6347e-05
+            "average": 4.341979999999999e-6,
+            "fastest": 4.7e-7,
+            "slowest": 4.6347e-5
           }
         },
         "statusCodeDistribution": {
@@ -292,27 +256,15 @@
       "shape": "list",
       "routes": 50,
       "iterations": 223850,
-      "checksums": [
-        5708175,
-        11192500,
-        0
-      ],
-      "ms": [
-        687,
-        912,
-        449
-      ],
-      "ns_per_request": [
-        3069.019432655796,
-        4074.1568014295285,
-        2005.8074603529149
-      ],
+      "checksums": [5708175, 11192500, 0],
+      "ms": [687, 912, 449],
+      "ns_per_request": [3069.019432655796, 4074.1568014295285, 2005.8074603529149],
       "http": {
         "summary": {
           "successRate": 1.0,
           "total": 3.001743784,
           "slowest": 0.009080989,
-          "fastest": 1.8795e-05,
+          "fastest": 1.8795e-5,
           "average": 0.0008985194448520895,
           "requestsPerSec": 55589.35472422053,
           "totalData": 333630,
@@ -363,13 +315,13 @@
         "details": {
           "DNSDialup": {
             "average": 0.006415397860000001,
-            "fastest": 7.7846e-05,
+            "fastest": 7.7846e-5,
             "slowest": 0.008796073
           },
           "DNSLookup": {
-            "average": 3.5228199999999997e-06,
-            "fastest": 4.71e-07,
-            "slowest": 3.9634e-05
+            "average": 3.5228199999999997e-6,
+            "fastest": 4.71e-7,
+            "slowest": 3.9634e-5
           }
         },
         "statusCodeDistribution": {
@@ -386,27 +338,15 @@
       "shape": "data",
       "routes": 50,
       "iterations": 405400,
-      "checksums": [
-        10337700,
-        20270000,
-        0
-      ],
-      "ms": [
-        735,
-        1409,
-        564
-      ],
-      "ns_per_request": [
-        1813.0241736556488,
-        3475.5796743956585,
-        1391.2185495806611
-      ],
+      "checksums": [10337700, 20270000, 0],
+      "ms": [735, 1409, 564],
+      "ns_per_request": [1813.0241736556488, 3475.5796743956585, 1391.2185495806611],
       "http": {
         "summary": {
           "successRate": 1.0,
           "total": 3.002263338,
           "slowest": 0.012550127,
-          "fastest": 2.1692e-05,
+          "fastest": 2.1692e-5,
           "average": 0.0008477605794131912,
           "requestsPerSec": 58912.55365954177,
           "totalData": 353644,
@@ -461,9 +401,9 @@
             "slowest": 0.005167743
           },
           "DNSLookup": {
-            "average": 2.985180000000001e-06,
-            "fastest": 4.91e-07,
-            "slowest": 2.657e-05
+            "average": 2.985180000000001e-6,
+            "fastest": 4.91e-7,
+            "slowest": 2.657e-5
           }
         },
         "statusCodeDistribution": {
@@ -480,27 +420,15 @@
       "shape": "chain",
       "routes": 50,
       "iterations": 483850,
-      "checksums": [
-        12338175,
-        24192500,
-        0
-      ],
-      "ms": [
-        775,
-        1557,
-        436
-      ],
-      "ns_per_request": [
-        1601.7360752299267,
-        3217.9394440425754,
-        901.1057145809651
-      ],
+      "checksums": [12338175, 24192500, 0],
+      "ms": [775, 1557, 436],
+      "ns_per_request": [1601.7360752299267, 3217.9394440425754, 901.1057145809651],
       "http": {
         "summary": {
           "successRate": 1.0,
           "total": 3.001565441,
           "slowest": 0.016285901,
-          "fastest": 1.8835e-05,
+          "fastest": 1.8835e-5,
           "average": 0.0008411693231822559,
           "requestsPerSec": 59377.34942091506,
           "totalData": 356350,
@@ -551,13 +479,13 @@
         "details": {
           "DNSDialup": {
             "average": 0.004159418860000001,
-            "fastest": 5.1928e-05,
+            "fastest": 5.1928e-5,
             "slowest": 0.007736866
           },
           "DNSLookup": {
-            "average": 3.71712e-06,
-            "fastest": 4.81e-07,
-            "slowest": 4.209e-05
+            "average": 3.71712e-6,
+            "fastest": 4.81e-7,
+            "slowest": 4.209e-5
           }
         },
         "statusCodeDistribution": {
@@ -574,27 +502,15 @@
       "shape": "list",
       "routes": 500,
       "iterations": 22000,
-      "checksums": [
-        5511000,
-        11000000,
-        0
-      ],
-      "ms": [
-        778,
-        1007,
-        554
-      ],
-      "ns_per_request": [
-        35363.63636363636,
-        45772.72727272727,
-        25181.81818181818
-      ],
+      "checksums": [5511000, 11000000, 0],
+      "ms": [778, 1007, 554],
+      "ns_per_request": [35363.63636363636, 45772.72727272727, 25181.81818181818],
       "http": {
         "summary": {
           "successRate": 1.0,
           "total": 3.001726068,
           "slowest": 0.010208256,
-          "fastest": 6.6025e-05,
+          "fastest": 6.6025e-5,
           "average": 0.0029318904734278793,
           "requestsPerSec": 17048.524362550193,
           "totalData": 153375,
@@ -645,13 +561,13 @@
         "details": {
           "DNSDialup": {
             "average": 0.003681826120000001,
-            "fastest": 9.9919e-05,
+            "fastest": 9.9919e-5,
             "slowest": 0.005403772
           },
           "DNSLookup": {
-            "average": 4.498300000000001e-06,
-            "fastest": 5.91e-07,
-            "slowest": 3.4074e-05
+            "average": 4.498300000000001e-6,
+            "fastest": 5.91e-7,
+            "slowest": 3.4074e-5
           }
         },
         "statusCodeDistribution": {
@@ -668,27 +584,15 @@
       "shape": "data",
       "routes": 500,
       "iterations": 42500,
-      "checksums": [
-        10646250,
-        21250000,
-        0
-      ],
-      "ms": [
-        738,
-        1460,
-        613
-      ],
-      "ns_per_request": [
-        17364.70588235294,
-        34352.94117647059,
-        14423.529411764706
-      ],
+      "checksums": [10646250, 21250000, 0],
+      "ms": [738, 1460, 613],
+      "ns_per_request": [17364.70588235294, 34352.94117647059, 14423.529411764706],
       "http": {
         "summary": {
           "successRate": 1.0,
           "total": 3.002430472,
           "slowest": 0.036515542,
-          "fastest": 4.7531e-05,
+          "fastest": 4.7531e-5,
           "average": 0.0024671450531211017,
           "requestsPerSec": 20249.59464240343,
           "totalData": 182244,
@@ -739,13 +643,13 @@
         "details": {
           "DNSDialup": {
             "average": 0.0026823543799999994,
-            "fastest": 5.4753e-05,
+            "fastest": 5.4753e-5,
             "slowest": 0.009259221
           },
           "DNSLookup": {
-            "average": 3.159560000000001e-06,
-            "fastest": 4.61e-07,
-            "slowest": 2.6361e-05
+            "average": 3.159560000000001e-6,
+            "fastest": 4.61e-7,
+            "slowest": 2.6361e-5
           }
         },
         "statusCodeDistribution": {
@@ -762,27 +666,15 @@
       "shape": "chain",
       "routes": 500,
       "iterations": 48500,
-      "checksums": [
-        12149250,
-        24250000,
-        0
-      ],
-      "ms": [
-        725,
-        1535,
-        415
-      ],
-      "ns_per_request": [
-        14948.453608247422,
-        31649.484536082473,
-        8556.701030927836
-      ],
+      "checksums": [12149250, 24250000, 0],
+      "ms": [725, 1535, 415],
+      "ns_per_request": [14948.453608247422, 31649.484536082473, 8556.701030927836],
       "http": {
         "summary": {
           "successRate": 1.0,
           "total": 3.000944102,
           "slowest": 0.045463504,
-          "fastest": 4.5455e-05,
+          "fastest": 4.5455e-5,
           "average": 0.0024225090051875715,
           "requestsPerSec": 20636.17244943938,
           "totalData": 185637,
@@ -833,13 +725,13 @@
         "details": {
           "DNSDialup": {
             "average": 0.0011753213600000003,
-            "fastest": 5.9011e-05,
+            "fastest": 5.9011e-5,
             "slowest": 0.002158159
           },
           "DNSLookup": {
-            "average": 2.661539999999999e-06,
-            "fastest": 4.62e-07,
-            "slowest": 2.6851e-05
+            "average": 2.661539999999999e-6,
+            "fastest": 4.62e-7,
+            "slowest": 2.6851e-5
           }
         },
         "statusCodeDistribution": {
@@ -856,27 +748,15 @@
       "shape": "data",
       "routes": 5,
       "iterations": 2000000,
-      "checksums": [
-        6000000,
-        10000000,
-        0
-      ],
-      "ms": [
-        492,
-        775,
-        338
-      ],
-      "ns_per_request": [
-        246.0,
-        387.5,
-        169.0
-      ],
+      "checksums": [6000000, 10000000, 0],
+      "ms": [492, 775, 338],
+      "ns_per_request": [246.0, 387.5, 169.0],
       "http": {
         "summary": {
           "successRate": 1.0,
           "total": 3.001294361,
           "slowest": 0.009411734,
-          "fastest": 1.5579e-05,
+          "fastest": 1.5579e-5,
           "average": 0.0006586467315794995,
           "requestsPerSec": 75804.96033857708,
           "totalData": 227464,
@@ -927,13 +807,13 @@
         "details": {
           "DNSDialup": {
             "average": 0.005861777260000001,
-            "fastest": 7.6946e-05,
+            "fastest": 7.6946e-5,
             "slowest": 0.009183264
           },
           "DNSLookup": {
-            "average": 3.566360000000001e-06,
-            "fastest": 5.71e-07,
-            "slowest": 3.2482e-05
+            "average": 3.566360000000001e-6,
+            "fastest": 5.71e-7,
+            "slowest": 3.2482e-5
           }
         },
         "statusCodeDistribution": {
@@ -950,27 +830,15 @@
       "shape": "chain",
       "routes": 5,
       "iterations": 2000000,
-      "checksums": [
-        6000000,
-        10000000,
-        0
-      ],
-      "ms": [
-        407,
-        653,
-        214
-      ],
-      "ns_per_request": [
-        203.5,
-        326.5,
-        107.0
-      ],
+      "checksums": [6000000, 10000000, 0],
+      "ms": [407, 653, 214],
+      "ns_per_request": [203.5, 326.5, 107.0],
       "http": {
         "summary": {
           "successRate": 1.0,
           "total": 3.002123182,
           "slowest": 0.026897257,
-          "fastest": 1.618e-05,
+          "fastest": 1.618e-5,
           "average": 0.0007251317572157622,
           "requestsPerSec": 68879.58536805969,
           "totalData": 206735,
@@ -1021,12 +889,12 @@
         "details": {
           "DNSDialup": {
             "average": 0.0008828744999999997,
-            "fastest": 6.2289e-05,
+            "fastest": 6.2289e-5,
             "slowest": 0.002969819
           },
           "DNSLookup": {
-            "average": 5.670059999999999e-06,
-            "fastest": 6.01e-07,
+            "average": 5.670059999999999e-6,
+            "fastest": 6.01e-7,
             "slowest": 0.000115517
           }
         },
@@ -1044,27 +912,15 @@
       "shape": "list",
       "routes": 5,
       "iterations": 1875000,
-      "checksums": [
-        5625000,
-        9375000,
-        0
-      ],
-      "ms": [
-        687,
-        822,
-        419
-      ],
-      "ns_per_request": [
-        366.4,
-        438.4,
-        223.46666666666667
-      ],
+      "checksums": [5625000, 9375000, 0],
+      "ms": [687, 822, 419],
+      "ns_per_request": [366.4, 438.4, 223.46666666666667],
       "http": {
         "summary": {
           "successRate": 1.0,
           "total": 3.002637465,
           "slowest": 0.006527871,
-          "fastest": 1.5669e-05,
+          "fastest": 1.5669e-5,
           "average": 0.0007030454262257367,
           "requestsPerSec": 71026.88968812957,
           "totalData": 213218,
@@ -1115,13 +971,13 @@
         "details": {
           "DNSDialup": {
             "average": 0.0032876108200000013,
-            "fastest": 5.9453e-05,
+            "fastest": 5.9453e-5,
             "slowest": 0.005925606
           },
           "DNSLookup": {
-            "average": 3.439839999999999e-06,
-            "fastest": 4.41e-07,
-            "slowest": 3.3342e-05
+            "average": 3.439839999999999e-6,
+            "fastest": 4.41e-7,
+            "slowest": 3.3342e-5
           }
         },
         "statusCodeDistribution": {
@@ -1138,27 +994,15 @@
       "shape": "data",
       "routes": 50,
       "iterations": 357100,
-      "checksums": [
-        9106050,
-        17855000,
-        0
-      ],
-      "ms": [
-        785,
-        1449,
-        581
-      ],
-      "ns_per_request": [
-        2198.2637916549984,
-        4057.6869224306915,
-        1626.9952394287313
-      ],
+      "checksums": [9106050, 17855000, 0],
+      "ms": [785, 1449, 581],
+      "ns_per_request": [2198.2637916549984, 4057.6869224306915, 1626.9952394287313],
       "http": {
         "summary": {
           "successRate": 1.0,
           "total": 3.001455627,
           "slowest": 0.014947254,
-          "fastest": 1.9407e-05,
+          "fastest": 1.9407e-5,
           "average": 0.0009721651831612851,
           "requestsPerSec": 51365.41037393121,
           "totalData": 308242,
@@ -1213,9 +1057,9 @@
             "slowest": 0.006185657
           },
           "DNSLookup": {
-            "average": 7.775640000000003e-06,
-            "fastest": 7.12e-07,
-            "slowest": 6.6755e-05
+            "average": 7.775640000000003e-6,
+            "fastest": 7.12e-7,
+            "slowest": 6.6755e-5
           }
         },
         "statusCodeDistribution": {
@@ -1232,27 +1076,15 @@
       "shape": "chain",
       "routes": 50,
       "iterations": 428550,
-      "checksums": [
-        10928025,
-        21427500,
-        0
-      ],
-      "ms": [
-        736,
-        1409,
-        376
-      ],
-      "ns_per_request": [
-        1717.419204293548,
-        3287.8310582195777,
-        877.377202193443
-      ],
+      "checksums": [10928025, 21427500, 0],
+      "ms": [736, 1409, 376],
+      "ns_per_request": [1717.419204293548, 3287.8310582195777, 877.377202193443],
       "http": {
         "summary": {
           "successRate": 1.0,
           "total": 3.001687786,
           "slowest": 0.009192482,
-          "fastest": 1.9056e-05,
+          "fastest": 1.9056e-5,
           "average": 0.0009325899803549331,
           "requestsPerSec": 53553.53769627525,
           "totalData": 321404,
@@ -1303,13 +1135,13 @@
         "details": {
           "DNSDialup": {
             "average": 0.00497535346,
-            "fastest": 8.497e-05,
+            "fastest": 8.497e-5,
             "slowest": 0.008575777
           },
           "DNSLookup": {
-            "average": 4.871060000000001e-06,
-            "fastest": 5.21e-07,
-            "slowest": 3.8585e-05
+            "average": 4.871060000000001e-6,
+            "fastest": 5.21e-7,
+            "slowest": 3.8585e-5
           }
         },
         "statusCodeDistribution": {
@@ -1326,27 +1158,15 @@
       "shape": "list",
       "routes": 50,
       "iterations": 200000,
-      "checksums": [
-        5100000,
-        10000000,
-        0
-      ],
-      "ms": [
-        728,
-        924,
-        457
-      ],
-      "ns_per_request": [
-        3640.0,
-        4620.0,
-        2285.0
-      ],
+      "checksums": [5100000, 10000000, 0],
+      "ms": [728, 924, 457],
+      "ns_per_request": [3640.0, 4620.0, 2285.0],
       "http": {
         "summary": {
           "successRate": 1.0,
           "total": 3.002266486,
           "slowest": 0.014551725,
-          "fastest": 1.9878e-05,
+          "fastest": 1.9878e-5,
           "average": 0.0009829340244721858,
           "requestsPerSec": 50783.96628379777,
           "totalData": 304836,
@@ -1397,13 +1217,13 @@
         "details": {
           "DNSDialup": {
             "average": 0.005444763419999998,
-            "fastest": 8.8826e-05,
+            "fastest": 8.8826e-5,
             "slowest": 0.010886611
           },
           "DNSLookup": {
-            "average": 4.557899999999999e-06,
-            "fastest": 6.21e-07,
-            "slowest": 4.0506e-05
+            "average": 4.557899999999999e-6,
+            "fastest": 6.21e-7,
+            "slowest": 4.0506e-5
           }
         },
         "statusCodeDistribution": {
@@ -1420,27 +1240,15 @@
       "shape": "data",
       "routes": 500,
       "iterations": 39000,
-      "checksums": [
-        9769500,
-        19500000,
-        0
-      ],
-      "ms": [
-        746,
-        1470,
-        610
-      ],
-      "ns_per_request": [
-        19128.20512820513,
-        37692.307692307695,
-        15641.02564102564
-      ],
+      "checksums": [9769500, 19500000, 0],
+      "ms": [746, 1470, 610],
+      "ns_per_request": [19128.20512820513, 37692.307692307695, 15641.02564102564],
       "http": {
         "summary": {
           "successRate": 1.0,
           "total": 3.002522815,
           "slowest": 0.026989983,
-          "fastest": 6.1706e-05,
+          "fastest": 6.1706e-5,
           "average": 0.0025459237488362277,
           "requestsPerSec": 19620.500369120426,
           "totalData": 176586,
@@ -1491,13 +1299,13 @@
         "details": {
           "DNSDialup": {
             "average": 0.010242125579999997,
-            "fastest": 9.2564e-05,
+            "fastest": 9.2564e-5,
             "slowest": 0.012763837
           },
           "DNSLookup": {
-            "average": 4.180220000000002e-06,
-            "fastest": 4.51e-07,
-            "slowest": 2.7773e-05
+            "average": 4.180220000000002e-6,
+            "fastest": 4.51e-7,
+            "slowest": 2.7773e-5
           }
         },
         "statusCodeDistribution": {
@@ -1514,27 +1322,15 @@
       "shape": "chain",
       "routes": 500,
       "iterations": 48000,
-      "checksums": [
-        12024000,
-        24000000,
-        0
-      ],
-      "ms": [
-        788,
-        1475,
-        437
-      ],
-      "ns_per_request": [
-        16416.666666666668,
-        30729.166666666668,
-        9104.166666666666
-      ],
+      "checksums": [12024000, 24000000, 0],
+      "ms": [788, 1475, 437],
+      "ns_per_request": [16416.666666666668, 30729.166666666668, 9104.166666666666],
       "http": {
         "summary": {
           "successRate": 1.0,
           "total": 3.001308653,
           "slowest": 0.043750865,
-          "fastest": 4.3521e-05,
+          "fastest": 4.3521e-5,
           "average": 0.002280059752107683,
           "requestsPerSec": 21752.844358323982,
           "totalData": 195714,
@@ -1590,7 +1386,7 @@
           },
           "DNSLookup": {
             "average": 0.0006611513600000001,
-            "fastest": 4.51e-07,
+            "fastest": 4.51e-7,
             "slowest": 0.031161435
           }
         },
@@ -1608,27 +1404,15 @@
       "shape": "list",
       "routes": 500,
       "iterations": 22000,
-      "checksums": [
-        5511000,
-        11000000,
-        0
-      ],
-      "ms": [
-        719,
-        927,
-        475
-      ],
-      "ns_per_request": [
-        32681.81818181818,
-        42136.36363636364,
-        21590.909090909092
-      ],
+      "checksums": [5511000, 11000000, 0],
+      "ms": [719, 927, 475],
+      "ns_per_request": [32681.81818181818, 42136.36363636364, 21590.909090909092],
       "http": {
         "summary": {
           "successRate": 1.0,
           "total": 3.000969136,
           "slowest": 0.035686666,
-          "fastest": 5.7849e-05,
+          "fastest": 5.7849e-5,
           "average": 0.002973672281190469,
           "requestsPerSec": 16811.235875369563,
           "totalData": 151200,
@@ -1679,13 +1463,13 @@
         "details": {
           "DNSDialup": {
             "average": 0.00017380875999999996,
-            "fastest": 4.5686e-05,
+            "fastest": 4.5686e-5,
             "slowest": 0.002503015
           },
           "DNSLookup": {
-            "average": 2.35422e-06,
-            "fastest": 4.31e-07,
-            "slowest": 2.2723e-05
+            "average": 2.35422e-6,
+            "fastest": 4.31e-7,
+            "slowest": 2.2723e-5
           }
         },
         "statusCodeDistribution": {
@@ -1702,27 +1486,15 @@
       "shape": "chain",
       "routes": 5,
       "iterations": 2000000,
-      "checksums": [
-        6000000,
-        10000000,
-        0
-      ],
-      "ms": [
-        420,
-        669,
-        220
-      ],
-      "ns_per_request": [
-        210.0,
-        334.5,
-        110.0
-      ],
+      "checksums": [6000000, 10000000, 0],
+      "ms": [420, 669, 220],
+      "ns_per_request": [210.0, 334.5, 110.0],
       "http": {
         "summary": {
           "successRate": 1.0,
           "total": 3.001603116,
           "slowest": 0.007924852,
-          "fastest": 1.64e-05,
+          "fastest": 1.64e-5,
           "average": 0.0006969527302392662,
           "requestsPerSec": 71656.3755059748,
           "totalData": 215035,
@@ -1773,13 +1545,13 @@
         "details": {
           "DNSDialup": {
             "average": 0.00024179406,
-            "fastest": 5.0575e-05,
+            "fastest": 5.0575e-5,
             "slowest": 0.003890576
           },
           "DNSLookup": {
-            "average": 3.0931599999999996e-06,
-            "fastest": 4.3e-07,
-            "slowest": 3.8053e-05
+            "average": 3.0931599999999996e-6,
+            "fastest": 4.3e-7,
+            "slowest": 3.8053e-5
           }
         },
         "statusCodeDistribution": {
@@ -1796,27 +1568,15 @@
       "shape": "list",
       "routes": 5,
       "iterations": 1875000,
-      "checksums": [
-        5625000,
-        9375000,
-        0
-      ],
-      "ms": [
-        720,
-        910,
-        432
-      ],
-      "ns_per_request": [
-        384.0,
-        485.3333333333333,
-        230.4
-      ],
+      "checksums": [5625000, 9375000, 0],
+      "ms": [720, 910, 432],
+      "ns_per_request": [384.0, 485.3333333333333, 230.4],
       "http": {
         "summary": {
           "successRate": 1.0,
           "total": 3.001719814,
           "slowest": 0.015487354,
-          "fastest": 1.8895e-05,
+          "fastest": 1.8895e-5,
           "average": 0.0007327567366482942,
           "requestsPerSec": 68139.60418492278,
           "totalData": 204487,
@@ -1871,9 +1631,9 @@
             "slowest": 0.009104721
           },
           "DNSLookup": {
-            "average": 5.215919999999999e-06,
-            "fastest": 6.91e-07,
-            "slowest": 4.268e-05
+            "average": 5.215919999999999e-6,
+            "fastest": 6.91e-7,
+            "slowest": 4.268e-5
           }
         },
         "statusCodeDistribution": {
@@ -1890,27 +1650,15 @@
       "shape": "data",
       "routes": 5,
       "iterations": 2000000,
-      "checksums": [
-        6000000,
-        10000000,
-        0
-      ],
-      "ms": [
-        506,
-        797,
-        314
-      ],
-      "ns_per_request": [
-        253.0,
-        398.5,
-        157.0
-      ],
+      "checksums": [6000000, 10000000, 0],
+      "ms": [506, 797, 314],
+      "ns_per_request": [253.0, 398.5, 157.0],
       "http": {
         "summary": {
           "successRate": 1.0,
           "total": 3.00215944,
           "slowest": 0.010292275,
-          "fastest": 2.1291e-05,
+          "fastest": 2.1291e-5,
           "average": 0.0006739166737646074,
           "requestsPerSec": 74115.65056651355,
           "totalData": 222459,
@@ -1961,13 +1709,13 @@
         "details": {
           "DNSDialup": {
             "average": 0.0017355108800000008,
-            "fastest": 8.0772e-05,
+            "fastest": 8.0772e-5,
             "slowest": 0.003221915
           },
           "DNSLookup": {
-            "average": 4.3614599999999986e-06,
-            "fastest": 6.91e-07,
-            "slowest": 5.4303e-05
+            "average": 4.3614599999999986e-6,
+            "fastest": 6.91e-7,
+            "slowest": 5.4303e-5
           }
         },
         "statusCodeDistribution": {
@@ -1984,27 +1732,15 @@
       "shape": "chain",
       "routes": 50,
       "iterations": 416650,
-      "checksums": [
-        10624575,
-        20832500,
-        0
-      ],
-      "ms": [
-        741,
-        1446,
-        399
-      ],
-      "ns_per_request": [
-        1778.471138845554,
-        3470.538821552862,
-        957.6383055322212
-      ],
+      "checksums": [10624575, 20832500, 0],
+      "ms": [741, 1446, 399],
+      "ns_per_request": [1778.471138845554, 3470.538821552862, 957.6383055322212],
       "http": {
         "summary": {
           "successRate": 1.0,
           "total": 3.001309179,
           "slowest": 0.017058796,
-          "fastest": 2.165e-05,
+          "fastest": 2.165e-5,
           "average": 0.0008712971864945642,
           "requestsPerSec": 57326.64971801627,
           "totalData": 344010,
@@ -2055,13 +1791,13 @@
         "details": {
           "DNSDialup": {
             "average": 0.0014187699200000003,
-            "fastest": 7.9852e-05,
+            "fastest": 7.9852e-5,
             "slowest": 0.004291525
           },
           "DNSLookup": {
-            "average": 4.52546e-06,
-            "fastest": 7.01e-07,
-            "slowest": 3.4605e-05
+            "average": 4.52546e-6,
+            "fastest": 7.01e-7,
+            "slowest": 3.4605e-5
           }
         },
         "statusCodeDistribution": {
@@ -2078,27 +1814,15 @@
       "shape": "list",
       "routes": 50,
       "iterations": 217350,
-      "checksums": [
-        5542425,
-        10867500,
-        0
-      ],
-      "ms": [
-        773,
-        956,
-        496
-      ],
-      "ns_per_request": [
-        3556.475730388774,
-        4398.4357027835285,
-        2282.0335863814125
-      ],
+      "checksums": [5542425, 10867500, 0],
+      "ms": [773, 956, 496],
+      "ns_per_request": [3556.475730388774, 4398.4357027835285, 2282.0335863814125],
       "http": {
         "summary": {
           "successRate": 1.0,
           "total": 3.002685752,
           "slowest": 0.014367347,
-          "fastest": 2.2662e-05,
+          "fastest": 2.2662e-5,
           "average": 0.0008833492646506089,
           "requestsPerSec": 56545.04467772224,
           "totalData": 339474,
@@ -2149,13 +1873,13 @@
         "details": {
           "DNSDialup": {
             "average": 0.0022784897799999998,
-            "fastest": 5.7097e-05,
+            "fastest": 5.7097e-5,
             "slowest": 0.005906156
           },
           "DNSLookup": {
-            "average": 2.6124599999999997e-06,
-            "fastest": 4.81e-07,
-            "slowest": 2.0579e-05
+            "average": 2.6124599999999997e-6,
+            "fastest": 4.81e-7,
+            "slowest": 2.0579e-5
           }
         },
         "statusCodeDistribution": {
@@ -2172,27 +1896,15 @@
       "shape": "data",
       "routes": 50,
       "iterations": 428550,
-      "checksums": [
-        10928025,
-        21427500,
-        0
-      ],
-      "ms": [
-        766,
-        1528,
-        600
-      ],
-      "ns_per_request": [
-        1787.4227044685567,
-        3565.511608913779,
-        1400.070003500175
-      ],
+      "checksums": [10928025, 21427500, 0],
+      "ms": [766, 1528, 600],
+      "ns_per_request": [1787.4227044685567, 3565.511608913779, 1400.070003500175],
       "http": {
         "summary": {
           "successRate": 1.0,
           "total": 3.001635161,
           "slowest": 0.011890663,
-          "fastest": 2.119e-05,
+          "fastest": 2.119e-5,
           "average": 0.0008095987746902668,
           "requestsPerSec": 61677.049364761224,
           "totalData": 370166,
@@ -2243,13 +1955,13 @@
         "details": {
           "DNSDialup": {
             "average": 0.00236190608,
-            "fastest": 8.3258e-05,
+            "fastest": 8.3258e-5,
             "slowest": 0.00685537
           },
           "DNSLookup": {
-            "average": 3.54048e-06,
-            "fastest": 4.61e-07,
-            "slowest": 2.5749e-05
+            "average": 3.54048e-6,
+            "fastest": 4.61e-7,
+            "slowest": 2.5749e-5
           }
         },
         "statusCodeDistribution": {
@@ -2266,27 +1978,15 @@
       "shape": "chain",
       "routes": 500,
       "iterations": 46000,
-      "checksums": [
-        11523000,
-        23000000,
-        0
-      ],
-      "ms": [
-        714,
-        1437,
-        408
-      ],
-      "ns_per_request": [
-        15521.739130434782,
-        31239.130434782608,
-        8869.565217391304
-      ],
+      "checksums": [11523000, 23000000, 0],
+      "ms": [714, 1437, 408],
+      "ns_per_request": [15521.739130434782, 31239.130434782608, 8869.565217391304],
       "http": {
         "summary": {
           "successRate": 1.0,
           "total": 3.002651862,
           "slowest": 0.026604434,
-          "fastest": 4.5275e-05,
+          "fastest": 4.5275e-5,
           "average": 0.0022207894294431385,
           "requestsPerSec": 22503.441326359134,
           "totalData": 202560,
@@ -2337,13 +2037,13 @@
         "details": {
           "DNSDialup": {
             "average": 0.0025192966400000003,
-            "fastest": 7.0704e-05,
+            "fastest": 7.0704e-5,
             "slowest": 0.004792254
           },
           "DNSLookup": {
-            "average": 4.457719999999999e-06,
-            "fastest": 5.21e-07,
-            "slowest": 7.1925e-05
+            "average": 4.457719999999999e-6,
+            "fastest": 5.21e-7,
+            "slowest": 7.1925e-5
           }
         },
         "statusCodeDistribution": {
@@ -2360,27 +2060,15 @@
       "shape": "list",
       "routes": 500,
       "iterations": 21500,
-      "checksums": [
-        5385750,
-        10750000,
-        0
-      ],
-      "ms": [
-        720,
-        924,
-        473
-      ],
-      "ns_per_request": [
-        33488.37209302326,
-        42976.74418604651,
-        22000.0
-      ],
+      "checksums": [5385750, 10750000, 0],
+      "ms": [720, 924, 473],
+      "ns_per_request": [33488.37209302326, 42976.74418604651, 22000.0],
       "http": {
         "summary": {
           "successRate": 1.0,
           "total": 3.002162145,
           "slowest": 0.05620821,
-          "fastest": 5.9332e-05,
+          "fastest": 5.9332e-5,
           "average": 0.0032092384739242077,
           "requestsPerSec": 15575.108119285143,
           "totalData": 140130,
@@ -2431,13 +2119,13 @@
         "details": {
           "DNSDialup": {
             "average": 0.00261441844,
-            "fastest": 5.9934e-05,
+            "fastest": 5.9934e-5,
             "slowest": 0.004937641
           },
           "DNSLookup": {
-            "average": 3.2677199999999998e-06,
-            "fastest": 4.6e-07,
-            "slowest": 2.3696e-05
+            "average": 3.2677199999999998e-6,
+            "fastest": 4.6e-7,
+            "slowest": 2.3696e-5
           }
         },
         "statusCodeDistribution": {
@@ -2454,27 +2142,15 @@
       "shape": "data",
       "routes": 500,
       "iterations": 40000,
-      "checksums": [
-        10020000,
-        20000000,
-        0
-      ],
-      "ms": [
-        690,
-        1377,
-        549
-      ],
-      "ns_per_request": [
-        17250.0,
-        34425.0,
-        13725.0
-      ],
+      "checksums": [10020000, 20000000, 0],
+      "ms": [690, 1377, 549],
+      "ns_per_request": [17250.0, 34425.0, 13725.0],
       "http": {
         "summary": {
           "successRate": 1.0,
           "total": 3.001905449,
           "slowest": 0.026699458,
-          "fastest": 5.0666e-05,
+          "fastest": 5.0666e-5,
           "average": 0.0024248862794022286,
           "requestsPerSec": 20614.240205538197,
           "totalData": 185496,
@@ -2525,13 +2201,13 @@
         "details": {
           "DNSDialup": {
             "average": 0.0017622117,
-            "fastest": 6.0434e-05,
+            "fastest": 6.0434e-5,
             "slowest": 0.003252036
           },
           "DNSLookup": {
-            "average": 2.8988600000000005e-06,
-            "fastest": 4.81e-07,
-            "slowest": 2.2632e-05
+            "average": 2.8988600000000005e-6,
+            "fastest": 4.81e-7,
+            "slowest": 2.2632e-5
           }
         },
         "statusCodeDistribution": {
