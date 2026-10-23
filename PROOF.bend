@@ -1,5 +1,7 @@
 # Proofs of LAWS.bend. Run: bend PROOF.bend --verdict
 import Base
+import ./proof/schema.bend as SchemaProof
+import ./src/data/schema.bend as Schema
 import ./src/http/response.bend as Response
 import ./src/http/write_response.bend as WriteResponse
 import ./src/http.bend as Http
@@ -356,3 +358,11 @@ def Laws.hex_roundtrip(xs, valid):
 
 def Laws.base64_roundtrip(xs, url, padded, valid):
   Base64Proof.roundtrip(xs, url, padded, valid)
+
+# BND-33
+
+def Laws.schema_acceptance_iff(schema, value):
+  SchemaProof.acceptance(schema, value, Schema.valid(schema))
+
+def Laws.schema_preserves_typed_value(schema, value):
+  SchemaProof.preservation(schema, value, Schema.valid(schema))

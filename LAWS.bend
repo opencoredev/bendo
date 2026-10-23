@@ -2,6 +2,8 @@
 # Agents may add laws. Never delete or weaken one without a written reason
 # in the pull request.
 import Base
+import ./src/data/schema.bend as Schema
+import ./src/data/json.bend as Json
 import ./src/http/response.bend as Response
 import ./src/http/write_response.bend as WriteResponse
 import ./proof/response-spec.bend as ResponseSpec
@@ -830,3 +832,19 @@ law base64_roundtrip:
   for +padded: Bool
   for valid: {Octets.valid(xs) == True{} : Bool}
   {Base64.decode(Base64.encode(xs, url, padded), url, padded) == Some{xs} : Maybe<&2, List<&2, U32>>}
+
+# BND-33: scalar decoding agrees with the independent declarative predicate
+# for EVERY schema and Json tree, including malformed schemas/constructed data.
+# Equality proves both soundness (accepted implies satisfies) and completeness.
+
+law schema_acceptance_iff:
+  for +schema: Schema.Schema
+  for +value: Json.Json
+  {Schema.accepted(Schema.decode(schema, value)) == Schema.satisfies(schema, value) : Bool}
+
+# Every success has the right typed constructor AND preserves the exact input
+# payload, including decimal spelling. Failures impose no payload obligation.
+law schema_preserves_typed_value:
+  for +schema: Schema.Schema
+  for +value: Json.Json
+  Schema.Preserves(Schema.value_for(schema, value), Schema.decode(schema, value))
