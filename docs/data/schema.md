@@ -117,11 +117,38 @@ def zip() -> P.Pattern:
 
 `P.matches(p, s)` scans the text once with Antimirov partial derivatives: it
 keeps the deduplicated set of patterns that must match the rest of the text.
-The set is bounded by the pattern's size, with a counted repetition counting
-once per remaining count, so the scan is linear in the text for a fixed
-pattern. Every loop over the text is a tail call in native code and `.mjs`.
-There are no alternations, captures, backreferences, lookarounds, or negated
-classes.
+Each entry carries a hash of its pattern, so telling two entries apart is
+usually one integer comparison. Every loop over the text is a tail call in
+native code and `.mjs`. There are no alternations, captures, backreferences,
+lookarounds, or negated classes.
+
+### Size cap
+
+Every part of a valid pattern has an expanded size of at most 128. The expanded
+size counts nodes after each repetition is written out as copies of its body: a
+literal counts 1 plus its scalars, a class 1, a `Cat` 1 plus both parts, and a
+`Repeat` 1 plus the body's size times its copies. `{m,n}` makes `n` copies and
+`{m,}` makes `m + 1`. A repetition may also have at most 128 copies.
+
+| Pattern | Expanded size | Valid |
+| --- | --- | --- |
+| `a{0,127}` | 128 | yes |
+| `a{0,128}` | 129 | no |
+| `(?:(?:a){0,10}){0,11}` | 122 | yes |
+| `(?:(?:(?:a){0,10}){0,10}){0,10}` | 1111 | no |
+| `[a-z]{1,64}` | 65 | yes |
+
+By Antimirov's bound on the written-out pattern, the derivative set never
+holds more patterns than the expanded size, so the cap bounds the work per
+scalar and every valid pattern scans in time linear in the text. Before the
+cap, the 1111-node pattern above took between 1.7 and 10 seconds to match 30
+characters. Measured in `.mjs` on ms-a2, the slug, the ZIP code and
+`[a-z]{1,64}` take under a microsecond per scalar. Nested counted repetitions
+near the cap take 0.1 to 0.4 ms per scalar. The slowest shape found, a starred
+sequence of sixteen `[a-z]{0,6}`, takes about 2.7 ms. Native builds are faster.
+Express plain length limits with `min_len` and `max_len`, which do not count
+toward the cap, and set `max_len` on any pattern field that may receive long
+input.
 
 ### ECMAScript rendering
 
@@ -185,9 +212,10 @@ assuming generic JSON Schema `format` implementations agree.
 
 Malformed bounds, reversed bounds, non-ASCII or reversed pattern ranges,
 pattern literals with a lone surrogate, reversed counts anywhere in a pattern,
-and invalid literal or enum members return `InvalidSchema` before examining
-input. `TypeMismatch` means the JSON category differs from the schema.
-`Constraint` means a value fails a check, literal membership, or scalar validity.
+patterns over the size cap, and invalid literal or enum members return
+`InvalidSchema` before examining input. `TypeMismatch` means the JSON category
+differs from the schema. `Constraint` means a value fails a check, literal
+membership, or scalar validity.
 Even an otherwise matching enum rejects if another member is malformed.
 
 There is no coercion, default insertion, or path accumulation yet (BND-35), and
@@ -203,9 +231,9 @@ this generic scalar decoder per field without duplicating scalar checks.
 the decoder. It reads lengths as a structural count of scalars, numbers by the
 RFC 8259 grammar, decimal values as exact natural numbers (`digits * 10^e`
 compared by cross-multiplying), patterns as regular languages that try every
-way to split the text, and the email and URL formats as direct grammars. It
-imports the schema and pattern modules only for their data types and calls none
-of their functions. It is a specification, not an implementation: it is
+way to split the text, the pattern size cap in plain unbounded arithmetic, and
+the email and URL formats as direct grammars. It imports the schema and pattern
+modules only for their data types and calls none of their functions. It is a specification, not an implementation: it is
 exponential on patterns and unary on numbers.
 
 The BND-33 laws quantify every schema and every JSON tree. The first equates

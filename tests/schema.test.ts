@@ -1,23 +1,10 @@
-import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { compile, SLOW_TEST_TIMEOUT_MS } from "./harness.ts";
+import { describe, expect, test } from "bun:test";
 import { pathToFileURL } from "node:url";
-import { findBend } from "../packages/bendo/src/bend.ts";
 
-const dir = mkdtempSync(join(tmpdir(), "bendo-schema-"));
-afterAll(() => rmSync(dir, { recursive: true, force: true }));
-const bend = findBend();
-if (bend.kind === "missing") throw new Error("Bend is not installed");
-function compile(source: string, output: string) {
-  if (bend.kind === "missing") throw new Error("Bend is not installed");
-  const r = Bun.spawnSync(["timeout", "--foreground", "30s", bend.path, source, "-o", output]);
-  if (r.exitCode !== 0) throw new Error(`${r.stdout}${r.stderr}`);
-}
-const nativePath = join(dir, "schema");
-const modulePath = join(dir, "schema.mjs");
-compile(join(import.meta.dir, "fixtures/schema/native.bend"), nativePath);
-compile(join(import.meta.dir, "fixtures/schema/consumer.bend"), modulePath);
+// Compile once, outside any test's timeout, through the shared fixture cache.
+const nativePath = compile("tests/fixtures/schema/native.bend", "native");
+const modulePath = compile("tests/fixtures/schema/consumer.bend", "mjs");
 const imported: unknown = await import(pathToFileURL(modulePath).href);
 if (typeof imported !== "object" || imported === null || !("default" in imported)) {
   throw new Error("Missing Bend exports");
@@ -371,25 +358,29 @@ test("exact decimal ordering agrees with independently scaled BigInts", () => {
   }
 });
 
-test(".mjs scalar checks stay stack safe for long strings, decimals, patterns and enums", () => {
-  const long = "a".repeat(100000);
-  for (const name of ["text", "star", "plus"]) {
-    expect(value(call("decode", call("schema", name), { $: "JString", value: long }))).toEqual({
-      $: "VString",
-      value: long,
-    });
-  }
-  const rejected = (name: string, input: string) =>
-    call("report", call("decode", call("schema", name), { $: "JString", value: input }));
-  expect(rejected("star", long + "b")).toBe("error:Constraint");
-  for (const name of ["email", "url"]) expect(rejected(name, long)).toBe("error:Constraint");
-  const digits = "9".repeat(100000);
-  expect(value(call("decode", call("schema", "integer"), { $: "JNumber", value: digits }))).toEqual(
-    { $: "VInteger", value: digits },
-  );
-  expect(call("order", "1e" + digits, "2e" + digits)).toEqual({ $: "LT" });
-  expect(call("order", "1e-" + digits, "2e-" + digits)).toEqual({ $: "LT" });
-});
+test(
+  ".mjs scalar checks stay stack safe for long strings, decimals, patterns and enums",
+  () => {
+    const long = "a".repeat(100000);
+    for (const name of ["text", "star", "plus"]) {
+      expect(value(call("decode", call("schema", name), { $: "JString", value: long }))).toEqual({
+        $: "VString",
+        value: long,
+      });
+    }
+    const rejected = (name: string, input: string) =>
+      call("report", call("decode", call("schema", name), { $: "JString", value: input }));
+    expect(rejected("star", long + "b")).toBe("error:Constraint");
+    for (const name of ["email", "url"]) expect(rejected(name, long)).toBe("error:Constraint");
+    const digits = "9".repeat(100000);
+    expect(
+      value(call("decode", call("schema", "integer"), { $: "JNumber", value: digits })),
+    ).toEqual({ $: "VInteger", value: digits });
+    expect(call("order", "1e" + digits, "2e" + digits)).toEqual({ $: "LT" });
+    expect(call("order", "1e-" + digits, "2e-" + digits)).toEqual({ $: "LT" });
+  },
+  SLOW_TEST_TIMEOUT_MS,
+);
 
 const patternNames = [
   "pattern",
@@ -436,73 +427,178 @@ test("rendered ECMAScript sources are exact for slug and ZIP", () => {
   expect(patternSource("no-ranges")).toBe("^(?:(?:[^\\s\\S])*)(?![\\s\\S])");
 });
 
-test("the matcher, the specification and both ECMAScript flag modes agree", () => {
-  const alphabet = ["a", "b", "0", "1", "-", "<", ">", "😀", "é", "\n", "^", "$", "\\", "\u0000"];
-  const exhaustive = words(alphabet, 3);
-  const generated: string[] = [];
-  let seed = 37;
-  const next = () => {
-    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-    return seed;
-  };
-  for (let i = 0; i < 400; i++) {
-    let w = "";
-    for (let n = next() % 16; n > 0; n--) w += alphabet[next() % alphabet.length];
-    generated.push(w);
-  }
-  for (const name of patternNames) {
-    const pattern = call("pattern_of", name);
-    expect(call("pattern_valid", pattern)).toBe(true);
-    const source = patternSource(name);
-    const plain = new RegExp(source);
-    const unicode = new RegExp(source, "u");
-    const samples = [
-      ...exhaustive,
-      ...generated,
-      "abc-def-g",
-      "12345-6789",
-      "<ab12ab><ab>",
-      "aaaaaaa",
-      "ababab",
-      "😀é😀é",
-      "^$\\.*+?()[]{}|/-\u007f",
-      "a\n",
-      "a\r\n",
-      "a\u2028",
-    ];
-    for (const w of samples) {
-      const got = call("matches", pattern, w);
-      expect({ name, w, got }).toEqual({ name, w, got: plain.test(w) });
-      expect({ name, w, got }).toEqual({ name, w, got: unicode.test(w) });
-      if ([...w].length <= 2)
-        expect({ name, w, spec: call("pattern_spec", pattern, w) }).toEqual({ name, w, spec: got });
+test(
+  "the matcher, the specification and both ECMAScript flag modes agree",
+  () => {
+    const alphabet = ["a", "b", "0", "1", "-", "<", ">", "😀", "é", "\n", "^", "$", "\\", "\u0000"];
+    const exhaustive = words(alphabet, 3);
+    const generated: string[] = [];
+    let seed = 37;
+    const next = () => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed;
+    };
+    for (let i = 0; i < 400; i++) {
+      let w = "";
+      for (let n = next() % 16; n > 0; n--) w += alphabet[next() % alphabet.length];
+      generated.push(w);
     }
+    for (const name of patternNames) {
+      const pattern = call("pattern_of", name);
+      expect(call("pattern_valid", pattern)).toBe(true);
+      const source = patternSource(name);
+      const plain = new RegExp(source);
+      const unicode = new RegExp(source, "u");
+      const samples = [
+        ...exhaustive,
+        ...generated,
+        "abc-def-g",
+        "12345-6789",
+        "<ab12ab><ab>",
+        "aaaaaaa",
+        "ababab",
+        "😀é😀é",
+        "^$\\.*+?()[]{}|/-\u007f",
+        "a\n",
+        "a\r\n",
+        "a\u2028",
+      ];
+      for (const w of samples) {
+        const got = call("matches", pattern, w);
+        expect({ name, w, got }).toEqual({ name, w, got: plain.test(w) });
+        expect({ name, w, got }).toEqual({ name, w, got: unicode.test(w) });
+        if ([...w].length <= 2)
+          expect({ name, w, spec: call("pattern_spec", pattern, w) }).toEqual({
+            name,
+            w,
+            spec: got,
+          });
+      }
+    }
+  },
+  SLOW_TEST_TIMEOUT_MS,
+);
+
+test(
+  "long pattern inputs scan in linear time without stack growth",
+  () => {
+    const slug = call("pattern_of", "slug");
+    const zip = call("pattern_of", "zip");
+    const long = "ab-".repeat(40000) + "z9";
+    const started = performance.now();
+    expect(call("matches", slug, long)).toBe(true);
+    expect(call("matches", slug, long + "-")).toBe(false);
+    expect(call("matches", slug, "a" + "-".repeat(100000))).toBe(false);
+    expect(call("matches", zip, "1".repeat(100000))).toBe(false);
+    expect(performance.now() - started).toBeLessThan(10000);
+    expect(native("slug", text(long))).toBe(`ok:VString:${text(long)}`);
+    expect(native("slug", text(long + "-"))).toBe("error:Constraint");
+  },
+  SLOW_TEST_TIMEOUT_MS,
+);
+
+type PatternData =
+  | {
+      $: "Class";
+      ranges: { $: "Con"; head: { $: "Range"; lo: number; hi: number }; tail: { $: "Nil" } };
+    }
+  | {
+      $: "Repeat";
+      body: PatternData;
+      min: number;
+      max: { $: "Some"; value: number } | { $: "None" };
+    };
+const letterA: PatternData = {
+  $: "Class",
+  ranges: { $: "Con", head: { $: "Range", lo: 97, hi: 97 }, tail: { $: "Nil" } },
+};
+const upTo = (body: PatternData, n: number): PatternData => ({
+  $: "Repeat",
+  body,
+  min: 0,
+  max: { $: "Some", value: n },
+});
+const anyCount = (body: PatternData): PatternData => ({
+  $: "Repeat",
+  body,
+  min: 0,
+  max: { $: "None" },
+});
+const patternSchema = (pattern: PatternData) => ({
+  $: "StringSchema",
+  min_len: 0,
+  max_len: { $: "None" },
+  pattern: { $: "Some", value: pattern },
+  format: { $: "Plain" },
+});
+const decodeText = (pattern: PatternData, input: string) =>
+  call("report", call("decode", patternSchema(pattern), { $: "JString", value: input }));
+
+test("caps a pattern's expanded size at 128 nodes in the decoder and the specification", () => {
+  // a{0,127} writes out 1 + 127 nodes; a{0,128} is one past the cap.
+  for (const [pattern, ok] of [
+    [upTo(letterA, 127), true],
+    [upTo(letterA, 128), false],
+    [upTo(upTo(letterA, 10), 11), true],
+    [upTo(upTo(letterA, 10), 12), false],
+  ] as const) {
+    expect(call("pattern_valid", pattern)).toBe(ok);
+    const tree = { $: "JString", value: "a" };
+    expect(call("satisfies", patternSchema(pattern), tree)).toBe(ok);
+    expect(decodeText(pattern, "a")).toBe(ok ? 'ok:VString:"a"' : "error:InvalidSchema");
   }
+  // Huge counts are rejected before any size arithmetic could pass 2^48.
+  // The specification is exponential in counts, so it is not run here.
+  const huge = 4294967295;
+  for (const pattern of [upTo(letterA, huge), upTo(upTo(upTo(letterA, huge), huge), huge)])
+    expect(decodeText(pattern, "a")).toBe("error:InvalidSchema");
 });
 
-test("long pattern inputs scan in linear time without stack growth", () => {
-  const slug = call("pattern_of", "slug");
-  const zip = call("pattern_of", "zip");
-  const long = "ab-".repeat(40000) + "z9";
-  const started = performance.now();
-  expect(call("matches", slug, long)).toBe(true);
-  expect(call("matches", slug, long + "-")).toBe(false);
-  expect(call("matches", slug, "a" + "-".repeat(100000))).toBe(false);
-  expect(call("matches", zip, "1".repeat(100000))).toBe(false);
-  expect(performance.now() - started).toBeLessThan(10000);
-  expect(native("slug", text(long))).toBe(`ok:VString:${text(long)}`);
-  expect(native("slug", text(long + "-"))).toBe("error:Constraint");
-});
+test(
+  "nested counted repetitions stay fast: over the cap they are rejected, under it they scan",
+  () => {
+    // (?:(?:(?:a){0,10}){0,10}){0,10} expands to 1111 nodes, so it is invalid.
+    const over = upTo(upTo(upTo(letterA, 10), 10), 10);
+    // (?:(?:a){0,10}){0,10} expands to 111 and (?:(?:(?:(?:a){0,2}){0,2}){0,2})* to 32.
+    const under = upTo(upTo(letterA, 10), 10);
+    const starred = anyCount(upTo(upTo(upTo(letterA, 2), 2), 2));
+    for (const n of [30, 10000]) {
+      const input = "a".repeat(n);
+      let started = performance.now();
+      expect(decodeText(over, input)).toBe("error:InvalidSchema");
+      expect(performance.now() - started).toBeLessThan(1000);
+      started = performance.now();
+      expect(call("matches", under, input)).toBe(n <= 100);
+      expect(performance.now() - started).toBeLessThan(1000);
+      started = performance.now();
+      expect(call("matches", starred, input)).toBe(true);
+      expect(performance.now() - started).toBeLessThan(1000);
+    }
+    for (const pattern of [under, starred]) {
+      const source = call("source", pattern);
+      if (typeof source !== "string") throw new Error("Expected a source string");
+      for (const n of [0, 1, 7, 99, 100, 101, 1000])
+        expect(call("matches", pattern, "a".repeat(n))).toBe(
+          new RegExp(source).test("a".repeat(n)),
+        );
+    }
+  },
+  SLOW_TEST_TIMEOUT_MS,
+);
 
-test("validates every enum member before matching and scans wide enums without recursion growth", () => {
-  type Items = { $: "Nil" } | { $: "Con"; head: { $: "JNumber"; value: string }; tail: Items };
-  let items: Items = { $: "Nil" };
-  for (let i = 0; i < 20000; i++)
-    items = { $: "Con", head: { $: "JNumber", value: String(i) }, tail: items };
-  const schema = { $: "EnumSchema", values: items };
-  const tree = { $: "JNumber", value: "0.0" };
-  expect(value(call("decode", schema, tree))).toEqual({ $: "VLiteral", value: tree });
-  expect(call("report", call("decode", schema, { $: "JNumber", value: "20000" }))).toBe(
-    "error:Constraint",
-  );
-});
+test(
+  "validates every enum member before matching and scans wide enums without recursion growth",
+  () => {
+    type Items = { $: "Nil" } | { $: "Con"; head: { $: "JNumber"; value: string }; tail: Items };
+    let items: Items = { $: "Nil" };
+    for (let i = 0; i < 20000; i++)
+      items = { $: "Con", head: { $: "JNumber", value: String(i) }, tail: items };
+    const schema = { $: "EnumSchema", values: items };
+    const tree = { $: "JNumber", value: "0.0" };
+    expect(value(call("decode", schema, tree))).toEqual({ $: "VLiteral", value: tree });
+    expect(call("report", call("decode", schema, { $: "JNumber", value: "20000" }))).toBe(
+      "error:Constraint",
+    );
+  },
+  SLOW_TEST_TIMEOUT_MS,
+);

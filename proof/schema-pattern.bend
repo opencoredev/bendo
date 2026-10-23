@@ -9,6 +9,8 @@ import ../src/data/schema-pattern.bend as P
 import ../src/data/schema-spec.bend as Spec
 import ./schema-text.bend as TP
 import ./schema-pattern-core.bend as Core
+import ./schema-pattern-strings.bend as W
+import ../src/data/json.bend as J
 
 # Validity.
 
@@ -24,18 +26,48 @@ def at_most_equiv(+n: Maybe<&2, Nat>, -m: Nat) -> {P.at_most(n, m) == Spec.at_mo
     case None{}: {==}
     case Some{k}: {==}
 
-def valid_equiv(+p: P.Pattern) -> {P.valid(p) == Spec.pattern_ok(p) : Bool}:
+def copies_equiv(+m: Nat, +n: Maybe<&2, Nat>) -> {P.copies(m, n) == Spec.copies(m, n) : Nat}:
+  match n:
+    case None{}: {==}
+    case Some{k}: {==}
+
+def size_equiv(+p: P.Pattern) -> {P.size(p) == Spec.expanded(p) : Nat}:
   match p:
-    case P.Literal{x}: TP.scalars_equiv(x)
-    case P.Class{rs}: ranges_go(rs, True{})
+    case P.Literal{x}: Equal.cong(Nat, Nat, z => 1n+z, String.length(x), Spec.length(x), W.length_eq(x))
+    case P.Class{rs}: {==}
     case P.Cat{a, b}:
-      %valid_equiv(a) : {P.valid(P.Cat{a, b}) == (_ && Spec.pattern_ok(b)) : Bool}
-      %valid_equiv(b) : {P.valid(P.Cat{a, b}) == (P.valid(a) && _) : Bool}
+      %size_equiv(a) : {P.size(P.Cat{a, b}) == 1n+Nat.add(_, Spec.expanded(b)) : Nat}
+      %size_equiv(b) : {P.size(P.Cat{a, b}) == 1n+Nat.add(P.size(a), _) : Nat}
       {==}
     case P.Repeat{r, m, n}:
-      %valid_equiv(r) : {P.valid(P.Repeat{r, m, n}) == (_ && Spec.at_most(n, m)) : Bool}
-      %at_most_equiv(n, m) : {P.valid(P.Repeat{r, m, n}) == (P.valid(r) && _) : Bool}
+      %size_equiv(r) : {P.size(P.Repeat{r, m, n}) == 1n+Nat.mul(Spec.copies(m, n), _) : Nat}
+      %copies_equiv(m, n) : {P.size(P.Repeat{r, m, n}) == 1n+Nat.mul(_, P.size(r)) : Nat}
       {==}
+
+def small_equiv(+ok: Bool, +p: P.Pattern) -> {P.small(ok, p) == (ok && Spec.fits(p)) : Bool}:
+  match ok:
+    case False{}: {==}
+    case True{}:
+      %size_equiv(p) : {P.small(True{}, p) == Nat.is_le(_, Spec.pattern_limit()) : Bool}
+      {==}
+
+def valid_equiv(+p: P.Pattern) -> {P.valid(p) == Spec.pattern_ok(p) : Bool}:
+  match p:
+    case P.Literal{x}:
+      %TP.scalars_equiv(x) : {P.valid(P.Literal{x}) == (_ && Spec.fits(P.Literal{x})) : Bool}
+      small_equiv(J.scalars(x), P.Literal{x})
+    case P.Class{rs}:
+      %ranges_go(rs, True{}) : {P.valid(P.Class{rs}) == (_ && Spec.fits(P.Class{rs})) : Bool}
+      small_equiv(P.ranges_valid(rs, True{}), P.Class{rs})
+    case P.Cat{a, b}:
+      %valid_equiv(a) : {P.valid(P.Cat{a, b}) == (_ && Spec.pattern_ok(b) && Spec.fits(P.Cat{a, b})) : Bool}
+      %valid_equiv(b) : {P.valid(P.Cat{a, b}) == (P.valid(a) && _ && Spec.fits(P.Cat{a, b})) : Bool}
+      small_equiv(P.valid(a) && P.valid(b), P.Cat{a, b})
+    case P.Repeat{r, m, n}:
+      %valid_equiv(r) : {P.valid(P.Repeat{r, m, n}) == (_ && Spec.at_most(n, m) && Nat.is_le(Spec.copies(m, n), Spec.pattern_limit()) && Spec.fits(P.Repeat{r, m, n})) : Bool}
+      %at_most_equiv(n, m) : {P.valid(P.Repeat{r, m, n}) == (P.valid(r) && _ && Nat.is_le(Spec.copies(m, n), Spec.pattern_limit()) && Spec.fits(P.Repeat{r, m, n})) : Bool}
+      %copies_equiv(m, n) : {P.valid(P.Repeat{r, m, n}) == (P.valid(r) && P.at_most(n, m) && Nat.is_le(_, Spec.pattern_limit()) && Spec.fits(P.Repeat{r, m, n})) : Bool}
+      small_equiv(P.valid(r) && P.at_most(n, m) && Nat.is_le(P.copies(m, n), P.limit()), P.Repeat{r, m, n})
 
 # Structural equality is sound.
 
@@ -125,75 +157,85 @@ def or_again(+a: Bool, +b: Bool) -> {((a || b) || a) == (a || b) : Bool}:
     case False{} True{}: {==}
     case False{} False{}: {==}
 
-# Deduplication keeps the accepted language.
+# Deduplication keeps the accepted language. Only a hash hit confirmed by
+# `same` drops a residual, and `same` is sound, so the hashes need no proof.
 
-def contains(ps: List<&2, P.Pattern>, +q: P.Pattern) -> Bool:
-  match ps:
+def any_entries(es: List<&2, P.Entry>, +w: String) -> Bool:
+  match es:
     case Nil{}: False{}
-    case p <> t: P.same(p, q) || contains(t, q)
+    case P.Entry{h, p} <> t: Spec.matches(p, w) || any_entries(t, w)
 
-def member_contains(+ps: List<&2, P.Pattern>, +q: P.Pattern, +found: Bool) -> {P.member(ps, q, found) == (found || contains(ps, q)) : Bool}:
-  match ps:
-    case Nil{}: or_false(found)
-    case p <> t:
-      %or_assoc(found, P.same(p, q), contains(t, q)) : {P.member(p <> t, q, found) == _ : Bool}
-      member_contains(t, q, found || P.same(p, q))
+def contains(es: List<&2, P.Entry>, +k: U32, +q: P.Pattern) -> Bool:
+  match es:
+    case Nil{}: False{}
+    case P.Entry{h, p} <> t: P.gate(U32.is_eq(h, k), p, q) || contains(t, k, q)
 
-def absorb_hit(+p: P.Pattern, +t: List<&2, P.Pattern>, +q: P.Pattern, +w: String, eb: {P.same(p, q) == True{} : Bool}) -> {((Spec.matches(p, w) || Core.any_matches(t, w)) || Spec.matches(q, w)) == (Spec.matches(p, w) || Core.any_matches(t, w)) : Bool}:
-  %same_sound(p, q, eb) : {((Spec.matches(p, w) || Core.any_matches(t, w)) || Spec.matches(_, w)) == (Spec.matches(p, w) || Core.any_matches(t, w)) : Bool}
-  or_again(Spec.matches(p, w), Core.any_matches(t, w))
+def member_contains(+es: List<&2, P.Entry>, +k: U32, +q: P.Pattern, +found: Bool) -> {P.member(es, k, q, found) == (found || contains(es, k, q)) : Bool}:
+  match es found:
+    case Nil{} _: or_false(found)
+    case P.Entry{h, p} <> t True{}: {==}
+    case P.Entry{h, p} <> t False{}: member_contains(t, k, q, P.gate(U32.is_eq(h, k), p, q))
+
+def gate_same(+b: Bool, +p: P.Pattern, +q: P.Pattern, e: {P.gate(b, p, q) == True{} : Bool}) -> {P.same(p, q) == True{} : Bool}:
+  match b:
+    case True{}: e
+    case False{}: E.absurd({P.same(p, q) == True{} : Bool}, E.false_true(e))
+
+def absorb_hit(+p: P.Pattern, +t: List<&2, P.Entry>, +h: U32, +k: U32, +q: P.Pattern, +w: String, eb: {P.gate(U32.is_eq(h, k), p, q) == True{} : Bool}) -> {((Spec.matches(p, w) || any_entries(t, w)) || Spec.matches(q, w)) == (Spec.matches(p, w) || any_entries(t, w)) : Bool}:
+  %same_sound(p, q, gate_same(U32.is_eq(h, k), p, q, eb)) : {((Spec.matches(p, w) || any_entries(t, w)) || Spec.matches(_, w)) == (Spec.matches(p, w) || any_entries(t, w)) : Bool}
+  or_again(Spec.matches(p, w), any_entries(t, w))
 
 # A pattern already in the set adds nothing to the accepted language.
-def absorb(+t: List<&2, P.Pattern>, +p: P.Pattern, +q: P.Pattern, +w: String, b: Bool) -> {P.same(p, q) == b : Bool} -> {(b || contains(t, q)) == True{} : Bool} -> {((Spec.matches(p, w) || Core.any_matches(t, w)) || Spec.matches(q, w)) == (Spec.matches(p, w) || Core.any_matches(t, w)) : Bool}:
+def absorb(+t: List<&2, P.Entry>, +p: P.Pattern, +h: U32, +k: U32, +q: P.Pattern, +w: String, b: Bool) -> {P.gate(U32.is_eq(h, k), p, q) == b : Bool} -> {(b || contains(t, k, q)) == True{} : Bool} -> {((Spec.matches(p, w) || any_entries(t, w)) || Spec.matches(q, w)) == (Spec.matches(p, w) || any_entries(t, w)) : Bool}:
   match t b:
-    case Nil{} True{}: eb => e => absorb_hit(p, [], q, w, eb)
+    case Nil{} True{}: eb => e => absorb_hit(p, [], h, k, q, w, eb)
     case Nil{} False{}: eb => e => E.absurd({((Spec.matches(p, w) || False{}) || Spec.matches(q, w)) == (Spec.matches(p, w) || False{}) : Bool}, E.false_true(e))
-    case h <> u True{}: eb => e => absorb_hit(p, h <> u, q, w, eb)
-    case h <> u False{}: eb => e =>
-      %Equal.sym(Bool, ((Spec.matches(p, w) || Core.any_matches(h <> u, w)) || Spec.matches(q, w)), (Spec.matches(p, w) || (Core.any_matches(h <> u, w) || Spec.matches(q, w))), or_assoc(Spec.matches(p, w), Core.any_matches(h <> u, w), Spec.matches(q, w))) : {_ == (Spec.matches(p, w) || Core.any_matches(h <> u, w)) : Bool}
-      %Equal.sym(Bool, (Core.any_matches(h <> u, w) || Spec.matches(q, w)), Core.any_matches(h <> u, w), absorb(u, h, q, w, P.same(h, q))({==})(e)) : {(Spec.matches(p, w) || _) == (Spec.matches(p, w) || Core.any_matches(h <> u, w)) : Bool}
+    case g <> u True{}: eb => e => absorb_hit(p, g <> u, h, k, q, w, eb)
+    case P.Entry{g, o} <> u False{}: eb => e =>
+      %Equal.sym(Bool, ((Spec.matches(p, w) || any_entries(P.Entry{g, o} <> u, w)) || Spec.matches(q, w)), (Spec.matches(p, w) || (any_entries(P.Entry{g, o} <> u, w) || Spec.matches(q, w))), or_assoc(Spec.matches(p, w), any_entries(P.Entry{g, o} <> u, w), Spec.matches(q, w))) : {_ == (Spec.matches(p, w) || any_entries(P.Entry{g, o} <> u, w)) : Bool}
+      %Equal.sym(Bool, (any_entries(P.Entry{g, o} <> u, w) || Spec.matches(q, w)), any_entries(P.Entry{g, o} <> u, w), absorb(u, o, g, k, q, w, P.gate(U32.is_eq(g, k), o, q))({==})(e)) : {(Spec.matches(p, w) || _) == (Spec.matches(p, w) || any_entries(P.Entry{g, o} <> u, w)) : Bool}
       {==}
 
-def contained(+acc: List<&2, P.Pattern>, +q: P.Pattern, +w: String, e: {contains(acc, q) == True{} : Bool}) -> {Core.any_matches(acc, w) == (Core.any_matches(acc, w) || Spec.matches(q, w)) : Bool}:
+def contained(+acc: List<&2, P.Entry>, +k: U32, +q: P.Pattern, +w: String, e: {contains(acc, k, q) == True{} : Bool}) -> {any_entries(acc, w) == (any_entries(acc, w) || Spec.matches(q, w)) : Bool}:
   match acc:
     case Nil{}: E.absurd({False{} == (False{} || Spec.matches(q, w)) : Bool}, E.false_true(e))
-    case p <> t: Equal.sym(Bool, ((Spec.matches(p, w) || Core.any_matches(t, w)) || Spec.matches(q, w)), (Spec.matches(p, w) || Core.any_matches(t, w)), absorb(t, p, q, w, P.same(p, q))({==})(e))
+    case P.Entry{h, p} <> t: Equal.sym(Bool, ((Spec.matches(p, w) || any_entries(t, w)) || Spec.matches(q, w)), (Spec.matches(p, w) || any_entries(t, w)), absorb(t, p, h, k, q, w, P.gate(U32.is_eq(h, k), p, q))({==})(e))
 
-def insert_any(b: Bool, +q: P.Pattern, +acc: List<&2, P.Pattern>, +w: String) -> {P.member(acc, q, False{}) == b : Bool} -> {Core.any_matches(P.insert(b, q, acc), w) == (Core.any_matches(acc, w) || Spec.matches(q, w)) : Bool}:
+def insert_any(b: Bool, +k: U32, +q: P.Pattern, +acc: List<&2, P.Entry>, +w: String) -> {P.member(acc, k, q, False{}) == b : Bool} -> {any_entries(P.insert(b, k, q, acc), w) == (any_entries(acc, w) || Spec.matches(q, w)) : Bool}:
   match b:
-    case True{}: e => contained(acc, q, w, Equal.trans(Bool, contains(acc, q), P.member(acc, q, False{}), True{}, Equal.sym(Bool, P.member(acc, q, False{}), contains(acc, q), member_contains(acc, q, False{})), e))
-    case False{}: e => or_comm(Spec.matches(q, w), Core.any_matches(acc, w))
+    case True{}: e => contained(acc, k, q, w, Equal.trans(Bool, contains(acc, k, q), P.member(acc, k, q, False{}), True{}, Equal.sym(Bool, P.member(acc, k, q, False{}), contains(acc, k, q), member_contains(acc, k, q, False{})), e))
+    case False{}: e => or_comm(Spec.matches(q, w), any_entries(acc, w))
 
-def add_all_any(+xs: List<&2, P.Pattern>, +acc: List<&2, P.Pattern>, +w: String) -> {Core.any_matches(P.add_all(xs, acc), w) == (Core.any_matches(acc, w) || Core.any_matches(xs, w)) : Bool}:
+def add_all_any(+xs: List<&2, P.Pattern>, +acc: List<&2, P.Entry>, +w: String) -> {any_entries(P.add_all(xs, acc), w) == (any_entries(acc, w) || Core.any_matches(xs, w)) : Bool}:
   match xs:
-    case Nil{}: or_false(Core.any_matches(acc, w))
+    case Nil{}: or_false(any_entries(acc, w))
     case q <> t:
-      %or_assoc(Core.any_matches(acc, w), Spec.matches(q, w), Core.any_matches(t, w)) : {Core.any_matches(P.add_all(q <> t, acc), w) == _ : Bool}
-      %insert_any(P.member(acc, q, False{}), q, acc, w)({==}) : {Core.any_matches(P.add_all(q <> t, acc), w) == (_ || Core.any_matches(t, w)) : Bool}
-      add_all_any(t, P.insert(P.member(acc, q, False{}), q, acc), w)
+      %or_assoc(any_entries(acc, w), Spec.matches(q, w), Core.any_matches(t, w)) : {any_entries(P.add_all(q <> t, acc), w) == _ : Bool}
+      %insert_any(P.member(acc, P.hash(q), q, False{}), P.hash(q), q, acc, w)({==}) : {any_entries(P.add_all(q <> t, acc), w) == (_ || Core.any_matches(t, w)) : Bool}
+      add_all_any(t, P.add_one(P.hash(q), q, acc), w)
 
-def step_any(+ps: List<&2, P.Pattern>, +c: U32, +acc: List<&2, P.Pattern>, +t: String) -> {Core.any_matches(P.step(ps, c, acc), t) == (Core.any_matches(acc, t) || Core.any_matches(ps, SCon{Chr{c}, t})) : Bool}:
-  match ps:
-    case Nil{}: or_false(Core.any_matches(acc, t))
-    case q <> rest:
-      %Equal.sym(Bool, Spec.matches(q, SCon{Chr{c}, t}), Core.any_matches(P.derive(c, q), t), Core.derive_equiv(c, q, t)) : {Core.any_matches(P.step(q <> rest, c, acc), t) == (Core.any_matches(acc, t) || (_ || Core.any_matches(rest, SCon{Chr{c}, t}))) : Bool}
-      %or_assoc(Core.any_matches(acc, t), Core.any_matches(P.derive(c, q), t), Core.any_matches(rest, SCon{Chr{c}, t})) : {Core.any_matches(P.step(q <> rest, c, acc), t) == _ : Bool}
-      %add_all_any(P.derive(c, q), acc, t) : {Core.any_matches(P.step(q <> rest, c, acc), t) == (_ || Core.any_matches(rest, SCon{Chr{c}, t})) : Bool}
+def step_any(+es: List<&2, P.Entry>, +c: U32, +acc: List<&2, P.Entry>, +t: String) -> {any_entries(P.step(es, c, acc), t) == (any_entries(acc, t) || any_entries(es, SCon{Chr{c}, t})) : Bool}:
+  match es:
+    case Nil{}: or_false(any_entries(acc, t))
+    case P.Entry{h, q} <> rest:
+      %Equal.sym(Bool, Spec.matches(q, SCon{Chr{c}, t}), Core.any_matches(P.derive(c, q), t), Core.derive_equiv(c, q, t)) : {any_entries(P.step(P.Entry{h, q} <> rest, c, acc), t) == (any_entries(acc, t) || (_ || any_entries(rest, SCon{Chr{c}, t}))) : Bool}
+      %or_assoc(any_entries(acc, t), Core.any_matches(P.derive(c, q), t), any_entries(rest, SCon{Chr{c}, t})) : {any_entries(P.step(P.Entry{h, q} <> rest, c, acc), t) == _ : Bool}
+      %add_all_any(P.derive(c, q), acc, t) : {any_entries(P.step(P.Entry{h, q} <> rest, c, acc), t) == (_ || any_entries(rest, SCon{Chr{c}, t})) : Bool}
       step_any(rest, c, P.add_all(P.derive(c, q), acc), t)
 
-def nullable_any(+ps: List<&2, P.Pattern>, +found: Bool) -> {P.any_nullable(ps, found) == (found || Core.any_matches(ps, "")) : Bool}:
-  match ps:
+def nullable_any(+es: List<&2, P.Entry>, +found: Bool) -> {P.any_nullable(es, found) == (found || any_entries(es, "")) : Bool}:
+  match es:
     case Nil{}: or_false(found)
-    case p <> t:
-      %Core.nullable_equiv(p) : {P.any_nullable(p <> t, found) == (found || (_ || Core.any_matches(t, ""))) : Bool}
-      %or_assoc(found, P.nullable(p), Core.any_matches(t, "")) : {P.any_nullable(p <> t, found) == _ : Bool}
+    case P.Entry{h, p} <> t:
+      %Core.nullable_equiv(p) : {P.any_nullable(P.Entry{h, p} <> t, found) == (found || (_ || any_entries(t, ""))) : Bool}
+      %or_assoc(found, P.nullable(p), any_entries(t, "")) : {P.any_nullable(P.Entry{h, p} <> t, found) == _ : Bool}
       nullable_any(t, found || P.nullable(p))
 
-def run_any(+w: String, +ps: List<&2, P.Pattern>) -> {P.run(w, ps) == Core.any_matches(ps, w) : Bool}:
+def run_any(+w: String, +es: List<&2, P.Entry>) -> {P.run(w, es) == any_entries(es, w) : Bool}:
   match w:
-    case SNil{}: nullable_any(ps, False{})
-    case SCon{Chr{c}, t}: Equal.trans(Bool, P.run(t, P.step(ps, c, [])), Core.any_matches(P.step(ps, c, []), t), Core.any_matches(ps, SCon{Chr{c}, t}), run_any(t, P.step(ps, c, [])), step_any(ps, c, [], t))
+    case SNil{}: nullable_any(es, False{})
+    case SCon{Chr{c}, t}: Equal.trans(Bool, P.run(t, P.step(es, c, [])), any_entries(P.step(es, c, []), t), any_entries(es, SCon{Chr{c}, t}), run_any(t, P.step(es, c, [])), step_any(es, c, [], t))
 
 def matches_equiv(+p: P.Pattern, +s: String) -> {P.matches(p, s) == Spec.matches(p, s) : Bool}:
   %Equal.sym(Bool, Spec.matches(p, s), (Spec.matches(p, s) || False{}), or_false(Spec.matches(p, s))) : {P.matches(p, s) == _ : Bool}
-  run_any(s, [p])
+  run_any(s, [P.Entry{P.hash(p), p}])

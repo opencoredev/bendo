@@ -945,9 +945,9 @@ law lifecycle_ordered_selection:
 # BND-33: scalar decoding agrees with an independent specification for EVERY
 # schema and Json tree, including malformed schemas and constructed data.
 # SchemaSpec restates each rule from docs/data/schema.md (scalar counts, the
-# RFC 8259 number grammar, exact decimal values, patterns as regular languages,
-# email and URL grammars) and calls no decoder helper. Equality proves both
-# soundness (accepted implies satisfies) and completeness.
+# RFC 8259 number grammar, exact decimal values, patterns as regular languages
+# with a size cap, email and URL grammars) and calls no decoder helper.
+# Equality proves both soundness (accepted implies satisfies) and completeness.
 
 law schema_acceptance_iff:
   for +schema: Schema.Schema

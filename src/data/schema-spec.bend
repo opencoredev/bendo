@@ -239,12 +239,34 @@ def ascii_ranges(rs: List<&2, P.Range>) -> Bool:
     case Nil{}: True{}
     case P.Range{+lo, +hi} <> t: (lo <= hi : U32) && (hi <= 127 : U32) && ascii_ranges(t)
 
+# How many copies of its body a repetition writes out: r{m,n} is n copies and
+# r{m,} is m copies plus the one that repeats.
+def copies(m: Nat, n: Maybe<&2, Nat>) -> Nat:
+  match n:
+    case None{}: 1n+m
+    case Some{k}: k
+
+# The node count once every repetition is written out as its copies.
+def expanded(p: P.Pattern) -> Nat:
+  match p:
+    case P.Literal{x}: 1n+length(x)
+    case P.Class{rs}: 1n
+    case P.Cat{a, b}: 1n+Nat.add(expanded(a), expanded(b))
+    case P.Repeat{r, m, n}: 1n+Nat.mul(copies(m, n), expanded(r))
+
+# The largest expanded size and copy count a valid pattern may have anywhere.
+def pattern_limit() -> Nat:
+  128n
+
+def fits(p: P.Pattern) -> Bool:
+  Nat.is_le(expanded(p), pattern_limit())
+
 def pattern_ok(p: P.Pattern) -> Bool:
   match p:
-    case P.Literal{x}: scalars(x)
-    case P.Class{rs}: ascii_ranges(rs)
-    case P.Cat{a, b}: pattern_ok(a) && pattern_ok(b)
-    case P.Repeat{r, +m, n}: pattern_ok(r) && at_most(n, m)
+    case P.Literal{+x}: scalars(x) && fits(P.Literal{x})
+    case P.Class{+rs}: ascii_ranges(rs) && fits(P.Class{rs})
+    case P.Cat{+a, +b}: pattern_ok(a) && pattern_ok(b) && fits(P.Cat{a, b})
+    case P.Repeat{+r, +m, +n}: pattern_ok(r) && at_most(n, m) && Nat.is_le(copies(m, n), pattern_limit()) && fits(P.Repeat{r, m, n})
 
 type Lang is Data:
   LNone{}

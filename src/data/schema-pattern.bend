@@ -32,13 +32,38 @@ def ranges_valid(rs: List<&2, Range>, ok: Bool) -> Bool:
     case Nil{}: ok
     case Range{+lo, +hi} <> t: ranges_valid(t, ok && (lo <= hi : U32) && (hi <= 127 : U32))
 
-# Class ranges are ASCII; literal text is any Unicode scalar text; m <= n.
+# Expanded size: the node count once every counted repetition is written out,
+# r{m,n} as n copies of r and r{m,} as m + 1. It bounds the matcher's residual
+# sets, so capping it bounds the work per scalar of text.
+def limit() -> Nat:
+  128n
+
+def copies(m: Nat, n: Maybe<&2, Nat>) -> Nat:
+  match n:
+    case None{}: 1n+m
+    case Some{k}: k
+
+def size(p: Pattern) -> Nat:
+  match p:
+    case Literal{x}: 1n+String.length(x)
+    case Class{rs}: 1n
+    case Cat{a, b}: 1n+Nat.add(size(a), size(b))
+    case Repeat{r, m, n}: 1n+Nat.mul(copies(m, n), size(r))
+
+# Sized only once its parts are valid, so every product stays below 2^48.
+def small(ok: Bool, p: Pattern) -> Bool:
+  match ok:
+    case False{}: False{}
+    case True{}: Nat.is_le(size(p), limit())
+
+# Class ranges are ASCII; literal text is any Unicode scalar text; m <= n; a
+# repetition has at most `limit()` copies; every part stays within `limit()`.
 def valid(p: Pattern) -> Bool:
   match p:
-    case Literal{x}: J.scalars(x)
-    case Class{rs}: ranges_valid(rs, True{})
-    case Cat{a, b}: valid(a) && valid(b)
-    case Repeat{r, +m, n}: valid(r) && at_most(n, m)
+    case Literal{+x}: small(J.scalars(x), Literal{x})
+    case Class{+rs}: small(ranges_valid(rs, True{}), Class{rs})
+    case Cat{+a, +b}: small(valid(a) && valid(b), Cat{a, b})
+    case Repeat{+r, +m, +n}: small(valid(r) && at_most(n, m) && Nat.is_le(copies(m, n), limit()), Repeat{r, m, n})
 
 def in_ranges(rs: List<&2, Range>, +c: U32, found: Bool) -> Bool:
   match rs:
@@ -46,9 +71,9 @@ def in_ranges(rs: List<&2, Range>, +c: U32, found: Bool) -> Bool:
     case Range{lo, hi} <> t: in_ranges(t, c, found || ((c >= lo : U32) && (c <= hi : U32)))
 
 # Matching uses Antimirov partial derivatives: the set of patterns that must
-# match the rest of the text. Deduplicated sets stay bounded by the pattern's
-# size (counted repetitions count once per remaining count), so a scan is
-# linear in the text for a fixed pattern. Every text-length loop is a tail call.
+# match the rest of the text. Deduplicated sets stay bounded by the expanded
+# size, so a scan is linear in the text with a constant `limit()` caps. Every
+# text-length loop is a tail call.
 
 def nullable(p: Pattern) -> Bool:
   match p:
@@ -139,39 +164,80 @@ def same(p: Pattern, q: Pattern) -> Bool:
     case Repeat{r, m, n} Repeat{s, k, l}: same(r, s) && Nat.is_eq(m, k) && max_same(n, l)
     case _ _: False{}
 
-def member(ps: List<&2, Pattern>, +q: Pattern, found: Bool) -> Bool:
-  match ps:
-    case Nil{}: found
-    case p <> t: member(t, q, found || same(p, q))
+# A set entry carries its pattern's hash, so telling residuals apart is
+# usually one U32 comparison; only equal hashes fall back to `same`.
+type Entry is Data:
+  Entry{key: U32, pattern: Pattern}
 
-def insert(seen: Bool, q: Pattern, acc: List<&2, Pattern>) -> List<&2, Pattern>:
+def mix(h: U32, x: U32) -> U32:
+  ((h * 31 : U32) + x : U32)
+
+def text_hash(s: String, h: U32) -> U32:
+  match s:
+    case SNil{}: h
+    case SCon{Chr{c}, t}: text_hash(t, mix(h, c))
+
+def ranges_hash(rs: List<&2, Range>, h: U32) -> U32:
+  match rs:
+    case Nil{}: h
+    case Range{lo, hi} <> t: ranges_hash(t, mix(mix(h, lo), hi))
+
+def max_hash(n: Maybe<&2, Nat>) -> U32:
+  match n:
+    case None{}: 0
+    case Some{k}: (U32.from_nat(k) + 1 : U32)
+
+def hash(p: Pattern) -> U32:
+  match p:
+    case Literal{x}: text_hash(x, 1)
+    case Class{rs}: ranges_hash(rs, 2)
+    case Cat{a, b}: mix(mix(3, hash(a)), hash(b))
+    case Repeat{r, m, n}: mix(mix(mix(4, hash(r)), U32.from_nat(m)), max_hash(n))
+
+def gate(hit: Bool, p: Pattern, q: Pattern) -> Bool:
+  match hit:
+    case False{}: False{}
+    case True{}: same(p, q)
+
+def member(es: List<&2, Entry>, +k: U32, +q: Pattern, found: Bool) -> Bool:
+  match es:
+    case Nil{}: found
+    case Entry{h, p} <> t:
+      match found:
+        case True{}: True{}
+        case False{}: member(t, k, q, gate(U32.is_eq(h, k), p, q))
+
+def insert(seen: Bool, k: U32, q: Pattern, acc: List<&2, Entry>) -> List<&2, Entry>:
   match seen:
     case True{}: acc
-    case False{}: q <> acc
+    case False{}: Entry{k, q} <> acc
 
-def add_all(xs: List<&2, Pattern>, +acc: List<&2, Pattern>) -> List<&2, Pattern>:
+def add_one(+k: U32, +q: Pattern, +acc: List<&2, Entry>) -> List<&2, Entry>:
+  insert(member(acc, k, q, False{}), k, q, acc)
+
+def add_all(xs: List<&2, Pattern>, acc: List<&2, Entry>) -> List<&2, Entry>:
   match xs:
     case Nil{}: acc
-    case +q <> t: add_all(t, insert(member(acc, q, False{}), q, acc))
+    case +q <> t: add_all(t, add_one(hash(q), q, acc))
 
-def step(ps: List<&2, Pattern>, +c: U32, acc: List<&2, Pattern>) -> List<&2, Pattern>:
-  match ps:
+def step(es: List<&2, Entry>, +c: U32, acc: List<&2, Entry>) -> List<&2, Entry>:
+  match es:
     case Nil{}: acc
-    case q <> t: step(t, c, add_all(derive(c, q), acc))
+    case Entry{h, q} <> t: step(t, c, add_all(derive(c, q), acc))
 
-def any_nullable(ps: List<&2, Pattern>, found: Bool) -> Bool:
-  match ps:
+def any_nullable(es: List<&2, Entry>, found: Bool) -> Bool:
+  match es:
     case Nil{}: found
-    case p <> t: any_nullable(t, found || nullable(p))
+    case Entry{h, p} <> t: any_nullable(t, found || nullable(p))
 
-def run(s: String, ps: List<&2, Pattern>) -> Bool:
+def run(s: String, es: List<&2, Entry>) -> Bool:
   match s:
-    case SNil{}: any_nullable(ps, False{})
-    case SCon{Chr{c}, t}: run(t, step(ps, c, []))
+    case SNil{}: any_nullable(es, False{})
+    case SCon{Chr{c}, t}: run(t, step(es, c, []))
 
 # Whole-string match. Callers check `valid` first; invalid counts match nothing.
-def matches(p: Pattern, s: String) -> Bool:
-  run(s, [p])
+def matches(+p: Pattern, s: String) -> Bool:
+  run(s, [Entry{hash(p), p}])
 
 # ECMAScript source. Every scalar is escaped, so the source means the same with
 # or without the `u` flag: ASCII as \xHH, other BMP scalars as \uHHHH, and
