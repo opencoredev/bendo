@@ -231,7 +231,7 @@ def hex_value(ds: List<&2, Word(4n)>, acc: U32) -> U32:
     case Nil{}:
       acc
     case d <> t:
-      hex_value(t, (acc * 16 + nibble(d) : U32))
+      hex_value(t, (16 * acc + nibble(d) : U32))
 
 # The representation fits U32 exactly when every prefix can accept a digit.
 # This tests only arithmetic, independently of the parser.
@@ -240,7 +240,7 @@ def hex_fits(ds: List<&2, Word(4n)>, +acc: U32) -> Bool:
     case Nil{}:
       True{}
     case d <> t:
-      (acc <= 268435455 : U32) && hex_fits(t, (acc * 16 + nibble(d) : U32))
+      (acc <= 268435455 : U32) && hex_fits(t, (16 * acc + nibble(d) : U32))
 
 def digits_seen(ds: List<&2, Word(4n)>, seen: Bool) -> Bool:
   match ds:
@@ -288,13 +288,13 @@ def parse_hex_digits(ds, acc, seen, safe):
       {==}
     case d <> t:
       +safe = safe
-      fits = both_left((acc <= 268435455 : U32), hex_fits(t, (acc * 16 + nibble(d) : U32)), safe)
-      tail = both_right((acc <= 268435455 : U32), hex_fits(t, (acc * 16 + nibble(d) : U32)), safe)
-      %Equal.sym(Bool, B.hex(C.hex_char(nibble(d))), True{}, hex_nibble_valid(d)) : {C.branch(Maybe<&2, U32>, _, u => C.branch(Maybe<&2, U32>, (acc <= 268435455 : U32), u => C.size_digits(hex_bytes(t), (acc * 16 + C.hex_digit(C.hex_char(nibble(d))) : U32), True{}), u => None{}), u => C.size_result(acc, seen && C.ext_valid(C.hex_char(nibble(d)) <> hex_bytes(t), C.Semi{}))) == C.size_result(hex_value(d <> t, acc), True{}) : Maybe<&2, U32>}
-      %Equal.sym(Bool, (acc <= 268435455 : U32), True{}, fits) : {C.branch(Maybe<&2, U32>, _, u => C.size_digits(hex_bytes(t), (acc * 16 + C.hex_digit(C.hex_char(nibble(d))) : U32), True{}), u => None{}) == C.size_result(hex_value(d <> t, acc), True{}) : Maybe<&2, U32>}
-      %Equal.sym(U32, C.hex_digit(C.hex_char(nibble(d))), nibble(d), hex_nibble_inverse(d)) : {C.size_digits(hex_bytes(t), (acc * 16 + _ : U32), True{}) == C.size_result(hex_value(d <> t, acc), True{}) : Maybe<&2, U32>}
-      %digits_seen_true(t) : {C.size_digits(hex_bytes(t), (acc * 16 + nibble(d) : U32), True{}) == C.size_result(hex_value(t, (acc * 16 + nibble(d) : U32)), _) : Maybe<&2, U32>}
-      parse_hex_digits(t, (acc * 16 + nibble(d) : U32), True{}, tail)
+      fits = both_left((acc <= 268435455 : U32), hex_fits(t, (16 * acc + nibble(d) : U32)), safe)
+      tail = both_right((acc <= 268435455 : U32), hex_fits(t, (16 * acc + nibble(d) : U32)), safe)
+      %Equal.sym(Bool, B.hex(C.hex_char(nibble(d))), True{}, hex_nibble_valid(d)) : {C.branch(Maybe<&2, U32>, _, u => C.branch(Maybe<&2, U32>, (acc <= 268435455 : U32), u => C.size_digits(hex_bytes(t), (16 * acc + C.hex_digit(C.hex_char(nibble(d))) : U32), True{}), u => None{}), u => C.size_result(acc, seen && C.ext_valid(C.hex_char(nibble(d)) <> hex_bytes(t), C.Semi{}))) == C.size_result(hex_value(d <> t, acc), True{}) : Maybe<&2, U32>}
+      %Equal.sym(Bool, (acc <= 268435455 : U32), True{}, fits) : {C.branch(Maybe<&2, U32>, _, u => C.size_digits(hex_bytes(t), (16 * acc + C.hex_digit(C.hex_char(nibble(d))) : U32), True{}), u => None{}) == C.size_result(hex_value(d <> t, acc), True{}) : Maybe<&2, U32>}
+      %Equal.sym(U32, C.hex_digit(C.hex_char(nibble(d))), nibble(d), hex_nibble_inverse(d)) : {C.size_digits(hex_bytes(t), (16 * acc + _ : U32), True{}) == C.size_result(hex_value(d <> t, acc), True{}) : Maybe<&2, U32>}
+      %digits_seen_true(t) : {C.size_digits(hex_bytes(t), (16 * acc + nibble(d) : U32), True{}) == C.size_result(hex_value(t, (16 * acc + nibble(d) : U32)), _) : Maybe<&2, U32>}
+      parse_hex_digits(t, (16 * acc + nibble(d) : U32), True{}, tail)
 
 # The encoder's accumulator is a genuine suffix, including at fuel exhaustion.
 def hex_append_case(+fuel: Nat, +n: U32, +xs: List<&2, U32>, +ys: List<&2, U32>, zero: Bool,
