@@ -242,6 +242,22 @@ def located(seg: Segment, rest: List<&2, String>) -> Segment:
     case s _:
       s
 
+def all_optional(segs: List<&2, Segment>) -> Bool:
+  match segs:
+    case Nil{}:
+      True{}
+    case Capture{name, c, True{}} <> rest:
+      all_optional(rest)
+    case _:
+      False{}
+
+def optional_tail_ok(seg: Segment, rest: List<&2, Segment>) -> Bool:
+  match seg:
+    case Capture{name, c, True{}}:
+      all_optional(rest)
+    case _:
+      True{}
+
 # One shrinking segment-list traversal; constraints themselves are pure data.
 def compile_segments(xs: List<&2, String>, +names: List<&2, String>) -> Result<&2, &2, PatternError, List<&2, Segment>>:
   match xs:
@@ -258,8 +274,8 @@ def compile_segments(xs: List<&2, String>, +names: List<&2, String>) -> Result<&
             Fail{PatternError{terminal_error(seg), raw}}
           ), u => (
             do Result<&2, &2, PatternError, List<&2, Segment>>:
-              tail : List<&2, Segment> <- compile_segments(rest, add_name(segment_name(seg), names))
-              return seg <> tail
+              +tail : List<&2, Segment> <- compile_segments(rest, add_name(segment_name(seg), names))
+              E.choose(Result<&2, &2, PatternError, List<&2, Segment>>, optional_tail_ok(seg, tail), u => Done{seg <> tail}, u => Fail{PatternError{OptionalNotLast{}, raw}})
           ))
         ))
 
@@ -410,15 +426,6 @@ def match_segments(segs: List<&2, Segment>, paths: List<&2, String>) -> Maybe<&2
       search_segments(Span{name} <> rest, ps)
     case _ _:
       None{}
-
-def all_optional(segs: List<&2, Segment>) -> Bool:
-  match segs:
-    case Nil{}:
-      True{}
-    case Capture{name, c, True{}} <> rest:
-      all_optional(rest)
-    case _:
-      False{}
 
 def match_path(pattern: Pattern, path: String) -> Maybe<&2, Params>:
   match pattern path:
