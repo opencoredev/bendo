@@ -7,6 +7,8 @@ const ROOT = resolve(import.meta.dir, "..");
 
 /** Wall-clock budget for one `bend` compile. CI runners are slower than ms-a2. */
 export const BEND_COMPILE_TIMEOUT = "180s";
+/** Per-test timeout for a test whose body runs one `bend` compile. Above BEND_COMPILE_TIMEOUT. */
+export const COMPILE_TEST_TIMEOUT_MS = 200_000;
 
 export type RunningServer = { url: string; [Symbol.asyncDispose]: () => Promise<void> };
 
@@ -15,10 +17,13 @@ export function build(entry: string): string {
   const bend = findBend();
   if (bend.kind === "missing") throw new Error("bend is not installed");
   const out = join(mkdtempSync(join(tmpdir(), "bendo-test-")), "server");
-  const run = Bun.spawnSync([bend.path, join(ROOT, entry), "-o", out], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+  const run = Bun.spawnSync(
+    ["timeout", "--foreground", BEND_COMPILE_TIMEOUT, bend.path, join(ROOT, entry), "-o", out],
+    {
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
   if (run.exitCode !== 0) throw new Error(`bend build failed:\n${run.stdout}${run.stderr}`);
   return out;
 }
@@ -32,14 +37,14 @@ type StartAttempt =
   | { kind: "exited"; url: string; stderr: string }
   | { kind: "timeout"; url: string };
 
-async function attempt(binary: string): Promise<StartAttempt> {
+async function attempt(binary: string, hostname: string): Promise<StartAttempt> {
   const port = 20000 + Math.floor(Math.random() * 20000);
   const proc = Bun.spawn([binary], {
     env: { ...process.env, PORT: String(port) },
     stdout: "pipe",
     stderr: "pipe",
   });
-  const url = `http://127.0.0.1:${port}`;
+  const url = `http://${hostname}:${port}`;
   let exited = false;
   void proc.exited.then(() => {
     exited = true;
@@ -73,10 +78,10 @@ async function attempt(binary: string): Promise<StartAttempt> {
  * Starts a compiled server on a random port and waits until it answers.
  * A server that exits before answering (for example on a port collision) is retried on a new port.
  */
-export async function start(binary: string): Promise<RunningServer> {
+export async function start(binary: string, hostname = "127.0.0.1"): Promise<RunningServer> {
   const failures: string[] = [];
   for (let i = 0; i < START_ATTEMPTS; i++) {
-    const result = await attempt(binary);
+    const result = await attempt(binary, hostname);
     switch (result.kind) {
       case "up":
         return result.server;

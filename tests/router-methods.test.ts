@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { findBend } from "../packages/bendo/src/bend.ts";
 import { connect } from "node:net";
-import { build, start } from "./harness.ts";
+import { BEND_COMPILE_TIMEOUT, build, COMPILE_TEST_TIMEOUT_MS, start } from "./harness.ts";
 
 function exchange(url: string, method: string, target: string): Promise<string> {
   const address = new URL(url);
@@ -153,8 +153,8 @@ describe("method-aware router", () => {
   });
 });
 
+const binary = build("tests/router-methods-driver.bend");
 test("public construction normalizes standards, rejects invalid tokens atomically and preserves extension case", () => {
-  const binary = build("tests/router-methods-driver.bend");
   const result = Bun.spawnSync(["timeout", "--foreground", "10s", binary], {
     stdout: "pipe",
     stderr: "pipe",
@@ -193,31 +193,35 @@ test("public construction normalizes standards, rejects invalid tokens atomicall
 }, 30000);
 
 for (const fixture of ["raw-table", "forged-none", "forged-valid", "forged-checked-none"]) {
-  test(`the compiler rejects the ${fixture} validation bypass`, () => {
-    const bend = findBend();
-    if (bend.kind === "missing") throw new Error("bend is not installed");
-    const directory = mkdtempSync(join(tmpdir(), "bendo-method-bypass-"));
-    try {
-      const result = Bun.spawnSync(
-        [
-          "timeout",
-          "--foreground",
-          "25s",
-          bend.path,
-          join(import.meta.dir, "fixtures/router-methods", `${fixture}.bend`),
-          "-o",
-          join(directory, "bypass.mjs"),
-        ],
-        { stdout: "pipe", stderr: "pipe" },
-      );
-      expect(result.exitCode).toBe(1);
-      const diagnostic = result.stdout.toString() + result.stderr.toString();
-      expect(diagnostic).toContain("SOME PROOFS FAIL");
-      expect(diagnostic).toContain("expected :");
-      expect(diagnostic).toContain("observed :");
-      expect(diagnostic).toContain("Location: main");
-    } finally {
-      rmSync(directory, { recursive: true, force: true });
-    }
-  }, 30000);
+  test(
+    `the compiler rejects the ${fixture} validation bypass`,
+    () => {
+      const bend = findBend();
+      if (bend.kind === "missing") throw new Error("bend is not installed");
+      const directory = mkdtempSync(join(tmpdir(), "bendo-method-bypass-"));
+      try {
+        const result = Bun.spawnSync(
+          [
+            "timeout",
+            "--foreground",
+            BEND_COMPILE_TIMEOUT,
+            bend.path,
+            join(import.meta.dir, "fixtures/router-methods", `${fixture}.bend`),
+            "-o",
+            join(directory, "bypass.mjs"),
+          ],
+          { stdout: "pipe", stderr: "pipe" },
+        );
+        expect(result.exitCode).toBe(1);
+        const diagnostic = result.stdout.toString() + result.stderr.toString();
+        expect(diagnostic).toContain("SOME PROOFS FAIL");
+        expect(diagnostic).toContain("expected :");
+        expect(diagnostic).toContain("observed :");
+        expect(diagnostic).toContain("Location: main");
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    },
+    COMPILE_TEST_TIMEOUT_MS,
+  );
 }
