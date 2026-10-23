@@ -1189,7 +1189,7 @@
     "kind": "fill",
     "pattern": "/a/*/b/*",
     "params": [["*", "x/y"]],
-    "filled": "/a//b/%78%2F%79"
+    "filled": "/a/b/%78%2F%79"
   },
   {
     "kind": "fill",
@@ -1246,5 +1246,17 @@
       ["b", "z/w"]
     ],
     "filled": "/%78%2F%79/%7A%2F%77"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/*/*",
+    "params": [["*", "a"]],
+    "filled": "/%61"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/*/:x{.+}",
+    "params": [["x", "a"]],
+    "filled": "/%61"
   }
 ]

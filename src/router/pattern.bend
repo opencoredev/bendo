@@ -403,9 +403,7 @@ def fill_segments(segs: List<&2, Segment>, ps: Params) -> Maybe<&2, List<&2, Str
           return E.encode(value) <> xs
       ), u => (None{}))
     case InteriorWildcard{} <> rest values:
-      do Maybe<&2, List<&2, String>>:
-        xs : List<&2, String> <- fill_segments(rest, values)
-        return "" <> xs
+      fill_segments(rest, values)
     case PrefixWildcard{prefix} <> Nil{} Nil{}:
       Some{[prefix]}
     case Span{name} <> rest Param{key, +value} <> tail:
