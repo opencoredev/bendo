@@ -1,6 +1,7 @@
 # Proofs of LAWS.bend. Run: bend PROOF.bend --verdict
 import Base
 import ./proof/json.bend as JsonProof
+import ./proof/json-escape.bend as JsonEscapeProof
 import ./proof/json-codec.bend as JsonCodecProof
 import ./proof/json-number.bend as JsonNumberProof
 import ./proof/json-space.bend as JsonSpaceProof
