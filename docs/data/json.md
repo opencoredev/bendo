@@ -2,8 +2,8 @@
 
 Import `src/data/json.bend` to parse UTF-8 body octets into a copyable value
 tree or serialize that tree. Both operations are pure and compile to native
-code and `.mjs`. BND-28 is implementation progress: its universal roundtrip law
-is stated but not yet proved, so the repository proof gate does not pass.
+code and `.mjs`. The round-trip law (parsing written JSON gives back the same
+value) is being proved in BND-79 and is not in `LAWS.bend` yet.
 
 ## Values and precision
 
@@ -134,7 +134,7 @@ The test compiles `tests/fixtures/json/native.bend`; reproduce the measurement
 with its `bench <path>` arguments and `+RTS --threads 1 -RTS`. It prints
 `accept:<milliseconds>`. The test enforces the issue's 200 ms threshold.
 
-The contiguous BND-28 block in `LAWS.bend` states:
+BND-79 will add this law to `LAWS.bend` once its proof checks with `--verdict`:
 
 ```python
 law json_roundtrip:
@@ -147,10 +147,5 @@ law json_roundtrip:
   {Json.parse(Utf8.encode(output)) == Done{value} : Result<&2, &2, Json.Error, Json.Json>}
 ```
 
-`proof/json.bend` contains checked scalar-predicate, parser continuation,
-writer continuation, and primitive/empty-container lemmas. The universal law
-remains open: recursive string escaping/unescaping, lexical-number parsing,
-nonempty array/object continuation invariants, sufficient fuel, depth bounds,
-and the optimized decoder's equivalence still need proofs. `bun run prove`
-and consequently `bun run check` fail on that open law. No existing law was
-removed or weakened. BND-28 must stay open until the strict gate passes.
+Until then the parser and writer are covered by the JSONTestSuite and the
+tests in `tests/json.test.ts`, not by a proof.
