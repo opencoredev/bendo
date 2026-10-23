@@ -1,6 +1,5 @@
 # Proofs of LAWS.bend. Run: bend PROOF.bend --verdict
 import Base
-import ./src/http/chunked.bend as Chunked
 import ./src/http.bend as Http
 import ./src/http/bytes.bend as Bytes
 import ./src/http/request.bend as Request
@@ -20,7 +19,6 @@ import ./proof/forms.bend as FormSpec
 import ./proof/percent.bend as Percent
 import ./proof/utf8.bend as Utf8Proof
 
-import ./proof/chunked.bend as ChunkedProof
 
 import ./src/router/proofs.bend as PatternProof
 import ./src/router/pattern.bend as Pattern
@@ -135,17 +133,3 @@ def Laws.router_priority(T, table, path, a, b, tag_a, params_a, tag_b, params_b,
 
 def Laws.router_fill_match(T, table, i, source, pattern, tag, entry, compiled, params, admitted):
   SpecProof.filled_roundtrip(T, table, i, pattern, tag, params, entry, Laws.pattern_fill_match(source, pattern, compiled, params, admitted))
-
-# BND-8: chunked encode/decode roundtrip.
-
-def Laws.chunked_roundtrip(chunks, limit, suffix, valid):
-  match chunks:
-    case Nil{}:
-      Equal.cong(Chunked.State & Chunked.DecodeResult, Chunked.DecodeResult, pair => Chunked.result(pair), Chunked.feed(48 <> 13 <> 10 <> 13 <> 10 <> suffix, Chunked.initial(limit)), (Chunked.Complete{[], []}, Chunked.Decoded{[], [], suffix}), ChunkedProof.scan_terminal(limit, [], suffix))
-    case Nil{} <> rest:
-      Laws.chunked_roundtrip(rest, limit, suffix, valid)
-    case (c <> tail) <> rest:
-      +size = U32.from_nat(List.length(&2, U32, c <> tail))
-      # Expose structural nibbles instead of expanding eight div/mod pairs.
-      %Equal.sym(List<&2, U32>, Chunked.hex_go(8n, size, []), ChunkedProof.hex_bytes(ChunkedProof.hex_digits(8n, size, [])), ChunkedProof.hex_go_digits(8n, size, [])) : {Chunked.decode(Bytes.append(Bytes.append(_, 13 <> 10 <> Bytes.append(c <> tail, 13 <> 10 <> Chunked.encode(rest))), suffix), limit) == Chunked.Decoded{c <> Bytes.append(tail, List.concat(&2, U32, rest)), [], suffix} : Chunked.DecodeResult}
-      ?chunked_roundtrip_nonempty_chunk

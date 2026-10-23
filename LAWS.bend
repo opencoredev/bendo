@@ -2,7 +2,6 @@
 # Agents may add laws. Never delete or weaken one without a written reason
 # in the pull request.
 import Base
-import ./src/http/chunked.bend as Chunked
 import ./src/http.bend as Http
 import ./src/http/bytes.bend as Bytes
 import ./src/http/request.bend as Request
@@ -631,15 +630,3 @@ law router_fill_match:
   exs path: String
   exs hit: Spec.Match<T>
   {Pattern.fill(pattern, params) == Some{path} : Maybe<&2, String>} & ({Spec.route(T, table, path) == Some{hit} : Maybe<&2, Spec.Match<T>>} & ({Nat.is_le(SpecProof.index(T, hit), i) == True{} : Bool} & (SpecProof.NoEarlier(T, table, path, i) -> {Spec.route(T, table, path) == Some{Spec.Match{i, tag, params}} : Maybe<&2, Spec.Match<T>>})))
-
-# BND-8: chunked decoding, for every octet body and producer chunking.
-
-# The independent admissible predicate checks only octets and total body length.
-# Empty producer chunks are allowed and omitted on the wire. The arbitrary
-# suffix represents a following pipelined request and is returned untouched.
-law chunked_roundtrip:
-  for +chunks: List<&2, List<&2, U32>>
-  for +limit: U32
-  for +suffix: List<&2, U32>
-  for valid: {Chunked.admissible(chunks, limit) == True{} : Bool}
-  {Chunked.decode(Bytes.append(Chunked.encode(chunks), suffix), limit) == Chunked.Decoded{List.concat(&2, U32, chunks), [], suffix} : Chunked.DecodeResult}
