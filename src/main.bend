@@ -4,10 +4,12 @@ import ./mw/builtin.bend as Builtin
 import ./mw/server_timing.bend as Timing
 import ./app/config.bend as Config
 import ./app/table.bend as Table
+import ./app/scopes.bend as Scopes
 import ./app/handle.bend as Handle
 import ./app/context.bend as Context
 import ./app/store.bend as Store
 import ./data/json.bend as Json
+import ./data/cookie.bend as Cookie
 import ./serve.bend as Serve
 import ./http/request.bend as Request
 import ./http/response.bend as Response
@@ -22,6 +24,7 @@ def ServerConfig() -> Data: Config.Config
 def RouterKind() -> Data: Router.RouterKind
 def Registration(-Tag: Data) -> Data: Table.Entry<Tag>
 def Routes(-Tag: Data) -> Data: Table.Table<Tag>
+def RouteError() -> Data: Methods.BuildError
 
 def config() -> Config.Config: Config.defaults()
 def spec() -> Router.RouterKind: Router.Spec{}
@@ -71,6 +74,16 @@ def on_error(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.Error{},
 def on_after_response(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.AfterResponse{}, id}
 def routes(-Tag: Data, entries: List<&2, Table.Entry<Tag>>) -> Result<&2, &2, Methods.BuildError, Table.Table<Tag>>: Table.build(Tag, entries)
 
+# Typed hook data for group/guard/route options; on_* entries are global until assembled into a scope.
+def Hook(-Tag: Data) -> Data: Table.HookSpec<Tag>
+def GuardOptions(-Tag: Data) -> Data: Table.GuardOptions<Tag>
+def hook(-Tag: Data, stage: Table.Stage, id: Tag) -> Table.HookSpec<Tag>: Table.HookSpec{stage, id}
+def guard_options(-Tag: Data, hooks: List<&2, Table.HookSpec<Tag>>) -> Table.GuardOptions<Tag>: Table.GuardOptions{hooks, Table.NoSchemas{}}
+def guard(-Tag: Data, options: Table.GuardOptions<Tag>, entries: List<&2, Table.Entry<Tag>>) -> List<&2, Table.Entry<Tag>>: Scopes.guard(Tag, options, entries)
+def group(-Tag: Data, prefix: String, hooks: List<&2, Table.HookSpec<Tag>>, entries: List<&2, Table.Entry<Tag>>) -> List<&2, Table.Entry<Tag>>: Scopes.group(Tag, prefix, hooks, entries)
+def route_hooks(-Tag: Data, registration: Methods.Registration(Tag), hooks: List<&2, Table.HookSpec<Tag>>) -> Table.Entry<Tag>:
+  Scopes.local(Tag, registration, hooks)
+
 def handle(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Handle.Ctx -> Env -> IO(Response.Res), table: Table.Table<Tag>, env: Env, req: Request.Req, body: List<&2, U32>) -> IO(Response.Res):
   Handle.handle(~Tag, ~Env, ~dispatch, table, env, req, body)
 
@@ -114,3 +127,9 @@ def builtin(-Vars: Data, id: Builtin.Builtin, c: Context.Ctx<Vars>, next: Contex
   Builtin.dispatch(Vars, id, c, next)
 def timing_mark(-Vars: Data, c: Context.Ctx<Vars>, name: String, duration_ms: Nat) -> IO(Bool):
   Timing.mark(Vars, c, name, duration_ms)
+
+# Cookie setters append fields and return validation failures explicitly.
+def cookies(c: Handle.Ctx) -> List<&2, Cookie.Entry>: Context.cookies(Unit, c)
+def cookie(c: Handle.Ctx, name: String) -> Maybe<&2, String>: Context.cookie(Unit, c, name)
+def set_cookie(c: Handle.Ctx, name: String, value: String, options: Cookie.Options) -> Result<&2, &2, Cookie.Error, Handle.Ctx>: Context.set_cookie(Unit, c, name, value, options)
+def delete_cookie(c: Handle.Ctx, name: String, options: Cookie.Options) -> Result<&2, &2, Cookie.Error, Handle.Ctx>: Context.delete_cookie(Unit, c, name, options)

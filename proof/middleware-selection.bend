@@ -44,6 +44,11 @@ def route_checked(-Tag: Data, +index: Nat, +checked: Result<&2, &2, M.BuildError
     case Fail{M.InvalidMethod{old, source, token}}: Unit{}
     case Done{table}: proof
 
+def prepend_scoped(-Tag: Data, +ordinal: Nat, +hooks: List<&2, T.Placement<Tag>>, +rest: Result<&2, &2, M.BuildError, List<&2, T.Middleware<Tag>>>, +expected: List<&2, Tag>, +path: String, proof: Collected(Tag, rest, expected, path)) -> Collected(Tag, T.prepend(Tag, T.Scoped{ordinal, hooks}, rest), expected, path):
+  match rest:
+    case Fail{error}: Unit{}
+    case Done{layers}: proof
+
 def entries(-Tag: Data, +xs: List<&2, T.Entry<Tag>>, +index: Nat, +path: String) -> Collected(Tag, T.middleware_entries(Tag, xs, index), S.filter(Tag, xs, path), path):
   match xs:
     case Nil{}: {==}
@@ -51,6 +56,8 @@ def entries(-Tag: Data, +xs: List<&2, T.Entry<Tag>>, +index: Nat, +path: String)
       prepend_hook(Tag, stage, tag, T.middleware_entries(Tag, tail, 1n+index), S.filter(Tag, tail, path), path, entries(Tag, tail, 1n+index, path))
     case T.Route{r} <> tail:
       route_checked(Tag, index, M.build_table(Tag, [r]), T.middleware_entries(Tag, tail, 1n+index), S.filter(Tag, tail, path), path, entries(Tag, tail, 1n+index, path))
+    case T.ScopedRoute{r, hooks} <> tail:
+      route_checked(Tag, index, M.build_table(Tag, [r]), T.prepend(Tag, T.Scoped{List.length(&2, M.Registration(Tag), T.route_entries(Tag, tail)), hooks}, T.middleware_entries(Tag, tail, 1n+index)), S.filter(Tag, tail, path), path, prepend_scoped(Tag, List.length(&2, M.Registration(Tag), T.route_entries(Tag, tail)), hooks, T.middleware_entries(Tag, tail, 1n+index), S.filter(Tag, tail, path), path, entries(Tag, tail, 1n+index, path)))
     case T.Use{None{}, tag} <> tail:
       prepend_global(Tag, tag, T.middleware_entries(Tag, tail, 1n+index), S.filter(Tag, tail, path), path, entries(Tag, tail, 1n+index, path))
     case T.Use{Some{source}, tag} <> tail:
