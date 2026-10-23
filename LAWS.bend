@@ -3,6 +3,9 @@
 # in the pull request.
 import Base
 
+# BND-32
+import ./proof/signed-cookie-laws.bend as SignedCookieLaws
+
 # BND-31
 import ./proof/cookie-ows-laws.bend as CookieOwsLaws
 import ./proof/cookie-serialization-laws.bend as CookieSerializationLaws

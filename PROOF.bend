@@ -1,6 +1,9 @@
 # Proofs of LAWS.bend. Run: bend PROOF.bend --verdict
 import Base
 
+# BND-32
+import ./proof/signed-cookie.bend as SignedCookieProof
+
 # BND-31
 import ./proof/cookie-ows.bend as CookieOwsProof
 import ./proof/cookie-serialization.bend as CookieSerializationProof
