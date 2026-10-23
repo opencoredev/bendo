@@ -19,6 +19,8 @@ import ./src/app/scopes.bend as Scopes
 import ./proof/middleware-selection.bend as MiddlewareSelection
 
 import ./proof/schema-compound.bend as SchemaProof
+import ./proof/schema-errors.bend as SchemaErrors
+import ./proof/schema-coerce.bend as SchemaCoerce
 import ./src/http/response.bend as Response
 import ./src/http/write_response.bend as WriteResponse
 
@@ -503,6 +505,27 @@ def Laws.schema_preserves_typed_value(schema, value):
 
 def Laws.schema_children_satisfy(schema, value, accepted):
   SchemaProof.children_law(schema, value, accepted)
+
+def Laws.schema_errors_name_failing_paths(schema, value):
+  SchemaErrors.errors_located(schema, value)
+
+def Laws.schema_errors_complete(schema, value, path, fault):
+  SchemaErrors.errors_complete(schema, value, path, fault)
+
+def Laws.schema_coerce_matches_spec(schema, value):
+  SchemaCoerce.coerce_spec(schema, value)
+
+def Laws.schema_coerced_acceptance_iff(schema, value):
+  SchemaCoerce.text_acceptance(schema, value)
+
+def Laws.schema_coerced_preserves_typed_value(schema, value):
+  SchemaCoerce.text_preservation(schema, value)
+
+def Laws.schema_coerced_errors_name_failing_paths(schema, value):
+  SchemaCoerce.text_located(schema, value)
+
+def Laws.schema_coerced_errors_complete(schema, value, path, fault):
+  SchemaCoerce.text_complete(schema, value, path, fault)
 
 # BND-24
 

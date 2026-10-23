@@ -17,10 +17,13 @@ type Unknown is Data:
   Strip{}
 
 # Whether a declared key must be present. JSON has no undefined value, so
-# optionality belongs to an object's field rather than to a schema.
+# optionality belongs to an object's field rather than to a schema. A Default
+# field may be absent, and then decodes as its value, which the field's schema
+# must accept (checked by `valid`).
 type Presence is Data:
   Required{}
   Optional{}
+  Default{value: J.Json}
 
 type Schema is Data:
   StringSchema{min_len: Nat, max_len: Maybe<&2, Nat>, pattern: Maybe<&2, P.Pattern>, format: Format}
@@ -163,22 +166,6 @@ def declared(fs: List<&2, Field>, +k: String) -> Bool:
     case Nil{}: False{}
     case Field{key, c, p} <> t: String.eq(key, k) || declared(t, k)
 
-# The schema tree is the app's own data, so this walks it without accumulators.
-def valid(s: Schema) -> Bool:
-  match s:
-    case StringSchema{min, max, p, f}: max_length(max, min) && optional_pattern_valid(p)
-    case NumberSchema{min, max}: bounds_valid(min, max)
-    case IntegerSchema{min, max}: bounds_valid(min, max)
-    case BooleanSchema{}: True{}
-    case LiteralSchema{v}: scalar(v)
-    case EnumSchema{xs}: literals_valid(xs, True{})
-    case ArraySchema{i, +min, max}: max_length(max, min) && valid(i)
-    case ObjectSchema{Nil{}, u}: True{}
-    case ObjectSchema{Field{+k, c, p} <> +t, u}: J.scalars(k) && Bool.not(declared(t, k)) && valid(c) && valid(ObjectSchema{t, u})
-    case NullableSchema{i}: valid(i)
-    case UnionSchema{Nil{}}: True{}
-    case UnionSchema{m <> t}: valid(m) && valid(UnionSchema{t})
-
 def failure(code: Code, message: String) -> Result<&2, &2, Errors(), Value>:
   Fail{[Error{code, message, []}]}
 
@@ -290,10 +277,20 @@ def push_field(rev: List<&2, VField>, k: String, r: Result<&2, &2, Errors(), Val
     case Fail{e}: Fail{e}
     case Done{x}: Done{VField{k, Some{x}} <> rev}
 
-def absent(rev: List<&2, VField>, +k: String, p: Presence) -> Result<&2, &2, Errors(), List<&2, VField>>:
+# The value an absent field decodes from: its default, or null, which only a
+# Default field's result uses. Decoding null is a cheap kind check.
+def default_of(p: Presence) -> J.Json:
+  match p:
+    case Default{d}: d
+    case Required{}: J.JNull{}
+    case Optional{}: J.JNull{}
+
+# An absent field: an error, None, or its decoded default.
+def absent(rev: List<&2, VField>, +k: String, p: Presence, r: Result<&2, &2, Errors(), Value>) -> Result<&2, &2, Errors(), List<&2, VField>>:
   match p:
     case Optional{}: Done{VField{k, None{}} <> rev}
     case Required{}: Fail{[Error{Constraint{}, "missing required key", [PathKey{k}]}]}
+    case Default{d}: push_field(rev, k, r)
 
 def decode_go(s: Schema, v: J.Json, acc: Acc) -> Result<&2, &2, Errors(), Value>:
   match s v acc:
@@ -309,7 +306,7 @@ def decode_go(s: Schema, v: J.Json, acc: Acc) -> Result<&2, &2, Errors(), Value>
     case ObjectSchema{fs, u} _ AFields{Fail{e}, ss}: Fail{e}
     case ObjectSchema{Nil{}, u} _ AFields{Done{rev}, ss}: Done{VObject{List.reverse(&2, VField, rev)}}
     case ObjectSchema{Field{+k, +c, p} <> t, u} x AFields{Done{rev}, Once{+y} <> rest}: decode_go(ObjectSchema{t, u}, x, AFields{push_field(rev, k, at(PathKey{k}, decode_go(c, y, start(c, y)))), rest})
-    case ObjectSchema{Field{k, c, p} <> t, u} x AFields{Done{rev}, Absent{} <> rest}: decode_go(ObjectSchema{t, u}, x, AFields{absent(rev, k, p), rest})
+    case ObjectSchema{Field{+k, +c, +p} <> t, u} x AFields{Done{rev}, Absent{} <> rest}: decode_go(ObjectSchema{t, u}, x, AFields{absent(rev, k, p, at(PathKey{k}, decode_go(c, default_of(p), start(c, default_of(p))))), rest})
     case ObjectSchema{Field{k, c, p} <> t, u} x AFields{Done{rev}, Repeated{y} <> rest}: Fail{[Error{Constraint{}, "duplicate key", [PathKey{k}]}]}
     case ObjectSchema{f <> t, u} x AFields{Done{rev}, Nil{}}: failure(InvalidSchema{}, "object fields out of step")
     case NullableSchema{+i} J.JNull{} y: Done{VNull{}}
@@ -319,18 +316,274 @@ def decode_go(s: Schema, v: J.Json, acc: Acc) -> Result<&2, &2, Errors(), Value>
     case UnionSchema{+m <> t} +x AMembers{+n, i, Fail{e}}: decode_go(UnionSchema{t}, x, AMembers{1n+n, n, decode_go(m, x, start(m, x))})
     case _ _ _: failure(TypeMismatch{}, "expected schema kind")
 
+def accepted(r: Result<&2, &2, Errors(), Value>) -> Bool:
+  match r:
+    case Fail{e}: False{}
+    case Done{x}: True{}
+
+# A default must decode under its own field's schema.
+def default_ok(+c: Schema, p: Presence) -> Bool:
+  match p:
+    case Required{}: True{}
+    case Optional{}: True{}
+    case Default{+d}: accepted(decode_go(c, d, start(c, d)))
+
+# The schema tree is the app's own data, so this walks it without accumulators.
+def valid(s: Schema) -> Bool:
+  match s:
+    case StringSchema{min, max, p, f}: max_length(max, min) && optional_pattern_valid(p)
+    case NumberSchema{min, max}: bounds_valid(min, max)
+    case IntegerSchema{min, max}: bounds_valid(min, max)
+    case BooleanSchema{}: True{}
+    case LiteralSchema{v}: scalar(v)
+    case EnumSchema{xs}: literals_valid(xs, True{})
+    case ArraySchema{i, +min, max}: max_length(max, min) && valid(i)
+    case ObjectSchema{Nil{}, u}: True{}
+    case ObjectSchema{Field{+k, +c, p} <> +t, u}: J.scalars(k) && Bool.not(declared(t, k)) && valid(c) && default_ok(c, p) && valid(ObjectSchema{t, u})
+    case NullableSchema{i}: valid(i)
+    case UnionSchema{Nil{}}: True{}
+    case UnionSchema{m <> t}: valid(m) && valid(UnionSchema{t})
+
 def decode_valid(+s: Schema, +v: J.Json, schema_ok: Bool) -> Result<&2, &2, Errors(), Value>:
   match schema_ok:
     case True{}: decode_go(s, v, start(s, v))
     case False{}: failure(InvalidSchema{}, "invalid schema")
 
-def decode(+s: Schema, v: J.Json) -> Result<&2, &2, Errors(), Value>:
+# Decodes and stops at the first failure. `decode` reports every failure.
+def decode_first(+s: Schema, v: J.Json) -> Result<&2, &2, Errors(), Value>:
   decode_valid(s, v, valid(s))
 
-def accepted(r: Result<&2, &2, Errors(), Value>) -> Bool:
+# Error collection (BND-35). `decode` reports every failing location, at most
+# `error_cap()` of them, each with the path that leads to it. `collect_go`
+# walks the schema and the input together like `decode_go`, and returns the
+# errors found so far in reverse with the budget left. A child starts with no
+# errors and the parent's budget; the parent prefixes the child's errors with
+# the key or index of the child. Below a failed array length or kind check
+# nothing is examined, and a union reports one error for the whole value.
+
+def error_cap() -> Nat:
+  100n
+
+type Out is Data:
+  Out{rev: List<&2, Error>, left: Nat}
+
+type Walk is Data:
+  WHere{left: Nat}
+  WItems{index: Nat, out: Out}
+  WFields{slots: List<&2, Slot>, out: Out}
+  WDone{out: Out}
+
+# Adds e unless the check passed or the budget is spent.
+def emit(ok: Bool, e: Error, out: Out) -> Out:
+  match ok out:
+    case True{} o: o
+    case False{} Out{rev, 0n}: Out{rev, 0n}
+    case False{} Out{rev, 1n+n}: Out{e <> rev, n}
+
+def emit_all(es: List<&2, Error>, out: Out) -> Out:
+  match es:
+    case Nil{}: out
+    case e <> t: emit_all(t, emit(False{}, e, out))
+
+def scalar_out(r: Result<&2, &2, Errors(), Value>, left: Nat) -> Out:
   match r:
-    case Fail{e}: False{}
-    case Done{x}: True{}
+    case Done{x}: Out{[], left}
+    case Fail{es}: emit_all(es, Out{[], left})
+
+# Under Strict, one error per member whose key is undeclared, named by that key.
+def strays(input: List<&2, J.Field>, +fs: List<&2, Field>, out: Out) -> Out:
+  match input out:
+    case _ Out{rev, 0n}: Out{rev, 0n}
+    case Nil{} Out{rev, 1n+n}: Out{rev, 1n+n}
+    case J.Field{+k, v} <> t Out{rev, 1n+n}: strays(t, fs, emit(declared(fs, k), Error{Constraint{}, "object has an undeclared key", [PathKey{k}]}, Out{rev, 1n+n}))
+
+def unknown_out(u: Unknown, fs: List<&2, Field>, input: List<&2, J.Field>, out: Out) -> Out:
+  match u:
+    case Strict{}: strays(input, fs, out)
+    case Strip{}: out
+
+def items_walk(ok: Bool, left: Nat) -> Walk:
+  match ok:
+    case True{}: WItems{0n, Out{[], left}}
+    case False{}: WDone{emit(False{}, Error{Constraint{}, "array length out of bounds", []}, Out{[], left})}
+
+def cstart(s: Schema, v: J.Json, left: Nat) -> Walk:
+  match s v:
+    case ArraySchema{i, min, max} J.JArray{xs}: items_walk(item_count(min, max, count(xs, 0n)), left)
+    case ObjectSchema{+fs, u} J.JObject{+input}: WFields{slots(fs, input), unknown_out(u, fs, input, Out{[], left})}
+    case _ _: WHere{left}
+
+def prefix_onto(+part: PathPart, es: List<&2, Error>, rev: List<&2, Error>) -> List<&2, Error>:
+  match es:
+    case Nil{}: rev
+    case Error{c, m, path} <> t: Error{c, m, part <> path} <> prefix_onto(part, t, rev)
+
+def merge(part: PathPart, child: Out, rev: List<&2, Error>) -> Out:
+  match child:
+    case Out{es, left}: Out{prefix_onto(part, es, rev), left}
+
+def may_be_absent(p: Presence) -> Bool:
+  match p:
+    case Required{}: False{}
+    case Optional{}: True{}
+    case Default{d}: True{}
+
+def kind_out(left: Nat) -> Out:
+  emit(False{}, Error{TypeMismatch{}, "expected schema kind", []}, Out{[], left})
+
+# Every state the walk does not advance returns its own errors; a schema
+# given a value of the wrong kind reports that.
+def walk_out(w: Walk) -> Out:
+  match w:
+    case WHere{l}: kind_out(l)
+    case WItems{k, o}: o
+    case WFields{ss, o}: o
+    case WDone{o}: o
+
+def collect_go(s: Schema, v: J.Json, w: Walk) -> Out:
+  match s v w:
+    case StringSchema{a, b, c, d} x WHere{l}: scalar_out(decode_scalar(StringSchema{a, b, c, d}, x), l)
+    case NumberSchema{a, b} x WHere{l}: scalar_out(decode_scalar(NumberSchema{a, b}, x), l)
+    case IntegerSchema{a, b} x WHere{l}: scalar_out(decode_scalar(IntegerSchema{a, b}, x), l)
+    case BooleanSchema{} x WHere{l}: scalar_out(decode_scalar(BooleanSchema{}, x), l)
+    case LiteralSchema{a} x WHere{l}: scalar_out(decode_scalar(LiteralSchema{a}, x), l)
+    case EnumSchema{a} x WHere{l}: scalar_out(decode_scalar(EnumSchema{a}, x), l)
+    case ArraySchema{i, m, n} x WItems{k, Out{rev, 0n}}: Out{rev, 0n}
+    case ArraySchema{+i, +m, +n} J.JArray{+h <> t} WItems{+k, Out{rev, 1n+l}}: collect_go(ArraySchema{i, m, n}, J.JArray{t}, WItems{1n+k, merge(PathIndex{k}, collect_go(i, h, cstart(i, h, 1n+l)), rev)})
+    case ObjectSchema{fs, u} x WFields{ss, Out{rev, 0n}}: Out{rev, 0n}
+    case ObjectSchema{Field{+k, +c, p} <> t, u} x WFields{Once{+y} <> rest, Out{rev, 1n+l}}: collect_go(ObjectSchema{t, u}, x, WFields{rest, merge(PathKey{k}, collect_go(c, y, cstart(c, y, 1n+l)), rev)})
+    case ObjectSchema{Field{+k, c, p} <> t, u} x WFields{Absent{} <> rest, Out{rev, 1n+l}}: collect_go(ObjectSchema{t, u}, x, WFields{rest, emit(may_be_absent(p), Error{Constraint{}, "missing required key", [PathKey{k}]}, Out{rev, 1n+l})})
+    case ObjectSchema{Field{k, c, p} <> t, u} x WFields{Repeated{y} <> rest, Out{rev, 1n+l}}: collect_go(ObjectSchema{t, u}, x, WFields{rest, Out{Error{Constraint{}, "duplicate key", [PathKey{k}]} <> rev, l}})
+    case NullableSchema{i} J.JNull{} WHere{l}: Out{[], l}
+    case NullableSchema{+i} +x WHere{l}: collect_go(i, x, cstart(i, x, l))
+    case UnionSchema{+ms} +x WHere{l}: emit(accepted(decode_go(UnionSchema{ms}, x, start(UnionSchema{ms}, x))), Error{Constraint{}, "value matches no union member", []}, Out{[], l})
+    case _ _ w: walk_out(w)
+
+def listed(o: Out) -> List<&2, Error>:
+  match o:
+    case Out{rev, l}: List.reverse(&2, Error, rev)
+
+def collect(+s: Schema, +v: J.Json) -> List<&2, Error>:
+  listed(collect_go(s, v, cstart(s, v, error_cap())))
+
+def errors(+s: Schema, +v: J.Json, schema_ok: Bool) -> List<&2, Error>:
+  match schema_ok:
+    case True{}: collect(s, v)
+    case False{}: [Error{InvalidSchema{}, "invalid schema", []}]
+
+def report(r: Result<&2, &2, Errors(), Value>, +s: Schema, +v: J.Json) -> Result<&2, &2, Errors(), Value>:
+  match r:
+    case Done{x}: Done{x}
+    case Fail{e}: Fail{errors(s, v, valid(s))}
+
+# Decodes, or lists every failure (at most `error_cap()`) with its path.
+def decode(+s: Schema, +v: J.Json) -> Result<&2, &2, Errors(), Value>:
+  report(decode_first(s, v), s, v)
+
+# Coercion for text sources (BND-35). Params, query strings, headers and forms
+# carry only strings, so before decoding, a string under a number or integer
+# schema that is a valid JSON number token becomes that number, "true" and
+# "false" under a boolean schema become booleans, and under an object every
+# member named by an array field is gathered, in order, into one array at the
+# first such member's position. Arrays coerce their items, nullables their
+# inner schema, objects their declared members. Unions, literals, enums and
+# undeclared members are left as they are. A JSON body is never coerced.
+type Pass is Data:
+  PValue{}
+  PMap{rev: List<&2, J.Json>}
+  PEach{key: String, rev: List<&2, J.Field>}
+  PGather{key: String, merged: J.Json, first: Bool, rev: List<&2, J.Field>}
+
+def number_text(ok: Bool, x: String) -> J.Json:
+  match ok:
+    case True{}: J.JNumber{x}
+    case False{}: J.JString{x}
+
+def flag_text(yes: Bool, no: Bool, x: String) -> J.Json:
+  match yes no:
+    case True{} _: J.JBool{True{}}
+    case False{} True{}: J.JBool{False{}}
+    case False{} False{}: J.JString{x}
+
+def keep_value(same: Bool, y: J.Json, rev: List<&2, J.Json>) -> List<&2, J.Json>:
+  match same:
+    case True{}: y <> rev
+    case False{}: rev
+
+# The values of every member named k, in order.
+def named_values(input: List<&2, J.Field>, +k: String, rev: List<&2, J.Json>) -> List<&2, J.Json>:
+  match input:
+    case Nil{}: List.reverse(&2, J.Json, rev)
+    case J.Field{key, y} <> t: named_values(t, k, keep_value(String.eq(key, k), y, rev))
+
+def member_pick(same: Bool, key: String, y: J.Json, coerced: J.Json) -> J.Field:
+  match same:
+    case True{}: J.Field{key, coerced}
+    case False{}: J.Field{key, y}
+
+def gather_step(same: Bool, first: Bool, key: String, y: J.Json, k: String, +merged: J.Json, rev: List<&2, J.Field>) -> Pass:
+  match same first:
+    case True{} True{}: PGather{k, merged, False{}, J.Field{key, merged} <> rev}
+    case True{} False{}: PGather{k, merged, False{}, rev}
+    case False{} f: PGather{k, merged, f, J.Field{key, y} <> rev}
+
+def coerce_go(s: Schema, v: J.Json, w: Pass) -> J.Json:
+  match s v w:
+    case NumberSchema{a, b} J.JString{+x} PValue{}: number_text(J.number_valid(x), x)
+    case IntegerSchema{a, b} J.JString{+x} PValue{}: number_text(J.number_valid(x), x)
+    case BooleanSchema{} J.JString{+x} PValue{}: flag_text(String.eq(x, "true"), String.eq(x, "false"), x)
+    case NullableSchema{i} x PValue{}: coerce_go(i, x, PValue{})
+    case ArraySchema{i, m, n} J.JArray{xs} PValue{}: coerce_go(i, J.JArray{xs}, PMap{[]})
+    case ObjectSchema{Field{+k, ArraySchema{+i, m, n}, p} <> t, u} J.JObject{+input} PValue{}: coerce_go(ObjectSchema{t, u}, coerce_go(i, J.JObject{input}, PGather{k, coerce_go(i, J.JArray{named_values(input, k, [])}, PMap{[]}), True{}, []}), PValue{})
+    case ObjectSchema{Field{+k, +c, p} <> t, u} J.JObject{+input} PValue{}: coerce_go(ObjectSchema{t, u}, coerce_go(c, J.JObject{input}, PEach{k, []}), PValue{})
+    case s J.JArray{Nil{}} PMap{rev}: J.JArray{List.reverse(&2, J.Json, rev)}
+    case +s J.JArray{h <> t} PMap{rev}: coerce_go(s, J.JArray{t}, PMap{coerce_go(s, h, PValue{}) <> rev})
+    case s J.JObject{Nil{}} PEach{k, rev}: J.JObject{List.reverse(&2, J.Field, rev)}
+    case +s J.JObject{J.Field{+key, +y} <> t} PEach{+k, rev}: coerce_go(s, J.JObject{t}, PEach{k, member_pick(String.eq(key, k), key, y, coerce_go(s, y, PValue{})) <> rev})
+    case s J.JObject{Nil{}} PGather{k, g, f, rev}: J.JObject{List.reverse(&2, J.Field, rev)}
+    case s J.JObject{J.Field{+key, y} <> t} PGather{+k, g, f, rev}: coerce_go(s, J.JObject{t}, gather_step(String.eq(key, k), f, key, y, k, g, rev))
+    case _ x _: x
+
+def coerce(+s: Schema, v: J.Json) -> J.Json:
+  coerce_go(s, v, PValue{})
+
+# Where input comes from: text sources coerce, JSON bodies never do.
+type Source is Data:
+  JsonBody{}
+  TextSource{}
+
+def decode_from(src: Source, +s: Schema, v: J.Json) -> Result<&2, &2, Errors(), Value>:
+  match src:
+    case JsonBody{}: decode(s, v)
+    case TextSource{}: decode(s, coerce(s, v))
+
+# The JSON form of an error list for responses (BND-36): an array of
+# {"path": [...], "code": "...", "message": "..."} in report order. Path
+# segments are key strings and index numbers; codes are "invalid_schema",
+# "type_mismatch" and "constraint".
+def code_name(c: Code) -> String:
+  match c:
+    case InvalidSchema{}: "invalid_schema"
+    case TypeMismatch{}: "type_mismatch"
+    case Constraint{}: "constraint"
+
+def path_json(ps: List<&2, PathPart>, rev: List<&2, J.Json>) -> J.Json:
+  match ps:
+    case Nil{}: J.JArray{List.reverse(&2, J.Json, rev)}
+    case PathKey{k} <> t: path_json(t, J.JString{k} <> rev)
+    case PathIndex{i} <> t: path_json(t, J.JNumber{Nat.show(i)} <> rev)
+
+def error_json(e: Error) -> J.Json:
+  match e:
+    case Error{c, m, p}: J.JObject{[J.Field{"path", path_json(p, [])}, J.Field{"code", J.JString{code_name(c)}}, J.Field{"message", J.JString{m}}]}
+
+def errors_json_go(es: List<&2, Error>, rev: List<&2, J.Json>) -> J.Json:
+  match es:
+    case Nil{}: J.JArray{List.reverse(&2, J.Json, rev)}
+    case e <> t: errors_json_go(t, error_json(e) <> rev)
+
+def errors_json(es: List<&2, Error>) -> J.Json:
+  errors_json_go(es, [])
 
 # Rebuilds the JSON a value came from: absent fields are omitted, a union
 # value becomes its member's JSON, and stripped unknown keys stay dropped.
@@ -355,13 +608,20 @@ def to_json(v: Value) -> J.Json:
 # Independent shape/payload contract used by the preservation law. Scalars
 # carry their input. An array carries each item's value in order. An object
 # carries each declared field in schema order: the value of the first member
-# with that key, or None when there is none. A union carries the position of
-# the first member that `decode` accepts and that member's value. Nothing
-# here checks a constraint; `decode` must still reach exactly this value.
+# with that key, its default when it is a Default field, or None when there is
+# none. A union carries the position of the first member that `decode` accepts
+# and that member's value. Nothing here checks a constraint; `decode` must
+# still reach exactly this value.
 def first(input: List<&2, J.Field>, +k: String) -> Maybe<&2, J.Json>:
   match input:
     case Nil{}: None{}
     case J.Field{key, y} <> t: Bool.pick(Maybe<&2, J.Json>, String.eq(key, k), Some{y}, first(t, k))
+
+# An absent Default field takes its default.
+def fill(p: Presence, m: Maybe<&2, J.Json>) -> Maybe<&2, J.Json>:
+  match p m:
+    case Default{d} None{}: Some{d}
+    case _ x: x
 
 def or_null(m: Maybe<&2, J.Json>) -> J.Json:
   match m:
@@ -402,11 +662,11 @@ def value_for(s: Schema, v: J.Json) -> Maybe<&2, Value>:
     case ArraySchema{i, m, n} J.JArray{Nil{}}: Some{VArray{[]}}
     case ArraySchema{+i, +m, +n} J.JArray{h <> t}: cons_item(value_for(i, h), value_for(ArraySchema{i, m, n}, J.JArray{t}))
     case ObjectSchema{Nil{}, u} J.JObject{fs}: Some{VObject{[]}}
-    case ObjectSchema{Field{+k, c, p} <> t, u} J.JObject{+input}: cons_field(field_value(k, first(input, k), value_for(c, or_null(first(input, k)))), value_for(ObjectSchema{t, u}, J.JObject{input}))
+    case ObjectSchema{Field{+k, c, +p} <> t, u} J.JObject{+input}: cons_field(field_value(k, fill(p, first(input, k)), value_for(c, or_null(fill(p, first(input, k))))), value_for(ObjectSchema{t, u}, J.JObject{input}))
     case NullableSchema{i} J.JNull{}: Some{VNull{}}
     case NullableSchema{i} +y: value_for(i, y)
     case UnionSchema{Nil{}} y: None{}
-    case UnionSchema{+m <> t} +y: first_member(accepted(decode(m, y)), value_for(m, y), value_for(UnionSchema{t}, y))
+    case UnionSchema{+m <> t} +y: first_member(accepted(decode_first(m, y)), value_for(m, y), value_for(UnionSchema{t}, y))
     case _ _: None{}
 
 def Preserves(expected: Maybe<&2, Value>, r: Result<&2, &2, Errors(), Value>) -> Type:
