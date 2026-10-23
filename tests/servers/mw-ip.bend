@@ -9,13 +9,15 @@ import ../../src/http/response.bend as Response
 import ../../src/router/methods.bend as Methods
 
 type Env is Data:
-  Env{clock: B.Store(Nat), fixed: B.RateLimiter, bucket: B.RateLimiter, tiny: B.RateLimiter, conc: B.RateLimiter, live: B.RateLimiter}
+  Env{clock: B.Store(Nat), fixed: B.RateLimiter, bucket: B.RateLimiter, tiny: B.RateLimiter, conc: B.RateLimiter, live: B.RateLimiter, shared: B.RateLimiter, evict: B.RateLimiter}
 
 type Which is Data:
   Fixed{}
   Bucket{}
   Tiny{}
   Conc{}
+  Shared{}
+  Evict{}
 
 type Tag is Data:
   Info{}
@@ -25,6 +27,7 @@ type Tag is Data:
   Hello{}
   Builtin{id: B.Builtin}
   Limit{which: Which}
+  Stats{which: Which}
   Live{}
   Broken{}
 
@@ -59,26 +62,43 @@ def set_clock(c: B.Context(Unit), r: Result<&2, &2, Store.Error, Unit>) -> B.Res
     case Done{u}: C.text(Unit, c, "ok")
     case Fail{e}: Response.text(503, "clock unavailable")
 
+def pick(which: Which, env: Env) -> B.RateLimiter:
+  match which env:
+    case Fixed{} Env{clock, f, b, t, k, l, sh, ev}: f
+    case Bucket{} Env{clock, f, b, t, k, l, sh, ev}: b
+    case Tiny{} Env{clock, f, b, t, k, l, sh, ev}: t
+    case Conc{} Env{clock, f, b, t, k, l, sh, ev}: k
+    case Shared{} Env{clock, f, b, t, k, l, sh, ev}: sh
+    case Evict{} Env{clock, f, b, t, k, l, sh, ev}: ev
+
+def bool_text(b: Bool) -> String:
+  match b:
+    case True{}: "true"
+    case False{}: "false"
+
+# "tracked saturated saturating", for the saturation tests.
+def stats_text(+c: B.Context(Unit), r: Result<&2, &2, Store.Error, B.RateLimitStats>) -> B.Res:
+  match r:
+    case Done{+st}: C.text(Unit, c, Nat.show(B.stats_tracked(st)) ++ " " ++ Nat.show(B.stats_saturated(st)) ++ " " ++ bool_text(B.stats_saturating(st)))
+    case Fail{e}: Response.text(503, "stats unavailable")
+
 def handle(tag: Tag, +c: B.Context(Unit), env: Env) -> IO(B.Res):
   match tag env:
     case Info{} _: IO.pure(B.Res, C.text(Unit, c, info_text(B.conn_info(Unit, c))))
     case Client{} _: IO.pure(B.Res, C.text(Unit, c, client_text(B.client_address(Unit, c, []))))
     case ProxiedClient{} _: IO.pure(B.Res, C.text(Unit, c, client_text(B.client_address(Unit, c, trusted()))))
-    case SetClock{} Env{clock, f, b, t, k, l}:
+    case SetClock{} Env{clock, f, b, t, k, l, sh, ev}:
       do IO<B.Res>:
         r : Result<&2, &2, Store.Error, Unit> <- B.store_set(Nat, clock, clock_ms(c))
         return set_clock(c, r)
+    case Stats{which} _:
+      do IO<B.Res>:
+        r : Result<&2, &2, Store.Error, B.RateLimitStats> <- B.rate_limit_stats(pick(which, env))
+        return stats_text(c, r)
     case _ _: IO.pure(B.Res, C.text(Unit, c, "ok"))
 
 def handler(tag: Tag, c: B.Context(Unit), env: Env) -> IO(B.Res):
   handle(tag, c, env)
-
-def pick(which: Which, env: Env) -> B.RateLimiter:
-  match which env:
-    case Fixed{} Env{clock, f, b, t, k, l}: f
-    case Bucket{} Env{clock, f, b, t, k, l}: b
-    case Tiny{} Env{clock, f, b, t, k, l}: t
-    case Conc{} Env{clock, f, b, t, k, l}: k
 
 # Tests name their own key, so cases never share a counter.
 def key_pick(given: Maybe<&2, String>, +c: B.Context(Unit)) -> String:
@@ -95,11 +115,11 @@ def now(r: Result<&2, &2, Store.Error, Nat>) -> Nat:
     case Fail{e}: 0n
 
 def clock_of(env: Env) -> B.Store(Nat):
-  Env{clock, f, b, t, k, l} = env
+  Env{clock, f, b, t, k, l, sh, ev} = env
   clock
 
 def live_of(env: Env) -> B.RateLimiter:
-  Env{clock, f, b, t, k, l} = env
+  Env{clock, f, b, t, k, l, sh, ev} = env
   l
 
 def limited(+c: B.Context(Unit), +env: Env, which: Which, next: B.Context(Unit) -> IO(B.Res)) -> IO(B.Res):
@@ -141,6 +161,8 @@ def routes() -> List<&2, B.Registration(Tag)>:
     B.use_path(Tag, "/bucket", Limit{Bucket{}}),
     B.use_path(Tag, "/tiny", Limit{Tiny{}}),
     B.use_path(Tag, "/conc", Limit{Conc{}}),
+    B.use_path(Tag, "/tiny-shared", Limit{Shared{}}),
+    B.use_path(Tag, "/tiny-evict", Limit{Evict{}}),
     B.use_path(Tag, "/live", Live{}),
     B.get(Tag, "/info", Info{}),
     B.get(Tag, "/client", Client{}),
@@ -150,6 +172,11 @@ def routes() -> List<&2, B.Registration(Tag)>:
     B.get(Tag, "/bucket", Hello{}),
     B.get(Tag, "/tiny", Hello{}),
     B.get(Tag, "/conc", Hello{}),
+    B.get(Tag, "/tiny-shared", Hello{}),
+    B.get(Tag, "/tiny-evict", Hello{}),
+    B.get(Tag, "/stats/tiny", Stats{Tiny{}}),
+    B.get(Tag, "/stats/tiny-shared", Stats{Shared{}}),
+    B.get(Tag, "/stats/tiny-evict", Stats{Evict{}}),
     B.get(Tag, "/live", Hello{}),
     B.get(Tag, "/*", Hello{})
   ]
@@ -168,4 +195,6 @@ def main() -> IO(Unit):
     tiny : B.RateLimiter <- B.rate_limiter_with(B.rate_limit_config("tiny", B.fixed_window(2n, 60000n), 2n, []))
     conc : B.RateLimiter <- B.rate_limiter(B.fixed_window(40n, 60000n))
     live : B.RateLimiter <- B.rate_limiter(B.fixed_window(3n, 3600000n))
-    ready(B.routes(Tag, routes()), Env{clock, fixed, bucket, tiny, conc, live})
+    shared : B.RateLimiter <- B.rate_limiter_with(B.rate_limit_saturation(B.rate_limit_config("tiny", B.fixed_window(2n, 60000n), 2n, []), B.saturation_shared()))
+    evict : B.RateLimiter <- B.rate_limiter_with(B.rate_limit_saturation(B.rate_limit_config("tiny", B.fixed_window(2n, 60000n), 2n, []), B.saturation_evict()))
+    ready(B.routes(Tag, routes()), Env{clock, fixed, bucket, tiny, conc, live, shared, evict})

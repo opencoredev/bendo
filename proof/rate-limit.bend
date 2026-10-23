@@ -215,3 +215,4 @@ def Laws.rate_bucket_capacity(capacity, refill, every_ms, level, last, now): buc
 def Laws.rate_bucket_allow(capacity, refill, every_ms, level, last, now, enough): bucket_allow(capacity, refill, every_ms, level, last, now, enough)
 def Laws.rate_bucket_conserve(capacity, refill, every_ms, level, last, now, enough): bucket_conserve(capacity, refill, every_ms, level, last, now, enough)
 def Laws.rate_bucket_deny(capacity, refill, every_ms, level, last, now, short): bucket_deny(capacity, refill, every_ms, level, last, now, short)
+def Laws.rate_full_level(capacity, every_ms): {==}

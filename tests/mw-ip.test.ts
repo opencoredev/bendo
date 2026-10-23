@@ -464,26 +464,103 @@ describe("rate limiting (compiled server, injected clock)", () => {
     expect(await status("/bucket", key)).toBe(429);
   });
 
-  test("at the key cap new keys share one overflow entry; tracked keys keep their counts", async () => {
-    // "tiny" allows 2 requests per minute and tracks at most 2 keys.
+  const as = (k: string) => ({ "x-test-key": k });
+  async function stats(path: string): Promise<string> {
+    const response = await get(`/stats${path}`);
+    expect(response.status).toBe(200);
+    return response.text();
+  }
+
+  // The three "tiny" limiters allow 2 requests per minute and track at most 2 keys.
+  test("default saturation: key spraying never denies a new client; tracked keys keep their quotas", async () => {
     await setClock(30_000_000);
-    const as = (k: string) => ({ "x-test-key": k });
-    expect(await status("/tiny", as("a"))).toBe(200);
-    expect(await status("/tiny", as("b"))).toBe(200);
-    // The table is full: c and d share the overflow entry's quota of 2.
-    expect(await status("/tiny", as("c"))).toBe(200);
-    expect(await status("/tiny", as("d"))).toBe(200);
-    expect(await status("/tiny", as("c"))).toBe(429);
-    // Spraying keys did not reset a or b.
-    expect(await status("/tiny", as("a"))).toBe(200);
-    expect(await status("/tiny", as("a"))).toBe(429);
-    expect(await status("/tiny", as("b"))).toBe(200);
-    // In the next window the idle entries are swept and d gets its own entry.
+    // The review's reproduction: attacker-a and attacker-b fill the table.
+    for (const k of ["attacker-a", "attacker-b", "attacker-c", "attacker-d"]) {
+      expect([k, await status("/tiny", as(k))]).toEqual([k, 200]);
+    }
+    for (let i = 0; i < 5; i++) {
+      const fresh = await get("/tiny", as("legitimate-new"));
+      await fresh.arrayBuffer();
+      expect(fresh.status).toBe(200);
+      // No quota applied to it, so no RateLimit fields.
+      expect(header(fresh, "ratelimit")).toBeNull();
+      expect(header(fresh, "ratelimit-policy")).toBeNull();
+    }
+    // Spraying keys did not reset or share the tracked quotas.
+    const tracked = await get("/tiny", as("attacker-a"));
+    await tracked.arrayBuffer();
+    expect(tracked.status).toBe(200);
+    expect(header(tracked, "ratelimit")).toBe(`"tiny";r=0;t=60`);
+    expect(await status("/tiny", as("attacker-a"))).toBe(429);
+    expect(await status("/tiny", as("attacker-b"))).toBe(200);
+    expect(await status("/tiny", as("attacker-b"))).toBe(429);
+    // Two tracked keys; seven requests met the full table; still saturated.
+    expect(await stats("/tiny")).toBe("2 7 true");
+    // In the next window the idle entries are swept and the new client is tracked.
     await setClock(30_060_000);
-    expect(await status("/tiny", as("d"))).toBe(200);
-    expect(await status("/tiny", as("d"))).toBe(200);
-    expect(await status("/tiny", as("d"))).toBe(429);
-    expect(await status("/tiny", as("e"))).toBe(200);
+    expect(await status("/tiny", as("legitimate-new"))).toBe(200);
+    expect(await stats("/tiny")).toBe("1 7 false");
+    expect(await status("/tiny", as("legitimate-new"))).toBe(200);
+    expect(await status("/tiny", as("legitimate-new"))).toBe(429);
+  });
+
+  test("shared saturation (opt-in): new keys share one overflow quota and fail closed", async () => {
+    await setClock(31_000_000);
+    expect(await status("/tiny-shared", as("a"))).toBe(200);
+    expect(await status("/tiny-shared", as("b"))).toBe(200);
+    // The table is full: c and d share the overflow entry's quota of 2.
+    expect(await status("/tiny-shared", as("c"))).toBe(200);
+    expect(await status("/tiny-shared", as("d"))).toBe(200);
+    expect(await status("/tiny-shared", as("c"))).toBe(429);
+    // The documented trade-off: a client never seen before is denied too.
+    expect(await status("/tiny-shared", as("legitimate-new"))).toBe(429);
+    // Spraying keys did not reset a or b.
+    expect(await status("/tiny-shared", as("a"))).toBe(200);
+    expect(await status("/tiny-shared", as("a"))).toBe(429);
+    expect(await status("/tiny-shared", as("b"))).toBe(200);
+    expect(await stats("/tiny-shared")).toBe("2 4 true");
+    // In the next window the idle entries are swept and d gets its own entry.
+    await setClock(31_060_000);
+    expect(await status("/tiny-shared", as("d"))).toBe(200);
+    expect(await status("/tiny-shared", as("d"))).toBe(200);
+    expect(await status("/tiny-shared", as("d"))).toBe(429);
+    expect(await status("/tiny-shared", as("e"))).toBe(200);
+  });
+
+  test("evict saturation (opt-in): the least recently used key makes room; its quota restarts", async () => {
+    await setClock(32_400_000);
+    expect(await status("/tiny-evict", as("a"))).toBe(200);
+    expect(await status("/tiny-evict", as("b"))).toBe(200);
+    expect(await status("/tiny-evict", as("a"))).toBe(200);
+    // Full: c evicts b, the least recently used, and is counted.
+    const c = await get("/tiny-evict", as("c"));
+    await c.arrayBuffer();
+    expect(c.status).toBe(200);
+    expect(header(c, "ratelimit")).toBe(`"tiny";r=1;t=60`);
+    expect(await status("/tiny-evict", as("legitimate-new"))).toBe(200);
+    // legitimate-new evicted a (touched before c). c keeps its count.
+    expect(await status("/tiny-evict", as("c"))).toBe(200);
+    expect(await status("/tiny-evict", as("c"))).toBe(429);
+    expect(await status("/tiny-evict", as("legitimate-new"))).toBe(200);
+    expect(await status("/tiny-evict", as("legitimate-new"))).toBe(429);
+    expect(await stats("/tiny-evict")).toBe("2 2 true");
+    // The documented trade-off: an evicted key starts over (a had used 2).
+    expect(await status("/tiny-evict", as("a"))).toBe(200);
+    expect(await stats("/tiny-evict")).toBe("2 3 true");
+  });
+
+  test("evict saturation stays correct over many evictions and queue compactions", async () => {
+    await setClock(33_000_000);
+    // A steady tracked client between bursts of new keys keeps its own count.
+    expect(await status("/tiny-evict", as("steady"))).toBe(200);
+    for (let i = 0; i < 30; i++) {
+      expect(await status("/tiny-evict", as(`churn-${i}`))).toBe(200);
+    }
+    expect(await stats("/tiny-evict")).toMatch(/^2 \d+ true$/);
+    // steady was evicted long ago, so it starts over: 2 allowed, then 429.
+    expect(await status("/tiny-evict", as("steady"))).toBe(200);
+    expect(await status("/tiny-evict", as("steady"))).toBe(200);
+    expect(await status("/tiny-evict", as("steady"))).toBe(429);
   });
 
   test("concurrent requests are serialized: exactly the limit succeeds", async () => {

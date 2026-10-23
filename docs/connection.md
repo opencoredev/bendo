@@ -178,17 +178,46 @@ Requests can reach the store out of clock order. A request that read an
 earlier time still counts against the newer window, and a bucket never moves
 its clock backwards, so a late request can never reset a count.
 
-### Memory
+### Memory and saturation
 
 The table holds at most `max_keys` entries. When a new key arrives and the
 table is full, the limiter first drops idle entries: windows that have ended
 and buckets that have refilled to capacity. It does this at most once per
-window (or per full-refill time). If the table is still full, new keys share
-one overflow entry with the same policy until a sweep frees room.
+window (or per full-refill time). Spraying keys can never grow memory past
+`max_keys`, and can never reset or share a tracked key's count.
 
-So an attacker spraying source addresses cannot grow memory past `max_keys`,
-and cannot reset a tracked key's count by pushing it out. While the table is
-full of live keys, new clients share the overflow quota.
+If the table is still full of live keys, the table is saturated, and the
+limiter's saturation mode decides what the new key gets:
+
+| Mode | A new key while saturated | Trade-off |
+|---|---|---|
+| `B.saturation_allow()` (default) | Passes uncounted, with no `RateLimit` fields | Nobody new is denied because of other keys, but a client that can fill the table (many source addresses, an IPv6 range) is unlimited until the next sweep. |
+| `B.saturation_shared()` | Shares one overflow entry with the same policy | Fails closed: a flood of new keys exhausts the shared quota and every client not yet tracked gets `429`. |
+| `B.saturation_evict()` | Takes the place of the least recently used key | Everyone is counted, but under churn an evicted client's quota starts over the next time it is seen. |
+
+Set the mode on a config:
+
+```python
+B.rate_limiter_with(B.rate_limit_saturation(B.rate_limit_config(name, policy, max_keys, trusted), B.saturation_evict()))
+```
+
+Saturation is visible in three places. The server prints one line when a
+table becomes saturated, not one per request:
+
+```text
+bendo rate limit "default": key table full at 10000 keys; new keys pass uncounted until a sweep frees room
+```
+
+`B.rate_limit_stats(limiter)` returns the counters (`IO(Result<..., B.RateLimitStats>)`):
+`B.stats_tracked(s)` is the number of tracked keys, `B.stats_saturated(s)` counts
+requests that met a full table since startup, and `B.stats_saturating(s)` is
+whether the table is saturated now. It turns false when a sweep frees room for
+a new key. In the default mode, an uncounted response is also the only kind
+without `RateLimit-Policy` and `RateLimit` fields.
+
+Eviction keeps a queue of recent keys. It grows by one entry per request and
+is compacted back to at most `max_keys` once it passes twice that, so the
+memory bound stays proportional to `max_keys`.
 
 ## Laws
 
@@ -207,6 +236,12 @@ full of live keys, new clients share the overflow quota.
 - With no trusted proxies, or a peer outside them, the client address is the
   socket peer whatever headers say (`client_default_peer`,
   `client_untrusted_peer`).
+- Behind a trusted peer, the forwarded entries are scanned right to left from
+  the peer: a trusted hop is skipped and becomes the fallback, the first
+  address outside the trusted ranges is the client, and a malformed entry or
+  the end of the list stops at the last trusted hop (`client_trusted_chain`,
+  `chain_skips_trusted`, `chain_first_untrusted`, `chain_malformed_stops`,
+  `chain_exhausted`).
 - Fixed window: in the counter's window a request is allowed exactly when
   fewer than `limit` were counted, and only allowed requests count. A later
   window starts from zero, and a zero limit refuses everything. Any run of
@@ -216,9 +251,9 @@ full of live keys, new clients share the overflow quota.
 - Token bucket: the level never exceeds capacity, for any input. With a token
   available the request is allowed and takes exactly one, otherwise it is
   denied and takes nothing (`rate_bucket_capacity`, `rate_bucket_allow`,
-  `rate_bucket_conserve`, `rate_bucket_deny`).
+  `rate_bucket_conserve`, `rate_bucket_deny`, `rate_full_level`).
 
-The parser, the key table's sweep and overflow, and the IO shells are covered
+The parser, the key table's sweep and saturation modes, and the IO shells are covered
 by tests, not laws.
 
 ```sh

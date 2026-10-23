@@ -222,6 +222,24 @@ def client_untrusted(+peer: Ip.Addr, +fields: List<&2, List<&2, U32>>, +trusted:
   %Equal.sym(Bool, Ip.any(peer, trusted), False{}, outside) : {Some{Conn.forwarded(peer, fields, trusted, _)} == Some{peer} : Maybe<&2, Ip.Addr>}
   {==}
 
+def client_chain(+peer: Ip.Addr, +fields: List<&2, List<&2, U32>>, +trusted: List<&2, Ip.Cidr>, inside: {Ip.any(peer, trusted) == True{} : Bool}) -> {Conn.client(Some{peer}, fields, trusted) == Some{Conn.walk(Conn.hops(List.reverse(&2, String, Conn.entries(fields)), trusted), peer)} : Maybe<&2, Ip.Addr>}:
+  %Equal.sym(Bool, Ip.any(peer, trusted), True{}, inside) : {Some{Conn.forwarded(peer, fields, trusted, _)} == Some{Conn.walk(Conn.hops(List.reverse(&2, String, Conn.entries(fields)), trusted), peer)} : Maybe<&2, Ip.Addr>}
+  {==}
+
+def chain_skip(+x: String, +rest: List<&2, String>, +trusted: List<&2, Ip.Cidr>, +current: Ip.Addr, +a: Ip.Addr, parsed: {Ip.parse(x) == Some{a} : Maybe<&2, Ip.Addr>}, proxy: {Ip.any(a, trusted) == True{} : Bool}) -> {Conn.walk(Conn.hops(x <> rest, trusted), current) == Conn.walk(Conn.hops(rest, trusted), a) : Ip.Addr}:
+  %Equal.sym(Maybe<&2, Ip.Addr>, Ip.parse(x), Some{a}, parsed) : {Conn.walk(Conn.hop(_, trusted) <> Conn.hops(rest, trusted), current) == Conn.walk(Conn.hops(rest, trusted), a) : Ip.Addr}
+  %Equal.sym(Bool, Ip.any(a, trusted), True{}, proxy) : {Conn.walk(Conn.hop_kind(a, _) <> Conn.hops(rest, trusted), current) == Conn.walk(Conn.hops(rest, trusted), a) : Ip.Addr}
+  {==}
+
+def chain_untrusted(+x: String, +rest: List<&2, String>, +trusted: List<&2, Ip.Cidr>, +current: Ip.Addr, +a: Ip.Addr, parsed: {Ip.parse(x) == Some{a} : Maybe<&2, Ip.Addr>}, client: {Ip.any(a, trusted) == False{} : Bool}) -> {Conn.walk(Conn.hops(x <> rest, trusted), current) == a : Ip.Addr}:
+  %Equal.sym(Maybe<&2, Ip.Addr>, Ip.parse(x), Some{a}, parsed) : {Conn.walk(Conn.hop(_, trusted) <> Conn.hops(rest, trusted), current) == a : Ip.Addr}
+  %Equal.sym(Bool, Ip.any(a, trusted), False{}, client) : {Conn.walk(Conn.hop_kind(a, _) <> Conn.hops(rest, trusted), current) == a : Ip.Addr}
+  {==}
+
+def chain_malformed(+x: String, +rest: List<&2, String>, +trusted: List<&2, Ip.Cidr>, +current: Ip.Addr, bad: {Ip.parse(x) == None{} : Maybe<&2, Ip.Addr>}) -> {Conn.walk(Conn.hops(x <> rest, trusted), current) == current : Ip.Addr}:
+  %Equal.sym(Maybe<&2, Ip.Addr>, Ip.parse(x), None{}, bad) : {Conn.walk(Conn.hop(_, trusted) <> Conn.hops(rest, trusted), current) == current : Ip.Addr}
+  {==}
+
 def Laws.ip_member_bits(a, c, hit, i, below): member_bits(a, c, hit, i, below)
 def Laws.ip_member_family(a, c, hit): member_family(a, c, hit)
 def Laws.ip_member_width(a, c, hit): member_width(a, c, hit)
@@ -233,3 +251,8 @@ def Laws.ip_unknown_denied(d, deny, allow): unknown_denied(d, deny, allow)
 def Laws.ip_unknown_not_allowed(deny, c, allow): unknown_not_allowed(deny, c, allow)
 def Laws.client_default_peer(peer, fields): client_default(peer, fields)
 def Laws.client_untrusted_peer(peer, fields, trusted, outside): client_untrusted(peer, fields, trusted, outside)
+def Laws.client_trusted_chain(peer, fields, trusted, inside): client_chain(peer, fields, trusted, inside)
+def Laws.chain_skips_trusted(x, rest, trusted, current, a, parsed, proxy): chain_skip(x, rest, trusted, current, a, parsed, proxy)
+def Laws.chain_first_untrusted(x, rest, trusted, current, a, parsed, client): chain_untrusted(x, rest, trusted, current, a, parsed, client)
+def Laws.chain_malformed_stops(x, rest, trusted, current, bad): chain_malformed(x, rest, trusted, current, bad)
+def Laws.chain_exhausted(trusted, current): {==}

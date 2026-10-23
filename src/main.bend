@@ -255,7 +255,25 @@ def RateLimitConfig() -> Data: RateLimit.Config
 def RateLimiter() -> Data: RateLimit.Limiter
 def fixed_window(limit: Nat, window_ms: Nat) -> RateCore.Policy: RateCore.fixed_window_policy(limit, window_ms)
 def token_bucket(capacity: Nat, refill: Nat, every_ms: Nat) -> RateCore.Policy: RateCore.token_bucket_policy(capacity, refill, every_ms)
-def rate_limit_config(name: String, policy: RateCore.Policy, max_keys: Nat, trusted: List<&2, Ip.Cidr>) -> RateLimit.Config: RateLimit.Config{name, policy, max_keys, trusted}
+def rate_limit_config(name: String, policy: RateCore.Policy, max_keys: Nat, trusted: List<&2, Ip.Cidr>) -> RateLimit.Config: RateLimit.Config{name, policy, max_keys, trusted, RateCore.AllowUntracked{}}
+# What a new key gets while the key table is full of live entries.
+def RateLimitSaturation() -> Data: RateCore.Saturation
+def saturation_allow() -> RateCore.Saturation: RateCore.AllowUntracked{}
+def saturation_shared() -> RateCore.Saturation: RateCore.SharedQuota{}
+def saturation_evict() -> RateCore.Saturation: RateCore.EvictOldest{}
+def rate_limit_saturation(config: RateLimit.Config, mode: RateCore.Saturation) -> RateLimit.Config: RateLimit.with_saturation(config, mode)
+# Monitoring counters: tracked keys, requests that met a full table, saturated now.
+def RateLimitStats() -> Data: RateCore.Stats
+def rate_limit_stats(limiter: RateLimit.Limiter) -> IO(Result<&2, &2, Store.Error, RateCore.Stats>): RateLimit.stats(limiter)
+def stats_tracked(s: RateCore.Stats) -> Nat:
+  RateCore.Stats{tracked, saturated, saturating} = s
+  tracked
+def stats_saturated(s: RateCore.Stats) -> Nat:
+  RateCore.Stats{tracked, saturated, saturating} = s
+  saturated
+def stats_saturating(s: RateCore.Stats) -> Bool:
+  RateCore.Stats{tracked, saturated, saturating} = s
+  saturating
 def rate_limiter(policy: RateCore.Policy) -> IO(RateLimit.Limiter): RateLimit.limiter(RateLimit.config(policy))
 def rate_limiter_with(config: RateLimit.Config) -> IO(RateLimit.Limiter): RateLimit.limiter(config)
 def rate_limit(-Vars: Data, limiter: RateLimit.Limiter, c: Context.Ctx<Vars>, next: Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):

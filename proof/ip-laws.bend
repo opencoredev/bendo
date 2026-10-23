@@ -97,3 +97,49 @@ law client_untrusted_peer:
   for +trusted: List<&2, Ip.Cidr>
   for outside: {Ip.any(peer, trusted) == False{} : Bool}
   {Conn.client(Some{peer}, fields, trusted) == Some{peer} : Maybe<&2, Ip.Addr>}
+
+# Behind a trusted peer, the forwarded entries are scanned right to left
+# (nearest hop first), starting from the peer as the fallback.
+law client_trusted_chain:
+  for +peer: Ip.Addr
+  for +fields: List<&2, List<&2, U32>>
+  for +trusted: List<&2, Ip.Cidr>
+  for inside: {Ip.any(peer, trusted) == True{} : Bool}
+  {Conn.client(Some{peer}, fields, trusted) == Some{Conn.walk(Conn.hops(List.reverse(&2, String, Conn.entries(fields)), trusted), peer)} : Maybe<&2, Ip.Addr>}
+
+# The scan skips a trusted hop, which becomes the fallback.
+law chain_skips_trusted:
+  for +x: String
+  for +rest: List<&2, String>
+  for +trusted: List<&2, Ip.Cidr>
+  for +current: Ip.Addr
+  for +a: Ip.Addr
+  for parsed: {Ip.parse(x) == Some{a} : Maybe<&2, Ip.Addr>}
+  for proxy: {Ip.any(a, trusted) == True{} : Bool}
+  {Conn.walk(Conn.hops(x <> rest, trusted), current) == Conn.walk(Conn.hops(rest, trusted), a) : Ip.Addr}
+
+# The first address outside the trusted ranges is the client.
+law chain_first_untrusted:
+  for +x: String
+  for +rest: List<&2, String>
+  for +trusted: List<&2, Ip.Cidr>
+  for +current: Ip.Addr
+  for +a: Ip.Addr
+  for parsed: {Ip.parse(x) == Some{a} : Maybe<&2, Ip.Addr>}
+  for client: {Ip.any(a, trusted) == False{} : Bool}
+  {Conn.walk(Conn.hops(x <> rest, trusted), current) == a : Ip.Addr}
+
+# A malformed entry stops the scan at the last trusted hop.
+law chain_malformed_stops:
+  for +x: String
+  for +rest: List<&2, String>
+  for +trusted: List<&2, Ip.Cidr>
+  for +current: Ip.Addr
+  for bad: {Ip.parse(x) == None{} : Maybe<&2, Ip.Addr>}
+  {Conn.walk(Conn.hops(x <> rest, trusted), current) == current : Ip.Addr}
+
+# Running out of entries also stops at the last trusted hop.
+law chain_exhausted:
+  for +trusted: List<&2, Ip.Cidr>
+  for +current: Ip.Addr
+  {Conn.walk(Conn.hops([], trusted), current) == current : Ip.Addr}

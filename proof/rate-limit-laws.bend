@@ -97,3 +97,10 @@ law rate_bucket_deny:
   for +now: Nat
   for short: {Nat.is_le(every_ms, Spec.refill(R.full_level(capacity, every_ms), level, last, now, refill)) == False{} : Bool}
   {R.bucket_step(capacity, refill, every_ms, R.Bucket{level, last}, now) == R.BucketStep{False{}, R.Bucket{Spec.refill(R.full_level(capacity, every_ms), level, last, now, refill), Nat.max(last, now)}} : R.BucketStep}
+
+# The full level the capacity law bounds by is capacity tokens of every_ms
+# token-milliseconds each.
+law rate_full_level:
+  for +capacity: Nat
+  for +every_ms: Nat
+  {R.full_level(capacity, every_ms) == Nat.mul(capacity, every_ms) : Nat}

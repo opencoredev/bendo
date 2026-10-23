@@ -12,20 +12,39 @@ import ./ip_restriction.bend as IpRestriction
 import ./common.bend as Common
 import ./rate_limit_core.bend as Core
 
+# saturation picks what a new key gets while the table is full; see
+# Core.Saturation. The default lets it through uncounted.
 type Config is Data:
-  Config{name: String, policy: Core.Policy, max_keys: Nat, trusted: List<&2, Ip.Cidr>}
+  Config{name: String, policy: Core.Policy, max_keys: Nat, trusted: List<&2, Ip.Cidr>, saturation: Core.Saturation}
 
 type Limiter is Data:
   Limiter{config: Config, store: Store.Store<Core.Table>}
 
 def config(policy: Core.Policy) -> Config:
-  Config{"default", policy, 10000n, []}
+  Config{"default", policy, 10000n, [], Core.AllowUntracked{}}
+
+def with_saturation(config: Config, mode: Core.Saturation) -> Config:
+  Config{name, policy, max_keys, trusted, old} = config
+  Config{name, policy, max_keys, trusted, mode}
 
 def limiter(config: Config) -> IO(Limiter):
-  Config{name, +policy, max_keys, trusted} = config
+  Config{name, +policy, max_keys, trusted, saturation} = config
   do IO<Limiter>:
     store : Store.Store<Core.Table> <- StoreActor.store(Core.Table, Core.empty(policy))
-    return Limiter{Config{name, policy, max_keys, trusted}, store}
+    return Limiter{Config{name, policy, max_keys, trusted, saturation}, store}
+
+# Counters for monitoring: keys tracked, requests that met a full table since
+# startup, and whether the table is saturated now.
+def stats_of(result: Result<&2, &2, Store.Error, Core.Table>) -> Result<&2, &2, Store.Error, Core.Stats>:
+  match result:
+    case Done{table}: Done{Core.stats(table)}
+    case Fail{e}: Fail{e}
+
+def stats(limiter: Limiter) -> IO(Result<&2, &2, Store.Error, Core.Stats>):
+  Limiter{config, store} = limiter
+  do IO<Result<&2, &2, Store.Error, Core.Stats>>:
+    result : Result<&2, &2, Store.Error, Core.Table> <- Store.get(Core.Table, store)
+    return stats_of(result)
 
 def sf_keep(x: U32, rest: String, ok: Bool) -> String:
   match ok:
@@ -78,19 +97,43 @@ def verdict(-Vars: Data, +c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res),
   Core.Decision{+ok, l, r, s, w} = d
   allowed_go(Vars, c, next, name, policy, d, ok)
 
-def decided(-Vars: Data, +c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res), +name: String, +policy: Core.Policy, result: Result<&2, &2, Store.Error, Core.Table>) -> IO(Response.Res):
+# An uncounted request carries no RateLimit fields: no quota applied to it.
+def judged(-Vars: Data, +c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res), +name: String, +policy: Core.Policy, v: Core.Verdict) -> IO(Response.Res):
+  match v:
+    case Core.Counted{d}: verdict(Vars, c, next, name, policy, d)
+    case Core.Untracked{}: next(c)
+
+def mode_text(mode: Core.Saturation) -> String:
+  match mode:
+    case Core.AllowUntracked{}: "new keys pass uncounted until a sweep frees room"
+    case Core.SharedQuota{}: "new keys share one overflow quota until a sweep frees room"
+    case Core.EvictOldest{}: "evicting the least recently used keys"
+
+# One log line when the table becomes saturated, not one per request.
+def announce(+name: String, +max_keys: Nat, mode: Core.Saturation, began: Bool) -> IO(Unit):
+  match began:
+    case True{}: IO.print("bendo rate limit \"" ++ name ++ "\": key table full at " ++ Nat.show(max_keys) ++ " keys; " ++ mode_text(mode))
+    case False{}: IO.pure(Unit, Unit{})
+
+def reported(-Vars: Data, +c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res), +name: String, +policy: Core.Policy, +max_keys: Nat, mode: Core.Saturation, got: Core.Verdict & Bool) -> IO(Response.Res):
+  (v, began) = got
+  do IO<Response.Res>:
+    announce(name, max_keys, mode, began)
+    judged(Vars, c, next, name, policy, v)
+
+def decided(-Vars: Data, +c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res), +name: String, +policy: Core.Policy, +max_keys: Nat, mode: Core.Saturation, result: Result<&2, &2, Store.Error, Core.Table>) -> IO(Response.Res):
   match result:
-    case Done{table}: verdict(Vars, c, next, name, policy, Core.decision(table))
+    case Done{table}: reported(Vars, c, next, name, policy, max_keys, mode, Core.outcome(table))
     case Fail{e}: IO.pure(Response.Res, C.error(Vars, c, Errors.http_error(503, "Service Unavailable")))
 
 # Count one request for key at now (milliseconds on any monotonic clock).
 # Tests pass their own clock here; limit uses IO.now.
 def limit_with(-Vars: Data, limiter: Limiter, key: String, now: Nat, +c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
-  Limiter{Config{name, +policy, +max_keys, trusted}, store} = limiter
+  Limiter{Config{name, +policy, +max_keys, trusted, +saturation}, store} = limiter
   +label = sf_chars(name)
   do IO<Response.Res>:
-    result : Result<&2, &2, Store.Error, Core.Table> <- Store.update(Core.Table, store, table => Core.admit(policy, max_keys, key, now, table))
-    decided(Vars, c, next, label, policy, result)
+    result : Result<&2, &2, Store.Error, Core.Table> <- Store.update(Core.Table, store, table => Core.admit(policy, saturation, max_keys, key, now, table))
+    decided(Vars, c, next, label, policy, max_keys, saturation, result)
 
 # The client address text, or "unknown" when there is no socket peer (all
 # such requests share one key).
@@ -105,7 +148,7 @@ def key_option(address: Maybe<&2, Ip.Addr>) -> Maybe<&2, String>:
     case None{}: None{}
 
 def client_key(-Vars: Data, +c: C.Ctx<Vars>, limiter: Limiter) -> String:
-  Limiter{Config{name, policy, max_keys, trusted}, store} = limiter
+  Limiter{Config{name, policy, max_keys, trusted, saturation}, store} = limiter
   key_text(IpRestriction.client(Vars, c, trusted))
 
 def limit(-Vars: Data, +limiter: Limiter, +c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
