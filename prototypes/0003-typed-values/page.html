@@ -1,0 +1,86 @@
+<!doctype html>
+<!--
+Reference: compiler test reports, with inputs beside their actual verdicts.
+Palette: white paper #fff, ink #172033, blue #164fa3, red #9c2533.
+Type: system sans for instructions, monospace for JSON and decoder results.
+Layout: one vertical report; each case remains readable on a narrow screen.
+Signature: both accepted and rejected payloads expose the same decoder boundary.
+Avoiding: decorative cards, gradients, and simulated success results.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BND-5 · Shared Todo decoder</title>
+    <style>
+      body {
+        margin: 0 auto;
+        padding: 32px 20px;
+        max-width: 880px;
+        color: #172033;
+        background: #fff;
+        font:
+          17px/1.5 system-ui,
+          sans-serif;
+      }
+      h1 {
+        font-size: clamp(24px, 5vw, 36px);
+        line-height: 1.2;
+      }
+      section {
+        border-top: 1px solid #b7becb;
+        margin-top: 28px;
+        padding-top: 12px;
+      }
+      h2 {
+        font-size: 21px;
+      }
+      pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font: 15px/1.5 monospace;
+      }
+      .ok {
+        color: #164fa3;
+      }
+      .error {
+        color: #9c2533;
+      }
+      #summary {
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>One Todo decoder, two runtimes</h1>
+    <p>This browser runs the same pure Bend decoder as the native prototype.</p>
+    <p id="summary" role="status">Running response checks…</p>
+    <main id="results"></main>
+    <script type="module">
+      import { validateTodo } from "./validator.js";
+      const cases = [
+        { name: "Valid response", input: '{"title":"Read","done":false}', expected: "ok" },
+        { name: "Malformed response", input: '{"title":42,"done":false}', expected: "error" },
+        { name: "Missing response field", input: '{"title":"Read"}', expected: "error" },
+      ];
+      let passed = 0;
+      for (const item of cases) {
+        const result = validateTodo(JSON.parse(item.input));
+        if (result.kind === item.expected) passed++;
+        const section = document.createElement("section");
+        const title = document.createElement("h2");
+        title.textContent = item.name;
+        const input = document.createElement("pre");
+        input.textContent = `Input: ${item.input}`;
+        const output = document.createElement("pre");
+        output.className = result.kind;
+        output.textContent = JSON.stringify(result, null, 2);
+        section.append(title, input, output);
+        document.querySelector("#results").append(section);
+      }
+      document.querySelector("#summary").textContent =
+        `${passed}/${cases.length} response checks passed`;
+      document.body.dataset.passed = String(passed);
+    </script>
+  </body>
+</html>
