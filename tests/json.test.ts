@@ -175,6 +175,9 @@ for (const size of [65536, 1048576])
     test(
       `.mjs ${shape} traversals are stack safe at ${size} bytes`,
       () => {
+        // The previous case's byte list, parsed graph and writer intermediates
+        // are dead now. Reclaim them before allocating the next large input.
+        Bun.gc(true);
         let input: string;
         switch (shape) {
           case "string":
