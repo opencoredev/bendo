@@ -12,6 +12,7 @@ import ./proof/headers.bend as Headers
 import ./proof/line.bend as Line
 import ./proof/scanner.bend as Scanner
 import ./proof/printable.bend as Printable
+import ./proof/support.bend as Support
 
 def Laws.text_body_after_blank(body):
   ("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nConnection: close", ({==}, {==}))
@@ -24,6 +25,25 @@ def Laws.path_of_request_line():
 def Laws.header_lookup_case_insensitive(headers, name, variant, same):
   %same : {Request.lookup_folded(headers, Bytes.fold(name)) == Request.lookup_folded(headers, _) : List<&2, List<&2, U32>>}
   {==}
+
+# Mapping values over the independent selection agrees for either decision.
+def selected_values(+n: String, +v: List<&2, U32>, +hs: List<&2, Request.Header>, same: Bool) -> {Request.lookup_step(v, Support.header_values(hs), same) == Support.header_values(Support.select_header(Request.Header{n, v}, hs, same)) : List<&2, List<&2, U32>>}:
+  match same:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def lookup_selected(+hs: List<&2, Request.Header>, +name: String) -> {Request.lookup_folded(hs, name) == Support.header_values(Support.matching_headers(hs, name)) : List<&2, List<&2, U32>>}:
+  match hs:
+    case Nil{}:
+      {==}
+    case Request.Header{n, v} <> t:
+      %Equal.sym(List<&2, List<&2, U32>>, Request.lookup_folded(t, name), Support.header_values(Support.matching_headers(t, name)), lookup_selected(t, name)) : {Request.lookup_step(v, _, String.eq(n, name)) == Support.header_values(Support.matching_headers(Request.Header{n, v} <> t, name)) : List<&2, List<&2, U32>>}
+      selected_values(n, v, Support.matching_headers(t, name), String.eq(n, name))
+
+def Laws.header_lookup_all_in_order(headers, name):
+  lookup_selected(headers, Bytes.fold(name))
 
 # Scan the serialized line, reconstruct each field, then restore header order.
 def head_feed(+m: Request.Method, +p: String, +q: Maybe<&2, String>, +v: Request.Version, +hs: List<&2, Request.Header>, +mv: {Request.method_valid(m) == True{} : Bool}, +tv: {Request.target_valid(m, p, q) == True{} : Bool}, hv: {Request.headers_valid(hs) == True{} : Bool}) -> {Parse.feed(Write.write(Request.Req{m, p, q, v, hs}), Parse.initial()) == (Parse.Complete{Request.Req{m, p, q, v, hs}}, Request.Parsed{Request.Req{m, p, q, v, hs}, []}) : Parse.State & Request.ParseResult}:

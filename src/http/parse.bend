@@ -1,5 +1,5 @@
 # Strict RFC 9112 line endings. Origin-form and OPTIONS * only; other
-# target forms are explicitly unsupported. See decision 0003.
+# target forms are explicitly unsupported. See decision 0004.
 import Base
 import ./bytes.bend as Bytes
 import ./request.bend as R
@@ -57,10 +57,20 @@ def valid_method(m: String, t: String, v: String, ok: Bool) -> State:
     case True{}:
       target_form(R.method(m), t, v)
 
+# RFC 9112 section 2.2: discard empty lines before the request line.
+def request_preamble(line: String) -> State:
+  match line:
+    case "":
+      RequestLine{[], False{}}
+    case _:
+      Bad{R.InvalidRequestLine{}}
+
 def request_line_parts(parts: List<&2, String>) -> State:
   match parts:
     case +m <> t <> v <> Nil{}:
       valid_method(m, t, v, Bytes.token(m))
+    case line <> Nil{}:
+      request_preamble(line)
     case _:
       Bad{R.InvalidRequestLine{}}
 

@@ -38,3 +38,29 @@ def headers_scannable(hs: List<&2, R.Header>) -> Bool:
       True{}
     case +h <> t:
       B.value(header_content(h)) && headers_scannable(t)
+
+# Independent lookup specification: select whole headers first, preserving
+# their order, then project their values. No lookup implementation is used.
+def select_header(h: R.Header, rest: List<&2, R.Header>, same: Bool) -> List<&2, R.Header>:
+  match same:
+    case True{}:
+      h <> rest
+    case False{}:
+      rest
+
+def matching_headers(hs: List<&2, R.Header>, +name: String) -> List<&2, R.Header>:
+  match hs:
+    case Nil{}:
+      []
+    case R.Header{+n, v} <> t:
+      select_header(R.Header{n, v}, matching_headers(t, name), String.eq(n, name))
+
+def header_values(hs: List<&2, R.Header>) -> List<&2, List<&2, U32>>:
+  match hs:
+    case Nil{}:
+      []
+    case R.Header{n, v} <> t:
+      v <> header_values(t)
+
+def matching_values(hs: List<&2, R.Header>, name: String) -> List<&2, List<&2, U32>>:
+  header_values(matching_headers(hs, B.fold(name)))

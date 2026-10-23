@@ -14,6 +14,17 @@ lines fail immediately, even before the final empty line arrives. There is no
 header size limit here; BND-11 must enforce one before accumulating unbounded
 input. The scanner runs once per input byte and reverses each completed line.
 
+Before the first nonempty request line, ignore any number of complete CRLF
+pairs, as recommended by RFC 9112 section 2.2. This also accepts extra CRLF
+left after a previous request body on a persistent connection. Bare LF is
+still rejected, including after an ignored CRLF. A split CRLF waits for its
+LF; a prefix containing only complete CRLF pairs still returns `NeedMore`.
+Each pair is discarded immediately without growing the line buffer. `feed`
+terminates by consuming its finite input, even if it contains only CRLF pairs.
+BND-11 must count all received head bytes, including discarded leading pairs,
+toward its header limit and enforce its timeout across the whole head, so a
+peer cannot bypass either limit by sending empty lines.
+
 Methods are nonempty RFC 9110 `tchar` tokens and remain case-sensitive.
 Standard uppercase methods get dedicated constructors; other tokens, including
 lowercase spellings, become `Extension`. Headers use the same token grammar,

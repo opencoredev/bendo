@@ -489,5 +489,29 @@
       "headers": [],
       "rest": ""
     }
+  },
+  {
+    "name": "1 leading CRLF",
+    "raw": "\r\nGET / HTTP/1.1\r\n\r\n",
+    "expected": {
+      "method": "GET",
+      "path": "/",
+      "query": null,
+      "version": "1.1",
+      "headers": [],
+      "rest": ""
+    }
+  },
+  {
+    "name": "2 leading CRLF",
+    "raw": "\r\n\r\nGET / HTTP/1.1\r\n\r\n",
+    "expected": {
+      "method": "GET",
+      "path": "/",
+      "query": null,
+      "version": "1.1",
+      "headers": [],
+      "rest": ""
+    }
   }
 ]

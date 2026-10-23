@@ -150,10 +150,37 @@ describe("real compiled Bend HTTP request parser", () => {
     expect(lookup(hs, "absent")).toEqual({ $: "Nil" });
   });
 
+  for (const fixture of valid.filter((f) => f.name.endsWith("leading CRLF"))) {
+    test(`${fixture.name} across every split and one-byte reads`, () => {
+      const expected = {
+        $: "Parsed",
+        req: expectedRequest(fixture.expected),
+        rest: octets(fixture.expected.rest),
+      };
+      for (let split = 0; split < fixture.raw.length; split++) {
+        const first = pair(feed(octets(fixture.raw.slice(0, split)), initial()));
+        expect(first.snd).toEqual({ $: "NeedMore" });
+        expect(pair(feed(octets(fixture.raw.slice(split)), first.fst)).snd).toEqual(expected);
+      }
+      let state = initial();
+      let result: unknown;
+      for (const c of fixture.raw) {
+        const step = pair(feed(octets(c), state));
+        state = step.fst;
+        result = step.snd;
+      }
+      expect(result).toEqual(expected);
+    });
+  }
+
   test("incomplete prefixes return NeedMore, including a trailing CR", () => {
     for (const raw of [
       "",
       "G",
+      "\r",
+      "\r\n",
+      "\r\n\r",
+      "\r\n\r\n",
       "GET / HTTP/1.1\r",
       "GET / HTTP/1.1\r\n",
       "GET / HTTP/1.1\r\nX: a",

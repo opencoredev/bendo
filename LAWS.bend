@@ -42,6 +42,15 @@ law header_lookup_case_insensitive:
   for same: {Bytes.fold(name) == Bytes.fold(variant) : String}
   {Request.lookup(headers, name) == Request.lookup(headers, variant) : List<&2, List<&2, U32>>}
 
+# Lookup returns precisely every matching header value in arrival order.
+# The independent specification selects headers by the folded lookup name,
+# then projects their values. This holds for every list, including all valid
+# canonical header lists stored by the parser, and every lookup name.
+law header_lookup_all_in_order:
+  for +headers: List<&2, Request.Header>
+  for +name: String
+  {Request.lookup(headers, name) == Support.matching_values(headers, name) : List<&2, List<&2, U32>>}
+
 # Every well-formed request line, not an example: its parsed path is exactly
 # the raw target prefix ending at its first '?'. The independent target
 # predicate covers origin-form and OPTIONS *, with valid percent escapes.

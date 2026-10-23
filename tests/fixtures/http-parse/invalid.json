@@ -223,5 +223,15 @@
     "name": "non-octet header element",
     "raw": "GET / HTTP/1.1\r\nX: \u0100\r\n\r\n",
     "error": "InvalidOctet"
+  },
+  {
+    "name": "leading bare LF",
+    "raw": "\nGET / HTTP/1.1\r\n\r\n",
+    "error": "InvalidLineEnding"
+  },
+  {
+    "name": "leading CRLF then bare LF",
+    "raw": "\r\n\nGET / HTTP/1.1\r\n\r\n",
+    "error": "InvalidLineEnding"
   }
 ]
