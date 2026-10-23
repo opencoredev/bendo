@@ -36,6 +36,49 @@ encoded valid Unicode string returns that string. Header lookup laws can cover
 ASCII case folding and preservation of repeated-value order. These are proposed
 M1 laws, not proofs delivered by this experiment. No existing law changed.
 
+## Memory cost
+
+`List<&2, U32>` allocates one list node per octet. A bounded native measurement
+on ms-a2 (Linux x86_64, Bend 2.0.38, 2026-10-22) reported maximum RSS of
+1,972 KiB for an empty list, 18,392 KiB for 1 MiB of octets and 67,516 KiB for
+4 MiB. Subtracting the empty baseline gives 16.04 and 16.00 resident bytes per
+octet, respectively: budget roughly **16 times the wire size** for one live
+body list. These are process RSS deltas, not a portable allocation guarantee or
+a measurement of the HTTP parser. The earlier 96/512-byte fixtures do not assess
+large-body memory use.
+
+Recommend a **1 MiB default body limit** for M1, configurable in BND-8. Reject
+oversized bodies with 413 before buffering beyond that limit, including while
+reading chunked bodies. Sixteen concurrent bodies at that limit need roughly
+256 MiB for their lists alone; sixteen 4 MiB bodies would need roughly 1 GiB.
+Bound concurrent buffered bodies against the deployment's memory budget, with
+additional headroom for receive buffers, headers, parsing, decoded text,
+responses and temporary list copies. A per-request limit alone does not bound
+process memory. Large uploads, multipart processing and static-file responses
+should stream or enforce explicit caps rather than buffer unbounded content.
+
+`bend base`, `bend base U8` and `bend base Bytes` confirm that Bend 2.0.38 Base
+has no packed byte type. `bend base Array` shows `ALeaf`/`ANode` tree storage,
+so `Array` offers no obvious packed replacement. A packed buffer would need a
+Bendo effect with native C and JavaScript implementations; that is a possible
+later optimization, not a v1 change.
+
+Reproduce this small allocation measurement from the repository root, without
+Boat or network traffic:
+
+```sh
+export PATH="$HOME/.bend/bin:$HOME/.elan/bin:$HOME/.bun/bin:$PATH"
+timeout --foreground 30s bend prototypes/0002-bytes/memory.bend -o /tmp/bendo-bnd4-memory
+for octets in 0 1048576 4194304; do
+  BODY_OCTETS="$octets" /usr/bin/time -v timeout --foreground 30s /tmp/bendo-bnd4-memory
+done
+```
+
+Compilation is outside the RSS measurement. Each fresh process builds a list,
+holds it across a one-second sleep, then traverses it and prints its octet count
+to confirm the list stayed live. The prototype caps input at 4 MiB; all three
+runs exited successfully in 1.00–1.03 seconds, with peak RSS below 66 MiB.
+
 ## What was compared
 
 Both native Bend implementations scan for CRLFCRLF, read the decimal
