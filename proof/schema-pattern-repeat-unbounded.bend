@@ -6,6 +6,7 @@ import ./schema-pattern-cat.bend as Cat
 import ./schema-pattern-strings.bend as W
 import ./schema-pattern-bound-counts.bend as C
 import ./schema-pattern-repeat-algebra.bend as A
+import ./schema-pattern-assoc.bend as Assoc
 
 def or_self(+b: Bool) -> {(b || b) == b : Bool}:
   match b:
@@ -46,3 +47,7 @@ def star_head(+l: Spec.Lang, +c: U32, +t: String) -> {Spec.mem(Spec.repeat(l, 0n
   %star_positive(Spec.length(t), l, c, t) : {Spec.mem(Spec.repeat(l, 0n, None{}, 1n+Spec.length(t)), 1n+Spec.length(t), SCon{Chr{c}, t}) == _ : Bool}
   %Equal.sym(Bool, Spec.mem(Spec.repeat(l, 0n, None{}, 1n+Spec.length(t)), 1n+Spec.length(t), SCon{Chr{c}, t}), Spec.mem(Spec.counts(Spec.LNonEmpty{l}, 0n, 1n+Spec.length(t)), 1n+Spec.length(t), SCon{Chr{c}, t}), cat_empty_left(1n+Spec.length(t), Spec.counts(Spec.LNonEmpty{l}, 0n, 1n+Spec.length(t)), SCon{Chr{c}, t})) : {_ == S.positive(Spec.LNonEmpty{l}, Spec.counts(Spec.LNonEmpty{l}, 0n, Spec.length(t)), Spec.length(t), c, t) : Bool}
   star_counts_head(l, c, t)
+
+# A mandatory factor can be peeled before the nonempty-star suffix.
+def repeat_head(+m: Nat, +l: Spec.Lang, +c: U32, +t: String) -> {Spec.mem(Spec.repeat(l, 1n+m, None{}, 1n+Spec.length(t)), 1n+Spec.length(t), SCon{Chr{c}, t}) == Spec.mem(Spec.LCat{l, Spec.repeat(l, m, None{}, 1n+Spec.length(t))}, 1n+Spec.length(t), SCon{Chr{c}, t}) : Bool}:
+  Assoc.assoc(SCon{Chr{c}, t}, l, Spec.power(l, m), Spec.counts(Spec.LNonEmpty{l}, 0n, 1n+Spec.length(t)))
