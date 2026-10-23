@@ -122,3 +122,10 @@ tests exercise selection and execution against compiled native servers.
 bun run prove
 bun test --timeout 30000 tests/middleware.test.ts
 ```
+
+## Built-in middleware
+
+[Observability middleware](observability.md) provides logger, request ID,
+Server-Timing, powered-by and pretty JSON identifiers. Wrap `B.Builtin` in your
+app's tag and delegate that case to `B.builtin(Vars, id, c, next)` alongside your
+own middleware cases.
