@@ -69,6 +69,9 @@ import ./proof/crypto-hex.bend as HexProof
 import ./proof/crypto-base64.bend as Base64Proof
 import ./proof/crypto-compare.bend as CompareProof
 import ./proof/jwt.bend as JwtProof
+import ./proof/jwt-structure.bend as JwtStructureProof
+import ./proof/jwt-encoding.bend as JwtEncodingProof
+import ./proof/csrf.bend as CsrfProof
 
 # Check the pure crypto implementations with the strict kernel as well.
 import ./src/crypto/sha1.bend as SHA1
@@ -461,3 +464,20 @@ def Laws.jwt_open_seal(secret, header, payload, vh, vp):
 
 def Laws.jwt_rejects_bad_signature(secret, a, b, c, fa, fb, fc, differs):
   JwtProof.rejects(secret, a, b, c, fa, fb, fc, differs)
+
+def Laws.jwt_rejects_malformed(secret, token, wrong):
+  JwtStructureProof.malformed(secret, token, wrong)
+
+def Laws.jwt_rejects_bad_encoding(secret, a, b, za, zb, bad):
+  JwtEncodingProof.bad_encoding(secret, a, b, za, zb, bad)
+
+def Laws.jwt_verify_rejects_bad_alg(secret, a, b, c, now, leeway, header, fields, za, zb, zc, decoded, parsed, bad):
+  JwtStructureProof.bad_alg(secret, a, b, c, now, leeway, header, fields, za, zb, zc, decoded, parsed, bad)
+
+def Laws.jwt_verify_bad_alg_exact(secret, a, b, now, leeway, header, payload, fields, za, zb, dh, dp, parsed, distinct, bad):
+  JwtStructureProof.exactly_bad_alg(secret, a, b, now, leeway, header, payload, fields, za, zb, dh, dp, parsed, distinct, bad)
+
+# BND-43: the CSRF decision against its request-policy specification.
+
+def Laws.csrf_decision_spec(origins, scheme, method, content_type, site, origin, referer, host):
+  CsrfProof.decide(origins, scheme, method, content_type, site, origin, referer, host)

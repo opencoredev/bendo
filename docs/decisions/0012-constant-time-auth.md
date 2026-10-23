@@ -28,9 +28,10 @@ The middleware never feeds raw secrets to it:
   HMAC-SHA256 tag it computes. The tag is always 43 characters. A signature
   segment of another length is still walked to its end. Its length is not secret.
 
-Hashing first makes both inputs 32 or 64 bytes, so the secret's length does not
-change the work. Each configured entry's result is folded with `U32.or`, which
-evaluates both operands; `Bool.or` would skip the rest after the first match.
+Hashing fixes the lengths passed to the basic and bearer comparison loops at 32
+bytes per digest. Hashing itself can depend on secret length. Each configured
+entry's result is folded with `U32.or`, which evaluates both operands;
+`Bool.or` would skip the rest after the first match.
 
 ## What is proven
 

@@ -49,6 +49,9 @@ import ./src/crypto/compare.bend as Compare
 import ./src/crypto/hmac.bend as HMAC
 import ./src/crypto/jwt.bend as Jwt
 import ./proof/crypto-compare-spec.bend as CompareSpec
+import ./proof/jwt-spec.bend as JwtSpec
+import ./src/mw/csrf_policy.bend as CsrfPolicy
+import ./proof/csrf-spec.bend as CsrfSpec
 
 # LAW: a text response is a head with no blank line in it, then a blank
 # line, then the body. So the first blank line in the response is the one
@@ -1071,3 +1074,83 @@ law jwt_rejects_bad_signature:
   for fc: {Jwt.dotfree(c) == True{} : Bool}
   for differs: {c != Base64.encode(HMAC.sha256(secret, Utf8.encode(a ++ ("." ++ b))), True{}, False{}) : String}
   {Jwt.open(secret, a ++ ("." ++ (b ++ ("." ++ c)))) == Fail{Jwt.BadSignature{}} : Result<&2, &2, Jwt.Error, Jwt.Parts>}
+
+# Every token whose number of '.' characters (JwtSpec.dots) is not two is
+# Malformed, whatever the secret.
+law jwt_rejects_malformed:
+  for +secret: List<&2, U32>
+  for +token: String
+  for wrong: {JwtSpec.dots(token) != 2n : Nat}
+  {Jwt.open(secret, token) == Fail{Jwt.Malformed{}} : Result<&2, &2, Jwt.Error, Jwt.Parts>}
+
+# A token a.b.c whose c is the correct signature of "a.b", but whose a or b is
+# not strict unpadded base64url (JwtSpec.base64url: alphabet, length and
+# unused bits, stated by character sets), fails with BadEncoding. The
+# signature is checked first: with any other c the error is BadSignature.
+law jwt_rejects_bad_encoding:
+  for +secret: List<&2, U32>
+  for +a: String
+  for +b: String
+  for za: {JwtSpec.dots(a) == 0n : Nat}
+  for zb: {JwtSpec.dots(b) == 0n : Nat}
+  for bad: {JwtSpec.base64url(a) && JwtSpec.base64url(b) == False{} : Bool}
+  {Jwt.open(secret, a ++ ("." ++ (b ++ ("." ++ Base64.encode(HMAC.sha256(secret, Utf8.encode(a ++ ("." ++ b))), True{}, False{}))))) == Fail{Jwt.BadEncoding{}} : Result<&2, &2, Jwt.Error, Jwt.Parts>}
+
+# For every secret, time, leeway, payload segment and signature segment: if
+# the header segment decodes to a JSON object that does not have exactly one
+# member named "alg" holding the string "HS256" (absent, repeated, non-string
+# or another algorithm; JwtSpec.alg_accepted counts members itself), verify
+# fails. Tokens without exactly three segments fail by jwt_rejects_malformed.
+law jwt_verify_rejects_bad_alg:
+  for +secret: List<&2, U32>
+  for +a: String
+  for +b: String
+  for +c: String
+  for +now: Nat
+  for +leeway: Nat
+  for +header: List<&2, U32>
+  for +fields: List<&2, Json.Field>
+  for za: {JwtSpec.dots(a) == 0n : Nat}
+  for zb: {JwtSpec.dots(b) == 0n : Nat}
+  for zc: {JwtSpec.dots(c) == 0n : Nat}
+  for decoded: {Base64.decode(a, True{}, False{}) == Some{header} : Maybe<&2, List<&2, U32>>}
+  for parsed: {Json.parse(header) == Done{Json.JObject{fields}} : Result<&2, &2, Json.Error, Json.Json>}
+  for bad: {JwtSpec.alg_accepted(fields) == False{} : Bool}
+  {JwtSpec.failed(Jwt.verify(secret, a ++ ("." ++ (b ++ ("." ++ c))), now, leeway)) == True{} : Bool}
+
+# With canonical segments, the correct signature and no repeated header
+# member names, such a header fails with exactly BadAlgorithm.
+law jwt_verify_bad_alg_exact:
+  for +secret: List<&2, U32>
+  for +a: String
+  for +b: String
+  for +now: Nat
+  for +leeway: Nat
+  for +header: List<&2, U32>
+  for +payload: List<&2, U32>
+  for +fields: List<&2, Json.Field>
+  for za: {JwtSpec.dots(a) == 0n : Nat}
+  for zb: {JwtSpec.dots(b) == 0n : Nat}
+  for dh: {Base64.decode(a, True{}, False{}) == Some{header} : Maybe<&2, List<&2, U32>>}
+  for dp: {Base64.decode(b, True{}, False{}) == Some{payload} : Maybe<&2, List<&2, U32>>}
+  for parsed: {Json.parse(header) == Done{Json.JObject{fields}} : Result<&2, &2, Json.Error, Json.Json>}
+  for distinct: {JwtSpec.distinct(fields) == True{} : Bool}
+  for bad: {JwtSpec.alg_accepted(fields) == False{} : Bool}
+  {Jwt.verify(secret, a ++ ("." ++ (b ++ ("." ++ Base64.encode(HMAC.sha256(secret, Utf8.encode(a ++ ("." ++ b))), True{}, False{})))), now, leeway) == Fail{Jwt.BadAlgorithm{}} : Result<&2, &2, Jwt.Error, Json.Json>}
+
+# The CSRF decision equals CsrfSpec.allows for every policy (configured
+# origins and optional scheme), method and header combination. The spec
+# inspects only non-GET/HEAD requests with a form-like or absent
+# Content-Type; trusts Sec-Fetch-Site: same-origin, a listed source, or the
+# scheme://Host origin unless Sec-Fetch-Site is cross-site; takes Origin over
+# Referer; and never trusts a missing or unparsable source such as "null".
+law csrf_decision_spec:
+  for +origins: List<&2, String>
+  for +scheme: Maybe<&2, String>
+  for +method: Request.Method
+  for +content_type: Maybe<&2, String>
+  for +site: Maybe<&2, String>
+  for +origin: Maybe<&2, String>
+  for +referer: Maybe<&2, String>
+  for +host: Maybe<&2, String>
+  {CsrfPolicy.decide(CsrfPolicy.Policy{origins, scheme}, method, content_type, site, origin, referer, host) == CsrfSpec.allows(origins, scheme, method, content_type, site, origin, referer, host) : Bool}

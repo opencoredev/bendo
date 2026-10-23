@@ -196,11 +196,43 @@ covered.
   payload.
 - `jwt_rejects_bad_signature`: every token `a.b.c` with dot-free segments whose
   `c` is not the base64url HMAC-SHA256 of `a.b` fails with `BadSignature`.
+- `jwt_rejects_malformed`: every token whose number of `.` characters is not
+  two fails with `Malformed`.
+- `jwt_rejects_bad_encoding`: a correctly signed `a.b.c` whose `a` or `b` is
+  not strict unpadded base64url fails with `BadEncoding`. Strictness is stated
+  independently in `proof/jwt-spec.bend` (`base64url`): alphabet characters
+  only, a length that is not one more than a multiple of four, and zero unused
+  bits in the last character.
+- `jwt_verify_rejects_bad_alg`: if the header segment decodes to a JSON object
+  that does not have exactly one `alg` member holding the string `HS256`
+  (`alg_accepted` counts the members itself), `verify` fails, whatever the
+  signature, payload, time and leeway.
+- `jwt_verify_bad_alg_exact`: with canonical segments, the correct signature
+  and no repeated header member names, that failure is exactly `BadAlgorithm`.
+- `csrf_decision_spec`: the CSRF decision equals `CsrfSpec.allows` in
+  `proof/csrf-spec.bend` for every policy, method and header combination. The
+  spec restates the policy above without calling the middleware's helpers.
+  Origin serialization (`src/http/origin.bend`) and the media-type essence
+  (`src/http/media.bend`) are shared parsing primitives covered by the
+  integration tests, not by this law.
 
-The claim layer (JSON parsing, `alg`, `exp`, `nbf`, `iat`) is covered by
-integration tests, not laws. A law that `verify(secret, sign(secret, claims))`
-returns the claims needs a JSON write-then-parse roundtrip law, which Bendo does
-not have yet.
+The per-character facts behind `jwt_rejects_bad_encoding` are generated:
+`bun scripts/gen-base64url-chars.ts > proof/base64url-chars.bend` rebuilds
+them.
+
+The claim layer's time checks (`exp`, `nbf`, `iat`) are covered by integration
+tests, not laws. The claim round trip is pending on BND-79's JSON round trip
+(see [JSON](data/json.md)). Stated precisely, it is: for every claim object in
+an independently specified JSON round-trip domain (defined to include
+duplicate keys and number spelling), if signing succeeds and its optional
+`exp`/`nbf`/`iat` satisfy the documented checks at `now` and `leeway`,
+verifying the resulting token returns exactly that claim object. In Bend terms
+it will quantify over `fields`, require `Json.admissible(JObject{fields})`
+(BND-79's domain, which fixes number spelling), `JwtSpec.distinct(fields)`
+(which excludes duplicate keys, since `verify` rejects them),
+`Jwt.sign(secret, JObject{fields}) == Done{token}` and an independent
+restatement of the three time checks, and conclude
+`Jwt.verify(secret, token, now, leeway) == Done{JObject{fields}}`.
 
 Verify with:
 
