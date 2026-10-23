@@ -4,7 +4,14 @@
   "description": "TypeScript toolkit for Bendo, a Hono-style web framework for the Bend language",
   "license": "MIT",
   "type": "module",
-  "bin": { "bendo": "./src/cli.ts" },
-  "exports": { ".": "./src/index.ts" },
-  "repository": { "type": "git", "url": "https://github.com/opencoredev/bendo" }
+  "bin": {
+    "bendo": "./src/cli.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/opencoredev/bendo"
+  }
 }

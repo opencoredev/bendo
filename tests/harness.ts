@@ -12,7 +12,10 @@ export function build(entry: string): string {
   const bend = findBend();
   if (bend.kind === "missing") throw new Error("bend is not installed");
   const out = join(mkdtempSync(join(tmpdir(), "bendo-test-")), "server");
-  const run = Bun.spawnSync([bend.path, join(ROOT, entry), "-o", out], { stdout: "pipe", stderr: "pipe" });
+  const run = Bun.spawnSync([bend.path, join(ROOT, entry), "-o", out], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   if (run.exitCode !== 0) throw new Error(`bend build failed:\n${run.stdout}${run.stderr}`);
   return out;
 }
@@ -20,12 +23,26 @@ export function build(entry: string): string {
 /** Starts a compiled server on a free port and waits until it answers. */
 export async function start(binary: string): Promise<RunningServer> {
   const port = 20000 + Math.floor(Math.random() * 20000);
-  const proc = Bun.spawn([binary], { env: { ...process.env, PORT: String(port) }, stdout: "pipe", stderr: "pipe" });
+  const proc = Bun.spawn([binary], {
+    env: { ...process.env, PORT: String(port) },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   const url = `http://127.0.0.1:${port}`;
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline) {
-    const up = await fetch(url).then(() => true, () => false);
-    if (up) return { url, [Symbol.asyncDispose]: async () => { proc.kill(); await proc.exited; } };
+    const up = await fetch(url).then(
+      () => true,
+      () => false,
+    );
+    if (up)
+      return {
+        url,
+        [Symbol.asyncDispose]: async () => {
+          proc.kill();
+          await proc.exited;
+        },
+      };
     await Bun.sleep(50);
   }
   proc.kill();

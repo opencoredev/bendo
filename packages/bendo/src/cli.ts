@@ -15,7 +15,9 @@ function doctor(): number {
       process.stdout.write(`bend ${bend.version} at ${bend.path}\n`);
       return 0;
     case "missing":
-      process.stderr.write("bend not found. Install it: curl -fsSL https://bend-lang.com/install.sh | sh\n");
+      process.stderr.write(
+        "bend not found. Install it: curl -fsSL https://bend-lang.com/install.sh | sh\n",
+      );
       return 1;
     default: {
       const _exhaustive: never = bend;
