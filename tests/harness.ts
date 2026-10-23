@@ -32,14 +32,14 @@ type StartAttempt =
   | { kind: "exited"; url: string; stderr: string }
   | { kind: "timeout"; url: string };
 
-async function attempt(binary: string): Promise<StartAttempt> {
+async function attempt(binary: string, hostname: string): Promise<StartAttempt> {
   const port = 20000 + Math.floor(Math.random() * 20000);
   const proc = Bun.spawn([binary], {
     env: { ...process.env, PORT: String(port) },
     stdout: "pipe",
     stderr: "pipe",
   });
-  const url = `http://127.0.0.1:${port}`;
+  const url = `http://${hostname}:${port}`;
   let exited = false;
   void proc.exited.then(() => {
     exited = true;
@@ -73,10 +73,10 @@ async function attempt(binary: string): Promise<StartAttempt> {
  * Starts a compiled server on a random port and waits until it answers.
  * A server that exits before answering (for example on a port collision) is retried on a new port.
  */
-export async function start(binary: string): Promise<RunningServer> {
+export async function start(binary: string, hostname = "127.0.0.1"): Promise<RunningServer> {
   const failures: string[] = [];
   for (let i = 0; i < START_ATTEMPTS; i++) {
-    const result = await attempt(binary);
+    const result = await attempt(binary, hostname);
     switch (result.kind) {
       case "up":
         return result.server;

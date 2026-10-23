@@ -3,6 +3,13 @@
 import Base
 import ./http/request.bend as R
 import ./http/body.bend as Body
+import ./app/config.bend as Config
+import ./app/manifest.bend as Manifest
+import ./app/table.bend as Table
+import ./app/handle.bend as Handle
+import ./http/response.bend as Response
+import ./http/write_response.bend as Write
+import ./http/bytes.bend as Bytes
 
 type Config is Data:
   Config{port: U32, body_limit: U32}
@@ -88,38 +95,39 @@ type ConnectionEvent is Type:
   Read{read: Socket & Result<&1, &1, U32 & String, Maybe<&1, List<&2, U32>>>, state: Body.State}
 
 @unsafe
-def talk(~app: R.Req -> List<&2, U32> -> List<&2, U32>, event: ConnectionEvent, +limit: U32) -> IO(Unit):
+def talk(~Env: Data, ~app: R.Req -> List<&2, U32> -> Env -> IO(List<&2, U32>), event: ConnectionEvent, +env: Env, +limit: U32) -> IO(Unit):
   match event:
     case Work{s, Body.Complete{req, body, trailers, rest}}:
       do IO<Unit>:
-        out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- TCP.send_bytes(s, app(req, body))
+        bytes : List<&2, U32> <- app(req, body, env)
+        out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- TCP.send_bytes(s, bytes)
         sent(out)
     case Work{s, Body.Bad{status}}:
       reject(s, status)
     case Work{s, state}:
-      IO.bind(Socket & Result<&1, &1, U32 & String, Maybe<&1, List<&2, U32>>>, Unit, TCP.recv_bytes(s, 4096), read => talk(~app, Read{read, state}, limit))
+      IO.bind(Socket & Result<&1, &1, U32 & String, Maybe<&1, List<&2, U32>>>, Unit, TCP.recv_bytes(s, 4096), read => talk(~Env, ~app, Read{read, state}, env, limit))
     case Read{(sock, Done{Some{xs}}), state}:
-      talk(~app, Fed{sock, Body.feed(xs, state, limit)}, limit)
+      talk(~Env, ~app, Fed{sock, Body.feed(xs, state, limit)}, env, limit)
     case Fed{sock, (next, send)}:
-      IO.bind(Socket, Unit, interim(sock, send), s => talk(~app, Work{s, next}, limit))
+      IO.bind(Socket, Unit, interim(sock, send), s => talk(~Env, ~app, Work{s, next}, env, limit))
     case Read{(sock, Done{None{}}), state}:
       reject(sock, 400)
     case Read{(sock, Fail{e}), state}:
       Socket.close(sock)
 
-def conn(~app: R.Req -> List<&2, U32> -> List<&2, U32>, m: Listener & Result<&1, &1, U32 & String, Socket>, limit: U32) -> IO(Listener):
+def conn(~Env: Data, ~app: R.Req -> List<&2, U32> -> Env -> IO(List<&2, U32>), m: Listener & Result<&1, &1, U32 & String, Socket>, +env: Env, limit: U32) -> IO(Listener):
   (l, r) = m
   do IO<Listener>:
     s : Socket <- IO.pass(Socket, r)
-    IO.spawn(Unit, talk(~app, Work{s, Body.initial()}, limit))
+    IO.spawn(Unit, talk(~Env, ~app, Work{s, Body.initial()}, env, limit))
     return l
 
 @unsafe
-def loop(~app: R.Req -> List<&2, U32> -> List<&2, U32>, l: Listener, +limit: U32) -> IO(Unit):
+def loop(~Env: Data, ~app: R.Req -> List<&2, U32> -> Env -> IO(List<&2, U32>), l: Listener, +env: Env, +limit: U32) -> IO(Unit):
   do IO<Unit>:
     m : Listener & Result<&1, &1, U32 & String, Socket> <- TCP.accept(l)
-    l2 : Listener <- conn(~app, m, limit)
-    loop(~app, l2, limit)
+    l2 : Listener <- conn(~Env, ~app, m, env, limit)
+    loop(~Env, ~app, l2, env, limit)
 
 def port_read(m: Maybe<&2, U32>, +fallback: U32) -> U32:
   match m:
@@ -135,8 +143,8 @@ def port_or(r: Result<&1, &1, U32 & String, String>, +fallback: U32) -> U32:
     case Fail{e}:
       fallback
 
-# Temporary config/handler surface; BND-12 adds the full server config,
-# BND-11 the response writer/keep-alive, BND-21 body accessors on context.
+# Compatibility surface for byte-response consumers. New apps use B.serve
+# and app/config.bend; BND-11 adds connection reuse to the shared loop.
 def serve_config(~app: R.Req -> List<&2, U32> -> List<&2, U32>, config: Config) -> IO(Unit):
   Config{fallback, +limit} = config
   do IO<Unit>:
@@ -144,7 +152,40 @@ def serve_config(~app: R.Req -> List<&2, U32> -> List<&2, U32>, config: Config) 
     +port : U32 = port_or(env, fallback)
     l : Listener <- IO.try(Listener, TCP.listen("127.0.0.1", port))
     IO.print("bendo listening on http://127.0.0.1:" ++ U32.show(port))
-    loop(~app, l, limit)
+    loop(~Unit, ~(req => body => env => IO.pure(List<&2, U32>, app(req, body))), l, Unit{}, limit)
 
 def serve(~app: R.Req -> List<&2, U32> -> List<&2, U32>, port: U32) -> IO(Unit):
   serve_config(~app, defaults(port))
+
+# Responses from Handle already carry method-aware framing and no HEAD body.
+def encoded(res: Response.Res) -> List<&2, U32>:
+  Response.Res{status, headers, body, rep} = res
+  Bytes.append(Bytes.encode(Write.status_text(status) ++ Write.headers_text(headers) ++ "\r\n\r\n"), body)
+
+type State<-Tag: Data, -Env: Data> is Data:
+  State{table: Table.Table<Tag>, env: Env}
+
+def respond(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Handle.Ctx -> Env -> IO(Response.Res), req: R.Req, body: List<&2, U32>, state: State<Tag, Env>) -> IO(List<&2, U32>):
+  State{table, env} = state
+  do IO<List<&2, U32>>:
+    res : Response.Res <- Handle.handle(~Tag, ~Env, ~dispatch, table, env, req, body)
+    return encoded(res)
+
+def startup(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Handle.Ctx -> Env -> IO(Response.Res), +table: Table.Table<Tag>, env: Env, config: Config.Config, manifest: Bool) -> IO(Unit):
+  match config manifest:
+    case _ True{}:
+      do IO<Unit>:
+        IO.print(Manifest.json(Tag, table))
+        IO.exit(0)
+    case Config.Config{+host, +fallback, +limit, header_limit, idle, head, body, max_requests, keep_alive, router} False{}:
+      do IO<Unit>:
+        port_env : Result<&1, &1, U32 & String, String> <- IO.get_env("PORT")
+        +port : U32 = Config.port_env(port_env, fallback)
+        listener : Listener <- IO.try(Listener, TCP.listen(host, port))
+        IO.print("bendo listening on http://" ++ host ++ ":" ++ U32.show(port))
+        loop(~State<Tag, Env>, ~(req => body => state => respond(~Tag, ~Env, ~dispatch, req, body, state)), listener, State{table, env}, limit)
+
+def run(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Handle.Ctx -> Env -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config) -> IO(Unit):
+  do IO<Unit>:
+    args : List<String> <- IO.args()
+    startup(~Tag, ~Env, ~dispatch, table, env, config, Manifest.argv(args))
