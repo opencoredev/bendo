@@ -67,8 +67,9 @@ Constraints apply to the decoded value, before a match succeeds.
 
 A character class contains ASCII literals from space through `~`, or ascending
 ranges such as `a-z`. It cannot be empty. `-` is literal only at the first or
-last position; `[a-b-c]` is rejected. `\`, `[`, `]`, `^`, `{` and `}` cannot
-be class literals; there are no escapes, negation or nested classes. The suffix
+last position; `[a-b-c]` is rejected. `/`, `\`, `[`, `]`, `^`, `{` and `}`
+cannot be class literals (a pattern is split at every `/` before constraints
+are read, so `/:x{[a/]+}` is rejected with `UnbalancedBraces`); there are no escapes, negation or nested classes. The suffix
 is either `+` or `{n}`, where decimal `n` is between 1 and 4294967295 (leading
 zeros are allowed). No other regex syntax is supported. In particular,
 `:path{.+}` is rejected; use `*path`.
