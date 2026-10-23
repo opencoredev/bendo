@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "jose": "^6.2.13",
     "oxfmt": "0.74.0",
     "oxlint": "1.89.0",
     "typescript": "^5.9.0"
