@@ -13,6 +13,11 @@ import ./proof/line.bend as Line
 import ./proof/scanner.bend as Scanner
 import ./proof/printable.bend as Printable
 import ./proof/support.bend as Support
+import ./src/data/urlencoded.bend as Form
+import ./src/data/utf8.bend as Utf8
+import ./proof/forms.bend as FormSpec
+import ./proof/percent.bend as Percent
+import ./proof/utf8.bend as Utf8Proof
 
 def Laws.text_body_after_blank(body):
   ("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nConnection: close", ({==}, {==}))
@@ -77,3 +82,14 @@ def Laws.parsed_request_line_path(method, path, query, version, valid):
 # The single-header obligation from the request-head round trip.
 def Laws.header_line_roundtrip(req, name, value, valid):
   Laws.header_fields(req, name, value, valid)
+
+# BND-29: URL-encoded data and ordered repeated-key lookup.
+
+def Laws.form_queries_all_in_order(pairs, key):
+  FormSpec.ordered(pairs, key)
+
+def Laws.query_component_roundtrip(s, valid):
+  Percent.component_roundtrip(s, False{}, Utf8Proof.roundtrip(s, valid))
+
+def Laws.form_component_roundtrip(s, valid):
+  Percent.component_roundtrip(s, True{}, Utf8Proof.roundtrip(s, valid))

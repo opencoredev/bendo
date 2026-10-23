@@ -8,6 +8,9 @@ import ./src/http/request.bend as Request
 import ./src/http/parse.bend as Parse
 import ./src/http/write.bend as Write
 import ./proof/support.bend as Support
+import ./src/data/urlencoded.bend as Form
+import ./src/data/utf8.bend as Utf8
+import ./proof/forms.bend as FormSpec
 
 # LAW: a text response is a head with no blank line in it, then a blank
 # line, then the body. So the first blank line in the response is the one
@@ -507,3 +510,26 @@ law method_recover:
   for +m: Request.Method
   for +ok: {Request.method_valid(m) == True{} : Bool}
   {Request.method(Request.method_text(m)) == m : Request.Method}
+
+# BND-29: URL-encoded data and ordered repeated-key lookup.
+
+# Every String of Unicode scalar values survives query-component encoding.
+# Utf8.valid is the independent Unicode range/surrogate predicate.
+law query_component_roundtrip:
+  for +s: String
+  for +valid: {Utf8.valid(s) == True{} : Bool}
+  {Form.decode(Form.encode(s)) == Done{s} : Result<&2, &2, Form.Error, String>}
+
+# Every String of Unicode scalar values survives WHATWG form encoding,
+# including space -> '+' and literal '+' -> '%2B'.
+law form_component_roundtrip:
+  for +s: String
+  for +valid: {Utf8.valid(s) == True{} : Bool}
+  {Form.decode_form(Form.encode_form(s)) == Done{s} : Result<&2, &2, Form.Error, String>}
+
+# For every ordered list and key, lookup returns exactly all matching values,
+# in order. The specification filters whole entries before projecting values.
+law form_queries_all_in_order:
+  for +pairs: List<&2, Form.Entry>
+  for +key: String
+  {Form.queries(pairs, key) == FormSpec.spec(pairs, key) : List<&2, String>}
