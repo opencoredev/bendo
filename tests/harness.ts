@@ -107,7 +107,9 @@ export function compile(entry: string, target: Target): string {
       { stdout: "pipe", stderr: "pipe" },
     );
     if (run.exitCode !== 0)
-      throw new Error(`bend build failed (${entry}):\n${run.stdout}${run.stderr}`);
+      throw new Error(
+        `bend build failed (${entry}, exit ${run.exitCode}, signal ${run.signalCode}):\n${run.stdout}${run.stderr}`,
+      );
     // Each writer publishes a complete file atomically. Another worker may have
     // published the same graph meanwhile; replacing it is safe on POSIX.
     if (!existsSync(output)) renameSync(join(temporary, name), output);
