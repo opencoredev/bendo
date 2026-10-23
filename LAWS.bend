@@ -7,6 +7,9 @@ import ./proof/manifest-spec.bend as ManifestSpec
 import ./proof/manifest-built-spec.bend as ManifestBuiltSpec
 import ./proof/compose-laws.bend as ComposeLaws
 
+# BND-32
+import ./proof/signed-cookie-laws.bend as SignedCookieLaws
+
 # BND-31
 import ./proof/cookie-ows-laws.bend as CookieOwsLaws
 import ./proof/cookie-serialization-laws.bend as CookieSerializationLaws

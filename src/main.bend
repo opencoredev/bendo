@@ -19,6 +19,7 @@ import ./app/store.bend as Store
 import ./app/store_actor.bend as StoreActor
 import ./data/json.bend as Json
 import ./data/cookie.bend as Cookie
+import ./data/signed-cookie.bend as SignedCookie
 import ./serve.bend as Serve
 import ./http/request.bend as Request
 import ./http/response.bend as Response
@@ -152,6 +153,12 @@ def cookies(c: Handle.Ctx) -> List<&2, Cookie.Entry>: Context.cookies(Unit, c)
 def cookie(c: Handle.Ctx, name: String) -> Maybe<&2, String>: Context.cookie(Unit, c, name)
 def set_cookie(c: Handle.Ctx, name: String, value: String, options: Cookie.Options) -> Result<&2, &2, Cookie.Error, Handle.Ctx>: Context.set_cookie(Unit, c, name, value, options)
 def delete_cookie(c: Handle.Ctx, name: String, options: Cookie.Options) -> Result<&2, &2, Cookie.Error, Handle.Ctx>: Context.delete_cookie(Unit, c, name, options)
+
+def set_signed_cookie(c: Handle.Ctx, name: String, value: String, keys: SignedCookie.Keys, options: Cookie.Options) -> Result<&2, &2, Cookie.Error, Handle.Ctx>:
+  Context.set_signed_cookie(Unit, c, name, value, keys, options)
+
+def signed_cookie(c: Handle.Ctx, name: String, keys: SignedCookie.Keys) -> Maybe<&2, String>:
+  Context.signed_cookie(Unit, c, name, keys)
 
 # Authentication and CSRF built-ins. Credentials and secrets live in the
 # reusable route table, like Hono's middleware options.

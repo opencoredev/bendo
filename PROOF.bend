@@ -4,6 +4,9 @@ import ./proof/manifest.bend as ManifestProof
 import ./proof/manifest-built.bend as ManifestBuiltProof
 import ./proof/compose.bend as ComposeProof
 
+# BND-32
+import ./proof/signed-cookie.bend as SignedCookieProof
+
 # BND-31
 import ./proof/cookie-ows.bend as CookieOwsProof
 import ./proof/cookie-serialization.bend as CookieSerializationProof
