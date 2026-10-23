@@ -180,3 +180,14 @@ unchecked primitive for scalar strings; use the context setter or `serialize`
 for values from outside your application. Run
 `bun test --timeout 30000 tests/cookies-signed.test.ts` for native HTTP and `.mjs`
 roundtrips, rotation, tampering and Hono-algorithm interoperability checks.
+
+The signed-cookie laws in `proof/signed-cookie-laws.bend` prove structural
+correctness of digest comparison, authentication with the first or any listed
+key, rejection when every listed HMAC differs, empty-list configuration
+rejection, and percent-codec roundtrip. These are checked through `PROOF.bend`.
+They do not yet prove the full public wire roundtrip. The conditional
+`wire_digest` composition lemma still needs universal proofs that HMAC output
+is an octet list, the complete value/dot/Base64 payload contains only Unicode
+scalars, and the last-dot split recovers that payload's value and signature.
+Refinement of arbitrary-wire rejection against an independent wire decoder
+also remains open. The HTTP and `.mjs` tests cover those wire paths at runtime.
