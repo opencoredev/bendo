@@ -5,6 +5,7 @@ import ./encoding.bend as E
 import ./constraint.bend as C
 import ./octet-proofs.bend as OctetProof
 import ./codec-bits.bend as CodecBits
+import ./utf8-proofs.bend as Utf8Proof
 
 # A Boolean equality is usable evidence, including in impossible branches.
 def true_type(b: Bool) -> Type:
