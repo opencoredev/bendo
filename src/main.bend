@@ -8,6 +8,7 @@ import ./app/handle.bend as Handle
 import ./app/context.bend as Context
 import ./app/errors.bend as Errors
 import ./app/store.bend as Store
+import ./app/store_actor.bend as StoreActor
 import ./data/json.bend as Json
 import ./data/cookie.bend as Cookie
 import ./serve.bend as Serve
@@ -97,10 +98,10 @@ def Store(-S: Data) -> Data: Store.Store<S>
 def StoreError() -> Data: Store.Error
 
 def store(-S: Data, initial: S) -> IO(Store.Store<S>):
-  Store.store(S, initial)
+  StoreActor.store(S, initial)
 
 def store_with_timeout(-S: Data, initial: S, timeout_ms: U32) -> IO(Store.Store<S>):
-  Store.store_with_timeout(S, initial, timeout_ms)
+  StoreActor.store_with_timeout(S, initial, timeout_ms)
 
 def store_get(-S: Data, handle: Store.Store<S>) -> IO(Result<&2, &2, Store.Error, S>):
   Store.get(S, handle)
