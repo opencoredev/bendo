@@ -4,7 +4,18 @@ import { dirname, resolve } from "node:path";
 import type { ChildProcess } from "node:child_process";
 import pkg from "../package.json" with { type: "json" };
 import { findBend } from "./bend.ts";
-import { Pipeline, BuildCancelled, launch, log, stop, type Target } from "./pipeline.ts";
+import {
+  Pipeline,
+  BuildCancelled,
+  generateSchemas,
+  launch,
+  log,
+  stop,
+  type Target,
+} from "./pipeline.ts";
+import { doctor } from "./doctor.ts";
+import { prove } from "./prove.ts";
+import { fetchManifest } from "./manifest.ts";
 import { scaffold } from "./scaffold.ts";
 import { sourceGraph } from "./sources.ts";
 import { devProxy, privatePort, waitForServer } from "./dev-server.ts";
@@ -16,7 +27,10 @@ Usage:
   bendo dev [entry] [--native]  watch and restart with Bun JS (or native) (default: main.bend)
   bendo build [entry]   build dist/server (default: main.bend)
   bendo start          run dist/server; honors PORT (default: 8787)
-  bendo doctor         check that Bend is installed
+  bendo routes [entry] print the method/path table (default: main.bend)
+  bendo prove [file]   check proofs (default: PROOF.bend)
+  bendo gen [entry]    validate the manifest; types land in BND-56
+  bendo doctor         check Bend, Lean/elan, clang and Bun versions
   bendo --version      print the version
 
 Each command accepts --help. Requires Bun and Bend on PATH (or ~/.bend/bin).`;
@@ -158,7 +172,7 @@ async function dev(entry: string, target: Target): Promise<number> {
   return 0;
 }
 
-type Command = "new" | "dev" | "build" | "start" | "doctor";
+type Command = "new" | "dev" | "build" | "start" | "doctor" | "routes" | "prove" | "gen";
 function parseCommand(value: string): Command {
   switch (value) {
     case "new":
@@ -166,6 +180,9 @@ function parseCommand(value: string): Command {
     case "build":
     case "start":
     case "doctor":
+    case "routes":
+    case "prove":
+    case "gen":
       return value;
     default:
       throw new Error(`Unknown command: ${value}\n${USAGE}`);
@@ -201,18 +218,32 @@ async function main(args: string[]): Promise<number> {
       scaffold(argument);
       log(`Created ${argument}. Run bendo dev in that directory.`);
       return 0;
-    case "doctor": {
-      const bend = findBend();
-      switch (bend.kind) {
-        case "found":
-          log(`bend ${bend.version} at ${bend.path}`);
-          return 0;
-        case "missing":
-          throw new Error("bend not found. Install Bend from https://bend-lang.com");
-        default: {
-          const exhaustive: never = bend;
-          return exhaustive;
+    case "doctor":
+      return doctor();
+    case "prove":
+      return prove(argument ?? "PROOF.bend");
+    case "routes":
+    case "gen": {
+      const pipeline = new Pipeline();
+      const cancel = (): void => {
+        void pipeline.close();
+      };
+      process.once("SIGINT", cancel);
+      process.once("SIGTERM", cancel);
+      try {
+        const binary = await pipeline.build(argument ?? "main.bend");
+        if (parsed === "gen") await generateSchemas(binary);
+        else {
+          const manifest = fetchManifest(binary);
+          const width = Math.max(6, ...manifest.routes.map((route) => route.method.length));
+          log(`${"METHOD".padEnd(width)}  PATH`);
+          for (const route of manifest.routes) log(`${route.method.padEnd(width)}  ${route.path}`);
         }
+        return 0;
+      } finally {
+        process.removeListener("SIGINT", cancel);
+        process.removeListener("SIGTERM", cancel);
+        await pipeline.close();
       }
     }
     case "build": {

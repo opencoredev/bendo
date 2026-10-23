@@ -13,6 +13,7 @@ import { extname, join, resolve } from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import { stripVTControlCharacters } from "node:util";
 import { findBend } from "./bend.ts";
+import { fetchManifest, type Manifest } from "./manifest.ts";
 import { mapImports, sourceGraph } from "./sources.ts";
 
 export type Target = "js" | "native";
@@ -95,9 +96,19 @@ export function compilerDiagnostic(
   return `${entry}: location ${matches.length > 1 ? `ambiguous (${candidates})` : "unavailable"}: ${plain || "Bend compilation failed"}`;
 }
 
-/** Decision 0003 integration point. Replace this stage when BND-34/35/55 codegen lands. */
-export async function generateSchemas(): Promise<void> {
-  log("generate: schema generation pending BND-34/35/55 (no production generator)");
+/** Precompile schema seam; the manifest phase runs only after an app exists. */
+export async function generateSchemas(): Promise<void>;
+export async function generateSchemas(binary: string): Promise<Manifest>;
+export async function generateSchemas(binary?: string): Promise<void | Manifest> {
+  if (binary === undefined) {
+    log("generate: schema generation pending BND-34/35 (no production generator)");
+    return;
+  }
+  const manifest = fetchManifest(binary);
+  log(
+    `generate: validated ${manifest.routes.length} routes; type generation lands in BND-56 (no files written)`,
+  );
+  return manifest;
 }
 
 export class Pipeline {
