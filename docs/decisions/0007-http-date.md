@@ -87,3 +87,32 @@ the packaged root. Absolute imports and paths above the filesystem are
 rejected. No publication was attempted: publishing is public and permanent,
 and BND-74 owns the actual publish test. Both twins must remain beside
 `clock.bend` in the published dependency graph.
+
+## Pending laws (BND-80)
+
+The codec is tested, not yet proven. BND-80 will add these two laws to
+`LAWS.bend` once they check with `--verdict`:
+
+```bend
+law http_date_roundtrip:
+  for +second: Nat
+  for bound: {Nat.is_le(second, HttpDate.max_seconds()) == True{} : Bool}
+  {HttpDate.parse_imf(HttpDate.format_imf(second)) == Some{second} : Maybe<&2, Nat>}
+
+law http_date_imf_spec:
+  for +second: Nat
+  for bound: {Nat.is_le(second, HttpDate.max_seconds()) == True{} : Bool}
+  {HttpDateSpec.denotes(HttpDate.format_imf(second), second) == True{} : Bool}
+```
+
+The second law is needed because the round trip alone can't catch a wrong weekday:
+the parser checks weekday names through the formatter. `HttpDateSpec.denotes`
+must be written independently of the production codec. It must check the exact
+IMF grammar and English tokens, the Gregorian calendar with century leap rules,
+and the weekday, and confirm that the text denotes `second`.
+
+Bend 2.0.38 blocks both proofs as stated. `max_seconds()` is 253402300799, above
+the 2^32 literal limit, so it has to be computed. The checker expands computed
+Nats in unary and overflows above roughly 20,000 to 36,000. BND-80 may restate
+the bound in an equivalent form the checker can handle, such as a bound on the
+day count or civil year, with the equivalence explained in the law comment.

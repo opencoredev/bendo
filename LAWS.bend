@@ -2,7 +2,6 @@
 # Agents may add laws. Never delete or weaken one without a written reason
 # in the pull request.
 import Base
-import ./src/http/date.bend as HttpDate
 import ./src/app/table.bend as Table
 import ./proof/middleware-selection-spec.bend as MiddlewareSelectionSpec
 import ./src/app/middleware.bend as Middleware
@@ -938,11 +937,3 @@ law lifecycle_ordered_selection:
   for +path: String
   for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
   {Table.lifecycle(Tag, layers, path) == MiddlewareSelectionSpec.lifecycle(Tag, entries, path) : Table.Lifecycle<Tag>}
-
-# BND-10: every admissible Unix second survives IMF-fixdate serialization.
-# The only premise restricts the input to 1970-01-01..9999-12-31 inclusive.
-
-law http_date_roundtrip:
-  for +second: Nat
-  for bound: {Nat.is_le(second, HttpDate.max_seconds()) == True{} : Bool}
-  {HttpDate.parse_imf(HttpDate.format_imf(second)) == Some{second} : Maybe<&2, Nat>}
