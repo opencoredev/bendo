@@ -13,6 +13,7 @@ import ./app/context.bend as Context
 import ./http/response.bend as Response
 import ./http/write_response.bend as Write
 import ./http/bytes.bend as Bytes
+import ./http/date_wire.bend as DateWire
 
 type Config is Data:
   Config{port: U32, body_limit: U32}
@@ -66,7 +67,8 @@ def rejected(m: Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>) -
 
 def reject(s: Socket, status: U32) -> IO(Unit):
   do IO<Unit>:
-    out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- TCP.send_bytes(s, Write.write(R.Get{}, Response.body(status, Connection.headers([], True{}), [])))
+    bytes : List<&2, U32> <- DateWire.ensure(Write.write(R.Get{}, Response.body(status, Connection.headers([], True{}), [])))
+    out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- TCP.send_bytes(s, bytes)
     rejected(out)
 
 def continue_result(m: Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>) -> IO(Socket):
@@ -112,7 +114,8 @@ def talk(~Env: Data, ~app: R.Req -> List<&2, U32> -> Env -> Bool -> IO(Reply), e
         talk(~Env, ~app, Replied{s, state, rest, reply}, env, config)
     case Replied{s, state, rest, Reply{bytes, close, after}}:
       do IO<Unit>:
-        out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- TCP.send_bytes(s, bytes)
+        dated : List<&2, U32> <- DateWire.ensure(bytes)
+        out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- TCP.send_bytes(s, dated)
         after
         talk(~Env, ~app, Sent{out, state, rest, close}, env, config)
     case Work{s, state, Connection.Reject{status}}:

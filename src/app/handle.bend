@@ -14,6 +14,7 @@ import ../http/request.bend as Request
 import ../http/response.bend as Response
 import ../http/write_response.bend as Write
 import ../http/bytes.bend as Bytes
+import ../http/date_response.bend as DateResponse
 
 def Ctx() -> Data: Context.Ctx<Unit>
 
@@ -111,8 +112,9 @@ def pending_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.
 def returned(result: Response.Res & IO(Unit)) -> IO(Response.Res):
   (res, after) = result
   do IO<Response.Res>:
+    dated : Response.Res <- DateResponse.ensure(res)
     after
-    return res
+    return dated
 
 # For network-free consumers, returning the normalized response is the boundary.
 def handle_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, env: Env, req: Request.Req, body: List<&2, U32>) -> IO(Response.Res):
