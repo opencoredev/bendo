@@ -275,11 +275,23 @@ def slash_pattern(segs: List<&2, P.Segment>, strict: Bool) -> List<&2, P.Segment
     case False{}:
       List.reverse(&2, P.Segment, trim_pattern_rev(List.reverse(&2, P.Segment, segs)))
 
+def folded_equal(a: String, b: String) -> Bool:
+  String.eq(B.fold(a), B.fold(b))
+
+def folded_starts(a: String, b: String) -> Bool:
+  String.starts_with(B.fold(a), B.fold(b))
+
+def compare_path(pattern: P.Pattern, path: String, sensitive: Bool) -> Maybe<&2, P.Params>:
+  match sensitive:
+    case True{}:
+      P.match_path(pattern, path)
+    case False{}:
+      P.match_path_with(~folded_equal, ~folded_starts, pattern, path)
+
 def adapted_path(pattern: P.Pattern, path: String, opts: Options) -> Maybe<&2, P.Params>:
   match pattern path opts:
-    case P.Pattern{segs} SCon{'/', tail} Options{+strict, +sensitive}:
-      +normalized = slash_pattern(segs, strict)
-      P.match_path(P.Pattern{pattern_segments(normalized, sensitive)}, "/" ++ String.join(adapt_segments(normalized, slash_segments(P.path_segments(tail), strict), sensitive), "/"))
+    case P.Pattern{segs} SCon{'/', tail} Options{+strict, sensitive}:
+      compare_path(P.Pattern{slash_pattern(segs, strict)}, "/" ++ String.join(slash_segments(P.path_segments(tail), strict), "/"), sensitive)
     case _ _ _:
       None{}
 

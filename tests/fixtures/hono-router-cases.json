@@ -93,11 +93,9 @@
       "honoError": "",
       "expected": {
         "path": "1:1",
-        "method": "allow:GET, HEAD, POST, PUT, DELETE, CONNECT, OPTIONS, TRACE, PATCH"
+        "method": "1:1;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["all-standard-methods"]
+      "differences": []
     },
     {
       "id": "hono-004",
@@ -5669,11 +5667,9 @@
       "honoError": "",
       "expected": {
         "path": "1:1",
-        "method": "allow:GET, HEAD, POST, PUT, DELETE, CONNECT, OPTIONS, TRACE, PATCH"
+        "method": "1:1;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["all-standard-methods"]
+      "differences": []
     },
     {
       "id": "hono-169",

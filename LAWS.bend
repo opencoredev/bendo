@@ -540,7 +540,7 @@ law method_recover:
 # Every successfully compiled pattern roundtrips every independently admissible
 # ordered assignment. Admissibility checks exactly the capture names in order,
 # nonempty present non-wildcard values, constraints and Unicode scalars; only a
-# final optional capture may be omitted, and a wildcard may hold an empty value.
+# trailing chain of optional captures may be omitted, and a wildcard may hold an empty value.
 # It never invokes fill or match_path. Both filling success and matching success
 # are promised, so a filler that always fails cannot satisfy this law.
 law pattern_fill_match:

@@ -56,8 +56,8 @@ first pattern compilation failure. Invalid tables cannot be prepared or routed:
 the driver checks the shared path builder and method builder both reject them,
 and repeats the path build error in the two engine columns.
 
-The mutually exclusive case counts are 60 identical, 111 with principled
-differences only, and two awaiting the ALL-method extension. These are assertions,
+The mutually exclusive case counts are 62 identical and 111 with principled differences only. No fixture retains a
+BND-78 syntax-gap marker. These are assertions,
 not allowed failures. Every documented difference must continue producing its
 recorded result.
 
@@ -100,15 +100,9 @@ hono-054. Accepting these patterns does not remove those contracts.
 | --- | --- | --- | --- | --- |
 | registration-priority | hono-134 (1) | RegExpRouter prefers `/a*` over `/a/*` for `/a`. | Selects the earlier `/a/*` registration, with an empty `*` capture. | Registration order remains the BND-15 contract; wildcard spelling does not override it. |
 
-## Remaining gap
-
-[BND-78: Close the Hono routing syntax gaps](https://linear.app/opencoredev/issue/BND-78)
-also covers ALL matching extension methods. The two remaining fixtures keep
-`gap="BND-78"` until this method-layer change lands.
-
-| Category | Cases | Missing Hono behavior | Current Bendo result |
-| --- | --- | --- | --- |
-| all-standard-methods | hono-003, hono-168 (2) | ALL covering PURGE and UNKNOWN_METHOD | Returns 405 because ALL currently covers only nine standard methods. |
+ALL now accepts extension methods, including the PURGE and UNKNOWN_METHOD probes
+in hono-168 and hono-003. Both cases are identical. Finite method registrations
+retain exact, canonical Allow lists.
 
 ## Verification and limits
 
