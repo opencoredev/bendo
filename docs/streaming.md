@@ -12,7 +12,7 @@ A producer owns its state and returns one of these values from
 - `Failed{state}` aborts the connection without a terminating chunk.
 
 The state may be affine, so a later proxy producer can own an upstream socket.
-An SSE producer can encode an event into octets and use the same transport.
+[Server-Sent Events](sse.md) use the same transport.
 The cleanup template receives the final state exactly once, including when the
 client disconnects, a write times out, middleware replaces the response, or a
 bodyless response suppresses the producer. Cleanup must release any resources

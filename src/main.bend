@@ -2,6 +2,9 @@
 import Base
 import ./stream.bend as Stream
 import ./http/stream_types.bend as StreamTypes
+import ./sse.bend as Sse
+import ./http/sse.bend as SseCodec
+import ./http/sse_types.bend as SseTypes
 import ./app/observability.bend as Observation
 import ./mw/builtin.bend as Builtin
 import ./mw/cache.bend as Cache
@@ -224,3 +227,17 @@ def builtin_body_limit(id: Builtin.Builtin) -> Maybe<&2, U32>: Builtin.body_limi
 # Select BodyLimit tags before reading request payloads, using original scopes.
 def serve_limits_with(~Vars: Data, ~Tag: Data, ~select: Tag -> Maybe<&2, U32>, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config) -> IO(Unit):
   Serve.run_limits_with(~Vars, ~Tag, ~select, ~Env, ~dispatch, ~middleware, table, env, config)
+
+# Server-Sent Events over the same pull producer transport.
+def SseConfig() -> Data: SseTypes.Config
+def SseStep(-State: Type) -> Type: SseTypes.Step<State>
+def SseFrame() -> Data: SseCodec.Frame
+def sse_config() -> SseTypes.Config: Sse.defaults()
+def sse_message(event: Maybe<&2, String>, data: String, id: Maybe<&2, String>, retry: Maybe<&2, U32>) -> SseCodec.Frame: Sse.message(event, data, id, retry)
+def sse_data(data: String) -> SseCodec.Frame: Sse.message(None{}, data, None{}, None{})
+def sse_comment(text: String) -> SseCodec.Frame: Sse.comment_frame(text)
+def last_event_id(-Vars: Data, c: Context.Ctx<Vars>) -> Maybe<&2, String>: Sse.last_event_id(Vars, c)
+def stream_sse(~Vars: Data, ~State: Type, ~step: State -> IO(SseTypes.Step<State>), ~cleanup: State -> IO(Unit), c: Context.Ctx<Vars>, state: State, +config: SseTypes.Config) -> IO(Response.Res):
+  do IO<Response.Res>:
+    now : Nat <- IO.now()
+    stream(~Vars, ~SseTypes.Pump<State>, ~(p => Sse.pull(~State, ~step, p)), ~(p => Sse.release(~State, ~cleanup, p)), Sse.headers(Vars, c), SseTypes.Pump{state, config, now}, Sse.stream_config(config))
