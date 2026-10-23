@@ -19,6 +19,12 @@ import ./proof/forms.bend as FormSpec
 import ./proof/percent.bend as Percent
 import ./proof/utf8.bend as Utf8Proof
 
+import ./src/router/proofs.bend as PatternProof
+import ./src/router/pattern.bend as Pattern
+import ./src/router/compile-proofs.bend as CompileProof
+import ./src/router/equality-proofs.bend as EqualityProof
+import ./src/router/match-proofs.bend as MatchProof
+
 def Laws.text_body_after_blank(body):
   ("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nConnection: close", ({==}, {==}))
 
@@ -82,6 +88,20 @@ def Laws.parsed_request_line_path(method, path, query, version, valid):
 # The single-header obligation from the request-head round trip.
 def Laws.header_line_roundtrip(req, name, value, valid):
   Laws.header_fields(req, name, value, valid)
+
+# BND-14: compilation establishes clean, nonempty segment lists. Matching
+# induction composes the scalar codec roundtrip with split/join preservation,
+# including the omitted sole optional capture at the root path.
+def compiled_roundtrip(+pattern: Pattern.Pattern, +params: Pattern.Params,
+    good: {CompileProof.pattern_good(pattern) == True{} : Bool},
+    admitted: {Pattern.admissible(pattern, params) == True{} : Bool}) ->
+    &path: String -> {Pattern.fill(pattern, params) == Some{path} : Maybe<&2, String>} & {Pattern.match_path(pattern, path) == Some{params} : Maybe<&2, Pattern.Params>}:
+  match pattern:
+    case Pattern.Pattern{+segs}:
+      MatchProof.pattern_roundtrip(segs, params, good, admitted)
+
+def Laws.pattern_fill_match(source, pattern, compiled, params, admitted):
+  compiled_roundtrip(pattern, params, CompileProof.compiled_pattern_good(source, pattern, compiled), admitted)
 
 # BND-29: URL-encoded data and ordered repeated-key lookup.
 
