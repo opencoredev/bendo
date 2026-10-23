@@ -47,10 +47,11 @@ Every command supports `--help`.
   currently writes no type files or placeholders.
 - `bendo doctor` checks Bend, elan, Lean, clang, and Bun, printing versions and
   paths. Bend must match `.bend-version`; Lean must match `lean-toolchain`. A
-  versioned pin (`leanprover/lean4:v4.34.0`, `v4.34.0`) is compared with the
-  version Lean reports; a channel (`nightly`) or custom/linked toolchain only has
-  to be installed. Doctor reads the installed toolchain directly, so it never
-  downloads one.
+  pin is resolved by elan itself (`elan dump-state --no-net`), so shorthand
+  (`v4.34.0`), channels, custom origins and linked toolchains mean what they mean
+  to `lake`. An official release is compared with the version Lean reports;
+  anything else only has to be installed. Doctor runs the installed `lean`
+  binary directly and never downloads a toolchain.
   Pins come from the current directory when present, otherwise the toolkit checkout.
   Lean is selected explicitly from that pin, so no global elan default is needed.
   Lean is selected explicitly from that pin, so no global elan default is needed.

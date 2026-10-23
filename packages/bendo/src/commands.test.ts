@@ -6,11 +6,12 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { parseLeanPin } from "./doctor.ts";
+import { parseElanState } from "./doctor.ts";
 
 const cli = resolve(import.meta.dir, "cli.ts");
 const root = mkdtempSync(join(tmpdir(), "bendo-commands-"));
@@ -91,52 +92,69 @@ test("doctor never installs a missing pinned Lean toolchain", () => {
   expect(result.out).toContain(`elan toolchain install '${pin}'`);
 });
 
-test("lean-toolchain pins parse the way elan names them", () => {
-  expect(parseLeanPin("leanprover/lean4:v4.34.0")).toEqual({
-    kind: "release",
-    name: "leanprover/lean4:v4.34.0",
-    version: "4.34.0",
-  });
-  expect(parseLeanPin("v4.34.0")).toEqual({
-    kind: "release",
-    name: "leanprover/lean4:v4.34.0",
-    version: "4.34.0",
-  });
-  expect(parseLeanPin("4.35.0-rc1")).toEqual({
-    kind: "release",
-    name: "leanprover/lean4:v4.35.0-rc1",
-    version: "4.35.0-rc1",
-  });
-  expect(parseLeanPin("nightly")).toEqual({ kind: "official", name: "leanprover/lean4:nightly" });
-  expect(parseLeanPin("leanprover/lean4:nightly-2026-10-01")).toEqual({
-    kind: "official",
-    name: "leanprover/lean4:nightly-2026-10-01",
-  });
-  expect(parseLeanPin("local-linked")).toEqual({ kind: "custom", name: "local-linked" });
-  expect(parseLeanPin("a b'c")).toEqual({ kind: "invalid", text: "a b'c" });
+test("elan state parsing reads the resolved pin and installed toolchains", () => {
+  const state = parseElanState(
+    JSON.stringify({
+      toolchains: {
+        installed: [{ resolved_name: "leanprover/lean4:v4.34.0", path: "/e/toolchains/x" }],
+        resolved_active: { live: { Err: "offline" }, cached: "leanprover/lean4:v4.34.0" },
+      },
+    }),
+  );
+  expect(state?.resolved).toBe("leanprover/lean4:v4.34.0");
+  expect(state?.installed.get("leanprover/lean4:v4.34.0")).toBe("/e/toolchains/x");
+  expect(parseElanState("elan 4.2.4")).toBeNull();
+  expect(parseElanState("{}")).toEqual({ resolved: null, installed: new Map() });
 });
 
-test("doctor checks shorthand, channel and linked Lean pins without failing", () => {
-  for (const [text, directory, reported] of [
-    ["v4.99.0", "leanprover--lean4---v4.99.0", "Lean (version 4.99.0, x86_64)"],
-    ["nightly", "leanprover--lean4---nightly", "Lean (version 4.100.0-nightly, x86_64)"],
-    ["local-linked", "local-linked", "Lean (version 4.34.0, x86_64)"],
+/** A PATH directory holding the real elan, so pins resolve exactly as elan resolves them. */
+function realElan(directory: string): void {
+  const elan = Bun.which("elan");
+  if (elan === null) throw new Error("elan required");
+  copyFileSync(elan, join(directory, "elan"));
+}
+
+test("doctor resolves shorthand, custom-origin and linked Lean pins through elan", () => {
+  for (const [text, directory, version] of [
+    ["v4.99.0", "leanprover--lean4---v4.99.0", "4.99.0"],
+    ["4.99.0", "leanprover--lean4---v4.99.0", "4.99.0"],
+    ["myorg/lean4:custom", "myorg--lean4---custom", "4.34.0"],
+    ["local-linked", "local-linked", "4.34.0"],
   ] as const) {
-    const project = join(root, `pin-${directory}`);
-    mkdirSync(project);
+    const project = mkdtempSync(join(root, "pin-"));
     writeFileSync(join(project, ".bend-version"), "2.8.9\n");
     writeFileSync(join(project, "lean-toolchain"), `${text}\n`);
     fake(project, "bend", "bend 2.8.9");
-    fake(project, "elan", "elan 4.2.4");
+    realElan(project);
     fake(project, "clang", "clang version 18.1.3");
     fake(project, "bun", "1.4.4");
     const home = join(project, ".elan");
     const bin = join(home, "toolchains", directory, "bin");
-    mkdirSync(bin, { recursive: true });
-    fake(bin, "lean", reported);
+    if (directory === "local-linked") {
+      // `elan toolchain link` stores a linked toolchain as a symlink; elan only resolves those by name.
+      const target = join(project, "linked-build");
+      mkdirSync(join(target, "bin"), { recursive: true });
+      mkdirSync(join(home, "toolchains"), { recursive: true });
+      symlinkSync(target, join(home, "toolchains", directory));
+    } else mkdirSync(bin, { recursive: true });
+    fake(bin, "lean", `Lean (version ${version}, x86_64)`);
     const result = run(["doctor"], project, { ...hidden, PATH: project, ELAN_HOME: home });
     expect({ text, code: result.code, out: result.out }).toMatchObject({ text, code: 0 });
+    expect(result.out).toContain(`lean ${version} at ${bin}/lean: OK`);
   }
+});
+
+test("doctor reports an unresolved channel pin with its install command", () => {
+  const project = mkdtempSync(join(root, "pin-"));
+  writeFileSync(join(project, "lean-toolchain"), "stable\n");
+  realElan(project);
+  const home = join(project, ".elan");
+  mkdirSync(home);
+  const result = run(["doctor"], project, { ...hidden, PATH: project, ELAN_HOME: home });
+  expect(result.code).toBe(1);
+  expect(result.out).toContain("lean: missing");
+  expect(result.out).toContain("elan toolchain install 'stable'");
+  expect(existsSync(join(home, "toolchains"))).toBe(false);
 });
 
 test("doctor selects pinned Lean outside a project without a global default", () => {
@@ -145,7 +163,7 @@ test("doctor selects pinned Lean outside a project without a global default", ()
   const pin = readFileSync(resolve(import.meta.dir, "../../../lean-toolchain"), "utf8").trim();
   const bend = readFileSync(resolve(import.meta.dir, "../../../.bend-version"), "utf8").trim();
   fake(tools, "bend", `bend ${bend}`);
-  fake(tools, "elan", "elan 4.2.4");
+  realElan(tools);
   fake(tools, "clang", "clang version 18.1.3");
   fake(tools, "bun", "1.4.4");
   const home = join(root, "installed-elan");
@@ -182,7 +200,7 @@ test("doctor compares project pins and rejects failed or unparseable version pro
   const bin = join(home, "toolchains", "leanprover--lean4---v4.99.0", "bin");
   mkdirSync(bin, { recursive: true });
   fake(bin, "lean", "Lean (version 4.34.0, x86_64)");
-  fake(project, "elan", "elan 4.2.4");
+  realElan(project);
   fake(project, "clang", "Ubuntu clang version 18.1.3");
   fake(project, "bun", "1.4.4");
   const env = { ...hidden, PATH: project, ELAN_HOME: home };

@@ -1,6 +1,6 @@
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { resolve } from "node:path";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { findBend } from "./bend.ts";
 
 const bendInstall =
@@ -16,58 +16,82 @@ function pin(name: string): string {
   ).trim();
 }
 
-/**
- * A `lean-toolchain` pin as elan reads it. Official names expand to
- * `leanprover/lean4:<name>`; a release carries the version Lean reports.
- * Anything else is a custom or linked toolchain, kept as written.
- */
-type LeanPin =
-  | { kind: "release"; name: string; version: string }
-  | { kind: "official"; name: string }
-  | { kind: "custom"; name: string }
-  | { kind: "invalid"; text: string };
+/** What doctor reads from `elan dump-state`: the pin's resolved name and installed toolchains. */
+export type ElanState = { resolved: string | null; installed: Map<string, string> };
 
-export function parseLeanPin(text: string): LeanPin {
-  const release = /^(?:leanprover\/lean4:)?v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)$/.exec(text);
-  if (release?.[1] !== undefined)
-    return { kind: "release", name: `leanprover/lean4:v${release[1]}`, version: release[1] };
-  const channel = /^(?:leanprover\/lean4:)?((?:stable|beta|nightly)(?:-\d{4}-\d{2}-\d{2})?)$/.exec(
-    text,
-  );
-  if (channel?.[1] !== undefined)
-    return { kind: "official", name: `leanprover/lean4:${channel[1]}` };
-  if (/^[0-9A-Za-z][0-9A-Za-z._+-]*$/.test(text)) return { kind: "custom", name: text };
-  return { kind: "invalid", text };
+function member(value: unknown, key: string): unknown {
+  return typeof value === "object" && value !== null && key in value
+    ? Reflect.get(value, key)
+    : undefined;
+}
+
+export function parseElanState(text: string): ElanState | null {
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  const toolchains = member(json, "toolchains");
+  const active = member(toolchains, "resolved_active");
+  const live = member(member(active, "live"), "Ok");
+  const cached = member(active, "cached");
+  const installed = new Map<string, string>();
+  const list = member(toolchains, "installed");
+  if (Array.isArray(list))
+    for (const entry of list) {
+      const name = member(entry, "resolved_name");
+      const path = member(entry, "path");
+      if (typeof name === "string" && typeof path === "string") installed.set(name, path);
+    }
+  return {
+    resolved: typeof live === "string" ? live : typeof cached === "string" ? cached : null,
+    installed,
+  };
+}
+
+/**
+ * Let elan resolve the pin the way `lake` would (shorthand, channels, custom
+ * origins, linked and path toolchains), offline. `dump-state --no-net` only
+ * reads state; running the Lean proxy, even for `--version`, may install.
+ */
+function leanToolchain(
+  elan: string | null,
+  text: string,
+): { path: string | null; expected: string | null } {
+  if (elan === null) return { path: null, expected: null };
+  const directory = mkdtempSync(join(tmpdir(), "bendo-doctor-"));
+  try {
+    writeFileSync(join(directory, "lean-toolchain"), `${text}\n`);
+    const run = Bun.spawnSync([elan, "dump-state", "--no-net"], {
+      cwd: directory,
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 5000,
+    });
+    const state = run.exitCode === 0 ? parseElanState(run.stdout.toString()) : null;
+    if (state === null || state.resolved === null) return { path: null, expected: null };
+    const root = state.installed.get(state.resolved);
+    // Only official releases have a version to compare; channels and custom builds just need to exist.
+    const release = /^leanprover\/lean4:v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)$/.exec(state.resolved);
+    return {
+      path: root === undefined ? null : Bun.which(resolve(root, "bin/lean")),
+      expected: release?.[1] ?? null,
+    };
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+function shellQuote(text: string): string {
+  return `'${text.replaceAll("'", `'\\''`)}'`;
 }
 
 export function doctor(): number {
   let problems = 0;
-  const leanPin = parseLeanPin(pin("lean-toolchain"));
-  let leanName: string;
-  let leanVersion: string | null;
-  switch (leanPin.kind) {
-    case "release":
-      leanName = leanPin.name;
-      leanVersion = leanPin.version;
-      break;
-    case "official":
-    case "custom":
-      leanName = leanPin.name;
-      leanVersion = null;
-      break;
-    case "invalid":
-      console.log(`lean: unreadable lean-toolchain pin ${JSON.stringify(leanPin.text)}`);
-      return 1;
-  }
-  // The name is validated above, so single quotes make it a literal shell word.
-  const leanInstall = `elan toolchain install '${leanName}'`;
-  // Resolve the installed binary directly: an elan proxy can install even for --version.
-  const leanPath = resolve(
-    process.env.ELAN_HOME ?? resolve(homedir(), ".elan"),
-    "toolchains",
-    leanName.replaceAll("/", "--").replace(":", "---"),
-    "bin/lean",
-  );
+  const leanPin = pin("lean-toolchain");
+  const lean = leanToolchain(Bun.which("elan"), leanPin);
+  const leanInstall = `elan toolchain install ${shellQuote(leanPin)}`;
   const bend = findBend();
   const tools = [
     {
@@ -88,10 +112,10 @@ export function doctor(): number {
     },
     {
       name: "lean",
-      path: Bun.which(leanPath),
+      path: lean.path,
       args: ["--version"],
       pattern: /^Lean \(version (\d+\.\d+\.\d+(?:-[\w.]+)?)/m,
-      expected: leanVersion,
+      expected: lean.expected,
       install: `${elanInstall} && ${leanInstall}`,
     },
     {
