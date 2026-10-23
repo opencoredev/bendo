@@ -52,8 +52,7 @@ def join(rest: List<&2, String>, first: String) -> String:
     case h <> t: String.append(first, SCon{'/', join(t, h)})
 
 # The final check, independent of how segments were decoded: every segment
-# is safe, and there is one segment per '/' in the raw path, so decoding
-# introduced no separator.
+# is safe and free of '/', and there is one segment per '/' in the raw path.
 def check(+raw: String, +first: String, +rest: List<&2, String>) -> Bool:
   segment_ok(first) && segments_ok(rest) && Nat.is_eq(1n+List.length(&2, String, rest), slashes(raw))
 
@@ -67,23 +66,56 @@ def guard(+raw: String, m: Maybe<&2, Segments>) -> Maybe<&2, String>:
     case None{}: None{}
     case Some{Segments{+first, +rest}}: accept(first, rest, check(raw, first, rest))
 
+# A plain character is printable ASCII other than space, '%', '/' and '\'.
+# Percent-decoding leaves a run of them unchanged, so a plain segment skips
+# the decoder. The tests are Bools so the completeness proofs can split them.
+def plain_code(control: Bool, space: Bool, delete: Bool, high: Bool, slash: Bool, backslash: Bool, percent: Bool) -> Bool:
+  Bool.not(control || space || delete || high || slash || backslash || percent)
+
+def plain_char(+c: Char) -> Bool:
+  +code = Char.to_u32(c)
+  plain_code(U32.is_lt(code, 32), U32.is_eq(code, 32), U32.is_eq(code, 127), U32.is_lt(127, code), Char.is_eq(c, '/'), U32.is_eq(code, 92), U32.is_eq(code, 37))
+
+def plain(s: String) -> Bool:
+  match s:
+    case SNil{}: True{}
+    case SCon{+c, t}: plain_char(c) && plain(t)
+
+def decoded(+s: String, plain: Bool) -> Maybe<&2, String>:
+  match plain:
+    case True{}: Some{s}
+    case False{}: E.decode(s)
+
+# One raw segment, percent-decoded on its own.
+def decode_segment(+s: String) -> Maybe<&2, String>:
+  decoded(s, plain(s))
+
 # An empty final segment (a trailing slash) names the directory's index.
 def decode_last(raw: String, index: String) -> Maybe<&2, String>:
   match raw:
     case SNil{}: Some{index}
-    case SCon{c, t}: E.decode(SCon{c, t})
+    case SCon{c, t}: decode_segment(SCon{c, t})
 
+def single(x: Maybe<&2, String>) -> Maybe<&2, List<&2, String>>:
+  match x:
+    case None{}: None{}
+    case Some{y}: Some{[y]}
+
+def prepend_to(y: String, xs: Maybe<&2, List<&2, String>>) -> Maybe<&2, List<&2, String>>:
+  match xs:
+    case None{}: None{}
+    case Some{ys}: Some{y <> ys}
+
+def prepend(x: Maybe<&2, String>, xs: Maybe<&2, List<&2, String>>) -> Maybe<&2, List<&2, String>>:
+  match x:
+    case None{}: None{}
+    case Some{y}: prepend_to(y, xs)
+
+# Each raw segment decodes on its own, so one segment yields one piece.
 def decode_go(rest: List<&2, String>, raw: String, +index: String) -> Maybe<&2, List<&2, String>>:
   match rest:
-    case Nil{}:
-      do Maybe<&2, List<&2, String>>:
-        last : String <- decode_last(raw, index)
-        return [last]
-    case h <> t:
-      do Maybe<&2, List<&2, String>>:
-        x : String <- E.decode(raw)
-        xs : List<&2, String> <- decode_go(t, h, index)
-        return x <> xs
+    case Nil{}: single(decode_last(raw, index))
+    case h <> t: prepend(decode_segment(raw), decode_go(t, h, index))
 
 def segments_of(xs: Maybe<&2, List<&2, String>>) -> Maybe<&2, Segments>:
   match xs:

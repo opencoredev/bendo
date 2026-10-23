@@ -664,3 +664,15 @@ def Laws.static_path_confined(raw, index):
 
 def Laws.static_path_target(root, raw, index):
   StaticProof.target(root, raw, index)
+
+def Laws.static_path_segments(raw, index):
+  StaticProof.segments(raw, index)
+
+def Laws.static_path_no_dotfiles(raw, index):
+  StaticProof.no_dotfiles(raw, index)
+
+def Laws.static_path_complete(first, rest, index, servable):
+  StaticProof.complete(first, rest, index, servable)
+
+def Laws.static_path_index(xs, index, servable, named):
+  StaticProof.index_law(xs, index, servable, named)
