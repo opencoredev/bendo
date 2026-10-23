@@ -67,7 +67,7 @@ def scoped_expected(-Tag: Data, +ordinal: Nat, +hooks: List<&2, T.Placement<Tag>
     case None{}: expected
     case Some{n}: List.append(&2, Tag, S.at(Tag, hooks, stage, Nat.is_eq(ordinal, n)), expected)
 
-def prepend_scoped(-Tag: Data, +ordinal: Nat, +hooks: List<&2, T.Placement<Tag>>, +rest: Result<&2, &2, M.BuildError, List<&2, T.Middleware<Tag>>>, +expected: List<&2, Tag>, +route: Maybe<&2, Nat>, +stage: T.Stage, proof: Collected(Tag, rest, expected, route, stage)) -> Collected(Tag, T.prepend(Tag, T.Scoped{ordinal, hooks}, rest), scoped_expected(Tag, ordinal, hooks, expected, route, stage), route, stage):
+def prepend_record(-Tag: Data, +ordinal: Nat, +hooks: List<&2, T.Placement<Tag>>, +rest: Result<&2, &2, M.BuildError, List<&2, T.Middleware<Tag>>>, +expected: List<&2, Tag>, +route: Maybe<&2, Nat>, +stage: T.Stage, proof: Collected(Tag, rest, expected, route, stage)) -> Collected(Tag, T.prepend(Tag, T.Scoped{ordinal, hooks}, rest), scoped_expected(Tag, ordinal, hooks, expected, route, stage), route, stage):
   match rest:
     case Fail{error}: Unit{}
     case Done{layers}:
@@ -76,6 +76,27 @@ def prepend_scoped(-Tag: Data, +ordinal: Nat, +hooks: List<&2, T.Placement<Tag>>
         case Some{n}:
           %Equal.sym(List<&2, Tag>, T.include_hooks(Tag, hooks, stage, Nat.is_eq(ordinal, n)), S.at(Tag, hooks, stage, Nat.is_eq(ordinal, n)), at(Tag, hooks, stage, Nat.is_eq(ordinal, n))) : {List.append(&2, Tag, _, T.route_stage_ids(Tag, layers, Some{n}, stage)) == List.append(&2, Tag, S.at(Tag, hooks, stage, Nat.is_eq(ordinal, n)), expected) : List<&2, Tag>}
           Equal.cong(List<&2, Tag>, List<&2, Tag>, xs => List.append(&2, Tag, S.at(Tag, hooks, stage, Nat.is_eq(ordinal, n)), xs), T.route_stage_ids(Tag, layers, Some{n}, stage), expected, proof)
+
+# A route with no hooks selects nothing whichever ordinal it would carry.
+def at_empty(-Tag: Data, +stage: T.Stage, yes: Bool) -> {S.at(Tag, [], stage, yes) == [] : List<&2, Tag>}:
+  match yes:
+    case True{}: {==}
+    case False{}: {==}
+
+def unscoped_expected(-Tag: Data, +ordinal: Nat, +expected: List<&2, Tag>, +route: Maybe<&2, Nat>, +stage: T.Stage) -> {expected == scoped_expected(Tag, ordinal, [], expected, route, stage) : List<&2, Tag>}:
+  match route:
+    case None{}: {==}
+    case Some{n}:
+      Equal.cong(List<&2, Tag>, List<&2, Tag>, xs => List.append(&2, Tag, xs, expected), [], S.at(Tag, [], stage, Nat.is_eq(ordinal, n)), Equal.sym(List<&2, Tag>, S.at(Tag, [], stage, Nat.is_eq(ordinal, n)), [], at_empty(Tag, stage, Nat.is_eq(ordinal, n))))
+
+# Omitting the record for an empty hook list leaves the expected selection intact.
+def prepend_scoped(-Tag: Data, +hooks: List<&2, T.Placement<Tag>>, +tail: List<&2, T.Entry<Tag>>, +rest: Result<&2, &2, M.BuildError, List<&2, T.Middleware<Tag>>>, +expected: List<&2, Tag>, +route: Maybe<&2, Nat>, +stage: T.Stage, proof: Collected(Tag, rest, expected, route, stage)) -> Collected(Tag, T.prepend_scoped(Tag, hooks, tail, rest), scoped_expected(Tag, List.length(&2, M.Registration(Tag), T.route_entries(Tag, tail)), hooks, expected, route, stage), route, stage):
+  match hooks:
+    case Nil{}:
+      %unscoped_expected(Tag, List.length(&2, M.Registration(Tag), T.route_entries(Tag, tail)), expected, route, stage) : Collected(Tag, rest, _, route, stage)
+      proof
+    case h <> t:
+      prepend_record(Tag, List.length(&2, M.Registration(Tag), T.route_entries(Tag, tail)), h <> t, rest, expected, route, stage, proof)
 
 def expected(-Tag: Data, +r: M.Registration(Tag), +placements: List<&2, T.Placement<Tag>>, +tail: List<&2, T.Entry<Tag>>, +route: Maybe<&2, Nat>, +stage: T.Stage) -> {scoped_expected(Tag, List.length(&2, M.Registration(Tag), T.route_entries(Tag, tail)), placements, S.route_hooks(Tag, tail, route, stage), route, stage) == S.route_hooks(Tag, T.ScopedRoute{r, placements} <> tail, route, stage) : List<&2, Tag>}:
   match route:
@@ -92,7 +113,7 @@ def entries(-Tag: Data, +xs: List<&2, T.Entry<Tag>>, +index: Nat, +route: Maybe<
       route_checked(Tag, index, M.build_table(Tag, [r]), T.middleware_entries(Tag, tail, 1n+index), S.route_hooks(Tag, tail, route, stage), route, stage, entries(Tag, tail, 1n+index, route, stage))
     case T.ScopedRoute{r, hooks} <> tail:
       %expected(Tag, r, hooks, tail, route, stage) : Collected(Tag, T.middleware_entries(Tag, T.ScopedRoute{r, hooks} <> tail, index), _, route, stage)
-      route_checked(Tag, index, M.build_table(Tag, [r]), T.prepend(Tag, T.Scoped{List.length(&2, M.Registration(Tag), T.route_entries(Tag, tail)), hooks}, T.middleware_entries(Tag, tail, 1n+index)), scoped_expected(Tag, List.length(&2, M.Registration(Tag), T.route_entries(Tag, tail)), hooks, S.route_hooks(Tag, tail, route, stage), route, stage), route, stage, prepend_scoped(Tag, List.length(&2, M.Registration(Tag), T.route_entries(Tag, tail)), hooks, T.middleware_entries(Tag, tail, 1n+index), S.route_hooks(Tag, tail, route, stage), route, stage, entries(Tag, tail, 1n+index, route, stage)))
+      route_checked(Tag, index, M.build_table(Tag, [r]), T.prepend_scoped(Tag, hooks, tail, T.middleware_entries(Tag, tail, 1n+index)), scoped_expected(Tag, List.length(&2, M.Registration(Tag), T.route_entries(Tag, tail)), hooks, S.route_hooks(Tag, tail, route, stage), route, stage), route, stage, prepend_scoped(Tag, hooks, tail, T.middleware_entries(Tag, tail, 1n+index), S.route_hooks(Tag, tail, route, stage), route, stage, entries(Tag, tail, 1n+index, route, stage)))
     case T.Use{None{}, tag} <> tail:
       prepend_use(Tag, None{}, tag, T.middleware_entries(Tag, tail, 1n+index), S.route_hooks(Tag, tail, route, stage), route, stage, entries(Tag, tail, 1n+index, route, stage))
     case T.Use{Some{source}, tag} <> tail:

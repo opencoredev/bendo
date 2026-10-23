@@ -1,6 +1,7 @@
 # Proofs of LAWS.bend. Run: bend PROOF.bend --verdict
 import Base
 import ./proof/manifest.bend as ManifestProof
+import ./proof/manifest-built.bend as ManifestBuiltProof
 import ./proof/compose.bend as ComposeProof
 
 # BND-31
@@ -605,3 +606,5 @@ def Laws.csrf_configured_decision_spec(origins, scheme, method, content_type, si
 def Laws.manifest_capture_names(segments): ManifestProof.names(segments)
 def Laws.manifest_exact_routes(Tag, sources, compiled, layers, count):
   ManifestProof.describe(Tag, sources, Methods.raw(Tag, Methods.index_valid(Tag, compiled)))
+def Laws.manifest_built_routes(Tag, entries, table, built):
+  ManifestBuiltProof.built_rows(Tag, entries, table, built)

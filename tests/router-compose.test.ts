@@ -143,3 +143,40 @@ test("composition validates combined patterns and exports normalized methods and
     ],
   });
 });
+
+type Census = { name: string; routes: number; scoped: number; layers: number; work: number };
+
+function parseCensus(line: string): Census {
+  const match = /^(\w+) (\d+) (\d+) (\d+) (\d+)$/.exec(line);
+  if (match === null) throw new Error(`Unexpected census line: ${line}`);
+  const [, name = "", routes = "", scoped = "", layers = "", work = ""] = match;
+  return {
+    name,
+    routes: Number(routes),
+    scoped: Number(scoped),
+    layers: Number(layers),
+    work: Number(work),
+  };
+}
+
+const scaleDriver = build("tests/router-compose-scale-driver.bend");
+test("hook-free mounts and groups add no per-route scoped records or ordinal work", () => {
+  const run = Bun.spawnSync([scaleDriver], { stdout: "pipe", stderr: "pipe", timeout: 5000 });
+  expect(run.exitCode).toBe(0);
+  const rows = run.stdout.toString().trim().split("\n").map(parseCensus);
+  const find = (name: string, routes: number): Census => {
+    const row = rows.find((r) => r.name === name && r.routes === routes);
+    if (row === undefined) throw new Error(`Missing census row ${name} ${routes}`);
+    return row;
+  };
+  for (const name of ["mount", "group"]) {
+    const small = find(name, 5);
+    const large = find(name, 50);
+    expect([small.scoped, large.scoped], name).toEqual([0, 0]);
+    // Ten times the routes must not grow the per-request layer walk or build work.
+    expect((large.layers + large.work) / (small.layers + small.work), name).toBe(1);
+  }
+  // The census does see scoped records: a hooked group still carries one per route.
+  expect(find("hooked", 5)).toEqual({ name: "hooked", routes: 5, scoped: 5, layers: 6, work: 10 });
+  expect(find("hooked", 50).scoped).toBe(50);
+});

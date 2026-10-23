@@ -57,7 +57,9 @@ removing a string prefix from every request.
 ## Hooks, middleware and errors
 
 Mounting lowers through `group`, retaining inherited hooks, guards and local route
-hooks. Global parent hooks precede child hooks. Only the winning child route
+hooks. A route that ends up with no hooks adds no scoped record to
+the built table, so a hook-free mount or group adds no per-route middleware layer
+for each request to walk. Global parent hooks precede child hooks. Only the winning child route
 receives its scoped hooks, including HEAD fallback to GET. A parent route with
 the same URL prefix does not inherit them.
 
@@ -114,18 +116,28 @@ nested groups/mounts, validation, manifest contents and `show_routes` output.
 
 ## Proven guarantees and remaining lemmas
 
-The composition laws compare complete group/mount assembly with an independent
-source specification, including order, tags, hook placements and prefix-aware
-middleware. They compare method routing through either router with linear
-resolution over that independent assembly, including build failures. Separate
-segment-level laws prove cancellation of a literal prefix, associativity of
-literal prefix groups, and misses at a differing whole segment. Manifest laws compare
-capture names and exported rows with a separate projection of certified data.
+The BND-19 laws cover three things: assembly, routing against the assembled
+registrations, and segment properties. The composition laws compare complete
+group/mount assembly with an independent source specification, including order,
+tags, hook placements and prefix-aware middleware. They compare method routing
+through either router with linear resolution over that independent assembly,
+including build failures. Separate segment-level laws prove cancellation of a
+literal prefix, associativity of literal prefix groups, and misses at a
+differing whole segment.
 
-A public source-string suffix-routing theorem is still unproved. Its statement
-must account for the optional-root case above, captures introduced by prefixes,
-matching options, and compilation/splitting at the join. The proven segment law
-is not that compiler-to-runtime bridge.
+Two manifest laws cover the exported rows. `manifest_exact_routes` compares them
+with a separate projection of the certified table. `manifest_built_routes`
+starts from the entries instead: whenever `Table.build(entries)` succeeds, the
+rows equal an enumeration of every route declaration in those entries, with the
+full assembled source path, methods normalized as registration normalizes them
+(order and duplicates kept, one `ALL` row, no implicit HEAD) and capture names
+taken from compiling that route's own source. Hooks and middleware add no rows.
+
+The end-to-end source-string mounting bridge is not proved. That theorem would
+say a request under a mount prefix routes as the sub-app routes the remaining
+suffix. It must account for the optional-root case above, captures introduced
+by prefixes, matching options, and compilation and splitting at the join. The
+segment law above is not that bridge. BND-86 tracks it.
 
 Arbitrary group flattening is not an equality of entries: hook provenance records
 the original inner prefixes. Even path joining is not associative for every raw
