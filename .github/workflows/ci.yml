@@ -8,7 +8,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 15
     env:
       BEND_NO_TELEMETRY: "1"
     steps:
@@ -49,9 +49,17 @@ jobs:
       - name: Cache compiled fixtures
         uses: actions/cache@v4
         with:
-          path: .cache/bend
-          key: ${{ runner.os }}-${{ runner.arch }}-fixtures-v1-${{ hashFiles('**/*.bend', '**/*.c', '**/*.js', '.bend-version', 'tests/harness.ts') }}
+          path: |
+            .cache/bend
+            .cache/test-timings.json
+          key: ${{ runner.os }}-${{ runner.arch }}-fixtures-v1-${{ hashFiles('**/*.bend', '**/*.c', '**/*.js', 'tests/**/*.ts', 'prototypes/**/*.json', '.bend-version') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-fixtures-v1-
       - name: Quality gate
         run: timeout --foreground 12m bun run check
+      - name: Per-file test timings
+        if: always()
+        run: |
+          if test -f .cache/test-timings.json; then
+            cat .cache/test-timings.json
+          fi
