@@ -8,6 +8,9 @@ import ./src/http/request.bend as Request
 import ./src/http/parse.bend as Parse
 import ./src/http/write.bend as Write
 import ./proof/support.bend as Support
+import ./src/data/urlencoded.bend as Form
+import ./src/data/utf8.bend as Utf8
+import ./proof/forms.bend as FormSpec
 
 import ./src/router/pattern.bend as Pattern
 
@@ -526,3 +529,26 @@ law pattern_fill_match:
   for admitted: {Pattern.admissible(pattern, params) == True{} : Bool}
   exs path: String
   {Pattern.fill(pattern, params) == Some{path} : Maybe<&2, String>} & {Pattern.match_path(pattern, path) == Some{params} : Maybe<&2, Pattern.Params>}
+
+# BND-29: URL-encoded data and ordered repeated-key lookup.
+
+# Every String of Unicode scalar values survives query-component encoding.
+# Utf8.valid is the independent Unicode range/surrogate predicate.
+law query_component_roundtrip:
+  for +s: String
+  for +valid: {Utf8.valid(s) == True{} : Bool}
+  {Form.decode(Form.encode(s)) == Done{s} : Result<&2, &2, Form.Error, String>}
+
+# Every String of Unicode scalar values survives WHATWG form encoding,
+# including space -> '+' and literal '+' -> '%2B'.
+law form_component_roundtrip:
+  for +s: String
+  for +valid: {Utf8.valid(s) == True{} : Bool}
+  {Form.decode_form(Form.encode_form(s)) == Done{s} : Result<&2, &2, Form.Error, String>}
+
+# For every ordered list and key, lookup returns exactly all matching values,
+# in order. The specification filters whole entries before projecting values.
+law form_queries_all_in_order:
+  for +pairs: List<&2, Form.Entry>
+  for +key: String
+  {Form.queries(pairs, key) == FormSpec.spec(pairs, key) : List<&2, String>}

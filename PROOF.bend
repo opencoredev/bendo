@@ -13,6 +13,11 @@ import ./proof/line.bend as Line
 import ./proof/scanner.bend as Scanner
 import ./proof/printable.bend as Printable
 import ./proof/support.bend as Support
+import ./src/data/urlencoded.bend as Form
+import ./src/data/utf8.bend as Utf8
+import ./proof/forms.bend as FormSpec
+import ./proof/percent.bend as Percent
+import ./proof/utf8.bend as Utf8Proof
 
 import ./src/router/proofs.bend as PatternProof
 import ./src/router/pattern.bend as Pattern
@@ -97,3 +102,14 @@ def compiled_roundtrip(+pattern: Pattern.Pattern, +params: Pattern.Params,
 
 def Laws.pattern_fill_match(source, pattern, compiled, params, admitted):
   compiled_roundtrip(pattern, params, CompileProof.compiled_pattern_good(source, pattern, compiled), admitted)
+
+# BND-29: URL-encoded data and ordered repeated-key lookup.
+
+def Laws.form_queries_all_in_order(pairs, key):
+  FormSpec.ordered(pairs, key)
+
+def Laws.query_component_roundtrip(s, valid):
+  Percent.component_roundtrip(s, False{}, Utf8Proof.roundtrip(s, valid))
+
+def Laws.form_component_roundtrip(s, valid):
+  Percent.component_roundtrip(s, True{}, Utf8Proof.roundtrip(s, valid))
