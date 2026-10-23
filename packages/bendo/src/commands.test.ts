@@ -104,7 +104,8 @@ test("elan state parsing reads the resolved pin and installed toolchains", () =>
   expect(state?.resolved).toBe("leanprover/lean4:v4.34.0");
   expect(state?.installed.get("leanprover/lean4:v4.34.0")).toBe("/e/toolchains/x");
   expect(parseElanState("elan 4.2.4")).toBeNull();
-  expect(parseElanState("{}")).toEqual({ resolved: null, installed: new Map() });
+  expect(state?.path).toBe(false);
+  expect(parseElanState("{}")).toEqual({ resolved: null, path: false, installed: new Map() });
 });
 
 /** A PATH directory holding the real elan, so pins resolve exactly as elan resolves them. */
@@ -145,7 +146,7 @@ test("doctor resolves shorthand, custom-origin and linked Lean pins through elan
 });
 
 test("doctor resolves path pins and ignores an inherited ELAN_TOOLCHAIN", () => {
-  const cases = [["absolute"], ["relative"], ["override"]] as const;
+  const cases = [["absolute"], ["relative"], ["collision"], ["override"]] as const;
   for (const [mode] of cases) {
     const project = mkdtempSync(join(root, "pin-"));
     writeFileSync(join(project, ".bend-version"), "2.8.9\n");
@@ -167,6 +168,17 @@ test("doctor resolves path pins and ignores an inherited ELAN_TOOLCHAIN", () => 
         const result = run(["doctor"], project, env);
         expect({ mode, code: result.code, out: result.out }).toMatchObject({ mode, code: 0 });
         expect(result.out).toContain("lean 4.1.0 at");
+        break;
+      }
+      case "collision": {
+        // A missing named toolchain must stay missing even if a same-named directory exists locally.
+        writeFileSync(join(project, "lean-toolchain"), "v4.88.0\n");
+        const local = join(project, "leanprover", "lean4:v4.88.0", "bin");
+        mkdirSync(local, { recursive: true });
+        fake(local, "lean", "Lean (version 4.88.0, x86_64)");
+        const result = run(["doctor"], project, env);
+        expect(result.code).toBe(1);
+        expect(result.out).toContain("lean: missing");
         break;
       }
       case "override": {

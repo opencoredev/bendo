@@ -17,8 +17,11 @@ function pin(name: string): string {
   return readFileSync(pinFile(name), "utf8").trim();
 }
 
-/** What doctor reads from `elan dump-state`: the pin's resolved name and installed toolchains. */
-export type ElanState = { resolved: string | null; installed: Map<string, string> };
+/**
+ * What doctor reads from `elan dump-state`: the pin's resolved name, whether
+ * elan read it as a filesystem path, and the installed toolchains.
+ */
+export type ElanState = { resolved: string | null; path: boolean; installed: Map<string, string> };
 
 function member(value: unknown, key: string): unknown {
   return typeof value === "object" && value !== null && key in value
@@ -45,8 +48,10 @@ export function parseElanState(text: string): ElanState | null {
       const path = member(entry, "path");
       if (typeof name === "string" && typeof path === "string") installed.set(name, path);
     }
+  const unresolved = member(member(toolchains, "active_override"), "unresolved");
   return {
     resolved: typeof live === "string" ? live : typeof cached === "string" ? cached : null,
+    path: member(unresolved, "Path") !== undefined,
     installed,
   };
 }
@@ -76,7 +81,9 @@ function leanToolchain(
   const state = run.exitCode === 0 ? parseElanState(run.stdout.toString()) : null;
   if (state === null || state.resolved === null) return { path: null, expected: null };
   // Path toolchains are not listed as installed; elan resolves them to the directory itself.
-  const root = state.installed.get(state.resolved) ?? state.resolved;
+  // A named toolchain must be installed: a same-named directory never stands in for it.
+  const root = state.path ? state.resolved : state.installed.get(state.resolved);
+  if (root === undefined) return { path: null, expected: null };
   // Only official releases have a version to compare; channels and custom builds just need to exist.
   const release = /^leanprover\/lean4:v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)$/.exec(state.resolved);
   return { path: Bun.which(resolve(directory, root, "bin/lean")), expected: release?.[1] ?? null };
