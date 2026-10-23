@@ -2,6 +2,14 @@
 # Agents may add laws. Never delete or weaken one without a written reason
 # in the pull request.
 import Base
+import ./src/app/manifest.bend as Manifest
+import ./proof/manifest-spec.bend as ManifestSpec
+import ./proof/manifest-built-spec.bend as ManifestBuiltSpec
+import ./proof/compose-laws.bend as ComposeLaws
+import ./proof/plugin-laws.bend as PluginLaws
+
+# BND-32
+import ./proof/signed-cookie-laws.bend as SignedCookieLaws
 
 # BND-31
 import ./proof/cookie-ows-laws.bend as CookieOwsLaws
@@ -30,6 +38,8 @@ import ./proof/response-spec.bend as ResponseSpec
 import ./proof/response-framing-spec.bend as ResponseFramingSpec
 
 import ./src/http/chunked.bend as Chunked
+import ./src/http/stream_framing.bend as StreamFraming
+import ./proof/stream-rfc-spec.bend as StreamRfc
 import ./src/http.bend as Http
 import ./src/http/bytes.bend as Bytes
 import ./src/http/request.bend as Request
@@ -56,6 +66,13 @@ import ./src/router/router.bend as Router
 import ./src/data/hex.bend as Hex
 import ./src/data/base64.bend as Base64
 import ./src/crypto/octets.bend as Octets
+import ./src/crypto/compare.bend as Compare
+import ./src/crypto/hmac.bend as HMAC
+import ./src/crypto/jwt.bend as Jwt
+import ./proof/crypto-compare-spec.bend as CompareSpec
+import ./proof/jwt-spec.bend as JwtSpec
+import ./src/mw/csrf_policy.bend as CsrfPolicy
+import ./proof/csrf-spec.bend as CsrfSpec
 
 import ./src/http/date.bend as HttpDate
 import ./proof/date-spec.bend as HttpDateSpec
@@ -1086,12 +1103,17 @@ law cookies_ordered_list_roundtrip:
   for valid: {CookieSpec.entries_valid(entries) == True{} : Bool}
   {Cookie.parse(String.join(CookieSpec.pairs(entries), ";")) == entries : List<&2, Cookie.Entry>}
 
-# BND-33: scalar decoding agrees with an independent specification for EVERY
-# schema and Json tree, including malformed schemas and constructed data.
-# SchemaSpec restates each rule from docs/data/schema.md (scalar counts, the
-# RFC 8259 number grammar, exact decimal values, patterns as regular languages
-# with a size cap, email and URL grammars) and calls no decoder helper.
-# Equality proves both soundness (accepted implies satisfies) and completeness.
+# BND-33, extended by BND-34: decoding agrees with an independent
+# specification for EVERY schema and Json tree, including malformed schemas and
+# constructed data. SchemaSpec restates each rule from docs/data/schema.md
+# (scalar counts, the RFC 8259 number grammar, exact decimal values, patterns
+# as regular languages with a size cap, email and URL grammars; array item
+# counts and items; object key policy, per-key member counts and members;
+# nullables; unions as "some member") and calls no decoder helper. Equality
+# proves both soundness (accepted implies satisfies) and completeness. BND-34
+# added constructors to Schema without changing this statement. On a scalar
+# schema, decode accepts and satisfies holds exactly as in BND-33, so the
+# BND-33 law is this one restricted to scalar schemas.
 
 law schema_acceptance_iff:
   for +schema: Schema.Schema
@@ -1100,10 +1122,85 @@ law schema_acceptance_iff:
 
 # Every success has the right typed constructor AND preserves the exact input
 # payload, including decimal spelling. Failures impose no payload obligation.
+# For compound schemas value_for builds the whole tree: each array item in
+# order, each declared field in schema order from the first member with its
+# key (None when absent), and a union's first accepted member with its index.
+# On scalar schemas value_for and decode are unchanged from BND-33.
 law schema_preserves_typed_value:
   for +schema: Schema.Schema
   for +value: Json.Json
   Schema.Preserves(Schema.value_for(schema, value), Schema.decode(schema, value))
+
+# BND-34: an accepted compound value satisfies every child schema. Each array
+# item satisfies the item schema, each member with a declared key satisfies
+# that field's schema, a non-null value satisfies a nullable's inner schema,
+# and the value satisfies at least one union member. (It follows from
+# schema_acceptance_iff; it is stated on its own so the guarantee is explicit.)
+law schema_children_satisfy:
+  for +schema: Schema.Schema
+  for +value: Json.Json
+  for accepted: {Schema.accepted(Schema.decode(schema, value)) == True{} : Bool}
+  {SchemaSpec.children(schema, value) == True{} : Bool}
+
+# BND-35: a rejection names where it fails. When decoding rejects a value it
+# lists at least one and at most SchemaSpec.error_cap() (100) errors, and the
+# path of every error is a location where the independent specification finds
+# a failing check (SchemaSpec.error_at): the value there fails its scalar
+# schema, has the wrong kind or array length, matches no union member, is a
+# declared key present a number of times its presence forbids, or is a key
+# Strict does not declare; an invalid schema is one error at the root.
+# Successes impose nothing; schema_acceptance_iff says when decoding succeeds.
+law schema_errors_name_failing_paths:
+  for +schema: Schema.Schema
+  for +value: Json.Json
+  {SchemaSpec.located_errors(schema, value, Schema.decode(schema, value)) == True{} : Bool}
+
+# BND-35: and it names every one. For every path where the specification finds
+# a failing check, decoding rejects and lists an error with exactly that path,
+# unless the list already holds error_cap() errors. Errors are collected across
+# all array items and object fields. Nothing below a failed kind or length
+# check, and nothing inside a union, is a location (SchemaSpec.fault).
+law schema_errors_complete:
+  for +schema: Schema.Schema
+  for +value: Json.Json
+  for +path: List<&2, Schema.PathPart>
+  for fault: {SchemaSpec.error_at(schema, value, path) == True{} : Bool}
+  {SchemaSpec.reported(Schema.decode(schema, value), path) == True{} : Bool}
+
+# BND-35: coercion for text sources (params, query, headers, forms) is exactly
+# the independent restatement SchemaSpec.coerce_text: number tokens under number
+# and integer schemas, "true"/"false" under boolean schemas, items under arrays,
+# the inner schema under nullables, and under an object every declared member,
+# with all members named by an array field gathered in order into one array at
+# the first one's position. JSON bodies are decoded without it.
+law schema_coerce_matches_spec:
+  for +schema: Schema.Schema
+  for +value: Json.Json
+  {Schema.coerce(schema, value) == SchemaSpec.coerce_text(schema, value) : Json.Json}
+
+# BND-35: the BND-33/34 acceptance, preservation and BND-35 error laws hold in
+# text mode, read against the coerced value.
+law schema_coerced_acceptance_iff:
+  for +schema: Schema.Schema
+  for +value: Json.Json
+  {Schema.accepted(Schema.decode_from(Schema.TextSource{}, schema, value)) == SchemaSpec.satisfies(schema, SchemaSpec.coerce_text(schema, value)) : Bool}
+
+law schema_coerced_preserves_typed_value:
+  for +schema: Schema.Schema
+  for +value: Json.Json
+  Schema.Preserves(Schema.value_for(schema, SchemaSpec.coerce_text(schema, value)), Schema.decode_from(Schema.TextSource{}, schema, value))
+
+law schema_coerced_errors_name_failing_paths:
+  for +schema: Schema.Schema
+  for +value: Json.Json
+  {SchemaSpec.located_errors(schema, SchemaSpec.coerce_text(schema, value), Schema.decode_from(Schema.TextSource{}, schema, value)) == True{} : Bool}
+
+law schema_coerced_errors_complete:
+  for +schema: Schema.Schema
+  for +value: Json.Json
+  for +path: List<&2, Schema.PathPart>
+  for fault: {SchemaSpec.error_at(schema, SchemaSpec.coerce_text(schema, value), path) == True{} : Bool}
+  {SchemaSpec.reported(Schema.decode_from(Schema.TextSource{}, schema, value), path) == True{} : Bool}
 
 # BND-24: selection from source memberships, independent of runtime helpers.
 # Globals precede inherited group/guard placements and then route-local hooks;
@@ -1287,6 +1384,286 @@ law http_date_parse_strict:
   for +second: Nat
   for ok: {HttpDate.parse_imf(text) == Some{second} : Maybe<&2, Nat>}
   {HttpDate.format_imf(second) == text : String}
+
+# BND-43: authentication primitives. These laws state functional results only.
+# Execution time is outside them; see docs/decisions/0012-constant-time-auth.md.
+
+# The accumulating comparison is exactly element-wise equality, for every pair
+# of U32 lists of any lengths. The specification compares in order and stops.
+law ct_equal_spec:
+  for +xs: List<&2, U32>
+  for +ys: List<&2, U32>
+  {Compare.ct_equal(xs, ys) == CompareSpec.equal(xs, ys) : Bool}
+
+# For every secret and every octet header and payload, opening a token sealed
+# with the same secret returns exactly the sealed octets.
+law jwt_open_seal:
+  for +secret: List<&2, U32>
+  for +header: List<&2, U32>
+  for +payload: List<&2, U32>
+  for vh: {Octets.valid(header) == True{} : Bool}
+  for vp: {Octets.valid(payload) == True{} : Bool}
+  {Jwt.open(secret, Jwt.seal(secret, header, payload)) == Done{Jwt.Parts{header, payload}} : Result<&2, &2, Jwt.Error, Jwt.Parts>}
+
+# Every token a.b.c with three dot-free segments whose signature segment c is
+# not the unpadded base64url HMAC-SHA256 of the signing input "a.b" (its UTF-8
+# octets, under the same secret) is rejected with BadSignature. Any other
+# token has fewer or more than three segments.
+law jwt_rejects_bad_signature:
+  for +secret: List<&2, U32>
+  for +a: String
+  for +b: String
+  for +c: String
+  for fa: {Jwt.dotfree(a) == True{} : Bool}
+  for fb: {Jwt.dotfree(b) == True{} : Bool}
+  for fc: {Jwt.dotfree(c) == True{} : Bool}
+  for differs: {c != Base64.encode(HMAC.sha256(secret, Utf8.encode(a ++ ("." ++ b))), True{}, False{}) : String}
+  {Jwt.open(secret, a ++ ("." ++ (b ++ ("." ++ c)))) == Fail{Jwt.BadSignature{}} : Result<&2, &2, Jwt.Error, Jwt.Parts>}
+
+# Every token whose number of '.' characters (JwtSpec.dots) is not two is
+# Malformed, whatever the secret.
+law jwt_rejects_malformed:
+  for +secret: List<&2, U32>
+  for +token: String
+  for wrong: {JwtSpec.dots(token) != 2n : Nat}
+  {Jwt.open(secret, token) == Fail{Jwt.Malformed{}} : Result<&2, &2, Jwt.Error, Jwt.Parts>}
+
+# A token a.b.c whose c is the correct signature of "a.b", but whose a or b is
+# not strict unpadded base64url (JwtSpec.base64url: alphabet, length and
+# unused bits, stated by character sets), fails with BadEncoding. The
+# signature is checked first: with any other c the error is BadSignature.
+law jwt_rejects_bad_encoding:
+  for +secret: List<&2, U32>
+  for +a: String
+  for +b: String
+  for za: {JwtSpec.dots(a) == 0n : Nat}
+  for zb: {JwtSpec.dots(b) == 0n : Nat}
+  for bad: {JwtSpec.base64url(a) && JwtSpec.base64url(b) == False{} : Bool}
+  {Jwt.open(secret, a ++ ("." ++ (b ++ ("." ++ Base64.encode(HMAC.sha256(secret, Utf8.encode(a ++ ("." ++ b))), True{}, False{}))))) == Fail{Jwt.BadEncoding{}} : Result<&2, &2, Jwt.Error, Jwt.Parts>}
+
+# For every secret, time, leeway, payload segment and signature segment: if
+# the header segment decodes to a JSON object that does not have exactly one
+# member named "alg" holding the string "HS256" (absent, repeated, non-string
+# or another algorithm; JwtSpec.alg_accepted counts members itself), verify
+# fails. Tokens without exactly three segments fail by jwt_rejects_malformed.
+law jwt_verify_rejects_bad_alg:
+  for +secret: List<&2, U32>
+  for +a: String
+  for +b: String
+  for +c: String
+  for +now: Nat
+  for +leeway: Nat
+  for +header: List<&2, U32>
+  for +fields: List<&2, Json.Field>
+  for za: {JwtSpec.dots(a) == 0n : Nat}
+  for zb: {JwtSpec.dots(b) == 0n : Nat}
+  for zc: {JwtSpec.dots(c) == 0n : Nat}
+  for decoded: {Base64.decode(a, True{}, False{}) == Some{header} : Maybe<&2, List<&2, U32>>}
+  for parsed: {Json.parse(header) == Done{Json.JObject{fields}} : Result<&2, &2, Json.Error, Json.Json>}
+  for bad: {JwtSpec.alg_accepted(fields) == False{} : Bool}
+  {JwtSpec.failed(Jwt.verify(secret, a ++ ("." ++ (b ++ ("." ++ c))), now, leeway)) == True{} : Bool}
+
+# With canonical segments, the correct signature and no repeated header
+# member names, such a header fails with exactly BadAlgorithm.
+law jwt_verify_bad_alg_exact:
+  for +secret: List<&2, U32>
+  for +a: String
+  for +b: String
+  for +now: Nat
+  for +leeway: Nat
+  for +header: List<&2, U32>
+  for +payload: List<&2, U32>
+  for +fields: List<&2, Json.Field>
+  for za: {JwtSpec.dots(a) == 0n : Nat}
+  for zb: {JwtSpec.dots(b) == 0n : Nat}
+  for dh: {Base64.decode(a, True{}, False{}) == Some{header} : Maybe<&2, List<&2, U32>>}
+  for dp: {Base64.decode(b, True{}, False{}) == Some{payload} : Maybe<&2, List<&2, U32>>}
+  for parsed: {Json.parse(header) == Done{Json.JObject{fields}} : Result<&2, &2, Json.Error, Json.Json>}
+  for distinct: {JwtSpec.distinct(fields) == True{} : Bool}
+  for bad: {JwtSpec.alg_accepted(fields) == False{} : Bool}
+  {Jwt.verify(secret, a ++ ("." ++ (b ++ ("." ++ Base64.encode(HMAC.sha256(secret, Utf8.encode(a ++ ("." ++ b))), True{}, False{})))), now, leeway) == Fail{Jwt.BadAlgorithm{}} : Result<&2, &2, Jwt.Error, Json.Json>}
+
+# verify runs open first and adds checks after it, so every failure of open
+# (Malformed, BadEncoding, BadSignature) is verify's failure, unchanged.
+law jwt_verify_keeps_open_failure:
+  for +secret: List<&2, U32>
+  for +token: String
+  for +now: Nat
+  for +leeway: Nat
+  for +e: Jwt.Error
+  for failed: {Jwt.open(secret, token) == Fail{e} : Result<&2, &2, Jwt.Error, Jwt.Parts>}
+  {Jwt.verify(secret, token, now, leeway) == Fail{e} : Result<&2, &2, Jwt.Error, Json.Json>}
+
+# For every signature segment, time, leeway and payload segment: if the
+# header segment decodes to octets that are not JSON, or are JSON but not an
+# object, verify fails.
+law jwt_verify_rejects_non_object_header:
+  for +secret: List<&2, U32>
+  for +a: String
+  for +b: String
+  for +c: String
+  for +now: Nat
+  for +leeway: Nat
+  for +header: List<&2, U32>
+  for za: {JwtSpec.dots(a) == 0n : Nat}
+  for zb: {JwtSpec.dots(b) == 0n : Nat}
+  for zc: {JwtSpec.dots(c) == 0n : Nat}
+  for decoded: {Base64.decode(a, True{}, False{}) == Some{header} : Maybe<&2, List<&2, U32>>}
+  for bad: {JwtSpec.json_object(Json.parse(header)) == False{} : Bool}
+  {JwtSpec.failed(Jwt.verify(secret, a ++ ("." ++ (b ++ ("." ++ c))), now, leeway)) == True{} : Bool}
+
+# For every header segment, signature segment, time and leeway: if the
+# payload segment decodes to octets that are not JSON, or are JSON but not an
+# object, verify fails.
+law jwt_verify_rejects_non_object_payload:
+  for +secret: List<&2, U32>
+  for +a: String
+  for +b: String
+  for +c: String
+  for +now: Nat
+  for +leeway: Nat
+  for +payload: List<&2, U32>
+  for za: {JwtSpec.dots(a) == 0n : Nat}
+  for zb: {JwtSpec.dots(b) == 0n : Nat}
+  for zc: {JwtSpec.dots(c) == 0n : Nat}
+  for decoded: {Base64.decode(b, True{}, False{}) == Some{payload} : Maybe<&2, List<&2, U32>>}
+  for bad: {JwtSpec.json_object(Json.parse(payload)) == False{} : Bool}
+  {JwtSpec.failed(Jwt.verify(secret, a ++ ("." ++ (b ++ ("." ++ c))), now, leeway)) == True{} : Bool}
+
+# A header that decodes to a JSON object in which two top-level members share
+# a name (JwtSpec.distinct is False) never verifies, whatever the signature,
+# payload, time and leeway.
+law jwt_verify_rejects_repeated_header_member:
+  for +secret: List<&2, U32>
+  for +a: String
+  for +b: String
+  for +c: String
+  for +now: Nat
+  for +leeway: Nat
+  for +header: List<&2, U32>
+  for +fields: List<&2, Json.Field>
+  for za: {JwtSpec.dots(a) == 0n : Nat}
+  for zb: {JwtSpec.dots(b) == 0n : Nat}
+  for zc: {JwtSpec.dots(c) == 0n : Nat}
+  for decoded: {Base64.decode(a, True{}, False{}) == Some{header} : Maybe<&2, List<&2, U32>>}
+  for parsed: {Json.parse(header) == Done{Json.JObject{fields}} : Result<&2, &2, Json.Error, Json.Json>}
+  for repeated: {JwtSpec.distinct(fields) == False{} : Bool}
+  {JwtSpec.failed(Jwt.verify(secret, a ++ ("." ++ (b ++ ("." ++ c))), now, leeway)) == True{} : Bool}
+
+# A payload that decodes to a JSON object in which two top-level members
+# share a name never verifies, whatever the header, signature, time and leeway.
+law jwt_verify_rejects_repeated_claim:
+  for +secret: List<&2, U32>
+  for +a: String
+  for +b: String
+  for +c: String
+  for +now: Nat
+  for +leeway: Nat
+  for +payload: List<&2, U32>
+  for +fields: List<&2, Json.Field>
+  for za: {JwtSpec.dots(a) == 0n : Nat}
+  for zb: {JwtSpec.dots(b) == 0n : Nat}
+  for zc: {JwtSpec.dots(c) == 0n : Nat}
+  for decoded: {Base64.decode(b, True{}, False{}) == Some{payload} : Maybe<&2, List<&2, U32>>}
+  for parsed: {Json.parse(payload) == Done{Json.JObject{fields}} : Result<&2, &2, Json.Error, Json.Json>}
+  for repeated: {JwtSpec.distinct(fields) == False{} : Bool}
+  {JwtSpec.failed(Jwt.verify(secret, a ++ ("." ++ (b ++ ("." ++ c))), now, leeway)) == True{} : Bool}
+
+# The CSRF decision equals CsrfSpec.allows for every policy (configured
+# origins and optional scheme), method and header combination. The spec
+# inspects only non-GET/HEAD requests with a form-like or absent
+# Content-Type; trusts Sec-Fetch-Site: same-origin, a listed source, or the
+# scheme://Host origin unless Sec-Fetch-Site is cross-site; takes Origin over
+# Referer; and never trusts a missing or unparsable source such as "null".
+law csrf_decision_spec:
+  for +origins: List<&2, String>
+  for +scheme: Maybe<&2, String>
+  for +method: Request.Method
+  for +content_type: Maybe<&2, String>
+  for +site: Maybe<&2, String>
+  for +origin: Maybe<&2, String>
+  for +referer: Maybe<&2, String>
+  for +host: Maybe<&2, String>
+  {CsrfPolicy.decide(CsrfPolicy.Policy{origins, scheme}, method, content_type, site, origin, referer, host) == CsrfSpec.allows(origins, scheme, method, content_type, site, origin, referer, host) : Bool}
+
+# The middleware builds its policy with CsrfPolicy.policy, so the decision is
+# also stated from configuration: configured entries become their URL origins
+# (CsrfSpec.configured drops any that is not an http or https URL) and the
+# scheme is compared in lowercase. The origin parser itself is shared with the
+# specification (src/http/origin.bend).
+law csrf_configured_decision_spec:
+  for +origins: List<&2, String>
+  for +scheme: Maybe<&2, String>
+  for +method: Request.Method
+  for +content_type: Maybe<&2, String>
+  for +site: Maybe<&2, String>
+  for +origin: Maybe<&2, String>
+  for +referer: Maybe<&2, String>
+  for +host: Maybe<&2, String>
+  {CsrfPolicy.decide(CsrfPolicy.policy(origins, scheme), method, content_type, site, origin, referer, host) == CsrfSpec.allows(CsrfSpec.configured(origins), CsrfSpec.configured_scheme(scheme), method, content_type, site, origin, referer, host) : Bool}
+
+# BND-19: enumerate capture names from compiled segments, never source guessing.
+law manifest_capture_names:
+  for +segments: List<&2, Pattern.Segment>
+  {Manifest.names(segments) == ManifestSpec.names(segments) : List<&2, String>}
+
+# Exactly the explicit certified routes, normalized methods and ordered names.
+# ALL remains a distinct row; duplicates and registration order are preserved.
+law manifest_exact_routes:
+  for -Tag: Data
+  for +sources: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Index<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
+  {Manifest.rows(Tag, Table.Table{sources, compiled, layers, count}) == ManifestSpec.describe(Tag, sources, Methods.raw(Tag, Methods.index_valid(Tag, compiled))) : List<&2, Manifest.Row>}
+
+# A successful build lists exactly the route declarations of its entries, in
+# entry order with duplicates: each route's full assembled source path, its
+# methods as registration normalizes them (ALL as one distinct row, no implicit
+# HEAD) and the capture names of its own compiled source. Hooks and middleware
+# add no rows. The specification reads the entries, never the built table.
+law manifest_built_routes:
+  for -Tag: Data
+  for +entries: List<&2, Table.Entry<Tag>>
+  for +table: Table.Table<Tag>
+  for built: {Table.build(Tag, entries) == Done{table} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  {Manifest.rows(Tag, table) == ManifestBuiltSpec.enumerate(Tag, entries) : List<&2, Manifest.Row>}
+
+
+# BND-48: incremental writes use the existing proven chunked framing, over
+# every admissible partition (including empty chunks), with suffix preservation.
+law stream_roundtrip:
+  for +chunks: List<&2, List<&2, U32>>
+  for +limit: U32
+  for +suffix: List<&2, U32>
+  for valid: {Chunked.admissible(chunks, limit) == True{} : Bool}
+  {Chunked.decode(Bytes.append(StreamFraming.wire(chunks), suffix), limit) == Chunked.Decoded{List.concat(&2, U32, chunks), [], suffix} : Chunked.DecodeResult}
+
+law stream_empty_chunk:
+  {StreamFraming.chunk([]) == [] : List<&2, U32>}
+
+# The actual single-chunk writes compose to the canonical sequence above.
+law stream_chunk_tail:
+  for +bytes: List<&2, U32>
+  for +tail: List<&2, U32>
+  {Bytes.append(StreamFraming.chunk(bytes), tail) == Chunked.encode_chunk(bytes, tail) : List<&2, U32>}
+
+# BND-48: successful finite body-bearing streams satisfy the independent
+# RFC 9112 section 7.1 grammar (lowercase hex, no extensions or trailers).
+# The U32 limit bounds the total payload here, not the runtime chunk maximum.
+law stream_rfc_roundtrip:
+  for +chunks: List<&2, List<&2, U32>>
+  for +limit: U32
+  for +suffix: List<&2, U32>
+  for valid: {Chunked.admissible(chunks, limit) == True{} : Bool}
+  {StreamRfc.parse(Bytes.append(StreamFraming.wire(chunks), suffix), limit) == StreamRfc.Decoded{List.concat(&2, U32, chunks), suffix} : StreamRfc.DecodeResult}
+
+# The first last-chunk ends parsing. Even a suffix that looks like more data
+# chunks remains untouched, rather than being accepted as part of this body.
+law stream_rfc_last_chunk:
+  for +limit: U32
+  for +suffix: List<&2, U32>
+  {StreamRfc.parse(48 <> 13 <> 10 <> 13 <> 10 <> suffix, limit) == StreamRfc.Decoded{[], suffix} : StreamRfc.DecodeResult}
 
 # BND-45: static files (docs/static.md).
 #

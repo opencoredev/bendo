@@ -1,10 +1,21 @@
 # Public Bendo entrypoint. Route tags and startup environments are app-owned Data.
 import Base
+import ./stream.bend as Stream
+import ./http/stream_types.bend as StreamTypes
+import ./app/observability.bend as Observation
 import ./mw/builtin.bend as Builtin
 import ./mw/server_timing.bend as Timing
+import ./mw/basic_auth.bend as BasicAuth
+import ./mw/jwt.bend as JwtAuth
+import ./mw/csrf_policy.bend as CsrfPolicy
+import ./crypto/jwt.bend as Jwt
+import ./data/utf8.bend as Utf8
 import ./app/config.bend as Config
 import ./app/table.bend as Table
 import ./app/scopes.bend as Scopes
+import ./app/compose.bend as Compose
+import ./app/plugin.bend as Plugin
+import ./app/manifest.bend as Manifest
 import ./app/handle.bend as Handle
 import ./app/context.bend as Context
 import ./app/errors.bend as Errors
@@ -12,6 +23,7 @@ import ./app/store.bend as Store
 import ./app/store_actor.bend as StoreActor
 import ./data/json.bend as Json
 import ./data/cookie.bend as Cookie
+import ./data/signed-cookie.bend as SignedCookie
 import ./serve.bend as Serve
 import ./http/request.bend as Request
 import ./http/response.bend as Response
@@ -69,7 +81,7 @@ def options(-Tag: Data, path: String, tag: Tag) -> Table.Entry<Tag>: Table.Route
 def all(-Tag: Data, path: String, tag: Tag) -> Table.Entry<Tag>: Table.Route{Methods.all(Tag, path, tag)}
 def on(-Tag: Data, methods: List<&2, Request.Method>, path: String, tag: Tag) -> Table.Entry<Tag>: Table.Route{Methods.on(Tag, methods, path, tag)}
 # Adapt a low-level method registration into the public app registration list.
-def route(-Tag: Data, entry: Methods.Registration(Tag)) -> Table.Entry<Tag>: Table.Route{entry}
+def registration(-Tag: Data, entry: Methods.Registration(Tag)) -> Table.Entry<Tag>: Table.Route{entry}
 def use(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Use{None{}, id}
 def use_path(-Tag: Data, pattern: String, id: Tag) -> Table.Entry<Tag>: Table.Use{Some{pattern}, id}
 def on_request(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.Request{}, id}
@@ -89,9 +101,29 @@ def GuardOptions(-Tag: Data) -> Data: Table.GuardOptions<Tag>
 def hook(-Tag: Data, stage: Table.Stage, id: Tag) -> Table.HookSpec<Tag>: Table.HookSpec{stage, id}
 def guard_options(-Tag: Data, hooks: List<&2, Table.HookSpec<Tag>>) -> Table.GuardOptions<Tag>: Table.GuardOptions{hooks, Table.NoSchemas{}}
 def guard(-Tag: Data, options: Table.GuardOptions<Tag>, entries: List<&2, Table.Entry<Tag>>) -> List<&2, Table.Entry<Tag>>: Scopes.guard(Tag, options, entries)
-def group(-Tag: Data, prefix: String, hooks: List<&2, Table.HookSpec<Tag>>, entries: List<&2, Table.Entry<Tag>>) -> List<&2, Table.Entry<Tag>>: Scopes.group(Tag, prefix, hooks, entries)
+def group(-Tag: Data, prefix: String, hooks: List<&2, Table.HookSpec<Tag>>, entries: List<&2, Table.Entry<Tag>>) -> List<&2, Table.Entry<Tag>>: Compose.group(Tag, prefix, hooks, entries)
+# Sub-apps are reusable registration lists sharing the app's tag/dispatcher types.
+def route(-Tag: Data, prefix: String, sub: List<&2, Table.Entry<Tag>>) -> List<&2, Table.Entry<Tag>>: Compose.mount(Tag, prefix, sub)
+def base_path(-Tag: Data, prefix: String, entries: List<&2, Table.Entry<Tag>>) -> List<&2, Table.Entry<Tag>>: Compose.mount(Tag, prefix, entries)
+def show_routes(-Tag: Data, table: Table.Table<Tag>) -> IO(Unit): IO.print(Manifest.table_text(Tag, table))
 def route_hooks(-Tag: Data, registration: Methods.Registration(Tag), hooks: List<&2, Table.HookSpec<Tag>>) -> Table.Entry<Tag>:
   Scopes.local(Tag, registration, hooks)
+
+# BND-26 plugins: functions from a Builder to a Builder. See docs/guides/plugins.md.
+def Builder(-Tag: Data) -> Data: Plugin.Builder<Tag>
+def PluginId() -> Data: Plugin.Identity
+def app(-Tag: Data) -> Plugin.Builder<Tag>: Plugin.Builder{[], []}
+def app_from(-Tag: Data, entries: List<&2, Table.Entry<Tag>>) -> Plugin.Builder<Tag>: Plugin.Builder{[], entries}
+def register(-Tag: Data, app: Plugin.Builder<Tag>, entries: List<&2, Table.Entry<Tag>>) -> Plugin.Builder<Tag>: Plugin.register(Tag, app, entries)
+def use_plugin(-Tag: Data, app: Plugin.Builder<Tag>, plugin: Plugin.Builder<Tag> -> Plugin.Builder<Tag>) -> Plugin.Builder<Tag>: Plugin.use(Tag, app, plugin)
+def plugin_id(name: String) -> Plugin.Identity: Plugin.Identity{name, ""}
+def plugin_seed(name: String, seed: String) -> Plugin.Identity: Plugin.Identity{name, seed}
+def named(-Tag: Data, id: Plugin.Identity, app: Plugin.Builder<Tag>, body: Plugin.Builder<Tag> -> Plugin.Builder<Tag>) -> Plugin.Builder<Tag>: Plugin.named(Tag, id, app, body)
+def use_route(-Tag: Data, app: Plugin.Builder<Tag>, prefix: String, body: Plugin.Builder<Tag> -> Plugin.Builder<Tag>) -> Plugin.Builder<Tag>: Plugin.mount(Tag, app, prefix, body)
+def use_group(-Tag: Data, app: Plugin.Builder<Tag>, prefix: String, hooks: List<&2, Table.HookSpec<Tag>>, body: Plugin.Builder<Tag> -> Plugin.Builder<Tag>) -> Plugin.Builder<Tag>: Plugin.group(Tag, app, prefix, hooks, body)
+def use_guard(-Tag: Data, app: Plugin.Builder<Tag>, options: Table.GuardOptions<Tag>, body: Plugin.Builder<Tag> -> Plugin.Builder<Tag>) -> Plugin.Builder<Tag>: Plugin.guard(Tag, app, options, body)
+def app_entries(-Tag: Data, app: Plugin.Builder<Tag>) -> List<&2, Table.Entry<Tag>>: Plugin.entries(Tag, app)
+def app_routes(-Tag: Data, app: Plugin.Builder<Tag>) -> Result<&2, &2, Methods.BuildError, Table.Table<Tag>>: Table.build(Tag, Plugin.entries(Tag, app))
 
 def handle(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Handle.Ctx -> Env -> IO(Response.Res), table: Table.Table<Tag>, env: Env, req: Request.Req, body: List<&2, U32>) -> IO(Response.Res):
   Handle.handle(~Tag, ~Env, ~dispatch, table, env, req, body)
@@ -142,6 +174,41 @@ def cookies(c: Handle.Ctx) -> List<&2, Cookie.Entry>: Context.cookies(Unit, c)
 def cookie(c: Handle.Ctx, name: String) -> Maybe<&2, String>: Context.cookie(Unit, c, name)
 def set_cookie(c: Handle.Ctx, name: String, value: String, options: Cookie.Options) -> Result<&2, &2, Cookie.Error, Handle.Ctx>: Context.set_cookie(Unit, c, name, value, options)
 def delete_cookie(c: Handle.Ctx, name: String, options: Cookie.Options) -> Result<&2, &2, Cookie.Error, Handle.Ctx>: Context.delete_cookie(Unit, c, name, options)
+
+def set_signed_cookie(c: Handle.Ctx, name: String, value: String, keys: SignedCookie.Keys, options: Cookie.Options) -> Result<&2, &2, Cookie.Error, Handle.Ctx>:
+  Context.set_signed_cookie(Unit, c, name, value, keys, options)
+
+def signed_cookie(c: Handle.Ctx, name: String, keys: SignedCookie.Keys) -> Maybe<&2, String>:
+  Context.signed_cookie(Unit, c, name, keys)
+
+# Authentication and CSRF built-ins. Credentials and secrets live in the
+# reusable route table, like Hono's middleware options.
+def Credential() -> Data: BasicAuth.Credential
+def credential(username: String, password: String) -> BasicAuth.Credential: BasicAuth.Credential{username, password}
+def basic_auth(realm: String, users: List<&2, BasicAuth.Credential>) -> Builtin.Builtin: Builtin.BasicAuth{realm, users}
+def bearer_auth(realm: String, tokens: List<&2, String>) -> Builtin.Builtin: Builtin.BearerAuth{realm, tokens}
+# Trust only the listed origins ("https://app.example"; any path is ignored).
+def csrf(origins: List<&2, String>) -> Builtin.Builtin: Builtin.Csrf{CsrfPolicy.policy(origins, None{})}
+# Also trust scheme://Host, for a deployment that knows the scheme browsers
+# use. Behind a TLS-terminating proxy that keeps Host, pass "https".
+def csrf_host(scheme: String, origins: List<&2, String>) -> Builtin.Builtin: Builtin.Csrf{CsrfPolicy.policy(origins, Some{scheme})}
+
+# HS256 with a UTF-8 secret; leeway is the allowed clock skew in seconds.
+def JwtConfig() -> Data: JwtAuth.Config
+def JwtError() -> Data: Jwt.Error
+def jwt_config(secret: String, leeway: Nat, realm: String) -> JwtAuth.Config: JwtAuth.Config{Utf8.encode(secret), leeway, realm}
+def jwt(config: JwtAuth.Config) -> Builtin.Builtin: Builtin.Jwt{config}
+def jwt_with(-Vars: Data, config: JwtAuth.Config, c: Context.Ctx<Vars>, next: Json.Json -> Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
+  JwtAuth.with_claims(Vars, config, c, next)
+def jwt_sign(secret: String, claims: Json.Json) -> Result<&2, &2, Jwt.Error, String>: Jwt.sign(Utf8.encode(secret), claims)
+def jwt_verify(secret: String, token: String, now: Nat, leeway: Nat) -> Result<&2, &2, Jwt.Error, Json.Json>: Jwt.verify(Utf8.encode(secret), token, now, leeway)
+
+# Pull-based binary streaming through the ordinary routing/middleware lifecycle.
+def StreamConfig() -> Data: StreamTypes.Config
+def StreamStep(-State: Type) -> Type: StreamTypes.Step<State>
+def stream_config() -> StreamTypes.Config: Stream.defaults()
+def stream(~Vars: Data, ~State: Type, ~step: State -> IO(StreamTypes.Step<State>), ~cleanup: State -> IO(Unit), +c: Context.Ctx<Vars>, state: State, config: StreamTypes.Config) -> IO(Response.Res):
+  Stream.register(Observation.stream(Context.observation(Vars, c)), Context.body(Vars, c, [], None{}), Stream.plan(~State, ~step, ~cleanup, state, config))
 
 # Static files (BND-45). Register a GET wildcard route and call serve_static
 # from its handler; docs/static.md describes paths, caching and ranges.

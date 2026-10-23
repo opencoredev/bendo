@@ -1,5 +1,12 @@
 # Proofs of LAWS.bend. Run: bend PROOF.bend --verdict
 import Base
+import ./proof/manifest.bend as ManifestProof
+import ./proof/manifest-built.bend as ManifestBuiltProof
+import ./proof/compose.bend as ComposeProof
+import ./proof/plugin.bend as PluginProof
+
+# BND-32
+import ./proof/signed-cookie.bend as SignedCookieProof
 
 # BND-31
 import ./proof/cookie-ows.bend as CookieOwsProof
@@ -18,12 +25,16 @@ import ./proof/scoped-assembly-spec.bend as AssemblySpec
 import ./src/app/scopes.bend as Scopes
 import ./proof/middleware-selection.bend as MiddlewareSelection
 
-import ./proof/schema.bend as SchemaProof
-import ./src/data/schema.bend as Schema
+import ./proof/schema-compound.bend as SchemaProof
+import ./proof/schema-errors.bend as SchemaErrors
+import ./proof/schema-coerce.bend as SchemaCoerce
 import ./src/http/response.bend as Response
 import ./src/http/write_response.bend as WriteResponse
 
 import ./src/http/chunked.bend as Chunked
+import ./proof/stream.bend as StreamProof
+import ./proof/stream-rfc.bend as StreamRfcProof
+import ./src/http/stream_framing.bend as StreamFraming
 import ./src/http.bend as Http
 import ./src/http/bytes.bend as Bytes
 import ./src/http/request.bend as Request
@@ -77,6 +88,12 @@ import ./src/router/methods-trie-proofs.bend as MethodTrieProof
 import ./proof/crypto-hex.bend as HexProof
 import ./proof/crypto-base64.bend as Base64Proof
 import ./proof/date-laws.bend as DateLaws
+import ./proof/crypto-compare.bend as CompareProof
+import ./proof/jwt.bend as JwtProof
+import ./proof/jwt-structure.bend as JwtStructureProof
+import ./proof/jwt-encoding.bend as JwtEncodingProof
+import ./proof/csrf.bend as CsrfProof
+
 import ./proof/static-path.bend as StaticProof
 
 # Check the pure crypto implementations with the strict kernel as well.
@@ -496,7 +513,31 @@ def Laws.schema_acceptance_iff(schema, value):
   SchemaProof.acceptance_spec(schema, value)
 
 def Laws.schema_preserves_typed_value(schema, value):
-  SchemaProof.preservation(schema, value, Schema.valid(schema))
+  SchemaProof.preservation(schema, value)
+
+def Laws.schema_children_satisfy(schema, value, accepted):
+  SchemaProof.children_law(schema, value, accepted)
+
+def Laws.schema_errors_name_failing_paths(schema, value):
+  SchemaErrors.errors_located(schema, value)
+
+def Laws.schema_errors_complete(schema, value, path, fault):
+  SchemaErrors.errors_complete(schema, value, path, fault)
+
+def Laws.schema_coerce_matches_spec(schema, value):
+  SchemaCoerce.coerce_spec(schema, value)
+
+def Laws.schema_coerced_acceptance_iff(schema, value):
+  SchemaCoerce.text_acceptance(schema, value)
+
+def Laws.schema_coerced_preserves_typed_value(schema, value):
+  SchemaCoerce.text_preservation(schema, value)
+
+def Laws.schema_coerced_errors_name_failing_paths(schema, value):
+  SchemaCoerce.text_located(schema, value)
+
+def Laws.schema_coerced_errors_complete(schema, value, path, fault):
+  SchemaCoerce.text_complete(schema, value, path, fault)
 
 # BND-24
 
@@ -546,6 +587,75 @@ def Laws.http_date_imf_spec(second, bound):
 
 def Laws.http_date_parse_strict(text, second, ok):
   DateLaws.strict(text, second, ok)
+
+# BND-43: constant-time comparison and the JWT signature layer.
+
+def Laws.ct_equal_spec(xs, ys):
+  CompareProof.ct_equal(xs, ys)
+
+def Laws.jwt_open_seal(secret, header, payload, vh, vp):
+  JwtProof.roundtrip(secret, header, payload, vh, vp)
+
+def Laws.jwt_rejects_bad_signature(secret, a, b, c, fa, fb, fc, differs):
+  JwtProof.rejects(secret, a, b, c, fa, fb, fc, differs)
+
+def Laws.jwt_rejects_malformed(secret, token, wrong):
+  JwtStructureProof.malformed(secret, token, wrong)
+
+def Laws.jwt_rejects_bad_encoding(secret, a, b, za, zb, bad):
+  JwtEncodingProof.bad_encoding(secret, a, b, za, zb, bad)
+
+def Laws.jwt_verify_rejects_bad_alg(secret, a, b, c, now, leeway, header, fields, za, zb, zc, decoded, parsed, bad):
+  JwtStructureProof.bad_alg(secret, a, b, c, now, leeway, header, fields, za, zb, zc, decoded, parsed, bad)
+
+def Laws.jwt_verify_bad_alg_exact(secret, a, b, now, leeway, header, payload, fields, za, zb, dh, dp, parsed, distinct, bad):
+  JwtStructureProof.exactly_bad_alg(secret, a, b, now, leeway, header, payload, fields, za, zb, dh, dp, parsed, distinct, bad)
+
+def Laws.jwt_verify_keeps_open_failure(secret, token, now, leeway, e, failed):
+  JwtStructureProof.open_failure(secret, token, now, leeway, e, failed)
+
+def Laws.jwt_verify_rejects_non_object_header(secret, a, b, c, now, leeway, header, za, zb, zc, decoded, bad):
+  JwtStructureProof.header_not_object(secret, a, b, c, now, leeway, header, za, zb, zc, decoded, bad)
+
+def Laws.jwt_verify_rejects_non_object_payload(secret, a, b, c, now, leeway, payload, za, zb, zc, decoded, bad):
+  JwtStructureProof.payload_not_object(secret, a, b, c, now, leeway, payload, za, zb, zc, decoded, bad)
+
+def Laws.jwt_verify_rejects_repeated_header_member(secret, a, b, c, now, leeway, header, fields, za, zb, zc, decoded, parsed, repeated):
+  JwtStructureProof.header_repeated(secret, a, b, c, now, leeway, header, fields, za, zb, zc, decoded, parsed, repeated)
+
+def Laws.jwt_verify_rejects_repeated_claim(secret, a, b, c, now, leeway, payload, fields, za, zb, zc, decoded, parsed, repeated):
+  JwtStructureProof.payload_repeated(secret, a, b, c, now, leeway, payload, fields, za, zb, zc, decoded, parsed, repeated)
+
+# BND-43: the CSRF decision against its request-policy specification.
+
+def Laws.csrf_decision_spec(origins, scheme, method, content_type, site, origin, referer, host):
+  CsrfProof.decide(origins, scheme, method, content_type, site, origin, referer, host)
+
+def Laws.csrf_configured_decision_spec(origins, scheme, method, content_type, site, origin, referer, host):
+  CsrfProof.configured(origins, scheme, method, content_type, site, origin, referer, host)
+
+# BND-19
+def Laws.manifest_capture_names(segments): ManifestProof.names(segments)
+def Laws.manifest_exact_routes(Tag, sources, compiled, layers, count):
+  ManifestProof.describe(Tag, sources, Methods.raw(Tag, Methods.index_valid(Tag, compiled)))
+def Laws.manifest_built_routes(Tag, entries, table, built):
+  ManifestBuiltProof.built_rows(Tag, entries, table, built)
+
+
+def Laws.stream_roundtrip(chunks, limit, suffix, valid):
+  Equal.trans(Chunked.DecodeResult, Chunked.decode(Bytes.append(StreamFraming.wire(chunks), suffix), limit), Chunked.decode(Bytes.append(Chunked.encode(chunks), suffix), limit), Chunked.Decoded{List.concat(&2, U32, chunks), [], suffix}, Equal.cong(List<&2, U32>, Chunked.DecodeResult, wire => Chunked.decode(Bytes.append(wire, suffix), limit), StreamFraming.wire(chunks), Chunked.encode(chunks), StreamProof.canonical(chunks)), ChunkedRoundtrip.roundtrip(chunks, limit, suffix, valid))
+
+def Laws.stream_empty_chunk():
+  {==}
+
+def Laws.stream_chunk_tail(bytes, tail):
+  StreamProof.chunk_tail(bytes, tail)
+
+def Laws.stream_rfc_roundtrip(chunks, limit, suffix, valid):
+  StreamRfcProof.wire_roundtrip(chunks, limit, suffix, valid)
+
+def Laws.stream_rfc_last_chunk(limit, suffix):
+  StreamRfcProof.last_chunk(limit, suffix)
 
 # BND-45: static path confinement.
 

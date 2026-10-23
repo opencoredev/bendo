@@ -136,7 +136,9 @@ decision for callback forms, error semantics and the transport boundary.
 ## Built-in middleware
 
 [Observability middleware](observability.md) provides logger, request ID,
-Server-Timing, powered-by and pretty JSON identifiers. Wrap `B.Builtin` in your
+Server-Timing, powered-by and pretty JSON identifiers.
+[Authentication middleware](auth.md) provides basic auth, bearer auth, JWT and
+CSRF identifiers. Wrap `B.Builtin` in your
 app's tag and delegate that case to `B.builtin(Vars, id, c, next)` alongside your
 own middleware cases.
 
@@ -148,3 +150,9 @@ hooks from outer to inner scope, then local hooks. Guard membership follows the
 selected registration, including its method and first-match priority.
 See [hook scopes and guards](decisions/0011-hook-scopes.md) for the typed API,
 request-rewrite behavior, schema extension slot and Elysia comparison.
+
+## Plugins
+
+A [plugin](guides/plugins.md) packages routes, middleware and hooks as a
+function over a `B.Builder(Tag)`. Named plugins apply once per app; their
+middleware and hooks follow the ordering and scope rules above.

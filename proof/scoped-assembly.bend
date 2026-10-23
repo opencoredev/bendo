@@ -16,6 +16,7 @@ def declarations(-Tag: Data, +xs: List<&2, T.Entry<Tag>>) -> {A.declared(Tag, xs
     case T.Route{r} <> tail: declarations(Tag, tail)
     case T.ScopedRoute{r, hooks} <> tail: declarations(Tag, tail)
     case T.Use{source, tag} <> tail: declarations(Tag, tail)
+    case T.PrefixedUse{source, tag} <> tail: declarations(Tag, tail)
 
 def located(-Tag: Data, +hooks: List<&2, T.HookSpec<Tag>>, +scope: T.Scope) -> {A.placements(Tag, hooks, scope) == S.located(Tag, hooks, scope) : List<&2, T.Placement<Tag>>}:
   match hooks:
@@ -91,6 +92,8 @@ def attached(-Tag: Data, +xs: List<&2, T.Entry<Tag>>, +inherited: List<&2, T.Pla
     case T.Hook{stage, tag} <> tail: attached(Tag, tail, inherited)
     case T.Use{source, tag} <> tail:
       Equal.cong(List<&2, T.Entry<Tag>>, List<&2, T.Entry<Tag>>, rest => T.Use{source, tag} <> rest, A.attach(Tag, tail, inherited), S.assemble(Tag, tail, "", inherited), attached(Tag, tail, inherited))
+    case T.PrefixedUse{source, tag} <> tail:
+      Equal.cong(List<&2, T.Entry<Tag>>, List<&2, T.Entry<Tag>>, rest => T.PrefixedUse{source, tag} <> rest, A.attach(Tag, tail, inherited), S.assemble(Tag, tail, "", inherited), attached(Tag, tail, inherited))
 
 def assembled(-Tag: Data, +xs: List<&2, T.Entry<Tag>>, +prefix: String, +inherited: List<&2, T.Placement<Tag>>) -> {A.attach(Tag, A.prefix_entries(Tag, xs, prefix), inherited) == S.assemble(Tag, xs, prefix, inherited) : List<&2, T.Entry<Tag>>}:
   match xs:
@@ -104,6 +107,9 @@ def assembled(-Tag: Data, +xs: List<&2, T.Entry<Tag>>, +prefix: String, +inherit
     case T.Hook{stage, tag} <> tail: assembled(Tag, tail, prefix, inherited)
     case T.Use{source, tag} <> tail:
       Equal.cong(List<&2, T.Entry<Tag>>, List<&2, T.Entry<Tag>>, rest => T.Use{source, tag} <> rest, A.attach(Tag, A.prefix_entries(Tag, tail, prefix), inherited), S.assemble(Tag, tail, prefix, inherited), assembled(Tag, tail, prefix, inherited))
+    case T.PrefixedUse{source, tag} <> tail:
+      %Equal.sym(String, A.prefix_path(prefix, source), S.path(prefix, source), path(prefix, source)) : {T.PrefixedUse{_, tag} <> A.attach(Tag, A.prefix_entries(Tag, tail, prefix), inherited) == S.assemble(Tag, T.PrefixedUse{source, tag} <> tail, prefix, inherited) : List<&2, T.Entry<Tag>>}
+      Equal.cong(List<&2, T.Entry<Tag>>, List<&2, T.Entry<Tag>>, rest => T.PrefixedUse{S.path(prefix, source), tag} <> rest, A.attach(Tag, A.prefix_entries(Tag, tail, prefix), inherited), S.assemble(Tag, tail, prefix, inherited), assembled(Tag, tail, prefix, inherited))
 
 def guard(-Tag: Data, +options: T.GuardOptions<Tag>, +xs: List<&2, T.Entry<Tag>>) -> {A.guard(Tag, options, xs) == S.guard(Tag, options, xs) : List<&2, T.Entry<Tag>>}:
   match options:

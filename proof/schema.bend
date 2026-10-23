@@ -49,11 +49,10 @@ def scalar_preserves(+s: S.Schema, +v: J.Json) -> S.Preserves(S.value_for(s, v),
     case S.BooleanSchema{} J.JString{x}: Unit{}
     case S.BooleanSchema{} J.JArray{xs}: Unit{}
     case S.BooleanSchema{} J.JObject{fs}: Unit{}
-
-def preservation(+s: S.Schema, +v: J.Json, c: Bool) -> S.Preserves(S.value_for(s, v), S.decode_valid(s, v, c)):
-  match c:
-    case True{}: scalar_preserves(s, v)
-    case False{}: Unit{}
+    case S.ArraySchema{a, b, c} y: Unit{}
+    case S.ObjectSchema{a, b} y: Unit{}
+    case S.NullableSchema{a} y: Unit{}
+    case S.UnionSchema{a} y: Unit{}
 
 # BND-33 acceptance against the independent specification.
 
@@ -144,14 +143,12 @@ def literals_go(+xs: List<&2, J.Json>, +ok: Bool) -> {S.literals_valid(xs, ok) =
       %scalar_equiv(h) : {S.literals_valid(h <> t, ok) == ((ok && _) && Spec.literal_values(t)) : Bool}
       literals_go(t, ok && S.scalar(h))
 
-def valid_equiv(+s: S.Schema) -> {S.valid(s) == Spec.schema_ok(s) : Bool}:
-  match s:
-    case S.StringSchema{min, max, p, f}: and_eq(S.max_length(max, min), Spec.at_most(max, min), S.optional_pattern_valid(p), Spec.optional_pattern_ok(p), max_equiv(max, min), optional_pattern_equiv(p))
-    case S.NumberSchema{min, max}: bounds_equiv(min, max)
-    case S.IntegerSchema{min, max}: bounds_equiv(min, max)
-    case S.BooleanSchema{}: {==}
-    case S.LiteralSchema{v}: scalar_equiv(v)
-    case S.EnumSchema{xs}: literals_go(xs, True{})
+def declared_equiv(+fs: List<&2, S.Field>, +k: String) -> {S.declared(fs, k) == Spec.declares(fs, k) : Bool}:
+  match fs:
+    case Nil{}: {==}
+    case S.Field{key, c, p} <> t:
+      %declared_equiv(t, k) : {S.declared(S.Field{key, c, p} <> t, k) == (String.eq(key, k) || _) : Bool}
+      {==}
 
 def format_after_and(+ok: Bool, +f: S.Format, +x: String) -> {S.format_after(ok, f, x) == (ok && S.format_check(f, x)) : Bool}:
   match ok:
@@ -313,12 +310,7 @@ def accepts_equiv(+s: S.Schema, +v: J.Json, +ok: {S.valid(s) == True{} : Bool}) 
     case S.BooleanSchema{} J.JString{x}: {==}
     case S.BooleanSchema{} J.JArray{xs}: {==}
     case S.BooleanSchema{} J.JObject{fs}: {==}
-
-def spec_go(+s: S.Schema, +v: J.Json, c: Bool) -> {S.valid(s) == c : Bool} -> {S.accepted(S.decode_valid(s, v, c)) == (c && Spec.accepts(s, v)) : Bool}:
-  match c:
-    case False{}: e => {==}
-    case True{}: e => accepts_equiv(s, v, e)
-
-def acceptance_spec(+s: S.Schema, +v: J.Json) -> {S.accepted(S.decode(s, v)) == Spec.satisfies(s, v) : Bool}:
-  %valid_equiv(s) : {S.accepted(S.decode(s, v)) == (_ && Spec.accepts(s, v)) : Bool}
-  spec_go(s, v, S.valid(s))({==})
+    case S.ArraySchema{a, b, c} y: {==}
+    case S.ObjectSchema{a, b} y: {==}
+    case S.NullableSchema{a} y: {==}
+    case S.UnionSchema{a} y: {==}

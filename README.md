@@ -7,7 +7,7 @@ A Hono-style web framework for [Bend](https://bend-lang.com), with a TypeScript 
 - The same Bend validation code runs on the server and in the browser.
 - Handlers can spread heavy work across every CPU core, or the GPU.
 
-Bendo is pre-alpha and being built in the open. See [docs/PLAN.md](docs/PLAN.md) for the full plan. The [route pattern reference](docs/router-patterns.md) describes the current compiler and matcher. See the [public entrypoints and route manifest](docs/manifest.md) for network-free handling, server configuration and `--bendo-routes`. [Static files](docs/static.md) covers `serve_static`.
+Bendo is pre-alpha and being built in the open. See [docs/PLAN.md](docs/PLAN.md) for the full plan. The [route pattern reference](docs/router-patterns.md) describes the current compiler and matcher. [Compose route lists](docs/router-compose.md) covers base paths, mounting and nested groups. See the [public entrypoints and route manifest](docs/manifest.md) for network-free handling, server configuration and `--bendo-routes`. [Static files](docs/static.md) covers `serve_static`.
 
 ## Try the hello example
 

@@ -27,8 +27,8 @@ def guard(-Tag: Data, options: T.GuardOptions<Tag>, +entries: List<&2, T.Entry<T
   T.GuardOptions{hooks, schemas} = options
   attach(Tag, entries, placements(Tag, List.append(&2, T.HookSpec<Tag>, hooks, declared(Tag, entries)), T.GuardScope{}))
 
-# Prefix is literal and must start with / (or be empty). Route validation rejects
-# malformed composed paths. Empty and / are the identity. A trailing /
+# Prefixes are pattern sources starting with / (or empty). Table building
+# validates composed paths. Empty and / are the identity. A trailing /
 # on a non-root prefix is removed to avoid a double slash.
 def normalized_prefix(+prefix: String, trailing: Bool) -> String:
   match trailing:
@@ -52,6 +52,7 @@ def prefix_entries(-Tag: Data, entries: List<&2, T.Entry<Tag>>, +prefix: String)
     case T.ScopedRoute{r, hooks} <> tail: T.ScopedRoute{prefixed(Tag, prefix, r), hooks} <> prefix_entries(Tag, tail, prefix)
     case T.Hook{stage, tag} <> tail: T.Hook{stage, tag} <> prefix_entries(Tag, tail, prefix)
     case T.Use{source, tag} <> tail: T.Use{source, tag} <> prefix_entries(Tag, tail, prefix)
+    case T.PrefixedUse{source, tag} <> tail: T.PrefixedUse{prefix_path(prefix, source), tag} <> prefix_entries(Tag, tail, prefix)
 
 def group(-Tag: Data, +prefix: String, hooks: List<&2, T.HookSpec<Tag>>, +entries: List<&2, T.Entry<Tag>>) -> List<&2, T.Entry<Tag>>:
   attach(Tag, prefix_entries(Tag, entries, prefix), placements(Tag, List.append(&2, T.HookSpec<Tag>, hooks, declared(Tag, entries)), T.GroupScope{prefix}))

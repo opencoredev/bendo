@@ -207,7 +207,7 @@ def entries() -> List<&2, B.Registration(Tag)>:
     B.get(Tag, "/users/:id", Handler{}),
     B.use_path(Tag, "/optional/:name?", User{}),
     B.get(Tag, "/optional/*", Handler{}),
-    B.route(Tag, Methods.get(Tag, "/plain", Handler{}))
+    B.registration(Tag, Methods.get(Tag, "/plain", Handler{}))
   ]
 
 def main() -> IO(Unit):
