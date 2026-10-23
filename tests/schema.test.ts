@@ -752,38 +752,43 @@ function patternFuzz(seed: number): () => PatternData {
   return () => (next(3) === 0 ? wide() : small(1 + next(5)));
 }
 
-test(
-  "every generated in-cap pattern builds a checked table that agrees with the derivative matcher",
-  () => {
-    const gen = patternFuzz(20261023);
-    const words = ["", "a", "b", "ab", "aa", "a-", "\u0000\u0001", "zz0", "😀é", "aaaaaaa"];
-    let valid = 0;
-    let wide = 0;
-    let most = 0;
-    for (let i = 0; i < 1000; i++) {
-      const pattern = gen();
-      if (call("pattern_valid", pattern) !== true) continue;
-      valid++;
-      const size = call("pattern_size", pattern);
-      if (typeof size === "number" && size >= 96) wide++;
-      expect({ pattern, ok: call("table_ok", pattern) }).toEqual({ pattern, ok: true });
-      const nodes = call("table_nodes", pattern);
-      if (typeof nodes === "number") most = Math.max(most, nodes);
-      for (const w of words) {
-        expect({ pattern, w, got: call("matches", pattern, w) }).toEqual({
-          pattern,
-          w,
-          got: call("derive_matches", pattern, w),
-        });
+// One seeded sequence of 1,000 patterns, checked as four slices so each test
+// stays well inside its deadline on slow CI runners.
+const fuzzPatterns: unknown[] = (() => {
+  const gen = patternFuzz(20261023);
+  return Array.from({ length: 1000 }, () => gen());
+})();
+const fuzzTotals = { valid: 0, wide: 0, most: 0 };
+for (const slice of [0, 1, 2, 3])
+  test(
+    `generated in-cap patterns ${slice * 250}-${slice * 250 + 249} build a checked table that agrees with the derivative matcher`,
+    () => {
+      const words = ["", "a", "b", "ab", "aa", "a-", "\u0000\u0001", "zz0", "😀é", "aaaaaaa"];
+      for (const pattern of fuzzPatterns.slice(slice * 250, slice * 250 + 250)) {
+        if (call("pattern_valid", pattern) !== true) continue;
+        fuzzTotals.valid++;
+        const size = call("pattern_size", pattern);
+        if (typeof size === "number" && size >= 96) fuzzTotals.wide++;
+        expect({ pattern, ok: call("table_ok", pattern) }).toEqual({ pattern, ok: true });
+        const nodes = call("table_nodes", pattern);
+        if (typeof nodes === "number") fuzzTotals.most = Math.max(fuzzTotals.most, nodes);
+        for (const w of words) {
+          expect({ pattern, w, got: call("matches", pattern, w) }).toEqual({
+            pattern,
+            w,
+            got: call("derive_matches", pattern, w),
+          });
+        }
       }
-    }
-    // The run covers many valid patterns, many near the cap, and wide tables.
-    expect(valid).toBeGreaterThan(900);
-    expect(wide).toBeGreaterThan(250);
-    expect(most).toBeGreaterThan(64);
-  },
-  SLOW_TEST_TIMEOUT_MS,
-);
+    },
+    SLOW_TEST_TIMEOUT_MS,
+  );
+
+test("the generated patterns cover many valid patterns, many near the cap, and wide tables", () => {
+  expect(fuzzTotals.valid).toBeGreaterThan(900);
+  expect(fuzzTotals.wide).toBeGreaterThan(250);
+  expect(fuzzTotals.most).toBeGreaterThan(64);
+});
 
 test(
   "length limits reject a text before the pattern runs",
