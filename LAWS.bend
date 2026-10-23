@@ -2,6 +2,10 @@
 # Agents may add laws. Never delete or weaken one without a written reason
 # in the pull request.
 import Base
+import ./src/http/response.bend as Response
+import ./src/http/write_response.bend as WriteResponse
+import ./proof/response-spec.bend as ResponseSpec
+import ./proof/response-framing-spec.bend as ResponseFramingSpec
 import ./src/http.bend as Http
 import ./src/http/bytes.bend as Bytes
 import ./src/http/request.bend as Request
@@ -630,3 +634,78 @@ law router_fill_match:
   exs path: String
   exs hit: Spec.Match<T>
   {Pattern.fill(pattern, params) == Some{path} : Maybe<&2, String>} & ({Spec.route(T, table, path) == Some{hit} : Maybe<&2, Spec.Match<T>>} & ({Nat.is_le(SpecProof.index(T, hit), i) == True{} : Bool} & (SpecProof.NoEarlier(T, table, path, i) -> {Spec.route(T, table, path) == Some{Spec.Match{i, tag, params}} : Maybe<&2, Spec.Match<T>>})))
+
+# BND-9: buffered response framing, over every admissible response.
+
+# Observe the FIRST delimiter and independently parse the complete head.
+# Exactly one case-insensitive Content-Length, and no Transfer-Encoding.
+# All octet bodies are covered, including multibyte UTF-8 and embedded blanks.
+law response_body_after_first_blank:
+  for +method: Request.Method
+  for +status: U32
+  for +headers: List<&2, Request.Header>
+  for +body: List<&2, U32>
+  for +representation: Maybe<&2, List<&2, U32>>
+  for +valid: {Response.valid(Response.Res{status, headers, body, representation}) == True{} : Bool}
+  for +allowed: {WriteResponse.allows_body(status) == True{} : Bool}
+  for +not_head: {WriteResponse.is_head(method) == False{} : Bool}
+  for +not_tunnel: {WriteResponse.tunnel(method, status) == False{} : Bool}
+  exs head: List<&2, U32>
+  exs parsed: ResponseSpec.Head
+  {ResponseSpec.split_first(WriteResponse.write(method, Response.Res{status, headers, body, representation})) == Some{(head, body)} : Maybe<&2, ResponseSpec.BytePair()>} &
+  {ResponseSpec.parse_head(Bytes.append(head, [13, 10, 13, 10])) == Some{parsed} : Maybe<&2, ResponseSpec.Head>} &
+  {ResponseSpec.header_values(parsed, "content-length") == [Bytes.encode(Nat.show(List.length(&2, U32, body)))] : List<&2, List<&2, U32>>} &
+  {ResponseSpec.header_values(parsed, "transfer-encoding") == [] : List<&2, List<&2, U32>>}
+
+# Every method and 1xx/204: empty suffix after the FIRST delimiter, a valid
+# independently parsed head, and no Content-Length or Transfer-Encoding.
+law response_forbidden_has_no_body_or_length:
+  for +method: Request.Method
+  for +status: U32
+  for +headers: List<&2, Request.Header>
+  for +body: List<&2, U32>
+  for +representation: Maybe<&2, List<&2, U32>>
+  for +valid: {Response.valid(Response.Res{status, headers, body, representation}) == True{} : Bool}
+  for +forbidden: {WriteResponse.forbidden(status) == True{} : Bool}
+  exs head: List<&2, U32>
+  exs parsed: ResponseSpec.Head
+  {ResponseSpec.split_first(WriteResponse.write(method, Response.Res{status, headers, body, representation})) == Some{(head, [])} : Maybe<&2, ResponseSpec.BytePair()>} &
+  {ResponseSpec.parse_head(Bytes.append(head, [13, 10, 13, 10])) == Some{parsed} : Maybe<&2, ResponseSpec.Head>} &
+  {ResponseSpec.header_values(parsed, "content-length") == [] : List<&2, List<&2, U32>>} &
+  {ResponseSpec.header_values(parsed, "transfer-encoding") == [] : List<&2, List<&2, U32>>}
+
+# Every valid 304 and every method: no payload or transfer coding. A length
+# occurs exactly once iff a representation witness is supplied, and counts it.
+law response_304_framing:
+  for +method: Request.Method
+  for +headers: List<&2, Request.Header>
+  for +body: List<&2, U32>
+  for +representation: Maybe<&2, List<&2, U32>>
+  for +valid: {Response.valid(Response.Res{304, headers, body, representation}) == True{} : Bool}
+  exs head: List<&2, U32>
+  exs parsed: ResponseSpec.Head
+  {ResponseSpec.split_first(WriteResponse.write(method, Response.Res{304, headers, body, representation})) == Some{(head, [])} : Maybe<&2, ResponseSpec.BytePair()>} &
+  {ResponseSpec.parse_head(Bytes.append(head, [13, 10, 13, 10])) == Some{parsed} : Maybe<&2, ResponseSpec.Head>} &
+  {ResponseSpec.header_values(parsed, "content-length") == ResponseFramingSpec.representation_lengths(representation) : List<&2, List<&2, U32>>} &
+  {ResponseSpec.header_values(parsed, "transfer-encoding") == [] : List<&2, List<&2, U32>>}
+
+# Independently split actual GET and HEAD wire outputs. Their valid heads
+# agree, HEAD has no suffix, and that head meets the independent framing table.
+law response_head_matches_get:
+  for +res: Response.Res
+  for +valid: {Response.valid(res) == True{} : Bool}
+  exs head: List<&2, U32>
+  exs get_body: List<&2, U32>
+  exs parsed: ResponseSpec.Head
+  {ResponseSpec.split_first(WriteResponse.write(Request.Get{}, res)) == Some{(head, get_body)} : Maybe<&2, ResponseSpec.BytePair()>} &
+  {ResponseSpec.split_first(WriteResponse.write(Request.Head{}, res)) == Some{(head, [])} : Maybe<&2, ResponseSpec.BytePair()>} &
+  {ResponseSpec.parse_head(Bytes.append(head, [13, 10, 13, 10])) == Some{parsed} : Maybe<&2, ResponseSpec.Head>} &
+  {ResponseSpec.header_values(parsed, "content-length") == ResponseFramingSpec.get_lengths(res) : List<&2, List<&2, U32>>} &
+  {ResponseSpec.header_values(parsed, "transfer-encoding") == [] : List<&2, List<&2, U32>>}
+
+# Response.text uses this encoder. Every scalar String survives the shared
+# strict UTF-8 decoder, rather than merely counting unspecified octets.
+law response_utf8_encode:
+  for +s: String
+  for +valid: {Utf8.valid(s) == True{} : Bool}
+  {Utf8.decode(Response.utf8(s)) == Some{s} : Maybe<&2, String>}
