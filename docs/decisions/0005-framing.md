@@ -15,6 +15,7 @@ handler and closes after one response. It does not merge trailers into headers.
 Every final response closes the connection, including successful responses in
 this milestone. Errors have `Content-Length: 0` and `Connection: close`.
 The raw-socket tests read until EOF and fail on timeout or reset before EOF.
+Early rejections use the bounded staged close described below.
 Section references below are to [RFC 9112](https://www.rfc-editor.org/rfc/rfc9112)
 unless marked [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110).
 
@@ -52,6 +53,26 @@ RFC 9112 section 6.1's recommendation to send 501 for an unsupported coding.
 It treats unsupported request framing as a connection error. Rejecting repeated
 CL, including identical values, is explicitly allowed by section 6.3.
 
+## Early rejection teardown
+
+After sending a final error response successfully, the connection shell discards
+incoming bytes before closing the socket. It reads at most 4096 octets at a time,
+up to 4 MiB total, with an absolute deadline one second after the send completes.
+Each `TCP.try_recv_bytes` uses the remaining time; incoming data never restarts
+the deadline. EOF, a receive failure, a receive timeout, or either limit ends the
+drain and closes the socket. A failed response send closes immediately.
+
+This staged close avoids resetting connections when rejected request payload is
+already queued, as described in RFC 9112 section 9.6. Bend 2.0.38 exposes no TCP
+write-side shutdown, so the server cannot send FIN before draining. Clients that
+keep their write side open normally see EOF after the one-second deadline. If
+bytes remain unread at the byte cap or deadline, or arrive after teardown, the
+close can still reset the connection. EOF is therefore guaranteed by the tests
+for their bounded queued payloads, rather than for arbitrary uploads. The drain
+discards wire bytes without decoding or buffering a rejected body. It uses timed
+receives directly: `IO.within` would leave the losing computation alive with the
+socket after a timeout.
+
 ## Limits and API
 
 `Serve.defaults(port)` sets a 1 MiB decoded body limit.
@@ -74,4 +95,8 @@ framing decisions and the suffix rather than reinterpreting received bytes.
 these decisions through TCP. It compares binary bodies byte for byte, exercises
 chunk extensions/trailers and split reads, waits for 100 before uploading,
 and sends a 5,000,000-octet body in 1024-octet writes on one connection with a
-6,000,000-octet configured limit. Each test has a 30-second maximum.
+6,000,000-octet configured limit. Queued rejection tests cover 32 KiB and 2 MiB
+uploads after an oversized CL,
+TE+CL with queued bytes, and an oversized chunk after an accepted chunk. They
+keep the client write side open and require the framed error followed by EOF.
+Each test has a 30-second maximum.
