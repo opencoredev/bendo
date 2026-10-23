@@ -1334,6 +1334,92 @@ law jwt_verify_bad_alg_exact:
   for bad: {JwtSpec.alg_accepted(fields) == False{} : Bool}
   {Jwt.verify(secret, a ++ ("." ++ (b ++ ("." ++ Base64.encode(HMAC.sha256(secret, Utf8.encode(a ++ ("." ++ b))), True{}, False{})))), now, leeway) == Fail{Jwt.BadAlgorithm{}} : Result<&2, &2, Jwt.Error, Json.Json>}
 
+# verify runs open first and adds checks after it, so every failure of open
+# (Malformed, BadEncoding, BadSignature) is verify's failure, unchanged.
+law jwt_verify_keeps_open_failure:
+  for +secret: List<&2, U32>
+  for +token: String
+  for +now: Nat
+  for +leeway: Nat
+  for +e: Jwt.Error
+  for failed: {Jwt.open(secret, token) == Fail{e} : Result<&2, &2, Jwt.Error, Jwt.Parts>}
+  {Jwt.verify(secret, token, now, leeway) == Fail{e} : Result<&2, &2, Jwt.Error, Json.Json>}
+
+# For every signature segment, time, leeway and payload segment: if the
+# header segment decodes to octets that are not JSON, or are JSON but not an
+# object, verify fails.
+law jwt_verify_rejects_non_object_header:
+  for +secret: List<&2, U32>
+  for +a: String
+  for +b: String
+  for +c: String
+  for +now: Nat
+  for +leeway: Nat
+  for +header: List<&2, U32>
+  for za: {JwtSpec.dots(a) == 0n : Nat}
+  for zb: {JwtSpec.dots(b) == 0n : Nat}
+  for zc: {JwtSpec.dots(c) == 0n : Nat}
+  for decoded: {Base64.decode(a, True{}, False{}) == Some{header} : Maybe<&2, List<&2, U32>>}
+  for bad: {JwtSpec.json_object(Json.parse(header)) == False{} : Bool}
+  {JwtSpec.failed(Jwt.verify(secret, a ++ ("." ++ (b ++ ("." ++ c))), now, leeway)) == True{} : Bool}
+
+# For every header segment, signature segment, time and leeway: if the
+# payload segment decodes to octets that are not JSON, or are JSON but not an
+# object, verify fails.
+law jwt_verify_rejects_non_object_payload:
+  for +secret: List<&2, U32>
+  for +a: String
+  for +b: String
+  for +c: String
+  for +now: Nat
+  for +leeway: Nat
+  for +payload: List<&2, U32>
+  for za: {JwtSpec.dots(a) == 0n : Nat}
+  for zb: {JwtSpec.dots(b) == 0n : Nat}
+  for zc: {JwtSpec.dots(c) == 0n : Nat}
+  for decoded: {Base64.decode(b, True{}, False{}) == Some{payload} : Maybe<&2, List<&2, U32>>}
+  for bad: {JwtSpec.json_object(Json.parse(payload)) == False{} : Bool}
+  {JwtSpec.failed(Jwt.verify(secret, a ++ ("." ++ (b ++ ("." ++ c))), now, leeway)) == True{} : Bool}
+
+# A header that decodes to a JSON object in which two top-level members share
+# a name (JwtSpec.distinct is False) never verifies, whatever the signature,
+# payload, time and leeway.
+law jwt_verify_rejects_repeated_header_member:
+  for +secret: List<&2, U32>
+  for +a: String
+  for +b: String
+  for +c: String
+  for +now: Nat
+  for +leeway: Nat
+  for +header: List<&2, U32>
+  for +fields: List<&2, Json.Field>
+  for za: {JwtSpec.dots(a) == 0n : Nat}
+  for zb: {JwtSpec.dots(b) == 0n : Nat}
+  for zc: {JwtSpec.dots(c) == 0n : Nat}
+  for decoded: {Base64.decode(a, True{}, False{}) == Some{header} : Maybe<&2, List<&2, U32>>}
+  for parsed: {Json.parse(header) == Done{Json.JObject{fields}} : Result<&2, &2, Json.Error, Json.Json>}
+  for repeated: {JwtSpec.distinct(fields) == False{} : Bool}
+  {JwtSpec.failed(Jwt.verify(secret, a ++ ("." ++ (b ++ ("." ++ c))), now, leeway)) == True{} : Bool}
+
+# A payload that decodes to a JSON object in which two top-level members
+# share a name never verifies, whatever the header, signature, time and leeway.
+law jwt_verify_rejects_repeated_claim:
+  for +secret: List<&2, U32>
+  for +a: String
+  for +b: String
+  for +c: String
+  for +now: Nat
+  for +leeway: Nat
+  for +payload: List<&2, U32>
+  for +fields: List<&2, Json.Field>
+  for za: {JwtSpec.dots(a) == 0n : Nat}
+  for zb: {JwtSpec.dots(b) == 0n : Nat}
+  for zc: {JwtSpec.dots(c) == 0n : Nat}
+  for decoded: {Base64.decode(b, True{}, False{}) == Some{payload} : Maybe<&2, List<&2, U32>>}
+  for parsed: {Json.parse(payload) == Done{Json.JObject{fields}} : Result<&2, &2, Json.Error, Json.Json>}
+  for repeated: {JwtSpec.distinct(fields) == False{} : Bool}
+  {JwtSpec.failed(Jwt.verify(secret, a ++ ("." ++ (b ++ ("." ++ c))), now, leeway)) == True{} : Bool}
+
 # The CSRF decision equals CsrfSpec.allows for every policy (configured
 # origins and optional scheme), method and header combination. The spec
 # inspects only non-GET/HEAD requests with a form-like or absent
@@ -1350,3 +1436,19 @@ law csrf_decision_spec:
   for +referer: Maybe<&2, String>
   for +host: Maybe<&2, String>
   {CsrfPolicy.decide(CsrfPolicy.Policy{origins, scheme}, method, content_type, site, origin, referer, host) == CsrfSpec.allows(origins, scheme, method, content_type, site, origin, referer, host) : Bool}
+
+# The middleware builds its policy with CsrfPolicy.policy, so the decision is
+# also stated from configuration: configured entries become their URL origins
+# (CsrfSpec.configured drops any that is not an http or https URL) and the
+# scheme is compared in lowercase. The origin parser itself is shared with the
+# specification (src/http/origin.bend).
+law csrf_configured_decision_spec:
+  for +origins: List<&2, String>
+  for +scheme: Maybe<&2, String>
+  for +method: Request.Method
+  for +content_type: Maybe<&2, String>
+  for +site: Maybe<&2, String>
+  for +origin: Maybe<&2, String>
+  for +referer: Maybe<&2, String>
+  for +host: Maybe<&2, String>
+  {CsrfPolicy.decide(CsrfPolicy.policy(origins, scheme), method, content_type, site, origin, referer, host) == CsrfSpec.allows(CsrfSpec.configured(origins), CsrfSpec.configured_scheme(scheme), method, content_type, site, origin, referer, host) : Bool}

@@ -194,3 +194,11 @@ def base64url(s: String) -> Bool:
       url_char(a) && url_char(b) && last2(c)
     case SCon{a, SCon{b, SCon{c, SCon{d, t}}}}:
       url_char(a) && url_char(b) && url_char(c) && url_char(d) && base64url(t)
+
+# True when JSON parsing succeeded with an object.
+def json_object(r: Result<&2, &2, Json.Error, Json.Json>) -> Bool:
+  match r:
+    case Done{Json.JObject{fields}}:
+      True{}
+    case _:
+      False{}

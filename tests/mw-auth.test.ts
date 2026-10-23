@@ -318,10 +318,8 @@ describe("JWT rejection", () => {
     }
     // Either copy taken alone would verify, so the first copy cannot decide.
     const ambiguous: [string, string][] = [
-      ['{"alg":"none","alg":"HS256"}', payload],
       ['{"alg":"HS256","alg":"HS256"}', payload],
       ['{"alg":"HS256","typ":"JWT","typ":"JWT"}', payload],
-      ['{"crit":["x"],"alg":"HS256","crit":["y"]}', payload],
       [hs256Header, '{"exp":1,"exp":2000000000}'],
       [hs256Header, '{"exp":2000000000,"exp":2000000000}'],
       [hs256Header, '{"nbf":1,"nbf":4000000000}'],
@@ -334,6 +332,18 @@ describe("JWT rejection", () => {
     for (const [header, body] of ambiguous) {
       expect(verifyWithBendo(secret, forgeText(secret, header, body), NOW)).toEqual(duplicate);
     }
+    // alg and crit are read before member names, so a first copy that fails
+    // reports its own error. The token is rejected either way.
+    expect(
+      verifyWithBendo(secret, forgeText(secret, '{"alg":"none","alg":"HS256"}', payload), NOW),
+    ).toEqual({ kind: "err", reason: "unsupported algorithm" });
+    expect(
+      verifyWithBendo(
+        secret,
+        forgeText(secret, '{"crit":["x"],"alg":"HS256","crit":["y"]}', payload),
+        NOW,
+      ),
+    ).toEqual({ kind: "err", reason: "invalid header" });
     // Only top-level names count; nested objects are claim values.
     expect(
       verifyWithBendo(secret, forgeText(secret, hs256Header, '{"ctx":{"a":1,"a":2}}'), NOW).kind,
@@ -349,6 +359,74 @@ describe("JWT rejection", () => {
     expect(outcome(bendSign(Buffer.from(secret).toString("hex"), '{"a":1,"a":2}'))).toEqual(
       duplicate,
     );
+  });
+
+  test("objects over 256 members fail closed in the header, the claims and sign", () => {
+    const tooMany: Outcome = { kind: "err", reason: "too many members" };
+    const membersText = (n: number, extra = ""): string =>
+      `{${extra}${Array.from({ length: n }, (_, i) => `"m${i}":${i}`).join(",")}}`;
+    const hs256Header = '{"alg":"HS256"}';
+    // 256 members is the limit: the claim set still verifies.
+    expect(
+      verifyWithBendo(secret, forgeText(secret, hs256Header, membersText(256)), NOW).kind,
+    ).toBe("ok");
+    expect(verifyWithBendo(secret, forgeText(secret, hs256Header, membersText(257)), NOW)).toEqual(
+      tooMany,
+    );
+    expect(
+      verifyWithBendo(secret, forgeText(secret, membersText(256, '"alg":"HS256",'), "{}"), NOW),
+    ).toEqual(tooMany);
+    // The alg is read first, so a bad alg is reported at any size.
+    expect(
+      verifyWithBendo(secret, forgeText(secret, membersText(300, '"alg":"none",'), "{}"), NOW),
+    ).toEqual({ kind: "err", reason: "unsupported algorithm" });
+    expect(outcome(bendSign(Buffer.from(secret).toString("hex"), membersText(256))).kind).toBe(
+      "ok",
+    );
+    expect(outcome(bendSign(Buffer.from(secret).toString("hex"), membersText(257)))).toEqual(
+      tooMany,
+    );
+  });
+
+  test("member-name checking grows linearly past the limit", () => {
+    // Every name is distinct, so a pairwise scan would do all of its work.
+    // Compare growth between sizes, not wall time: CI runners are slow.
+    const object = (n: number): string =>
+      `{${Array.from({ length: n }, (_, i) => `"${i.toString(36)}":0`).join(",")}}`;
+    const hex = Buffer.from(secret).toString("hex");
+    const tooMany: Outcome = { kind: "err", reason: "too many members" };
+    const fastest = (run: () => Outcome): number => {
+      let best = Number.POSITIVE_INFINITY;
+      for (let i = 0; i < 3; i++) {
+        const start = performance.now();
+        expect(run()).toEqual(tooMany);
+        best = Math.min(best, performance.now() - start);
+      }
+      return best;
+    };
+    const growth = (small: () => Outcome, large: () => Outcome): number => {
+      fastest(small);
+      return fastest(large) / Math.max(fastest(small), 1);
+    };
+    // Ten times the members: linear work grows about 10x, the old pairwise
+    // scan about 100x (1,000 members took 61 ms, 10,000 took 16 s).
+    const signed = [object(1_000), object(10_000)] as const;
+    expect(
+      growth(
+        () => outcome(bendSign(hex, signed[0])),
+        () => outcome(bendSign(hex, signed[1])),
+      ),
+    ).toBeLessThan(35);
+    // The JS build recurses once per token character, so verify stays near
+    // 16 KB of token here: six times the members, about 6x linear and 36x
+    // pairwise. 280 members is already past the limit.
+    const tokens = [280, 1_680].map((n) => forgeText(secret, '{"alg":"HS256"}', object(n)));
+    expect(
+      growth(
+        () => verifyWithBendo(secret, tokens[0] ?? "", NOW),
+        () => verifyWithBendo(secret, tokens[1] ?? "", NOW),
+      ),
+    ).toBeLessThan(20);
   });
 
   test("malformed tokens are rejected", () => {
@@ -596,14 +674,21 @@ describe("CSRF", () => {
     return res.status;
   }
   const form = { "content-type": "application/x-www-form-urlencoded" };
-  // A raw request, so the test controls the Host header.
-  function rawStatus(path: string, fields: Record<string, string>): Promise<number> {
-    const head = Object.entries({
-      ...form,
-      "content-length": "3",
-      connection: "close",
-      ...fields,
-    })
+  // A raw request, so the test controls the Host header and can repeat fields.
+  function rawStatus(
+    path: string,
+    fields: Record<string, string>,
+    repeated: [string, string][] = [],
+  ): Promise<number> {
+    const head = [
+      ...Object.entries({
+        ...form,
+        "content-length": "3",
+        connection: "close",
+        ...fields,
+      }),
+      ...repeated,
+    ]
       .map(([name, value]) => `${name}: ${value}\r\n`)
       .join("");
     return new Promise((resolve, reject) => {
@@ -820,6 +905,65 @@ describe("CSRF", () => {
         referer: "https://evil.example/",
       }),
     ).toBe(200);
+  });
+
+  test("repeated Origin, Referer or Sec-Fetch-Site fields are rejected", async () => {
+    const own = new URL(server.url);
+    const self = `http://${own.host}`;
+    const host = { host: own.host };
+    // One copy of each is accepted, so only the repetition decides below.
+    expect(await rawStatus("/csrf/form", { ...host, origin: self })).toBe(200);
+    const repeats: [string, string][][] = [
+      [
+        ["origin", self],
+        ["origin", "https://evil.example"],
+      ],
+      [
+        ["origin", "https://evil.example"],
+        ["origin", self],
+      ],
+      [
+        ["origin", self],
+        ["origin", self],
+      ],
+      [
+        ["referer", `${self}/a`],
+        ["referer", "https://evil.example/"],
+      ],
+      [
+        ["referer", `${self}/a`],
+        ["referer", `${self}/b`],
+      ],
+      [
+        ["sec-fetch-site", "same-origin"],
+        ["sec-fetch-site", "cross-site"],
+      ],
+      [
+        ["sec-fetch-site", "same-origin"],
+        ["sec-fetch-site", "same-origin"],
+      ],
+      [
+        ["Origin", self],
+        ["origin", "https://trusted.example"],
+      ],
+    ];
+    for (const lines of repeats) {
+      expect(await rawStatus("/csrf/form", host, lines)).toBe(403);
+    }
+    // A repeated Origin is not replaced by a good Referer.
+    expect(
+      await rawStatus("/csrf/form", { ...host, referer: `${self}/` }, [
+        ["origin", self],
+        ["origin", "https://evil.example"],
+      ]),
+    ).toBe(403);
+    // A repeated Sec-Fetch-Site removes the trust a lone good Origin has.
+    expect(
+      await rawStatus("/csrf/form", { ...host, origin: self }, [
+        ["sec-fetch-site", "same-origin"],
+        ["sec-fetch-site", "same-origin"],
+      ]),
+    ).toBe(403);
   });
 
   test("suspicious origins are rejected", async () => {

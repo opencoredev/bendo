@@ -77,3 +77,22 @@ def trusted(+origins: List<&2, String>, scheme: Maybe<&2, String>, +site: Maybe<
 # same-origin nor a trusted source vouches for it.
 def allows(+origins: List<&2, String>, scheme: Maybe<&2, String>, method: Request.Method, content_type: Maybe<&2, String>, +site: Maybe<&2, String>, origin: Maybe<&2, String>, referer: Maybe<&2, String>, host: Maybe<&2, String>) -> Bool:
   Bool.not(inspected(method, content_type)) || site_is(site, "same-origin") || trusted(origins, scheme, site, source(origin, referer), host)
+
+def present(m: Maybe<&2, String>) -> List<&2, String>:
+  match m:
+    case None{}: []
+    case Some{o}: [o]
+
+# The configured origins as the policy compares them: each entry's origin
+# (scheme, host and port of the URL, any path ignored), in order. An entry
+# that is not an http or https URL contributes nothing.
+def configured(xs: List<&2, String>) -> List<&2, String>:
+  match xs:
+    case Nil{}: []
+    case x <> t: List.append(&2, String, present(Origin.of_url(x)), configured(t))
+
+# The configured scheme, compared in ASCII lowercase.
+def configured_scheme(s: Maybe<&2, String>) -> Maybe<&2, String>:
+  match s:
+    case None{}: None{}
+    case Some{v}: Some{Bytes.fold(v)}

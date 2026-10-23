@@ -555,7 +555,25 @@ def Laws.jwt_verify_rejects_bad_alg(secret, a, b, c, now, leeway, header, fields
 def Laws.jwt_verify_bad_alg_exact(secret, a, b, now, leeway, header, payload, fields, za, zb, dh, dp, parsed, distinct, bad):
   JwtStructureProof.exactly_bad_alg(secret, a, b, now, leeway, header, payload, fields, za, zb, dh, dp, parsed, distinct, bad)
 
+def Laws.jwt_verify_keeps_open_failure(secret, token, now, leeway, e, failed):
+  JwtStructureProof.open_failure(secret, token, now, leeway, e, failed)
+
+def Laws.jwt_verify_rejects_non_object_header(secret, a, b, c, now, leeway, header, za, zb, zc, decoded, bad):
+  JwtStructureProof.header_not_object(secret, a, b, c, now, leeway, header, za, zb, zc, decoded, bad)
+
+def Laws.jwt_verify_rejects_non_object_payload(secret, a, b, c, now, leeway, payload, za, zb, zc, decoded, bad):
+  JwtStructureProof.payload_not_object(secret, a, b, c, now, leeway, payload, za, zb, zc, decoded, bad)
+
+def Laws.jwt_verify_rejects_repeated_header_member(secret, a, b, c, now, leeway, header, fields, za, zb, zc, decoded, parsed, repeated):
+  JwtStructureProof.header_repeated(secret, a, b, c, now, leeway, header, fields, za, zb, zc, decoded, parsed, repeated)
+
+def Laws.jwt_verify_rejects_repeated_claim(secret, a, b, c, now, leeway, payload, fields, za, zb, zc, decoded, parsed, repeated):
+  JwtStructureProof.payload_repeated(secret, a, b, c, now, leeway, payload, fields, za, zb, zc, decoded, parsed, repeated)
+
 # BND-43: the CSRF decision against its request-policy specification.
 
 def Laws.csrf_decision_spec(origins, scheme, method, content_type, site, origin, referer, host):
   CsrfProof.decide(origins, scheme, method, content_type, site, origin, referer, host)
+
+def Laws.csrf_configured_decision_spec(origins, scheme, method, content_type, site, origin, referer, host):
+  CsrfProof.configured(origins, scheme, method, content_type, site, origin, referer, host)

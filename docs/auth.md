@@ -79,17 +79,25 @@ Verification rejects a token, with status 401, when:
   `alg: none` tokens with an empty signature;
 - a segment is not strict unpadded base64url, or the header or payload is not a
   JSON object;
+- the header's `alg` is anything but the string `HS256`, including `none`,
+  `RS256` and `HS512`, or the header has a `crit` field;
 - the header or the payload repeats a top-level member name (error
   `duplicate member name`), such as `{"alg":"HS256","alg":"none"}` or
   `{"exp":2000000000,"exp":1}`;
-- the header's `alg` is anything but the string `HS256`, including `none`,
-  `RS256` and `HS512`, or the header has a `crit` field;
+- the header or the payload has more than 256 top-level members (error
+  `too many members`);
 - `exp`, `nbf` or `iat` is present but not a JSON number;
 - `now >= exp + leeway` (expired), `nbf > now + leeway` (not yet valid), or
   `iat > now + leeway` (issued in the future).
 
 The signature is checked before the header, so a forged header never reaches
-the `alg` check. Because only HS256 is accepted, a token that names RS256 cannot
+the `alg` check, and only a token signed with the secret can make the verifier
+parse JSON or compare member names. The header checks run in the order listed:
+`alg` and `crit` read the first member of each name, then the member names are
+checked. A header with a repeated name is therefore always rejected, though the
+error may be `unsupported algorithm` when its first `alg` is wrong. Member
+names are compared pairwise, which is why objects are capped at 256 members:
+anything larger fails after one linear count. Because only HS256 is accepted, a token that names RS256 cannot
 be verified with the HMAC secret as if it were a public key.
 
 Time claims are compared exactly as decimal numbers, so fractions and exponents
@@ -113,8 +121,9 @@ fails, the response is an empty 500. Cookie tokens are not supported.
 `{"alg":"HS256","typ":"JWT"}` and returns `Result<.., B.JwtError, String>`.
 `B.jwt_verify(secret, token, now, leeway)` returns the claims or the error.
 Both are pure. The tests check every direction against the `jose` npm package.
-Signing a claim set with a repeated member name fails with the same
-`DuplicateMember` error that verifying it would give.
+Signing a claim set with a repeated member name, or with more than 256
+members, fails with the same error (`DuplicateMember` or `TooManyMembers`) that
+verifying it would give.
 For byte secrets, use `src/crypto/jwt.bend` (`sign`, `verify`, `error_text`)
 directly.
 
@@ -141,6 +150,10 @@ The claimed origin is the `Origin` header. Only when `Origin` is absent does
 the middleware use the origin of the `Referer` URL; Hono does not read
 `Referer`. `Origin: null`, a scheme other than `http` or `https`, userinfo, or
 an `Origin` value with a path fails, and so does a request with neither header.
+If `Origin`, `Referer` or `Sec-Fetch-Site` appears more than once, the
+middleware ignores all three, so an inspected request fails: two copies
+disagree about the sender, and a repeated `Origin` must not fall back to
+`Referer`.
 
 Origins compare as serialized origins: scheme, host and port. Scheme and host
 are compared in lowercase, and the default port is dropped, so
@@ -208,13 +221,30 @@ covered.
   (`alg_accepted` counts the members itself), `verify` fails, whatever the
   signature, payload, time and leeway.
 - `jwt_verify_bad_alg_exact`: with canonical segments, the correct signature
-  and no repeated header member names, that failure is exactly `BadAlgorithm`.
+  and no repeated header member names, that failure is exactly `BadAlgorithm`,
+  at any number of members.
+- `jwt_verify_keeps_open_failure`: whenever `open` fails (malformed token, bad
+  encoding, bad signature), `verify` fails with the same error.
+- `jwt_verify_rejects_non_object_header` and
+  `jwt_verify_rejects_non_object_payload`: if the header or payload segment
+  decodes to octets that are not JSON, or JSON that is not an object
+  (`JwtSpec.json_object`), `verify` fails, whatever the other segments.
+- `jwt_verify_rejects_repeated_header_member` and
+  `jwt_verify_rejects_repeated_claim`: if the header or payload decodes to a
+  JSON object with a repeated top-level member name (`JwtSpec.distinct` is
+  false), `verify` fails, whatever the other segments.
 - `csrf_decision_spec`: the CSRF decision equals `CsrfSpec.allows` in
   `proof/csrf-spec.bend` for every policy, method and header combination. The
   spec restates the policy above without calling the middleware's helpers.
   Origin serialization (`src/http/origin.bend`) and the media-type essence
   (`src/http/media.bend`) are shared parsing primitives covered by the
   integration tests, not by this law.
+- `csrf_configured_decision_spec`: the same, for the policy the middleware
+  builds from configuration with `CsrfPolicy.policy`. Configured entries become
+  their URL origins (`CsrfSpec.configured`) and the scheme is lowercased
+  (`CsrfSpec.configured_scheme`). The URL-origin parser is again the shared one.
+- The middleware's rule for repeated `Origin`, `Referer` and `Sec-Fetch-Site`
+  fields lives in its IO shell and is covered by integration tests.
 
 The per-character facts behind `jwt_rejects_bad_encoding` are generated:
 `bun scripts/gen-base64url-chars.ts > proof/base64url-chars.bend` rebuilds

@@ -17,6 +17,7 @@ type Error is Data:
   BadClaims{}
   BadClaim{name: String}
   DuplicateMember{}
+  TooManyMembers{}
   Expired{}
   NotYetValid{}
   IssuedInFuture{}
@@ -160,19 +161,53 @@ def unique(fields: List<&2, Json.Field>) -> Bool:
     case Json.Field{+k, v} <> +t:
       Bool.not(key_in(k, t)) && unique(t)
 
-def sign_object(+secret: List<&2, U32>, claims: Json.Json, distinct: Bool) -> Result<&2, &2, Error, String>:
+# True when fields has at most n members. Linear, so it runs before unique.
+def at_most(fields: List<&2, Json.Field>, n: Nat) -> Bool:
+  match fields:
+    case Nil{}:
+      True{}
+    case f <> t:
+      match n:
+        case 0n:
+          False{}
+        case 1n+p:
+          at_most(t, p)
+
+def repeated(distinct: Bool) -> Maybe<&2, Error>:
   match distinct:
     case True{}:
-      written(secret, Json.stringify(claims))
+      None{}
     case False{}:
-      Fail{DuplicateMember{}}
+      Some{DuplicateMember{}}
+
+def bounded(+fields: List<&2, Json.Field>, small: Bool) -> Maybe<&2, Error>:
+  match small:
+    case True{}:
+      repeated(unique(fields))
+    case False{}:
+      Some{TooManyMembers{}}
+
+# The member-name check for a header or claim set. unique compares every pair
+# of names, so an object with more than 256 top-level members fails with
+# TooManyMembers before that. On the verify path both run only after the
+# signature has been checked.
+def members(+fields: List<&2, Json.Field>) -> Maybe<&2, Error>:
+  bounded(fields, at_most(fields, 256n))
+
+def sign_object(+secret: List<&2, U32>, claims: Json.Json, failure: Maybe<&2, Error>) -> Result<&2, &2, Error, String>:
+  match failure:
+    case None{}:
+      written(secret, Json.stringify(claims))
+    case Some{e}:
+      Fail{e}
 
 # Sign a JSON object claim set with the fixed header {"alg":"HS256","typ":"JWT"}.
-# A claim set with a repeated member name fails, since verify would reject it.
+# A claim set with a repeated member name, or more than 256 members, fails,
+# since verify would reject it.
 def sign(+secret: List<&2, U32>, claims: Json.Json) -> Result<&2, &2, Error, String>:
   match claims:
     case Json.JObject{+fields}:
-      sign_object(secret, Json.JObject{fields}, unique(fields))
+      sign_object(secret, Json.JObject{fields}, members(fields))
     case _:
       Fail{BadClaims{}}
 
@@ -374,17 +409,17 @@ def accepted(claims: Json.Json, failure: Maybe<&2, Error>) -> Result<&2, &2, Err
     case None{}: Done{claims}
     case Some{e}: Fail{e}
 
-def claim_fields(+fields: List<&2, Json.Field>, +now: Nat, +leeway: Nat, distinct: Bool) -> Result<&2, &2, Error, Json.Json>:
-  match distinct:
-    case True{}:
+def claim_fields(+fields: List<&2, Json.Field>, +now: Nat, +leeway: Nat, failure: Maybe<&2, Error>) -> Result<&2, &2, Error, Json.Json>:
+  match failure:
+    case None{}:
       accepted(Json.JObject{fields}, times(fields, now, leeway))
-    case False{}:
-      Fail{DuplicateMember{}}
+    case Some{e}:
+      Fail{e}
 
 def payload_claims(result: Result<&2, &2, Json.Error, Json.Json>, +now: Nat, +leeway: Nat) -> Result<&2, &2, Error, Json.Json>:
   match result:
     case Done{Json.JObject{+fields}}:
-      claim_fields(fields, now, leeway, unique(fields))
+      claim_fields(fields, now, leeway, members(fields))
     case _:
       Fail{BadClaims{}}
 
@@ -398,29 +433,34 @@ def absent(v: Maybe<&2, Json.Json>) -> Bool:
     case None{}: True{}
     case Some{x}: False{}
 
-def header_checked(payload: List<&2, U32>, +now: Nat, +leeway: Nat, alg: Bool, crit: Bool) -> Result<&2, &2, Error, Json.Json>:
+def header_members(payload: List<&2, U32>, +now: Nat, +leeway: Nat, failure: Maybe<&2, Error>) -> Result<&2, &2, Error, Json.Json>:
+  match failure:
+    case None{}:
+      payload_claims(Json.parse(payload), now, leeway)
+    case Some{e}:
+      Fail{e}
+
+# Only HS256 is accepted; "none", RS256 and every other alg fail. A crit
+# header names extensions this verifier does not implement, so it fails too.
+# These read the first member of each name. The header is accepted only if no
+# name repeats, so a later copy cannot change the outcome; it only changes
+# which error is reported.
+def header_checked(+fields: List<&2, Json.Field>, payload: List<&2, U32>, +now: Nat, +leeway: Nat, alg: Bool, crit: Bool) -> Result<&2, &2, Error, Json.Json>:
   match alg crit:
     case True{} True{}:
-      payload_claims(Json.parse(payload), now, leeway)
+      header_members(payload, now, leeway, members(fields))
     case False{} _:
       Fail{BadAlgorithm{}}
     case True{} False{}:
       Fail{BadHeader{}}
 
-# Only HS256 is accepted; "none", RS256 and every other alg fail. A crit
-# header names extensions this verifier does not implement, so it fails too.
-def header_fields(+fields: List<&2, Json.Field>, payload: List<&2, U32>, +now: Nat, +leeway: Nat, distinct: Bool) -> Result<&2, &2, Error, Json.Json>:
-  match distinct:
-    case True{}:
-      header_checked(payload, now, leeway, alg_ok(Json.lookup(fields, "alg")), absent(Json.lookup(fields, "crit")))
-    case False{}:
-      Fail{DuplicateMember{}}
+def header_fields(+fields: List<&2, Json.Field>, payload: List<&2, U32>, +now: Nat, +leeway: Nat) -> Result<&2, &2, Error, Json.Json>:
+  header_checked(fields, payload, now, leeway, alg_ok(Json.lookup(fields, "alg")), absent(Json.lookup(fields, "crit")))
 
-# A repeated member name fails before any member is read.
 def header_parsed(result: Result<&2, &2, Json.Error, Json.Json>, payload: List<&2, U32>, +now: Nat, +leeway: Nat) -> Result<&2, &2, Error, Json.Json>:
   match result:
     case Done{Json.JObject{+fields}}:
-      header_fields(fields, payload, now, leeway, unique(fields))
+      header_fields(fields, payload, now, leeway)
     case _:
       Fail{BadHeader{}}
 
@@ -446,6 +486,7 @@ def error_text(e: Error) -> String:
     case BadClaims{}: "invalid claims"
     case BadClaim{name}: "invalid " ++ name ++ " claim"
     case DuplicateMember{}: "duplicate member name"
+    case TooManyMembers{}: "too many members"
     case Expired{}: "token expired"
     case NotYetValid{}: "token not yet valid"
     case IssuedInFuture{}: "token issued in the future"

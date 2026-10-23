@@ -222,47 +222,7 @@ def alg_accepted(+fields: List<&2, Json.Field>, u: {J.unique(fields) == True{} :
     case Json.Field{+k, +v} <> +t:
       alg_step(k, v, t, String.eq(k, "alg"), {==}, u, ok, w => o => alg_accepted(t, w, o))
 
-def alg_checked(+p: List<&2, U32>, +now: Nat, +leeway: Nat, +fields: List<&2, Json.Field>, bad: {Spec.alg_accepted(fields) == False{} : Bool}, u: {J.unique(fields) == True{} : Bool}, +al: Bool, ea: {J.alg_ok(Json.lookup(fields, "alg")) == al : Bool}) -> {Spec.failed(J.header_checked(p, now, leeway, al, J.absent(Json.lookup(fields, "crit")))) == True{} : Bool}:
-  match al:
-    case False{}:
-      {==}
-    case True{}:
-      JwtProof.absurd({Spec.failed(J.header_checked(p, now, leeway, True{}, J.absent(Json.lookup(fields, "crit")))) == True{} : Bool}, JwtProof.false_true(Equal.trans(Bool, False{}, Spec.alg_accepted(fields), True{}, Equal.sym(Bool, Spec.alg_accepted(fields), False{}, bad), alg_accepted(fields, u, ea))))
-
-def fields_checked(+p: List<&2, U32>, +now: Nat, +leeway: Nat, +fields: List<&2, Json.Field>, bad: {Spec.alg_accepted(fields) == False{} : Bool}, +d: Bool, ed: {J.unique(fields) == d : Bool}) -> {Spec.failed(J.header_fields(fields, p, now, leeway, d)) == True{} : Bool}:
-  match d:
-    case False{}:
-      {==}
-    case True{}:
-      alg_checked(p, now, leeway, fields, bad, ed, J.alg_ok(Json.lookup(fields, "alg")), {==})
-
-def payload_checked(+h: List<&2, U32>, +now: Nat, +leeway: Nat, +fields: List<&2, Json.Field>, ph: {Json.parse(h) == Done{Json.JObject{fields}} : Result<&2, &2, Json.Error, Json.Json>}, bad: {Spec.alg_accepted(fields) == False{} : Bool}, +m: Maybe<&2, List<&2, U32>>) -> {Spec.failed(J.opened(J.decoded(Some{h}, m), now, leeway)) == True{} : Bool}:
-  match m:
-    case None{}:
-      {==}
-    case Some{+p}:
-      %Equal.sym(Result<&2, &2, Json.Error, Json.Json>, Json.parse(h), Done{Json.JObject{fields}}, ph) : {Spec.failed(J.header_parsed(_, p, now, leeway)) == True{} : Bool}
-      fields_checked(p, now, leeway, fields, bad, J.unique(fields), {==})
-
-def signature_checked(+a: String, +b: String, +now: Nat, +leeway: Nat, +h: List<&2, U32>, +fields: List<&2, Json.Field>, dh: {J.decode(a) == Some{h} : Maybe<&2, List<&2, U32>>}, ph: {Json.parse(h) == Done{Json.JObject{fields}} : Result<&2, &2, Json.Error, Json.Json>}, bad: {Spec.alg_accepted(fields) == False{} : Bool}, +x: Bool) -> {Spec.failed(J.opened(J.signed(a, b, x), now, leeway)) == True{} : Bool}:
-  match x:
-    case False{}:
-      {==}
-    case True{}:
-      %Equal.sym(Maybe<&2, List<&2, U32>>, J.decode(a), Some{h}, dh) : {Spec.failed(J.opened(J.decoded(_, J.decode(b)), now, leeway)) == True{} : Bool}
-      payload_checked(h, now, leeway, fields, ph, bad, J.decode(b))
-
-# Whatever the signature and payload, a token whose header decodes to an
-# object that does not name HS256 exactly once fails to verify.
-def bad_alg(+secret: List<&2, U32>, +a: String, +b: String, +c: String, +now: Nat, +leeway: Nat, +h: List<&2, U32>, +fields: List<&2, Json.Field>, za: {Spec.dots(a) == 0n : Nat}, zb: {Spec.dots(b) == 0n : Nat}, zc: {Spec.dots(c) == 0n : Nat}, dh: {J.decode(a) == Some{h} : Maybe<&2, List<&2, U32>>}, ph: {Json.parse(h) == Done{Json.JObject{fields}} : Result<&2, &2, Json.Error, Json.Json>}, bad: {Spec.alg_accepted(fields) == False{} : Bool}) -> {Spec.failed(J.verify(secret, J.token(a, b, c), now, leeway)) == True{} : Bool}:
-  +s = J.signature(secret, J.signing_input(a, b))
-  +rest = b ++ ("." ++ c)
-  %Equal.sym(Maybe<&2, J.Cut>, J.split(a ++ ("." ++ rest)), Some{J.Cut{a, rest}}, JwtProof.split_free(a, rest, dotfree_of(a, za))) : {Spec.failed(J.opened(J.first(secret, _), now, leeway)) == True{} : Bool}
-  %Equal.sym(Maybe<&2, J.Cut>, J.split(rest), Some{J.Cut{b, c}}, JwtProof.split_free(b, c, dotfree_of(b, zb))) : {Spec.failed(J.opened(J.second(secret, a, _), now, leeway)) == True{} : Bool}
-  %Equal.sym(Bool, J.dotfree(c), True{}, dotfree_of(c, zc)) : {Spec.failed(J.opened(J.third(secret, a, b, c, _), now, leeway)) == True{} : Bool}
-  signature_checked(a, b, now, leeway, h, fields, dh, ph, bad, Compare.ct_equal(J.codes(c), J.codes(s)))
-
-# ---- Exactly BadAlgorithm ----
+# ---- Distinct names ----
 
 def named_key_in(+key: String, +fields: List<&2, Json.Field>) -> {Spec.named(key, fields) == J.key_in(key, fields) : Bool}:
   match fields:
@@ -281,15 +241,219 @@ def distinct_unique(+fields: List<&2, Json.Field>) -> {Spec.distinct(fields) == 
       %Equal.sym(Bool, Spec.distinct(t), J.unique(t), distinct_unique(t)) : {Bool.not(J.key_in(k, t)) && _ == Bool.not(J.key_in(k, t)) && J.unique(t) : Bool}
       {==}
 
-def alg_exact(+p: List<&2, U32>, +now: Nat, +leeway: Nat, +fields: List<&2, Json.Field>, bad: {Spec.alg_accepted(fields) == False{} : Bool}, u: {J.unique(fields) == True{} : Bool}, +al: Bool, ea: {J.alg_ok(Json.lookup(fields, "alg")) == al : Bool}) -> {J.header_checked(p, now, leeway, al, J.absent(Json.lookup(fields, "crit"))) == Fail{J.BadAlgorithm{}} : Result<&2, &2, J.Error, Json.Json>}:
+# ---- Member names ----
+
+def is_some(m: Maybe<&2, J.Error>) -> Type:
+  match m:
+    case None{}:
+      Empty
+    case Some{e}:
+      Unit
+
+def some_none(+x: J.Error, e: {Some{x} == None{} : Maybe<&2, J.Error>}) -> Empty:
+  %e : is_some(_)
+  Unit{}
+
+def repeated_none(+fields: List<&2, Json.Field>, +d: Bool, ed: {J.unique(fields) == d : Bool}, e: {J.repeated(d) == None{} : Maybe<&2, J.Error>}) -> {J.unique(fields) == True{} : Bool}:
+  match d:
+    case True{}:
+      ed
+    case False{}:
+      JwtProof.absurd({J.unique(fields) == True{} : Bool}, some_none(J.DuplicateMember{}, e))
+
+def bounded_none(+fields: List<&2, Json.Field>, +small: Bool, e: {J.bounded(fields, small) == None{} : Maybe<&2, J.Error>}) -> {J.unique(fields) == True{} : Bool}:
+  match small:
+    case True{}:
+      repeated_none(fields, J.unique(fields), {==}, e)
+    case False{}:
+      JwtProof.absurd({J.unique(fields) == True{} : Bool}, some_none(J.TooManyMembers{}, e))
+
+# The member check passes only when unique holds: the size limit adds
+# failures, never successes.
+def members_unique(+fields: List<&2, Json.Field>, e: {J.members(fields) == None{} : Maybe<&2, J.Error>}) -> {J.unique(fields) == True{} : Bool}:
+  bounded_none(fields, J.at_most(fields, 256n), e)
+
+def members_distinct(+fields: List<&2, Json.Field>, e: {J.members(fields) == None{} : Maybe<&2, J.Error>}) -> {Spec.distinct(fields) == True{} : Bool}:
+  Equal.trans(Bool, Spec.distinct(fields), J.unique(fields), True{}, distinct_unique(fields), members_unique(fields, e))
+
+def repeated_absurd(+fields: List<&2, Json.Field>, dup: {Spec.distinct(fields) == False{} : Bool}, e: {J.members(fields) == None{} : Maybe<&2, J.Error>}) -> Empty:
+  JwtProof.false_true(Equal.trans(Bool, False{}, Spec.distinct(fields), True{}, Equal.sym(Bool, Spec.distinct(fields), False{}, dup), members_distinct(fields, e)))
+
+def alg_absurd(+fields: List<&2, Json.Field>, bad: {Spec.alg_accepted(fields) == False{} : Bool}, e: {J.members(fields) == None{} : Maybe<&2, J.Error>}, ok: {J.alg_ok(Json.lookup(fields, "alg")) == True{} : Bool}) -> Empty:
+  JwtProof.false_true(Equal.trans(Bool, False{}, Spec.alg_accepted(fields), True{}, Equal.sym(Bool, Spec.alg_accepted(fields), False{}, bad), alg_accepted(fields, members_unique(fields, e), ok)))
+
+# ---- The header path ----
+
+def members_fails(+fields: List<&2, Json.Field>, +p: List<&2, U32>, +now: Nat, +leeway: Nat, +m: Maybe<&2, J.Error>, em: {J.members(fields) == m : Maybe<&2, J.Error>}, rest: {J.members(fields) == None{} : Maybe<&2, J.Error>} -> {Spec.failed(J.payload_claims(Json.parse(p), now, leeway)) == True{} : Bool}) -> {Spec.failed(J.header_members(p, now, leeway, m)) == True{} : Bool}:
+  match m:
+    case None{}:
+      rest(em)
+    case Some{x}:
+      {==}
+
+def checked_fails(+fields: List<&2, Json.Field>, +p: List<&2, U32>, +now: Nat, +leeway: Nat, +al: Bool, ea: {J.alg_ok(Json.lookup(fields, "alg")) == al : Bool}, +cr: Bool, rest: {J.members(fields) == None{} : Maybe<&2, J.Error>} -> {J.alg_ok(Json.lookup(fields, "alg")) == True{} : Bool} -> {Spec.failed(J.payload_claims(Json.parse(p), now, leeway)) == True{} : Bool}) -> {Spec.failed(J.header_checked(fields, p, now, leeway, al, cr)) == True{} : Bool}:
   match al:
     case False{}:
       {==}
     case True{}:
-      JwtProof.absurd({J.header_checked(p, now, leeway, True{}, J.absent(Json.lookup(fields, "crit"))) == Fail{J.BadAlgorithm{}} : Result<&2, &2, J.Error, Json.Json>}, JwtProof.false_true(Equal.trans(Bool, False{}, Spec.alg_accepted(fields), True{}, Equal.sym(Bool, Spec.alg_accepted(fields), False{}, bad), alg_accepted(fields, u, ea))))
+      match cr:
+        case False{}:
+          {==}
+        case True{}:
+          members_fails(fields, p, now, leeway, J.members(fields), {==}, m => rest(m, ea))
+
+# An object header fails unless its alg reads HS256, it has no crit, its
+# member check passes and the payload then verifies.
+def fields_fails(+fields: List<&2, Json.Field>, +p: List<&2, U32>, +now: Nat, +leeway: Nat, rest: {J.members(fields) == None{} : Maybe<&2, J.Error>} -> {J.alg_ok(Json.lookup(fields, "alg")) == True{} : Bool} -> {Spec.failed(J.payload_claims(Json.parse(p), now, leeway)) == True{} : Bool}) -> {Spec.failed(J.header_fields(fields, p, now, leeway)) == True{} : Bool}:
+  checked_fails(fields, p, now, leeway, J.alg_ok(Json.lookup(fields, "alg")), {==}, J.absent(Json.lookup(fields, "crit")), rest)
+
+def object_header(+h: List<&2, U32>, +p: List<&2, U32>, +now: Nat, +leeway: Nat, +fields: List<&2, Json.Field>, ph: {Json.parse(h) == Done{Json.JObject{fields}} : Result<&2, &2, Json.Error, Json.Json>}, rest: {J.members(fields) == None{} : Maybe<&2, J.Error>} -> {J.alg_ok(Json.lookup(fields, "alg")) == True{} : Bool} -> {Spec.failed(J.payload_claims(Json.parse(p), now, leeway)) == True{} : Bool}) -> {Spec.failed(J.header_parsed(Json.parse(h), p, now, leeway)) == True{} : Bool}:
+  %Equal.sym(Result<&2, &2, Json.Error, Json.Json>, Json.parse(h), Done{Json.JObject{fields}}, ph) : {Spec.failed(J.header_parsed(_, p, now, leeway)) == True{} : Bool}
+  fields_fails(fields, p, now, leeway, rest)
+
+def header_json(+r: Result<&2, &2, Json.Error, Json.Json>, +p: List<&2, U32>, +now: Nat, +leeway: Nat, bad: {Spec.json_object(r) == False{} : Bool}) -> {Spec.failed(J.header_parsed(r, p, now, leeway)) == True{} : Bool}:
+  match r:
+    case Done{Json.JObject{fields}}:
+      JwtProof.absurd({Spec.failed(J.header_parsed(Done{Json.JObject{fields}}, p, now, leeway)) == True{} : Bool}, JwtProof.false_true(Equal.sym(Bool, True{}, False{}, bad)))
+    case Done{Json.JNull{}}:
+      {==}
+    case Done{Json.JBool{x}}:
+      {==}
+    case Done{Json.JNumber{x}}:
+      {==}
+    case Done{Json.JString{x}}:
+      {==}
+    case Done{Json.JArray{x}}:
+      {==}
+    case Fail{e}:
+      {==}
+
+def claims_json(+r: Result<&2, &2, Json.Error, Json.Json>, +now: Nat, +leeway: Nat, bad: {Spec.json_object(r) == False{} : Bool}) -> {Spec.failed(J.payload_claims(r, now, leeway)) == True{} : Bool}:
+  match r:
+    case Done{Json.JObject{fields}}:
+      JwtProof.absurd({Spec.failed(J.payload_claims(Done{Json.JObject{fields}}, now, leeway)) == True{} : Bool}, JwtProof.false_true(Equal.sym(Bool, True{}, False{}, bad)))
+    case Done{Json.JNull{}}:
+      {==}
+    case Done{Json.JBool{x}}:
+      {==}
+    case Done{Json.JNumber{x}}:
+      {==}
+    case Done{Json.JString{x}}:
+      {==}
+    case Done{Json.JArray{x}}:
+      {==}
+    case Fail{e}:
+      {==}
+
+def claim_members(+fields: List<&2, Json.Field>, +now: Nat, +leeway: Nat, +m: Maybe<&2, J.Error>, em: {J.members(fields) == m : Maybe<&2, J.Error>}, no: {J.members(fields) == None{} : Maybe<&2, J.Error>} -> Empty) -> {Spec.failed(J.claim_fields(fields, now, leeway, m)) == True{} : Bool}:
+  match m:
+    case None{}:
+      JwtProof.absurd({Spec.failed(J.claim_fields(fields, now, leeway, None{})) == True{} : Bool}, no(em))
+    case Some{x}:
+      {==}
+
+def claims_distinct(+p: List<&2, U32>, +now: Nat, +leeway: Nat, +fields: List<&2, Json.Field>, pp: {Json.parse(p) == Done{Json.JObject{fields}} : Result<&2, &2, Json.Error, Json.Json>}, dup: {Spec.distinct(fields) == False{} : Bool}) -> {Spec.failed(J.payload_claims(Json.parse(p), now, leeway)) == True{} : Bool}:
+  %Equal.sym(Result<&2, &2, Json.Error, Json.Json>, Json.parse(p), Done{Json.JObject{fields}}, pp) : {Spec.failed(J.payload_claims(_, now, leeway)) == True{} : Bool}
+  claim_members(fields, now, leeway, J.members(fields), {==}, m => repeated_absurd(fields, dup, m))
+
+# Whatever the header, a payload that fails rest makes verify fail.
+def payload_parsed(+r: Result<&2, &2, Json.Error, Json.Json>, +p: List<&2, U32>, +now: Nat, +leeway: Nat, rest: {Spec.failed(J.payload_claims(Json.parse(p), now, leeway)) == True{} : Bool}) -> {Spec.failed(J.header_parsed(r, p, now, leeway)) == True{} : Bool}:
+  match r:
+    case Done{Json.JObject{+fields}}:
+      fields_fails(fields, p, now, leeway, m => o => rest)
+    case Done{Json.JNull{}}:
+      {==}
+    case Done{Json.JBool{x}}:
+      {==}
+    case Done{Json.JNumber{x}}:
+      {==}
+    case Done{Json.JString{x}}:
+      {==}
+    case Done{Json.JArray{x}}:
+      {==}
+    case Fail{e}:
+      {==}
+
+def payload_side(+ma: Maybe<&2, List<&2, U32>>, +p: List<&2, U32>, +now: Nat, +leeway: Nat, rest: {Spec.failed(J.payload_claims(Json.parse(p), now, leeway)) == True{} : Bool}) -> {Spec.failed(J.opened(J.decoded(ma, Some{p}), now, leeway)) == True{} : Bool}:
+  match ma:
+    case None{}:
+      {==}
+    case Some{+h}:
+      payload_parsed(Json.parse(h), p, now, leeway, rest)
+
+def payload_fails(+a: String, +b: String, +now: Nat, +leeway: Nat, +p: List<&2, U32>, dp: {J.decode(b) == Some{p} : Maybe<&2, List<&2, U32>>}, rest: {Spec.failed(J.payload_claims(Json.parse(p), now, leeway)) == True{} : Bool}) -> {Spec.failed(J.opened(J.decoded(J.decode(a), J.decode(b)), now, leeway)) == True{} : Bool}:
+  %Equal.sym(Maybe<&2, List<&2, U32>>, J.decode(b), Some{p}, dp) : {Spec.failed(J.opened(J.decoded(J.decode(a), _), now, leeway)) == True{} : Bool}
+  payload_side(J.decode(a), p, now, leeway, rest)
+
+def header_side(+h: List<&2, U32>, +now: Nat, +leeway: Nat, +mb: Maybe<&2, List<&2, U32>>, hr: @p:List<&2, U32> -> {Spec.failed(J.header_parsed(Json.parse(h), p, now, leeway)) == True{} : Bool}) -> {Spec.failed(J.opened(J.decoded(Some{h}, mb), now, leeway)) == True{} : Bool}:
+  match mb:
+    case None{}:
+      {==}
+    case Some{+p}:
+      hr(p)
+
+# Whatever the payload, a header that fails hr makes verify fail.
+def header_fails(+a: String, +b: String, +now: Nat, +leeway: Nat, +h: List<&2, U32>, dh: {J.decode(a) == Some{h} : Maybe<&2, List<&2, U32>>}, hr: @p:List<&2, U32> -> {Spec.failed(J.header_parsed(Json.parse(h), p, now, leeway)) == True{} : Bool}) -> {Spec.failed(J.opened(J.decoded(J.decode(a), J.decode(b)), now, leeway)) == True{} : Bool}:
+  %Equal.sym(Maybe<&2, List<&2, U32>>, J.decode(a), Some{h}, dh) : {Spec.failed(J.opened(J.decoded(_, J.decode(b)), now, leeway)) == True{} : Bool}
+  header_side(h, now, leeway, J.decode(b), hr)
+
+def signature_fails(+a: String, +b: String, +now: Nat, +leeway: Nat, +x: Bool, ok: {Spec.failed(J.opened(J.decoded(J.decode(a), J.decode(b)), now, leeway)) == True{} : Bool}) -> {Spec.failed(J.opened(J.signed(a, b, x), now, leeway)) == True{} : Bool}:
+  match x:
+    case False{}:
+      {==}
+    case True{}:
+      ok
+
+# For any signature segment: a wrong one fails with BadSignature, and a right
+# one reaches the decoded header and payload, where ok applies.
+def token_fails(+secret: List<&2, U32>, +a: String, +b: String, +c: String, +now: Nat, +leeway: Nat, za: {Spec.dots(a) == 0n : Nat}, zb: {Spec.dots(b) == 0n : Nat}, zc: {Spec.dots(c) == 0n : Nat}, ok: {Spec.failed(J.opened(J.decoded(J.decode(a), J.decode(b)), now, leeway)) == True{} : Bool}) -> {Spec.failed(J.verify(secret, J.token(a, b, c), now, leeway)) == True{} : Bool}:
+  +s = J.signature(secret, J.signing_input(a, b))
+  +rest = b ++ ("." ++ c)
+  %Equal.sym(Maybe<&2, J.Cut>, J.split(a ++ ("." ++ rest)), Some{J.Cut{a, rest}}, JwtProof.split_free(a, rest, dotfree_of(a, za))) : {Spec.failed(J.opened(J.first(secret, _), now, leeway)) == True{} : Bool}
+  %Equal.sym(Maybe<&2, J.Cut>, J.split(rest), Some{J.Cut{b, c}}, JwtProof.split_free(b, c, dotfree_of(b, zb))) : {Spec.failed(J.opened(J.second(secret, a, _), now, leeway)) == True{} : Bool}
+  %Equal.sym(Bool, J.dotfree(c), True{}, dotfree_of(c, zc)) : {Spec.failed(J.opened(J.third(secret, a, b, c, _), now, leeway)) == True{} : Bool}
+  signature_fails(a, b, now, leeway, Compare.ct_equal(J.codes(c), J.codes(s)), ok)
+
+# ---- Laws: verify fails ----
+
+# Whatever the signature and payload, a token whose header decodes to an
+# object that does not name HS256 exactly once fails to verify.
+def bad_alg(+secret: List<&2, U32>, +a: String, +b: String, +c: String, +now: Nat, +leeway: Nat, +h: List<&2, U32>, +fields: List<&2, Json.Field>, za: {Spec.dots(a) == 0n : Nat}, zb: {Spec.dots(b) == 0n : Nat}, zc: {Spec.dots(c) == 0n : Nat}, dh: {J.decode(a) == Some{h} : Maybe<&2, List<&2, U32>>}, ph: {Json.parse(h) == Done{Json.JObject{fields}} : Result<&2, &2, Json.Error, Json.Json>}, bad: {Spec.alg_accepted(fields) == False{} : Bool}) -> {Spec.failed(J.verify(secret, J.token(a, b, c), now, leeway)) == True{} : Bool}:
+  token_fails(secret, a, b, c, now, leeway, za, zb, zc, header_fails(a, b, now, leeway, h, dh, p => object_header(h, p, now, leeway, fields, ph, m => o => JwtProof.absurd({Spec.failed(J.payload_claims(Json.parse(p), now, leeway)) == True{} : Bool}, alg_absurd(fields, bad, m, o)))))
+
+# A header that decodes but is not a JSON object fails to verify.
+def header_not_object(+secret: List<&2, U32>, +a: String, +b: String, +c: String, +now: Nat, +leeway: Nat, +h: List<&2, U32>, za: {Spec.dots(a) == 0n : Nat}, zb: {Spec.dots(b) == 0n : Nat}, zc: {Spec.dots(c) == 0n : Nat}, dh: {J.decode(a) == Some{h} : Maybe<&2, List<&2, U32>>}, bad: {Spec.json_object(Json.parse(h)) == False{} : Bool}) -> {Spec.failed(J.verify(secret, J.token(a, b, c), now, leeway)) == True{} : Bool}:
+  token_fails(secret, a, b, c, now, leeway, za, zb, zc, header_fails(a, b, now, leeway, h, dh, p => header_json(Json.parse(h), p, now, leeway, bad)))
+
+# An object header with a repeated member name fails to verify.
+def header_repeated(+secret: List<&2, U32>, +a: String, +b: String, +c: String, +now: Nat, +leeway: Nat, +h: List<&2, U32>, +fields: List<&2, Json.Field>, za: {Spec.dots(a) == 0n : Nat}, zb: {Spec.dots(b) == 0n : Nat}, zc: {Spec.dots(c) == 0n : Nat}, dh: {J.decode(a) == Some{h} : Maybe<&2, List<&2, U32>>}, ph: {Json.parse(h) == Done{Json.JObject{fields}} : Result<&2, &2, Json.Error, Json.Json>}, dup: {Spec.distinct(fields) == False{} : Bool}) -> {Spec.failed(J.verify(secret, J.token(a, b, c), now, leeway)) == True{} : Bool}:
+  token_fails(secret, a, b, c, now, leeway, za, zb, zc, header_fails(a, b, now, leeway, h, dh, p => object_header(h, p, now, leeway, fields, ph, m => o => JwtProof.absurd({Spec.failed(J.payload_claims(Json.parse(p), now, leeway)) == True{} : Bool}, repeated_absurd(fields, dup, m)))))
+
+# A payload that decodes but is not a JSON object fails to verify.
+def payload_not_object(+secret: List<&2, U32>, +a: String, +b: String, +c: String, +now: Nat, +leeway: Nat, +p: List<&2, U32>, za: {Spec.dots(a) == 0n : Nat}, zb: {Spec.dots(b) == 0n : Nat}, zc: {Spec.dots(c) == 0n : Nat}, dp: {J.decode(b) == Some{p} : Maybe<&2, List<&2, U32>>}, bad: {Spec.json_object(Json.parse(p)) == False{} : Bool}) -> {Spec.failed(J.verify(secret, J.token(a, b, c), now, leeway)) == True{} : Bool}:
+  token_fails(secret, a, b, c, now, leeway, za, zb, zc, payload_fails(a, b, now, leeway, p, dp, claims_json(Json.parse(p), now, leeway, bad)))
+
+# An object payload with a repeated member name fails to verify.
+def payload_repeated(+secret: List<&2, U32>, +a: String, +b: String, +c: String, +now: Nat, +leeway: Nat, +p: List<&2, U32>, +fields: List<&2, Json.Field>, za: {Spec.dots(a) == 0n : Nat}, zb: {Spec.dots(b) == 0n : Nat}, zc: {Spec.dots(c) == 0n : Nat}, dp: {J.decode(b) == Some{p} : Maybe<&2, List<&2, U32>>}, pp: {Json.parse(p) == Done{Json.JObject{fields}} : Result<&2, &2, Json.Error, Json.Json>}, dup: {Spec.distinct(fields) == False{} : Bool}) -> {Spec.failed(J.verify(secret, J.token(a, b, c), now, leeway)) == True{} : Bool}:
+  token_fails(secret, a, b, c, now, leeway, za, zb, zc, payload_fails(a, b, now, leeway, p, dp, claims_distinct(p, now, leeway, fields, pp, dup)))
+
+# verify only adds checks after open: every open failure is verify's result.
+def open_failure(+secret: List<&2, U32>, +token: String, +now: Nat, +leeway: Nat, +e: J.Error, failed: {J.open(secret, token) == Fail{e} : Result<&2, &2, J.Error, J.Parts>}) -> {J.verify(secret, token, now, leeway) == Fail{e} : Result<&2, &2, J.Error, Json.Json>}:
+  %Equal.sym(Result<&2, &2, J.Error, J.Parts>, J.open(secret, token), Fail{e}, failed) : {J.opened(_, now, leeway) == Fail{e} : Result<&2, &2, J.Error, Json.Json>}
+  {==}
+
+# ---- Exactly BadAlgorithm ----
+
+def alg_exact(+fields: List<&2, Json.Field>, +p: List<&2, U32>, +now: Nat, +leeway: Nat, bad: {Spec.alg_accepted(fields) == False{} : Bool}, u: {J.unique(fields) == True{} : Bool}, +al: Bool, ea: {J.alg_ok(Json.lookup(fields, "alg")) == al : Bool}) -> {J.header_checked(fields, p, now, leeway, al, J.absent(Json.lookup(fields, "crit"))) == Fail{J.BadAlgorithm{}} : Result<&2, &2, J.Error, Json.Json>}:
+  match al:
+    case False{}:
+      {==}
+    case True{}:
+      JwtProof.absurd({J.header_checked(fields, p, now, leeway, True{}, J.absent(Json.lookup(fields, "crit"))) == Fail{J.BadAlgorithm{}} : Result<&2, &2, J.Error, Json.Json>}, JwtProof.false_true(Equal.trans(Bool, False{}, Spec.alg_accepted(fields), True{}, Equal.sym(Bool, Spec.alg_accepted(fields), False{}, bad), alg_accepted(fields, u, ea))))
 
 # With canonical segments, a correct signature and distinct member names, a
-# header that does not name HS256 exactly once fails with BadAlgorithm.
+# header that does not name HS256 exactly once fails with BadAlgorithm. The
+# alg is checked before the member limit, so this holds at any size.
 def exactly_bad_alg(+secret: List<&2, U32>, +a: String, +b: String, +now: Nat, +leeway: Nat, +h: List<&2, U32>, +p: List<&2, U32>, +fields: List<&2, Json.Field>, za: {Spec.dots(a) == 0n : Nat}, zb: {Spec.dots(b) == 0n : Nat}, dh: {J.decode(a) == Some{h} : Maybe<&2, List<&2, U32>>}, dp: {J.decode(b) == Some{p} : Maybe<&2, List<&2, U32>>}, ph: {Json.parse(h) == Done{Json.JObject{fields}} : Result<&2, &2, Json.Error, Json.Json>}, dist: {Spec.distinct(fields) == True{} : Bool}, bad: {Spec.alg_accepted(fields) == False{} : Bool}) -> {J.verify(secret, J.token(a, b, J.signature(secret, J.signing_input(a, b))), now, leeway) == Fail{J.BadAlgorithm{}} : Result<&2, &2, J.Error, Json.Json>}:
   +s = J.signature(secret, J.signing_input(a, b))
   +rest = b ++ ("." ++ s)
@@ -301,5 +465,4 @@ def exactly_bad_alg(+secret: List<&2, U32>, +a: String, +b: String, +now: Nat, +
   %Equal.sym(Maybe<&2, List<&2, U32>>, J.decode(a), Some{h}, dh) : {J.opened(J.decoded(_, J.decode(b)), now, leeway) == Fail{J.BadAlgorithm{}} : Result<&2, &2, J.Error, Json.Json>}
   %Equal.sym(Maybe<&2, List<&2, U32>>, J.decode(b), Some{p}, dp) : {J.opened(J.decoded(Some{h}, _), now, leeway) == Fail{J.BadAlgorithm{}} : Result<&2, &2, J.Error, Json.Json>}
   %Equal.sym(Result<&2, &2, Json.Error, Json.Json>, Json.parse(h), Done{Json.JObject{fields}}, ph) : {J.header_parsed(_, p, now, leeway) == Fail{J.BadAlgorithm{}} : Result<&2, &2, J.Error, Json.Json>}
-  %Equal.sym(Bool, J.unique(fields), True{}, u) : {J.header_fields(fields, p, now, leeway, _) == Fail{J.BadAlgorithm{}} : Result<&2, &2, J.Error, Json.Json>}
-  alg_exact(p, now, leeway, fields, bad, u, J.alg_ok(Json.lookup(fields, "alg")), {==})
+  alg_exact(fields, p, now, leeway, bad, u, J.alg_ok(Json.lookup(fields, "alg")), {==})

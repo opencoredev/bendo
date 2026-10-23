@@ -117,3 +117,29 @@ def decide(+origins: List<&2, String>, +scheme: Maybe<&2, String>, +method: Requ
   %Equal.sym(Bool, P.safe(method), Spec.reads_only(method), safe_reads(method)) : {P.inspect(Bool.not(_) && P.form(content_type), P.Policy{origins, scheme}, site, origin, referer, host) == Spec.allows(origins, scheme, method, content_type, site, origin, referer, host) : Bool}
   %Equal.sym(Bool, P.form(content_type), Spec.simple_body(content_type), form_simple(content_type)) : {P.inspect(Bool.not(Spec.reads_only(method)) && _, P.Policy{origins, scheme}, site, origin, referer, host) == Spec.allows(origins, scheme, method, content_type, site, origin, referer, host) : Bool}
   gate(origins, scheme, site, origin, referer, host, Spec.inspected(method, content_type))
+
+# ---- The configured policy ----
+
+def kept_present(+m: Maybe<&2, String>, +rest: List<&2, String>) -> {P.kept(m, rest) == List.append(&2, String, Spec.present(m), rest) : List<&2, String>}:
+  match m:
+    case None{}: {==}
+    case Some{o}: {==}
+
+def serialized(+xs: List<&2, String>) -> {P.serialized(xs) == Spec.configured(xs) : List<&2, String>}:
+  match xs:
+    case Nil{}: {==}
+    case +x <> +t:
+      %serialized(t) : {P.kept(Origin.of_url(x), P.serialized(t)) == List.append(&2, String, Spec.present(Origin.of_url(x)), _) : List<&2, String>}
+      kept_present(Origin.of_url(x), P.serialized(t))
+
+def scheme_of(+s: Maybe<&2, String>) -> {P.scheme_of(s) == Spec.configured_scheme(s) : Maybe<&2, String>}:
+  match s:
+    case None{}: {==}
+    case Some{v}: {==}
+
+# The decision of a policy built from configuration is the specification's
+# decision over the configured origins and scheme.
+def configured(+origins: List<&2, String>, +scheme: Maybe<&2, String>, +method: Request.Method, +content_type: Maybe<&2, String>, +site: Maybe<&2, String>, +origin: Maybe<&2, String>, +referer: Maybe<&2, String>, +host: Maybe<&2, String>) -> {P.decide(P.policy(origins, scheme), method, content_type, site, origin, referer, host) == Spec.allows(Spec.configured(origins), Spec.configured_scheme(scheme), method, content_type, site, origin, referer, host) : Bool}:
+  %Equal.sym(List<&2, String>, P.serialized(origins), Spec.configured(origins), serialized(origins)) : {P.decide(P.Policy{_, P.scheme_of(scheme)}, method, content_type, site, origin, referer, host) == Spec.allows(Spec.configured(origins), Spec.configured_scheme(scheme), method, content_type, site, origin, referer, host) : Bool}
+  %Equal.sym(Maybe<&2, String>, P.scheme_of(scheme), Spec.configured_scheme(scheme), scheme_of(scheme)) : {P.decide(P.Policy{Spec.configured(origins), _}, method, content_type, site, origin, referer, host) == Spec.allows(Spec.configured(origins), Spec.configured_scheme(scheme), method, content_type, site, origin, referer, host) : Bool}
+  decide(Spec.configured(origins), Spec.configured_scheme(scheme), method, content_type, site, origin, referer, host)
