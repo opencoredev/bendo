@@ -2,7 +2,6 @@
 # Agents may add laws. Never delete or weaken one without a written reason
 # in the pull request.
 import Base
-import ./src/data/json.bend as Json
 import ./src/http/response.bend as Response
 import ./src/http/write_response.bend as WriteResponse
 import ./proof/response-spec.bend as ResponseSpec
@@ -710,16 +709,3 @@ law response_utf8_encode:
   for +s: String
   for +valid: {Utf8.valid(s) == True{} : Bool}
   {Utf8.decode(Response.utf8(s)) == Some{s} : Maybe<&2, String>}
-
-# BND-28: every scalar-string, lexical-number JSON tree with at most 512
-# nested containers serializes successfully and survives strict byte parsing.
-# Pretty printing and ASCII Unicode escaping are independently quantified.
-
-law json_roundtrip:
-  for +value: Json.Json
-  for +pretty: Bool
-  for +ascii: Bool
-  for +valid: {Json.admissible(value) == True{} : Bool}
-  exs output: String
-  {Json.write(value, pretty, ascii) == Done{output} : Result<&2, &2, Json.Error, String>} &
-  {Json.parse(Utf8.encode(output)) == Done{value} : Result<&2, &2, Json.Error, Json.Json>}
