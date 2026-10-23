@@ -6,6 +6,9 @@ import ./src/http/request.bend as Request
 import ./src/http/parse.bend as Parse
 import ./src/http/write.bend as Write
 import ./LAWS.bend as Laws
+import ./proof/equality.bend as Equality
+import ./proof/tokens.bend as Tokens
+import ./proof/headers.bend as Headers
 
 def Laws.text_body_after_blank(body):
   ("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nConnection: close", ({==}, {==}))
@@ -29,16 +32,23 @@ def Laws.header_lookup_case_insensitive(headers, name, variant, same):
   %same : {Request.lookup_folded(headers, Bytes.fold(name)) == Request.lookup_folded(headers, _) : List<&2, List<&2, U32>>}
   {==}
 
-# Open: require feed-of-valid-written-line, feed-of-written-header and
-# header-list induction. The original laws remain unchanged.
+# Header field reconstruction is checked below. The remaining composition
+# needs printable-line proofs, scanner application and header-list induction.
 def Laws.request_head_roundtrip(req, valid):
   match req:
     case Request.Req{m, p, q, v, hs}:
       ?TODO
 
-# Open after eliminating ASCII encode/decode: prove the validated token
-# split and target reconstruction for arbitrary method/path/query fields.
+# ASCII conversion and splitting after the method token are checked.
+# Remaining: split target/version and recover the canonical method and target.
 def Laws.parsed_request_line_path(method, path, query, version, valid):
   +content = Request.method_text(method) ++ " " ++ path ++ Request.query_text(query) ++ " " ++ Request.version_text(version)
+  line_valid = Equality.and_left(Request.method_valid(method) && Request.target_valid(method, path, query), True{}, valid)
+  method_valid = Equality.and_left(Request.method_valid(method), Request.target_valid(method, path, query), line_valid)
   %Equal.sym(String, Bytes.ascii(Bytes.encode(content)), content, ascii_encode(content)) : {Parse.request_line_parts(String.split(_, ' ')) == Parse.Headers{Request.Req{method, Bytes.prefix(path ++ Request.query_text(query)), query, version, []}, [], False{}} : Parse.State}
+  %Equal.sym(List<&2, String>, String.split(content, ' '), Request.method_text(method) <> String.split(path ++ Request.query_text(query) ++ " " ++ Request.version_text(version), ' '), Tokens.split_method(method, path ++ Request.query_text(query) ++ " " ++ Request.version_text(version), method_valid)) : {Parse.request_line_parts(_) == Parse.Headers{Request.Req{method, Bytes.prefix(path ++ Request.query_text(query)), query, version, []}, [], False{}} : Parse.State}
   ?TODO
+
+# The single-header obligation from the request-head round trip.
+def Laws.header_line_roundtrip(req, name, value, valid):
+  Headers.header_fields(req, name, value, valid)

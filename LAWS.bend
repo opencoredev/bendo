@@ -51,3 +51,11 @@ law parsed_request_line_path:
   for +version: Request.Version
   for valid: {Request.well_formed(Request.Req{method, path, query, version, []}) == True{} : Bool}
   {Parse.request_line(Write.line_content(method, path, query, version)) == Parse.Headers{Request.Req{method, Bytes.prefix(path ++ Request.query_text(query)), query, version, []}, [], False{}} : Parse.State}
+
+# BND-7 lemmas: universal component reconstruction for the head round trip.
+law header_line_roundtrip:
+  for +req: Request.Req
+  for +name: String
+  for +value: List<&2, U32>
+  for +valid: {Request.header_valid(Request.Header{name, value}) == True{} : Bool}
+  {Parse.header_line(req, Bytes.append(Bytes.encode(name), 58 <> 32 <> value)) == Parse.push_header(req, Request.Header{name, value}) : Parse.State}
