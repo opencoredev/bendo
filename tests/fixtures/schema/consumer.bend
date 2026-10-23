@@ -3,6 +3,7 @@ import ../../../src/data/schema.bend as S
 import ../../../src/data/json.bend as J
 import ../../../src/data/decimal.bend as D
 import ../../../src/data/schema-pattern.bend as P
+import ../../../src/data/schema-pattern-automaton.bend as A
 import ../../../src/data/schema-spec.bend as Spec
 
 def lower() -> P.Pattern:
@@ -19,6 +20,15 @@ def slug() -> P.Pattern:
 
 def zip() -> P.Pattern:
   P.seq([P.Repeat{digit(), 5n, Some{5n}}, P.Repeat{P.Cat{P.Literal{"-"}, P.Repeat{digit(), 4n, Some{4n}}}, 0n, Some{1n}}])
+
+# k copies of r in sequence, all repeated: the worst shapes the size cap admits.
+def copies(k: Nat, +r: P.Pattern) -> List<&2, P.Pattern>:
+  match k:
+    case 0n: []
+    case 1n+j: r <> copies(j, r)
+
+def worst(k: Nat, n: Nat) -> P.Pattern:
+  P.Repeat{P.seq(copies(k, P.Repeat{P.Class{[P.Range{97, 122}]}, 0n, Some{n}})), 0n, None{}}
 
 def text(p: P.Pattern) -> S.Schema:
   S.StringSchema{0n, None{}, Some{p}, S.Plain{}}
@@ -39,6 +49,11 @@ def pattern_of(name: String) -> P.Pattern:
     case "bounds": P.Repeat{P.Cat{a(), P.Literal{"b"}}, 2n, Some{3n}}
     case "astral": P.Repeat{P.Literal{"😀é"}, 1n, Some{2n}}
     case "punctuation": P.seq([P.Literal{"^$\\.*+?()[]{}|/-"}, P.Repeat{P.Class{[P.Range{0, 31}, P.Range{127, 127}]}, 0n, Some{1n}}])
+    case "worst-2x32": worst(32n, 2n)
+    case "worst-6x16": worst(16n, 6n)
+    case "worst-1x42": worst(42n, 1n)
+    case "nested-10x11": P.Repeat{P.Repeat{a(), 0n, Some{10n}}, 0n, Some{11n}}
+    case "starred-nested": P.Repeat{P.Repeat{P.Repeat{a(), 0n, Some{10n}}, 0n, Some{11n}}, 0n, None{}}
     case "bad-pattern": P.Repeat{P.Class{[P.Range{122, 97}]}, 0n, None{}}
     case "bad-ascii": P.Repeat{P.Class{[P.Range{0, 128}]}, 0n, None{}}
     case "bad-count": P.Repeat{a(), 2n, Some{1n}}
@@ -66,6 +81,11 @@ def schema(name: String) -> S.Schema:
     case "bounds": text(pattern_of("bounds"))
     case "astral": text(pattern_of("astral"))
     case "slug-short": S.StringSchema{3n, Some{8n}, Some{slug()}, S.Plain{}}
+    case "worst-2x32": text(pattern_of("worst-2x32"))
+    case "worst-6x16": text(pattern_of("worst-6x16"))
+    case "worst-1x42": text(pattern_of("worst-1x42"))
+    case "starred-nested": text(pattern_of("starred-nested"))
+    case "worst-short": S.StringSchema{0n, Some{1n}, Some{pattern_of("worst-6x16")}, S.Plain{}}
     case "bad-literal-pattern": text(pattern_of("bad-literal-pattern"))
     case "bad-nested-count": text(pattern_of("bad-nested-count"))
     case "punctuation": text(pattern_of("punctuation"))
@@ -98,10 +118,12 @@ def schema(name: String) -> S.Schema:
 
 def decode(s: S.Schema, v: J.Json) -> Result<&2, &2, S.Errors(), S.Value>: S.decode(s, v)
 def satisfies(s: S.Schema, v: J.Json) -> Bool: Spec.satisfies(s, v)
-def matches(p: P.Pattern, s: String) -> Bool: P.matches(p, s)
+def matches(p: P.Pattern, s: String) -> Bool: A.matches(p, s)
+def derive_matches(p: P.Pattern, s: String) -> Bool: P.matches(p, s)
 def pattern_spec(p: P.Pattern, s: String) -> Bool: Spec.matches(p, s)
 def source(p: P.Pattern) -> String: P.source(p)
 def pattern_valid(p: P.Pattern) -> Bool: P.valid(p)
+def spec_pattern_ok(p: P.Pattern) -> Bool: Spec.pattern_ok(p)
 def spec_order(a: String, b: String) -> Cmp: Spec.order(a, b)
 def spec_number(s: String) -> Bool: Spec.number(s)
 def spec_integer(s: String) -> Bool: Spec.integer(s)

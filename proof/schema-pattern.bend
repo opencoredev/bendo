@@ -44,7 +44,7 @@ def size_equiv(+p: P.Pattern) -> {P.size(p) == Spec.expanded(p) : Nat}:
       %copies_equiv(m, n) : {P.size(P.Repeat{r, m, n}) == 1n+Nat.mul(_, P.size(r)) : Nat}
       {==}
 
-def small_equiv(+ok: Bool, +p: P.Pattern) -> {P.small(ok, p) == (ok && Spec.fits(p)) : Bool}:
+def small_equiv(+ok: Bool, +p: P.Pattern) -> {P.small(ok, p) == Spec.sized(ok, p) : Bool}:
   match ok:
     case False{}: {==}
     case True{}:
@@ -54,19 +54,19 @@ def small_equiv(+ok: Bool, +p: P.Pattern) -> {P.small(ok, p) == (ok && Spec.fits
 def valid_equiv(+p: P.Pattern) -> {P.valid(p) == Spec.pattern_ok(p) : Bool}:
   match p:
     case P.Literal{x}:
-      %TP.scalars_equiv(x) : {P.valid(P.Literal{x}) == (_ && Spec.fits(P.Literal{x})) : Bool}
+      %TP.scalars_equiv(x) : {P.valid(P.Literal{x}) == Spec.sized(_, P.Literal{x}) : Bool}
       small_equiv(J.scalars(x), P.Literal{x})
     case P.Class{rs}:
-      %ranges_go(rs, True{}) : {P.valid(P.Class{rs}) == (_ && Spec.fits(P.Class{rs})) : Bool}
+      %ranges_go(rs, True{}) : {P.valid(P.Class{rs}) == Spec.sized(_, P.Class{rs}) : Bool}
       small_equiv(P.ranges_valid(rs, True{}), P.Class{rs})
     case P.Cat{a, b}:
-      %valid_equiv(a) : {P.valid(P.Cat{a, b}) == (_ && Spec.pattern_ok(b) && Spec.fits(P.Cat{a, b})) : Bool}
-      %valid_equiv(b) : {P.valid(P.Cat{a, b}) == (P.valid(a) && _ && Spec.fits(P.Cat{a, b})) : Bool}
+      %valid_equiv(a) : {P.valid(P.Cat{a, b}) == Spec.sized(_ && Spec.pattern_ok(b), P.Cat{a, b}) : Bool}
+      %valid_equiv(b) : {P.valid(P.Cat{a, b}) == Spec.sized(P.valid(a) && _, P.Cat{a, b}) : Bool}
       small_equiv(P.valid(a) && P.valid(b), P.Cat{a, b})
     case P.Repeat{r, m, n}:
-      %valid_equiv(r) : {P.valid(P.Repeat{r, m, n}) == (_ && Spec.at_most(n, m) && Nat.is_le(Spec.copies(m, n), Spec.pattern_limit()) && Spec.fits(P.Repeat{r, m, n})) : Bool}
-      %at_most_equiv(n, m) : {P.valid(P.Repeat{r, m, n}) == (P.valid(r) && _ && Nat.is_le(Spec.copies(m, n), Spec.pattern_limit()) && Spec.fits(P.Repeat{r, m, n})) : Bool}
-      %copies_equiv(m, n) : {P.valid(P.Repeat{r, m, n}) == (P.valid(r) && P.at_most(n, m) && Nat.is_le(_, Spec.pattern_limit()) && Spec.fits(P.Repeat{r, m, n})) : Bool}
+      %valid_equiv(r) : {P.valid(P.Repeat{r, m, n}) == Spec.sized(_ && Spec.at_most(n, m) && Nat.is_le(Spec.copies(m, n), Spec.pattern_limit()), P.Repeat{r, m, n}) : Bool}
+      %at_most_equiv(n, m) : {P.valid(P.Repeat{r, m, n}) == Spec.sized(P.valid(r) && _ && Nat.is_le(Spec.copies(m, n), Spec.pattern_limit()), P.Repeat{r, m, n}) : Bool}
+      %copies_equiv(m, n) : {P.valid(P.Repeat{r, m, n}) == Spec.sized(P.valid(r) && P.at_most(n, m) && Nat.is_le(_, Spec.pattern_limit()), P.Repeat{r, m, n}) : Bool}
       small_equiv(P.valid(r) && P.at_most(n, m) && Nat.is_le(P.copies(m, n), P.limit()), P.Repeat{r, m, n})
 
 # Structural equality is sound.

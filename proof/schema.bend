@@ -8,6 +8,7 @@ import ./schema-text.bend as TP
 import ./schema-number.bend as NP
 import ./schema-format.bend as FP
 import ./schema-pattern.bend as PP
+import ./schema-pattern-automaton.bend as AP
 import ./utf8.bend as UP
 
 def finish_accept(v: S.Value, c: Bool) -> {S.accepted(S.finish(v, c)) == c : Bool}:
@@ -94,7 +95,7 @@ def optional_pattern_equiv(+p: Maybe<&2, P.Pattern>) -> {S.optional_pattern_vali
 def pattern_equiv(+p: Maybe<&2, P.Pattern>, +x: String) -> {S.pattern_check(p, x) == Spec.pattern(p, x) : Bool}:
   match p:
     case None{}: {==}
-    case Some{q}: PP.matches_equiv(q, x)
+    case Some{q}: AP.matches_equiv(q, x)
 
 def format_equiv(+f: S.Format, +x: String) -> {S.format_check(f, x) == Spec.format(f, x) : Bool}:
   match f:
@@ -152,13 +153,23 @@ def valid_equiv(+s: S.Schema) -> {S.valid(s) == Spec.schema_ok(s) : Bool}:
     case S.LiteralSchema{v}: scalar_equiv(v)
     case S.EnumSchema{xs}: literals_go(xs, True{})
 
+def format_after_and(+ok: Bool, +f: S.Format, +x: String) -> {S.format_after(ok, f, x) == (ok && S.format_check(f, x)) : Bool}:
+  match ok:
+    case True{}: {==}
+    case False{}: {==}
+
+def pattern_after_and(+ok: Bool, +p: Maybe<&2, P.Pattern>, +f: S.Format, +x: String) -> {S.pattern_after(ok, p, f, x) == ((ok && S.pattern_check(p, x)) && S.format_check(f, x)) : Bool}:
+  match ok:
+    case True{}: format_after_and(S.pattern_check(p, x), f, x)
+    case False{}: {==}
+
 def string_equiv(+min: Nat, +max: Maybe<&2, Nat>, +p: Maybe<&2, P.Pattern>, +f: S.Format, +x: String) -> {S.string_check(min, max, p, f, x) == (Spec.scalars(x) && Nat.is_le(min, Spec.length(x)) && Spec.at_most(max, Spec.length(x)) && Spec.pattern(p, x) && Spec.format(f, x)) : Bool}:
   %TP.scalars_equiv(x) : {S.string_check(min, max, p, f, x) == (_ && Nat.is_le(min, Spec.length(x)) && Spec.at_most(max, Spec.length(x)) && Spec.pattern(p, x) && Spec.format(f, x)) : Bool}
   %TP.length_equiv(x) : {S.string_check(min, max, p, f, x) == (J.scalars(x) && Nat.is_le(min, _) && Spec.at_most(max, _) && Spec.pattern(p, x) && Spec.format(f, x)) : Bool}
   %max_equiv(max, D.length(x)) : {S.string_check(min, max, p, f, x) == (J.scalars(x) && Nat.is_le(min, D.length(x)) && _ && Spec.pattern(p, x) && Spec.format(f, x)) : Bool}
   %pattern_equiv(p, x) : {S.string_check(min, max, p, f, x) == (J.scalars(x) && Nat.is_le(min, D.length(x)) && S.max_length(max, D.length(x)) && _ && Spec.format(f, x)) : Bool}
   %format_equiv(f, x) : {S.string_check(min, max, p, f, x) == (J.scalars(x) && Nat.is_le(min, D.length(x)) && S.max_length(max, D.length(x)) && S.pattern_check(p, x) && _) : Bool}
-  {==}
+  pattern_after_and(J.scalars(x) && Nat.is_le(min, D.length(x)) && S.max_length(max, D.length(x)), p, f, x)
 
 def lower_equiv(+b: Maybe<&2, String>, +x: String, vb: {S.bound_valid(b) == True{} : Bool}, vx: {J.number_valid(x) == True{} : Bool}) -> {S.lower(b, x) == Spec.at_least_number(b, x) : Bool}:
   match b:

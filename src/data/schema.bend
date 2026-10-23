@@ -4,6 +4,7 @@ import ./json.bend as J
 import ./decimal.bend as D
 import ./schema-text.bend as T
 import ./schema-pattern.bend as P
+import ./schema-pattern-automaton.bend as A
 
 type Format is Data:
   Plain{}
@@ -49,7 +50,7 @@ def max_length(limit: Maybe<&2, Nat>, n: Nat) -> Bool:
 def pattern_check(p: Maybe<&2, P.Pattern>, s: String) -> Bool:
   match p:
     case None{}: True{}
-    case Some{x}: P.matches(x, s)
+    case Some{x}: A.matches(x, s)
 
 def optional_pattern_valid(p: Maybe<&2, P.Pattern>) -> Bool:
   match p:
@@ -62,8 +63,21 @@ def format_check(f: Format, s: String) -> Bool:
     case Email{}: T.email(s)
     case Url{}: T.url(s)
 
+def format_after(ok: Bool, f: Format, s: String) -> Bool:
+  match ok:
+    case False{}: False{}
+    case True{}: format_check(f, s)
+
+def pattern_after(ok: Bool, p: Maybe<&2, P.Pattern>, f: Format, +s: String) -> Bool:
+  match ok:
+    case False{}: False{}
+    case True{}: format_after(pattern_check(p, s), f, s)
+
+# Cheapest first, each step only after the last passed: a text that fails
+# its counts never reaches the matcher, and one that fails the pattern never
+# reaches the format grammar.
 def string_check(min: Nat, max: Maybe<&2, Nat>, p: Maybe<&2, P.Pattern>, f: Format, +s: String) -> Bool:
-  J.scalars(s) && Nat.is_le(min, D.length(s)) && max_length(max, D.length(s)) && pattern_check(p, s) && format_check(f, s)
+  pattern_after(J.scalars(s) && Nat.is_le(min, D.length(s)) && max_length(max, D.length(s)), p, f, s)
 
 def bound_valid(b: Maybe<&2, String>) -> Bool:
   match b:

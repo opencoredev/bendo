@@ -115,12 +115,22 @@ def zip() -> P.Pattern:
   P.seq([P.Repeat{digit(), 5n, Some{5n}}, P.Repeat{P.Cat{P.Literal{"-"}, P.Repeat{digit(), 4n, Some{4n}}}, 0n, Some{1n}}])
 ```
 
-`P.matches(p, s)` scans the text once with Antimirov partial derivatives: it
-keeps the deduplicated set of patterns that must match the rest of the text.
-Each entry carries a hash of its pattern, so telling two entries apart is
-usually one integer comparison. Every loop over the text is a tail call in
-native code and `.mjs`. There are no alternations, captures, backreferences,
-lookarounds, or negated classes.
+The decoder matches with `A.matches(p, s)` from
+`src/data/schema-pattern-automaton.bend`. It first compiles the pattern into a
+table of nodes. Each node is one arc: an atom (a literal scalar or a class) and
+the residual pattern left to match after it, as Antimirov partial derivatives
+give them. The scan keeps one bit per live node and, for each scalar, ORs the
+follow sets of the live nodes and keeps the ones whose atom reads the scalar.
+A follow set is four 32-bit words, so the work per scalar is proportional to
+the node count and never to the size of a residual pattern. Every loop over the
+text is a tail call in native code and `.mjs`. There are no alternations,
+captures, backreferences, lookarounds, or negated classes.
+
+The closure that builds the table is not trusted. Before the table is used, a
+check confirms that it has at most four blocks of 32 nodes and that every arc
+of every residual is one of its nodes. A table that fails the check is never
+used: `P.matches`, the proven derivative matcher, runs instead. No valid
+pattern found so far fails it.
 
 ### Size cap
 
@@ -128,27 +138,43 @@ Every part of a valid pattern has an expanded size of at most 128. The expanded
 size counts nodes after each repetition is written out as copies of its body: a
 literal counts 1 plus its scalars, a class 1, a `Cat` 1 plus both parts, and a
 `Repeat` 1 plus the body's size times its copies. `{m,n}` makes `n` copies and
-`{m,}` makes `m + 1`. A repetition may also have at most 128 copies.
+`{m,}` makes `m + 1`. A repetition may also have at most 128 copies. The size
+depends on how the body is written: a one-scalar class counts 1, but a
+one-scalar literal counts 2.
 
 | Pattern | Expanded size | Valid |
 | --- | --- | --- |
-| `a{0,127}` | 128 | yes |
-| `a{0,128}` | 129 | no |
-| `(?:(?:a){0,10}){0,11}` | 122 | yes |
-| `(?:(?:(?:a){0,10}){0,10}){0,10}` | 1111 | no |
-| `[a-z]{1,64}` | 65 | yes |
+| `Repeat{Class{[Range{97, 97}]}, 0n, Some{127n}}`, `[a]{0,127}` | 1 + 127 × 1 = 128 | yes |
+| `Repeat{Literal{"a"}, 0n, Some{127n}}`, `(?:a){0,127}` | 1 + 127 × 2 = 255 | no |
+| `Repeat{Class{[Range{97, 97}]}, 0n, Some{128n}}`, `[a]{0,128}` | 129 | no |
+| `[a]{0,10}` repeated `{0,11}` | 1 + 11 × (1 + 10 × 1) = 122 | yes |
+| `[a]{0,10}` repeated `{0,10}`, then `{0,10}` again | 1 + 10 × (1 + 10 × 11) = 1111 | no |
+| `[a-z]{1,64}` | 1 + 64 = 65 | yes |
 
-By Antimirov's bound on the written-out pattern, the derivative set never
-holds more patterns than the expanded size, so the cap bounds the work per
-scalar and every valid pattern scans in time linear in the text. Before the
-cap, the 1111-node pattern above took between 1.7 and 10 seconds to match 30
-characters. Measured in `.mjs` on ms-a2, the slug, the ZIP code and
-`[a-z]{1,64}` take under a microsecond per scalar. Nested counted repetitions
-near the cap take 0.1 to 0.4 ms per scalar. The slowest shape found, a starred
-sequence of sixteen `[a-z]{0,6}`, takes about 2.7 ms. Native builds are faster.
-Express plain length limits with `min_len` and `max_len`, which do not count
-toward the cap, and set `max_len` on any pattern field that may receive long
-input.
+The specification measures a pattern only after its parts and counts are valid,
+so it never multiplies an unchecked count such as `{0,4294967295}`.
+
+The cap bounds the table. The widest shapes found have 42 to 110 nodes. On a
+Boat sandbox (4 vCPU, one runtime thread), native code scans a mebibyte of
+`a` against them in 2.2 to 5.6 seconds, about 2 to 5.4 µs per scalar:
+
+| Pattern | Nodes | 1 MiB, native |
+| --- | --- | --- |
+| `(?:[a-z]{0,1}){42}` starred | 42 | 2.2 s |
+| `(?:[a-z]{0,2}){32}` starred | 64 | 3.4 s |
+| `(?:[a-z]{0,6}){16}` starred | 96 | 5.0 s |
+| `(?:(?:[a]{0,10}){0,11})*` | 110 | 5.6 s |
+
+Over 300 scalars, the derivative matcher took 8 to 13 ms per scalar on the
+starred sequences. `.mjs` is faster than native here: 0.9 to 2.8 seconds per
+mebibyte on the same shapes, measured on ms-a2. Building the table costs up to
+about 40 ms for the widest shapes and well under a millisecond for patterns like
+the slug and the ZIP code, and it is paid on every match.
+
+String checks run cheapest first, so a text over `max_len` is rejected before
+the matcher starts. Express plain length limits with `min_len` and `max_len`,
+which do not count toward the cap, and set `max_len` on any pattern field that
+may receive long input.
 
 ### ECMAScript rendering
 

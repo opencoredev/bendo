@@ -535,7 +535,7 @@ const decodeText = (pattern: PatternData, input: string) =>
   call("report", call("decode", patternSchema(pattern), { $: "JString", value: input }));
 
 test("caps a pattern's expanded size at 128 nodes in the decoder and the specification", () => {
-  // a{0,127} writes out 1 + 127 nodes; a{0,128} is one past the cap.
+  // [a]{0,127} writes out 1 + 127 nodes; [a]{0,128} is one past the cap.
   for (const [pattern, ok] of [
     [upTo(letterA, 127), true],
     [upTo(letterA, 128), false],
@@ -550,8 +550,12 @@ test("caps a pattern's expanded size at 128 nodes in the decoder and the specifi
   // Huge counts are rejected before any size arithmetic could pass 2^48.
   // The specification is exponential in counts, so it is not run here.
   const huge = 4294967295;
-  for (const pattern of [upTo(letterA, huge), upTo(upTo(upTo(letterA, huge), huge), huge)])
+  for (const pattern of [upTo(letterA, huge), upTo(upTo(upTo(letterA, huge), huge), huge)]) {
     expect(decodeText(pattern, "a")).toBe("error:InvalidSchema");
+    // The specification checks counts before it measures, so it never
+    // multiplies one past 2^48 either.
+    expect(call("spec_pattern_ok", pattern)).toBe(false);
+  }
 });
 
 test(
@@ -582,6 +586,90 @@ test(
           new RegExp(source).test("a".repeat(n)),
         );
     }
+  },
+  SLOW_TEST_TIMEOUT_MS,
+);
+
+// The widest shapes the size cap admits: every scalar keeps most nodes live.
+const worstNames = ["worst-2x32", "worst-6x16", "worst-1x42", "starred-nested"];
+
+test(
+  "the automaton agrees with the derivative matcher and the specification on the widest shapes",
+  () => {
+    const short = words(["a", "b", "A"], 4);
+    for (const name of [...worstNames, "nested-10x11", ...patternNames]) {
+      const pattern = call("pattern_of", name);
+      expect(call("pattern_valid", pattern)).toBe(true);
+      const long = ["a".repeat(99), "a".repeat(100), "a".repeat(111), "a".repeat(200) + "A"];
+      for (const w of [...short, ...long]) {
+        const got = call("matches", pattern, w);
+        expect({ name, w, got }).toEqual({ name, w, got: call("derive_matches", pattern, w) });
+        if ([...w].length <= 2)
+          expect({ name, w, spec: call("pattern_spec", pattern, w) }).toEqual({
+            name,
+            w,
+            spec: got,
+          });
+      }
+    }
+  },
+  SLOW_TEST_TIMEOUT_MS,
+);
+
+function nativeTimed(schema: string, input: string): { out: string; ms: number } {
+  const started = performance.now();
+  const r = Bun.spawnSync([
+    "timeout",
+    "--foreground",
+    "60s",
+    nativePath,
+    schema,
+    input,
+    "+RTS",
+    "--threads",
+    "1",
+    "-RTS",
+  ]);
+  expect(r.exitCode).toBe(0);
+  return { out: r.stdout.toString().trimEnd(), ms: performance.now() - started };
+}
+
+test(
+  "the widest valid patterns scan 100k scalars in linear time, natively and in .mjs",
+  () => {
+    // About 2 µs per scalar on an idle machine; the derivative matcher took
+    // 3.5 ms per scalar here, so 100k scalars would take minutes.
+    const long = "a".repeat(100000);
+    for (const name of worstNames) {
+      const pass = nativeTimed(name, text(long));
+      expect(pass.out).toBe(`ok:VString:${text(long)}`);
+      expect(pass.ms).toBeLessThan(20000);
+      const fail = nativeTimed(name, text(long + "A"));
+      expect(fail.out).toBe("error:Constraint");
+      expect(fail.ms).toBeLessThan(20000);
+      const pattern = call("pattern_of", name);
+      const started = performance.now();
+      expect(call("matches", pattern, long)).toBe(true);
+      expect(call("matches", pattern, long + "A")).toBe(false);
+      expect(performance.now() - started).toBeLessThan(20000);
+    }
+  },
+  SLOW_TEST_TIMEOUT_MS,
+);
+
+test(
+  "length limits reject a text before the pattern runs",
+  () => {
+    // Matching a million scalars against this pattern takes seconds in .mjs;
+    // max_len 1 rejects it after counting.
+    const huge = { $: "JString", value: "a".repeat(1000000) };
+    const started = performance.now();
+    expect(call("report", call("decode", call("schema", "worst-short"), huge))).toBe(
+      "error:Constraint",
+    );
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(nativeTimed("worst-short", text("a".repeat(100000))).out).toBe("error:Constraint");
+    expect(nativeTimed("worst-short", text("a")).out).toBe('ok:VString:"a"');
   },
   SLOW_TEST_TIMEOUT_MS,
 );

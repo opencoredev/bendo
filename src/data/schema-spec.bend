@@ -261,12 +261,19 @@ def pattern_limit() -> Nat:
 def fits(p: P.Pattern) -> Bool:
   Nat.is_le(expanded(p), pattern_limit())
 
+# A pattern is measured only once its parts and counts are valid, so the
+# expansion never multiplies an unchecked count.
+def sized(ok: Bool, p: P.Pattern) -> Bool:
+  match ok:
+    case False{}: False{}
+    case True{}: fits(p)
+
 def pattern_ok(p: P.Pattern) -> Bool:
   match p:
-    case P.Literal{+x}: scalars(x) && fits(P.Literal{x})
-    case P.Class{+rs}: ascii_ranges(rs) && fits(P.Class{rs})
-    case P.Cat{+a, +b}: pattern_ok(a) && pattern_ok(b) && fits(P.Cat{a, b})
-    case P.Repeat{+r, +m, +n}: pattern_ok(r) && at_most(n, m) && Nat.is_le(copies(m, n), pattern_limit()) && fits(P.Repeat{r, m, n})
+    case P.Literal{+x}: sized(scalars(x), P.Literal{x})
+    case P.Class{+rs}: sized(ascii_ranges(rs), P.Class{rs})
+    case P.Cat{+a, +b}: sized(pattern_ok(a) && pattern_ok(b), P.Cat{a, b})
+    case P.Repeat{+r, +m, +n}: sized(pattern_ok(r) && at_most(n, m) && Nat.is_le(copies(m, n), pattern_limit()), P.Repeat{r, m, n})
 
 type Lang is Data:
   LNone{}
