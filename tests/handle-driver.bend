@@ -24,7 +24,7 @@ def params(xs: Pattern.Params) -> String:
 
 def dispatch(tag: Tag, ctx: B.Ctx, env: Env) -> IO(B.Res):
   match tag ctx env:
-    case Todo{} Context.Ctx{req, ps, body, pairs, code, headers, vars} Env{prefix}:
+    case Todo{} Context.Ctx{req, ps, body, pairs, code, headers, vars, observation} Env{prefix}:
       IO.pure(B.Res, Response.text(200, prefix ++ params(ps) ++ ":" ++ Bytes.ascii(body)))
     case Broken{} _ _:
       IO.pure(B.Res, Response.body(200, [Request.Header{"bad", [13, 10]}], []))
