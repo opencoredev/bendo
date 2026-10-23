@@ -1,5 +1,6 @@
 # Proofs of LAWS.bend. Run: bend PROOF.bend --verdict
 import Base
+import ./proof/json.bend as JsonProof
 import ./src/http/response.bend as Response
 import ./src/http/write_response.bend as WriteResponse
 import ./src/http.bend as Http
@@ -297,3 +298,5 @@ def Laws.response_head_matches_get(res, valid):
     %response_head_empty(res) : {ResponseSpec.split_first(WriteResponse.write(Request.Head{}, res)) == Some{(WriteResponse.prefix(Request.Head{}, res), _)} : Maybe<&2, ResponseSpec.BytePair()>}
     response_split(Request.Head{}, res, valid)) : {ResponseSpec.split_first(WriteResponse.write(Request.Head{}, res)) == Some{(head, [])} : Maybe<&2, ResponseSpec.BytePair()>}}
   (head, (get_body, (parsed, (response_split(Request.Get{}, res, valid), split_head, response_parse(Request.Get{}, res, valid), ResponseFields.get_length(res), ResponseFields.response_transfer(Request.Get{}, res)))))
+
+# BND-28: checked infrastructure; Laws.json_roundtrip remains open.
