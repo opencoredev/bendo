@@ -36,6 +36,11 @@ These public functions take `c: B.Ctx`:
   `?` when present. It does not construct an absolute URL, trust `Host`, or read
   forwarded headers.
 - `raw_body(c) -> List<&2, U32>` returns the buffered body octets.
+- `cookie(c, name) -> Maybe<&2, String>` returns the first valid cookie of that
+  name, with case-sensitive lookup.
+- `cookies(c) -> List<&2, Cookie.Entry>` returns valid pairs from every Cookie
+  field in arrival order, including repeated names and empty values. Malformed
+  pairs are skipped; see [Cookies](cookies.md).
 
 Query parsing follows the shared URL-encoded parser: names are case-sensitive,
 `+` means space, empty values are retained, and empty `&` pieces are ignored.
@@ -59,6 +64,9 @@ status and headers. The initial status is 200.
 - `redirect_status(c, location, code)` accepts only 301, 302, 303, 307 and 308.
 - `not_found(c)` forces 404 with plain-text `Not Found`.
 - `status(c, code) -> B.Ctx` changes the pending status.
+- `set_cookie(c, name, value, options)` and `delete_cookie(c, name, options)` return
+  `Result<&2, &2, Cookie.Error, B.Ctx>`. Successful calls append separate Set-Cookie
+  fields. Handle `Fail` before building the response; see [Cookies](cookies.md).
 - `header(c, name, value) -> B.Ctx` changes a pending response header. Names are
   folded to lowercase; a later setter replaces earlier values of that name.
 
@@ -71,7 +79,7 @@ Invalid status codes, header names, header values, body octets or redirect
 locations fail closed as an empty 500. Header validation follows the HTTP response
 model, including rejection of CR/LF and surrounding whitespace. Setters retain
 invalid data until finalization, so callers cannot accidentally emit it. Do not
-use `header` repeatedly to append Set-Cookie; cookie append helpers are future work.
+use `header` repeatedly to append Set-Cookie; use `set_cookie` instead.
 
 The request accessor is named `request_header` because Bend does not overload
 functions by arity. `header` writes the response. `B.get` remains route registration;

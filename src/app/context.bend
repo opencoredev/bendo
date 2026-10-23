@@ -7,6 +7,7 @@ import ../router/pattern.bend as Pattern
 import ../data/urlencoded.bend as Query
 import ../data/utf8.bend as Utf8
 import ../data/json.bend as Json
+import ../data/cookie.bend as Cookie
 
 type Ctx<-Vars: Data> is Data:
   Ctx{req: Request.Req, params: Pattern.Params, body: List<&2, U32>, pairs: List<&2, Query.Entry>, code: U32, headers: List<&2, Request.Header>, vars: Maybe<&2, Vars>}
@@ -161,3 +162,28 @@ def redirect(-Vars: Data, c: Ctx<Vars>, location: String) -> Response.Res:
 
 def not_found(-Vars: Data, c: Ctx<Vars>) -> Response.Res:
   text(Vars, status(Vars, c, 404), "Not Found")
+
+# Cookie fields are parsed separately, in arrival order, without comma joining.
+def cookie_fields(fields: List<&2, List<&2, U32>>) -> List<&2, Cookie.Entry>:
+  match fields:
+    case Nil{}: []
+    case bytes <> tail: List.append(&2, Cookie.Entry, Cookie.parse(Bytes.ascii(bytes)), cookie_fields(tail))
+
+def cookies(-Vars: Data, c: Ctx<Vars>) -> List<&2, Cookie.Entry>:
+  cookie_fields(header_bytes(Vars, c, "cookie"))
+
+def cookie(-Vars: Data, c: Ctx<Vars>, name: String) -> Maybe<&2, String>:
+  Cookie.first(cookies(Vars, c), name)
+
+def cookie_result(-Vars: Data, c: Ctx<Vars>, result: Result<&2, &2, Cookie.Error, String>) -> Result<&2, &2, Cookie.Error, Ctx<Vars>>:
+  Ctx{r, p, b, q, s, hs, v} = c
+  match result:
+    case Fail{error}: Fail{error}
+    case Done{value}:
+      Done{Ctx{r, p, b, q, s, List.append(&2, Request.Header, hs, [Request.Header{"set-cookie", Response.utf8(value)}]), v}}
+
+def set_cookie(-Vars: Data, c: Ctx<Vars>, name: String, value: String, options: Cookie.Options) -> Result<&2, &2, Cookie.Error, Ctx<Vars>>:
+  cookie_result(Vars, c, Cookie.serialize(name, value, options))
+
+def delete_cookie(-Vars: Data, c: Ctx<Vars>, name: String, options: Cookie.Options) -> Result<&2, &2, Cookie.Error, Ctx<Vars>>:
+  set_cookie(Vars, c, name, "", Cookie.deletion(options))

@@ -1,5 +1,8 @@
 # Proofs of LAWS.bend. Run: bend PROOF.bend --verdict
 import Base
+
+# BND-31
+import ./proof/cookies.bend as CookieProof
 import ./src/app/table.bend as Table
 import ./proof/middleware-selection-spec.bend as MiddlewareSelectionSpec
 import ./proof/lifecycle-selection.bend as LifecycleSelection
@@ -397,3 +400,15 @@ def Laws.lifecycle_ordered_selection(Tag, entries, routes, compiled, layers, pat
   %Equal.sym(List<&2, Tag>, Table.stage_ids(Tag, layers, Table.Error{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Error{}), LifecycleSelection.selection(Tag, entries, routes, compiled, layers, Table.Error{}, built)) : {Table.Lifecycle{MiddlewareSelectionSpec.hooks(Tag, entries, Table.Request{}), List.concat(&2, Tag, [MiddlewareSelectionSpec.filter(Tag, entries, path), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Parse{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Transform{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.BeforeHandle{})]), MiddlewareSelectionSpec.hooks(Tag, entries, Table.AfterHandle{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.MapResponse{}), _, Table.stage_ids(Tag, layers, Table.AfterResponse{})} == MiddlewareSelectionSpec.lifecycle(Tag, entries, path) : Table.Lifecycle<Tag>}
   %Equal.sym(List<&2, Tag>, Table.stage_ids(Tag, layers, Table.AfterResponse{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.AfterResponse{}), LifecycleSelection.selection(Tag, entries, routes, compiled, layers, Table.AfterResponse{}, built)) : {Table.Lifecycle{MiddlewareSelectionSpec.hooks(Tag, entries, Table.Request{}), List.concat(&2, Tag, [MiddlewareSelectionSpec.filter(Tag, entries, path), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Parse{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Transform{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.BeforeHandle{})]), MiddlewareSelectionSpec.hooks(Tag, entries, Table.AfterHandle{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.MapResponse{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Error{}), _} == MiddlewareSelectionSpec.lifecycle(Tag, entries, path) : Table.Lifecycle<Tag>}
   {==}
+
+# BND-31: universal cookie roundtrip and checked default serialization.
+
+def Laws.cookies_pair_roundtrip(name, value, name_valid, value_valid):
+  CookieProof.roundtrip(name, value, name_valid, value_valid)
+
+def Laws.cookies_defaults_checked(name, value, name_valid, value_valid):
+  CookieProof.defaults_checked(name, value, name_valid, value_valid)
+
+# BND-31
+def Laws.cookies_ordered_list_roundtrip(entries, valid):
+  CookieProof.list_roundtrip(entries, valid)
