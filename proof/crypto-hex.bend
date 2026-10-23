@@ -4,6 +4,7 @@ import ../src/data/utf8.bend as U
 import ../src/crypto/octets.bend as O
 import ./utf8.bend as UP
 import ./crypto-support.bend as S
+import ./crypto-octets.bend as OctetsProof
 
 def alphabet(+w: Word(4n)) -> {H.value(H.symbol(w)) == Some{w} : Maybe<&2, Word(4n)>}:
   match w:
@@ -58,16 +59,16 @@ def byte_step(+w: Word(32n), +tail: String, +rev: List<&2, U32>, ok: {(U32{w} <=
   %Equal.sym(Maybe<&2, List<&2, U32>>, H.pair(H.value(H.symbol(U.high(4n, 4n, U.low(8n, 24n, w)))), H.value(H.symbol(U.low(4n, 4n, U.low(8n, 24n, w)))), Some{rev}), Some{U32{U.join(8n, 24n, U.low(8n, 24n, w), Word.zero(24n))} <> rev}, byte_pair(U.low(8n, 24n, w), rev)) : {H.decode_go(tail, _) == H.decode_go(tail, Some{U32{w} <> rev}) : Maybe<&2, List<&2, U32>>}
   Equal.cong(U32, Maybe<&2, List<&2, U32>>, x => H.decode_go(tail, Some{x <> rev}), U32{U.join(8n, 24n, U.low(8n, 24n, w), Word.zero(24n))}, U32{w}, S.byte_reconstruct(w, ok))
 
-def roundtrip_go(+xs: List<&2, U32>, +rev: List<&2, U32>, +ok: {O.valid(xs) == True{} : Bool}) -> {H.decode_go(H.encode_spec(xs), Some{rev}) == Some{List.reverse.go(&2, U32, rev, xs)} : Maybe<&2, List<&2, U32>>}:
+def roundtrip_go(+xs: List<&2, U32>, +rev: List<&2, U32>, +ok: {OctetsProof.spec(xs) == True{} : Bool}) -> {H.decode_go(H.encode_spec(xs), Some{rev}) == Some{List.reverse.go(&2, U32, rev, xs)} : Maybe<&2, List<&2, U32>>}:
   match xs:
     case Nil{}:
       {==}
     case U32{+w} <> +t:
-      head = UP.and_left((U32{w} <= 255 : U32), O.valid(t), ok)
-      tail = UP.and_right((U32{w} <= 255 : U32), O.valid(t), ok)
+      head = UP.and_left((U32{w} <= 255 : U32), OctetsProof.spec(t), ok)
+      tail = UP.and_right((U32{w} <= 255 : U32), OctetsProof.spec(t), ok)
       %Equal.sym(Maybe<&2, List<&2, U32>>, H.decode_go(H.byte(U.low(8n, 24n, w)) ++ H.encode_spec(t), Some{rev}), H.decode_go(H.encode_spec(t), Some{U32{w} <> rev}), byte_step(w, H.encode_spec(t), rev, head)) : {_ == Some{List.reverse.go(&2, U32, rev, U32{w} <> t)} : Maybe<&2, List<&2, U32>>}
       roundtrip_go(t, U32{w} <> rev, tail)
 
 def roundtrip(+xs: List<&2, U32>, ok: {O.valid(xs) == True{} : Bool}) -> {H.decode(H.encode(xs)) == Some{xs} : Maybe<&2, List<&2, U32>>}:
   %Equal.sym(String, H.encode(xs), H.encode_spec(xs), encode_acc(xs, "")) : {H.decode(_) == Some{xs} : Maybe<&2, List<&2, U32>>}
-  roundtrip_go(xs, [], ok)
+  roundtrip_go(xs, [], OctetsProof.valid(xs, ok))

@@ -1,4 +1,5 @@
 import Base
+import ../../../src/crypto/octets.bend as Octets
 import ../../../src/crypto/sha1.bend as S1
 import ../../../src/crypto/sha256.bend as S256
 import ../../../src/crypto/hmac.bend as H
@@ -33,3 +34,6 @@ def ct_equal(a: List<&2, U32>, b: List<&2, U32>) -> Bool:
 
 def utf8(s: String) -> List<&2, U32>:
   Utf8.encode(s)
+
+def valid_octets(xs: List<&2, U32>) -> Bool:
+  Octets.valid(xs)

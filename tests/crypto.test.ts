@@ -58,12 +58,38 @@ const base64 = exported("base64");
 const unbase64 = exported("unbase64");
 const ctEqual = exported("ct_equal");
 const utf8 = exported("utf8");
+const validOctets = exported("valid_octets");
 const yes = true;
 const no = false;
 const some = (value: List) => ({ $: "Some", value });
 const none = { $: "None" };
 
 describe("BND-42 crypto", () => {
+  for (const length of [65_536, 1_048_576]) {
+    test(`mjs octet validation is stack safe for ${length} elements`, () => {
+      const xs = list(Uint8Array.from({ length }, (_, i) => i % 256));
+      expect(validOctets(xs)).toBe(true);
+      for (const position of [0, Math.floor(length / 2), length - 1]) {
+        let node = xs;
+        for (let i = 0; i < position; i++) {
+          if (node.$ !== "Con") throw new Error("Missing list element");
+          node = node.tail;
+        }
+        if (node.$ !== "Con") throw new Error("Missing list element");
+        const original = node.head;
+        for (const invalid of [256, 0xffff_ffff]) {
+          node.head = invalid;
+          expect(validOctets(xs)).toBe(false);
+        }
+        node.head = original;
+      }
+      expect(validOctets(xs)).toBe(true);
+    });
+  }
+  test("mjs octet validation accepts empty and boundary octets", () => {
+    expect(validOctets({ $: "Nil" })).toBe(true);
+    expect(validOctets(list(Uint8Array.of(0, 255)))).toBe(true);
+  });
   for (const vector of hashes) {
     test(`FIPS 180-4 ${vector.name}, native and mjs`, () => {
       const input = Buffer.from(vector.message.repeat(vector.repeat));

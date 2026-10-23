@@ -4,6 +4,7 @@ import ../src/data/utf8.bend as U
 import ../src/crypto/octets.bend as O
 import ./utf8.bend as UP
 import ./crypto-support.bend as S
+import ./crypto-octets.bend as OctetsProof
 
 def alphabet(+w: Word(6n), +url: Bool) -> {B.value(B.symbol(w, url), url) == Some{w} : Maybe<&2, Word(6n)>}:
   match w:
@@ -233,13 +234,13 @@ def bytes3(+a: Word(32n), +b: Word(32n), +c: Word(32n), +tail: String, +url: Boo
   %S.byte_reconstruct(c, okc) : {B.decode_go(B.three(U.low(8n, 24n, a), U.low(8n, 24n, b), U.low(8n, 24n, c), url) ++ tail, url, padded, Some{rev}) == B.decode_go(tail, url, padded, Some{_ <> B.octet(U.low(8n, 24n, b)) <> B.octet(U.low(8n, 24n, a)) <> rev}) : Maybe<&2, List<&2, U32>>}
   word3(U.low(8n, 24n, a), U.low(8n, 24n, b), U.low(8n, 24n, c), tail, url, padded, rev)
 
-def head(+x: U32, +xs: List<&2, U32>, ok: {O.valid(x <> xs) == True{} : Bool}) -> {(x <= 255 : U32) == True{} : Bool}:
-  UP.and_left((x <= 255 : U32), O.valid(xs), ok)
+def head(+x: U32, +xs: List<&2, U32>, ok: {OctetsProof.spec(x <> xs) == True{} : Bool}) -> {(x <= 255 : U32) == True{} : Bool}:
+  UP.and_left((x <= 255 : U32), OctetsProof.spec(xs), ok)
 
-def tail(+x: U32, +xs: List<&2, U32>, ok: {O.valid(x <> xs) == True{} : Bool}) -> {O.valid(xs) == True{} : Bool}:
-  UP.and_right((x <= 255 : U32), O.valid(xs), ok)
+def tail(+x: U32, +xs: List<&2, U32>, ok: {OctetsProof.spec(x <> xs) == True{} : Bool}) -> {OctetsProof.spec(xs) == True{} : Bool}:
+  UP.and_right((x <= 255 : U32), OctetsProof.spec(xs), ok)
 
-def roundtrip_go(+xs: List<&2, U32>, +url: Bool, +padded: Bool, +rev: List<&2, U32>, +ok: {O.valid(xs) == True{} : Bool}) -> {B.decode_go(B.encode_spec(xs, url, padded), url, padded, Some{rev}) == Some{List.reverse.go(&2, U32, rev, xs)} : Maybe<&2, List<&2, U32>>}:
+def roundtrip_go(+xs: List<&2, U32>, +url: Bool, +padded: Bool, +rev: List<&2, U32>, +ok: {OctetsProof.spec(xs) == True{} : Bool}) -> {B.decode_go(B.encode_spec(xs, url, padded), url, padded, Some{rev}) == Some{List.reverse.go(&2, U32, rev, xs)} : Maybe<&2, List<&2, U32>>}:
   match xs:
     case Nil{}:
       {==}
@@ -256,4 +257,4 @@ def roundtrip_go(+xs: List<&2, U32>, +url: Bool, +padded: Bool, +rev: List<&2, U
 
 def roundtrip(+xs: List<&2, U32>, +url: Bool, +padded: Bool, ok: {O.valid(xs) == True{} : Bool}) -> {B.decode(B.encode(xs, url, padded), url, padded) == Some{xs} : Maybe<&2, List<&2, U32>>}:
   %Equal.sym(String, B.encode(xs, url, padded), B.encode_spec(xs, url, padded), encode_acc(xs, url, padded, "")) : {B.decode(_, url, padded) == Some{xs} : Maybe<&2, List<&2, U32>>}
-  roundtrip_go(xs, url, padded, [], ok)
+  roundtrip_go(xs, url, padded, [], OctetsProof.valid(xs, ok))
