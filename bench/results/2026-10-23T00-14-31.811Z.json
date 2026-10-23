@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "measuredAt": "2026-10-23T00:14:27.072Z",
+  "hardware": {
+    "cpuModel": "AMD Ryzen 9 9950X 16-Core Processor",
+    "cores": 4,
+    "ramBytes": 8322519040,
+    "architecture": "x64",
+    "platform": "linux",
+    "kernel": "7.0.0-38-generic",
+    "cpuQuota": "unavailable"
+  },
+  "versions": {
+    "bend": "bend 2.0.38",
+    "bun": "1.4.4",
+    "oha": "oha 1.16.0",
+    "hono": "4.13.13",
+    "elysia": "1.4.30"
+  },
+  "method": {
+    "connections": 32,
+    "durationSeconds": 10,
+    "warmupSeconds": 3,
+    "keepAlive": false,
+    "waitForOngoingRequests": true,
+    "requestTimeoutSeconds": 5,
+    "loadGeneratorThreads": 2,
+    "httpVersion": "1.1",
+    "order": ["bendo", "hono", "elysia"],
+    "scenarioOrder": ["hello"],
+    "loadGenerator": "oha and server share the same sandbox; sequential runs"
+  },
+  "scenarios": [
+    {
+      "name": "hello",
+      "path": "/",
+      "method": "GET",
+      "expectedBody": "Hello, world!",
+      "bendoSource": "bench/servers/hello.bend"
+    }
+  ],
+  "results": [
+    {
+      "framework": "bendo",
+      "scenario": "hello",
+      "requestsPerSecond": 70812.63710791671,
+      "p50Ms": 0.41409999999999997,
+      "p99Ms": 1.188256,
+      "errorCount": 0
+    },
+    {
+      "framework": "hono",
+      "scenario": "hello",
+      "requestsPerSecond": 73122.54941331471,
+      "p50Ms": 0.410022,
+      "p99Ms": 0.896187,
+      "errorCount": 0
+    },
+    {
+      "framework": "elysia",
+      "scenario": "hello",
+      "requestsPerSecond": 79708.74449872586,
+      "p50Ms": 0.38253099999999995,
+      "p99Ms": 0.708283,
+      "errorCount": 0
+    }
+  ],
+  "sandbox": {
+    "provider": "boat",
+    "type": "default",
+    "id": "bx_5hkncmry",
+    "label": "bendo-bench-1792714406139-4155321"
+  },
+  "source": {
+    "commit": "e6cd8721b18597692eb4e3bbd942abc12e6cf942",
+    "dirty": false,
+    "sha256": "83209330792234a77dc253b390789dac3ff167ced7ae622ea572ce86065f6f43",
+    "hashMethod": "sorted git-listed paths excluding bench/results; JSON [path, mode, byteLength] plus newline then bytes; symlinks use JSON [path, symlink, target] plus newline"
+  }
+}
