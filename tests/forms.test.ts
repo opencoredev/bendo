@@ -38,6 +38,36 @@ if (compilation.exitCode !== 0) {
   throw new Error(`Bend forms compilation failed:\n${compilation.stdout}${compilation.stderr}`);
 }
 
+const nativeOutput = join(directory, "forms-native");
+const nativeCompilation = Bun.spawnSync(
+  [
+    "timeout",
+    "--foreground",
+    "30s",
+    bend.path,
+    join(import.meta.dir, "fixtures/forms/native.bend"),
+    "-o",
+    nativeOutput,
+  ],
+  { stdout: "pipe", stderr: "pipe" },
+);
+if (nativeCompilation.exitCode !== 0) {
+  throw new Error(
+    `Native forms compilation failed:\n${nativeCompilation.stdout}${nativeCompilation.stderr}`,
+  );
+}
+function native(...args: string[]): string {
+  const result = Bun.spawnSync(["timeout", "--foreground", "30s", nativeOutput, ...args], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  expect(result.exitCode).toBe(0);
+  // IO.print appends exactly one protocol newline; preserve payload whitespace.
+  const text = result.stdout.toString();
+  expect(text.endsWith("\n")).toBe(true);
+  return text.slice(0, -1);
+}
+
 // The generated module has no TS declarations. Validate exports at this
 // boundary and compare results with independent constructor-shaped literals.
 const module: unknown = await import(pathToFileURL(output).href);
@@ -249,6 +279,54 @@ describe("real compiled Bend URL-encoded components and forms", () => {
     ]) {
       expect(parseBody(ct, bytes("x=1"))).toEqual(fail("UnsupportedMediaType"));
     }
+  });
+
+  test("64 KiB Content-Type parameters stay within the JavaScript stack", () => {
+    const long = "a".repeat(65536);
+    for (const suffix of [`ignored=${long}`, `${long}=ignored`, `ignored="${long}"`]) {
+      expect(parseBody(`application/x-www-form-urlencoded; ${suffix}`, bytes("x=1"))).toEqual(
+        done(list([entry("x", "1")])),
+      );
+    }
+    for (const value of [long, `"${long}"`]) {
+      expect(
+        parseBody(`application/x-www-form-urlencoded; charset=${value}`, bytes("x=1")),
+      ).toEqual(fail("UnsupportedCharset"));
+    }
+    expect(
+      parseBody(`application/x-www-form-urlencoded${";x".repeat(32768)}`, bytes("x=1")),
+    ).toEqual(done(list([entry("x", "1")])));
+    expect(parseBody(long, bytes("x=1"))).toEqual(fail("UnsupportedMediaType"));
+  });
+
+  test("native decoding handles 64 KiB Content-Type parameters and charsets", () => {
+    const long = "a".repeat(65536);
+    for (const suffix of [`ignored=${long}`, `${long}=ignored`, `ignored="${long}"`]) {
+      expect(native("body", `application/x-www-form-urlencoded; ${suffix}`, "x=1")).toBe("x=1");
+    }
+    for (const value of [long, `"${long}"`]) {
+      expect(native("body", `application/x-www-form-urlencoded; charset=${value}`, "x=1")).toBe(
+        "unsupported-charset",
+      );
+    }
+    expect(native("body", `application/x-www-form-urlencoded${";x".repeat(32768)}`, "x=1")).toBe(
+      "x=1",
+    );
+    expect(native("body", long, "x=1")).toBe("unsupported-media-type");
+  });
+
+  test("native components, UTF-8, and bodies handle 64 KiB inputs", () => {
+    const value = "a".repeat(65536);
+    for (const text of [value, "é +&".repeat(16384)]) {
+      expect(native("component", text)).toBe(text);
+      expect(native("form", text)).toBe(text);
+      expect(native("utf8", text)).toBe(text);
+    }
+    expect(native("body", "application/x-www-form-urlencoded", `x=${value}`)).toBe(`x=${value}`);
+    expect(native("pairs", `${value}=v`)).toBe(`${value}=v`);
+    const repeated = Array.from({ length: 16384 }, (_, i) => `x=${i % 10}`).join("&");
+    expect(native("pairs", repeated)).toBe(repeated);
+    expect(native("body", "application/x-www-form-urlencoded", repeated)).toBe(repeated);
   });
 
   test("64 KiB components and form bodies stay within the JavaScript stack", () => {

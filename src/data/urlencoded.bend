@@ -278,22 +278,45 @@ def charset_text(s: String) -> Bool:
     case s:
       String.eq(s, "utf-8")
 
+# Base's to_lower builds after recursion; use an accumulator for .mjs.
+def lower_go(s: String, rev: String) -> String:
+  match s:
+    case SNil{}:
+      String.reverse(rev)
+    case SCon{c, t}:
+      lower_go(t, SCon{Char.to_lower(c), rev})
+
+def lower(s: String) -> String:
+  lower_go(s, "")
+
 def charset_value(v: String) -> Bool:
-  charset_text(String.to_lower(String.trim(v)))
+  charset_text(lower(String.trim(v)))
 
 def parameter_value(k: String, v: String) -> Bool:
-  Bool.not(String.eq(String.to_lower(String.trim(k)), "charset")) || charset_value(v)
+  Bool.not(String.eq(lower(String.trim(k)), "charset")) || charset_value(v)
 
-def parameter(parts: List<&2, U32> & List<&2, U32>) -> Bool:
-  (k, v) = parts
-  parameter_value(Bytes.ascii(k), Bytes.ascii(v))
+# Split the first '=' directly on Strings. Avoid the recursive byte/string
+# conversions in the HTTP module, since these decoders also run as .mjs.
+def parameter_go(s: String, rev: String) -> Bool:
+  match s:
+    case SNil{}:
+      parameter_value(String.reverse(rev), "")
+    case SCon{Chr{61}, t}:
+      parameter_value(String.reverse(rev), t)
+    case SCon{c, t}:
+      parameter_go(t, SCon{c, rev})
+
+def parameters_go(xs: List<&2, String>, ok: Bool) -> Bool:
+  match xs ok:
+    case _ False{}:
+      False{}
+    case Nil{} True{}:
+      True{}
+    case h <> t True{}:
+      parameters_go(t, parameter_go(h, ""))
 
 def parameters(xs: List<&2, String>) -> Bool:
-  match xs:
-    case Nil{}:
-      True{}
-    case h <> t:
-      parameter(field(Bytes.encode(h))) && parameters(t)
+  parameters_go(xs, True{})
 
 def body_charset(body: List<&2, U32>, ok: Bool) -> Result<&2, &2, Error, List<&2, Entry>>:
   match ok:
@@ -314,7 +337,7 @@ def body_type(parts: List<&2, String>, body: List<&2, U32>) -> Result<&2, &2, Er
     case Nil{}:
       Fail{UnsupportedMediaType{}}
     case media <> params:
-      body_media(params, body, String.eq(String.to_lower(String.trim(media)), "application/x-www-form-urlencoded"))
+      body_media(params, body, String.eq(lower(String.trim(media)), "application/x-www-form-urlencoded"))
 
 # Semicolons inside quoted values are data, and quoted-pair escapes do not
 # toggle quote state. Preserve the original text for parameter validation.
