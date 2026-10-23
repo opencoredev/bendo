@@ -43,7 +43,15 @@ bytes are hashed before padding, as RFC 2104 requires.
 element of both lists and accumulates differences without an early mismatch
 exit, including when lengths differ. This is best effort: Bend's compiler
 and runtime do not promise constant-time execution. Length, allocation,
-and runtime behavior remain observable.
+and runtime behavior remain observable. The `ct_equal_spec` law proves it
+returns exactly element-wise equality; decision
+[0012](decisions/0012-constant-time-auth.md) covers what that does not promise.
+
+`src/crypto/jwt.bend` signs and verifies HS256 JSON Web Tokens. `seal` and
+`open` work on raw header and payload octets and carry the laws
+`jwt_open_seal` and `jwt_rejects_bad_signature`. `sign(secret, claims)` and
+`verify(secret, token, now, leeway)` add the JSON header, `alg` and time-claim
+checks. See [authentication middleware](auth.md).
 
 `src/crypto/random.bend` exports
 `random_bytes(n: Nat) -> IO(Result<&1, &1, RandomError(), List<&2, U32>>)`,
