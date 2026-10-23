@@ -77,6 +77,7 @@ import ./src/router/methods-trie-proofs.bend as MethodTrieProof
 import ./proof/crypto-hex.bend as HexProof
 import ./proof/crypto-base64.bend as Base64Proof
 import ./proof/date-laws.bend as DateLaws
+import ./proof/static-path.bend as StaticProof
 
 # Check the pure crypto implementations with the strict kernel as well.
 import ./src/crypto/sha1.bend as SHA1
@@ -546,3 +547,10 @@ def Laws.http_date_imf_spec(second, bound):
 def Laws.http_date_parse_strict(text, second, ok):
   DateLaws.strict(text, second, ok)
 
+# BND-45: static path confinement.
+
+def Laws.static_path_confined(raw, index):
+  StaticProof.confined(raw, index)
+
+def Laws.static_path_target(root, raw, index):
+  StaticProof.target(root, raw, index)

@@ -60,6 +60,10 @@ import ./src/crypto/octets.bend as Octets
 import ./src/http/date.bend as HttpDate
 import ./proof/date-spec.bend as HttpDateSpec
 
+# BND-45
+import ./src/static/path.bend as StaticPath
+import ./proof/static-spec.bend as StaticSpec
+
 # LAW: a text response is a head with no blank line in it, then a blank
 # line, then the body. So the first blank line in the response is the one
 # that ends the head, and a client that cuts there reads the body back.
@@ -1284,3 +1288,30 @@ law http_date_parse_strict:
   for ok: {HttpDate.parse_imf(text) == Some{second} : Maybe<&2, Nat>}
   {HttpDate.format_imf(second) == text : String}
 
+# BND-45: static files (docs/static.md).
+#
+# `raw` is any request path after the mount prefix, undecoded, and `index`
+# any index file name. StaticSpec (proof/static-spec.bend) shares no code
+# with the resolver: it splits the relative path on '/' with Base's
+# String.split and requires every piece to be nonempty, not ".", not "..",
+# and free of control characters (NUL included), DEL, backslash and '%'.
+# With no '%' left after one decoding, no encoded separator or second
+# encoding survives. The segment count must equal the raw path's count
+# after its leading '/', so decoding added no separator.
+
+# LAW: no request path resolves outside the static root. Every resolution
+# is refused, or is a relative path made only of in-root segments.
+law static_path_confined:
+  for +raw: String
+  for +index: String
+  {StaticSpec.confined(raw, StaticPath.resolve(raw, index)) == True{} : Bool}
+
+# LAW: the path handed to the open effect is root ++ "/" ++ the resolved
+# relative path, and nothing is opened for a refused one. The effect opens
+# root, then walks each '/'-separated segment beneath it without following
+# symlinks (src/effects/static_file.c).
+law static_path_target:
+  for root: String
+  for +raw: String
+  for +index: String
+  {StaticPath.target(root, raw, index) == StaticSpec.opened(root, StaticPath.resolve(raw, index)) : Maybe<&2, String>}
