@@ -2,6 +2,9 @@
 import Base
 import ./stream.bend as Stream
 import ./http/stream_types.bend as StreamTypes
+import ./sse.bend as Sse
+import ./http/sse.bend as SseCodec
+import ./http/sse_types.bend as SseTypes
 import ./app/observability.bend as Observation
 import ./mw/builtin.bend as Builtin
 import ./mw/server_timing.bend as Timing
@@ -191,3 +194,17 @@ def StreamStep(-State: Type) -> Type: StreamTypes.Step<State>
 def stream_config() -> StreamTypes.Config: Stream.defaults()
 def stream(~Vars: Data, ~State: Type, ~step: State -> IO(StreamTypes.Step<State>), ~cleanup: State -> IO(Unit), +c: Context.Ctx<Vars>, state: State, config: StreamTypes.Config) -> IO(Response.Res):
   Stream.register(Observation.stream(Context.observation(Vars, c)), Context.body(Vars, c, [], None{}), Stream.plan(~State, ~step, ~cleanup, state, config))
+
+# Server-Sent Events over the same pull producer transport.
+def SseConfig() -> Data: SseTypes.Config
+def SseStep(-State: Type) -> Type: SseTypes.Step<State>
+def SseFrame() -> Data: SseCodec.Frame
+def sse_config() -> SseTypes.Config: Sse.defaults()
+def sse_message(event: Maybe<&2, String>, data: String, id: Maybe<&2, String>, retry: Maybe<&2, U32>) -> SseCodec.Frame: Sse.message(event, data, id, retry)
+def sse_data(data: String) -> SseCodec.Frame: Sse.message(None{}, data, None{}, None{})
+def sse_comment(text: String) -> SseCodec.Frame: Sse.comment_frame(text)
+def last_event_id(-Vars: Data, c: Context.Ctx<Vars>) -> Maybe<&2, String>: Sse.last_event_id(Vars, c)
+def stream_sse(~Vars: Data, ~State: Type, ~step: State -> IO(SseTypes.Step<State>), ~cleanup: State -> IO(Unit), c: Context.Ctx<Vars>, state: State, +config: SseTypes.Config) -> IO(Response.Res):
+  do IO<Response.Res>:
+    now : Nat <- IO.now()
+    stream(~Vars, ~SseTypes.Pump<State>, ~(p => Sse.pull(~State, ~step, p)), ~(p => Sse.release(~State, ~cleanup, p)), Sse.headers(Vars, c), SseTypes.Pump{state, config, now}, Sse.stream_config(config))
