@@ -321,7 +321,7 @@ def search(fuel: Nat, +segs: List<&2, Segment>, +paths: List<&2, String>, +taken
         case Span{name} <> rest Nil{}:
           span_result(name, String.join(taken, "/"), search(f, rest, Nil{}, Nil{}))
         case Span{name} <> rest raw <> tail:
-          prefer(search(f, segs, tail, List.append(&2, String, taken, [raw])), u => span_result(name, String.join(taken, "/"), search(f, rest, paths, Nil{})))
+          prefer(span_result(name, String.join(taken, "/"), search(f, rest, paths, Nil{})), u => search(f, segs, tail, List.append(&2, String, taken, [raw])))
         case Capture{name, c, True{}} <> rest Nil{}:
           search(f, rest, Nil{}, Nil{})
         case Capture{name, +c, optional} <> rest raw <> tail:

@@ -24,25 +24,34 @@ A complete native consumer is [`tests/router-pattern-driver.bend`](../tests/rout
 
 ## Syntax
 
-Every pattern starts with `/`. Segments are separated by literal `/` and may be:
+Patterns start with `/`; bare `*` is an alias for `/*`. Segments are separated by literal `/` and may be:
 
 | Segment | Meaning |
 | --- | --- |
 | `posts` | Raw, exact static text |
 | `:id` | One nonempty decoded value |
-| `:id?` | Optional final segment; omit its slash and value together |
+| `:id?` | Optional trailing capture; omit its slash and value together |
 | `:id{int}` | One value satisfying a constraint |
 | `:id{int}?` | Optional final constrained segment |
 | `*` | Final wildcard, captured under the name `*` |
 | `*path` | Final wildcard, captured under `path` |
+| `assets*` | Final prefix wildcard; matches `/assets`, `/assets-v2`, and `/assets/app.js`, without a capture |
+| interior `*` | Zero or more whole path segments, without a capture; `/a/*/b/*` matches `/a/x/b/c` |
+| `:prefix{.+}` | Nonempty decoded capture that can span segments before the remaining pattern |
 
 Names use ASCII `[A-Za-z_][A-Za-z0-9_]*` and cannot repeat within a pattern.
-Optional captures and wildcards must be last. A wildcard captures the remaining
+Optional captures form a consecutive trailing chain: `/v1/:version?/:platform?`
+accepts zero, one, or two values, assigned from left to right. A present value
+cannot skip an earlier optional. Named wildcards and prefix wildcards must be
+last; unnamed wildcards may also appear inside a pattern. A wildcard captures the remaining
 path, including separators, and may be empty. `/files/*path` therefore matches
 both `/files` and `/files/`, returning `path=""` in either case. Filling that
 assignment produces `/files/`.
 
-Static segments cannot contain `:`, `*`, `{`, `}`, `?` or `#`. Other Unicode
+Static segments may contain literal `:` after their first character, as in
+`/v1/name:activate`. A leading `:` starts a capture. Static segments cannot
+contain `*`, `{`, `}`, `?` or `#`, except for the terminal prefix-wildcard
+marker. Other Unicode
 scalar values, including raw percent signs, are accepted. Static text is never
 percent-decoded: `/caf%C3%A9` and `/café` are different patterns. Empty static
 segments preserve repeated and trailing slashes. Matching is case-sensitive:
@@ -71,8 +80,12 @@ last position; `[a-b-c]` is rejected. `/`, `\`, `[`, `]`, `^`, `{` and `}`
 cannot be class literals (a pattern is split at every `/` before constraints
 are read, so `/:x{[a/]+}` is rejected with `UnbalancedBraces`); there are no escapes, negation or nested classes. The suffix
 is either `+` or `{n}`, where decimal `n` is between 1 and 4294967295 (leading
-zeros are allowed). No other regex syntax is supported. In particular,
-`:path{.+}` is rejected; use `*path`.
+zeros are allowed). The additional constraint `{.+}` captures one or more decoded characters,
+including `/`, across raw path segments. For example,
+`/:prefix{.+}/contents/:id?` matches `/foo/bar/contents/123` with
+`prefix="foo/bar"` and `id="123"`. Matching chooses the shortest nonempty
+span that lets the remaining pattern match. Captures still decode exactly once.
+Other JavaScript regex syntax remains unsupported.
 
 A constraint failure returns `None`, exactly like a static mismatch. It does
 not return a pattern error. Registration-order route selection belongs to BND-15.
