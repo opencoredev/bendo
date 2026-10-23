@@ -1,5 +1,7 @@
 # Proofs of LAWS.bend. Run: bend PROOF.bend --verdict
 import Base
+import ./src/http/response.bend as Response
+import ./src/http/write_response.bend as WriteResponse
 import ./src/http.bend as Http
 import ./src/http/bytes.bend as Bytes
 import ./src/http/request.bend as Request
@@ -18,6 +20,16 @@ import ./src/data/utf8.bend as Utf8
 import ./proof/forms.bend as FormSpec
 import ./proof/percent.bend as Percent
 import ./proof/utf8.bend as Utf8Proof
+
+import ./proof/response-lines.bend as ResponseLines
+import ./proof/response-framing.bend as ResponseFraming
+import ./proof/response-absence.bend as ResponseAbsence
+import ./proof/response-runtime.bend as ResponseRuntime
+import ./proof/response-fields.bend as ResponseFields
+import ./proof/response-status.bend as ResponseStatus
+import ./proof/response-spec-proof.bend as ResponseSpecProof
+import ./proof/response-spec.bend as ResponseSpec
+import ./proof/response-framing-spec.bend as ResponseFramingSpec
 
 import ./src/router/proofs.bend as PatternProof
 import ./src/router/pattern.bend as Pattern
@@ -132,3 +144,156 @@ def Laws.router_priority(T, table, path, a, b, tag_a, params_a, tag_b, params_b,
 
 def Laws.router_fill_match(T, table, i, source, pattern, tag, entry, compiled, params, admitted):
   SpecProof.filled_roundtrip(T, table, i, pattern, tag, params, entry, Laws.pattern_fill_match(source, pattern, compiled, params, admitted))
+
+# BND-9: proofs of buffered response framing.
+
+def response_head_prefix(+r: Response.Res) -> {WriteResponse.prefix(Request.Head{}, r) == WriteResponse.prefix(Request.Get{}, r) : List<&2, U32>}:
+  match r:
+    case Response.Res{s, hs, b, rep}:
+      {==}
+
+def response_head_empty(+r: Response.Res) -> {WriteResponse.payload(Request.Head{}, r) == [] : List<&2, U32>}:
+  match r:
+    case Response.Res{s, hs, b, rep}:
+      {==}
+
+# Body equality is proved separately from the remaining head-safety goals.
+def response_body_condition(+method: Request.Method, +status: U32, not_head: {WriteResponse.is_head(method) == False{} : Bool}, allowed: {WriteResponse.allows_body(status) == True{} : Bool}, not_tunnel: {WriteResponse.tunnel(method, status) == False{} : Bool}) -> {WriteResponse.is_head(method) || Bool.not(WriteResponse.allows_body(status)) || WriteResponse.tunnel(method, status) == False{} : Bool}:
+  %Equal.sym(Bool, WriteResponse.is_head(method), False{}, not_head) : {_ || Bool.not(WriteResponse.allows_body(status)) || WriteResponse.tunnel(method, status) == False{} : Bool}
+  %Equal.sym(Bool, WriteResponse.allows_body(status), True{}, allowed) : {False{} || Bool.not(_) || WriteResponse.tunnel(method, status) == False{} : Bool}
+  not_tunnel
+
+def response_body_bytes(+method: Request.Method, +status: U32, +headers: List<&2, Request.Header>, +body: List<&2, U32>, +representation: Maybe<&2, List<&2, U32>>, valid: {Response.valid(Response.Res{status, headers, body, representation}) == True{} : Bool}, allowed: {WriteResponse.allows_body(status) == True{} : Bool}, not_head: {WriteResponse.is_head(method) == False{} : Bool}, not_tunnel: {WriteResponse.tunnel(method, status) == False{} : Bool}) -> {WriteResponse.write(method, Response.Res{status, headers, body, representation}) == Bytes.append(WriteResponse.prefix(method, Response.Res{status, headers, body, representation}), 13 <> 10 <> 13 <> 10 <> body) : List<&2, U32>}:
+  +r = {Response.Res{status, headers, body, representation} : Response.Res}
+  %Equal.sym(Bool, Response.valid(r), True{}, valid) : {WriteResponse.write_valid(method, r, _) == Bytes.append(WriteResponse.prefix(method, r), 13 <> 10 <> 13 <> 10 <> body) : List<&2, U32>}
+  %Equal.sym(Bool, WriteResponse.is_head(method) || Bool.not(WriteResponse.allows_body(status)) || WriteResponse.tunnel(method, status), False{}, response_body_condition(method, status, not_head, allowed, not_tunnel)) : {Bytes.append(WriteResponse.head(method, r), WriteResponse.emitted_body(body, _)) == Bytes.append(WriteResponse.prefix(method, r), 13 <> 10 <> 13 <> 10 <> body) : List<&2, U32>}
+  Laws.append_assoc(WriteResponse.prefix(method, r), [13, 10, 13, 10], body)
+
+def response_empty_when_forbidden(+body: List<&2, U32>, h: Bool, t: Bool) -> {WriteResponse.emitted_body(body, h || True{} || t) == [] : List<&2, U32>}:
+  match h:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def response_forbidden_payload(+method: Request.Method, +status: U32, +headers: List<&2, Request.Header>, +body: List<&2, U32>, +representation: Maybe<&2, List<&2, U32>>, forbidden: {WriteResponse.forbidden(status) == True{} : Bool}) -> {WriteResponse.payload(method, Response.Res{status, headers, body, representation}) == [] : List<&2, U32>}:
+  %Equal.sym(Bool, WriteResponse.forbidden(status), True{}, forbidden) : {WriteResponse.emitted_body(body, WriteResponse.is_head(method) || Bool.not(Bool.not(_ || U32.is_eq(status, 205) || U32.is_eq(status, 304))) || WriteResponse.tunnel(method, status)) == [] : List<&2, U32>}
+  response_empty_when_forbidden(body, WriteResponse.is_head(method), WriteResponse.tunnel(method, status))
+
+def response_forbidden_bytes(+method: Request.Method, +status: U32, +headers: List<&2, Request.Header>, +body: List<&2, U32>, +representation: Maybe<&2, List<&2, U32>>, valid: {Response.valid(Response.Res{status, headers, body, representation}) == True{} : Bool}, forbidden: {WriteResponse.forbidden(status) == True{} : Bool}) -> {WriteResponse.write(method, Response.Res{status, headers, body, representation}) == Bytes.append(WriteResponse.prefix(method, Response.Res{status, headers, body, representation}), [13, 10, 13, 10]) : List<&2, U32>}:
+  +r = {Response.Res{status, headers, body, representation} : Response.Res}
+  %Equal.sym(Bool, Response.valid(r), True{}, valid) : {WriteResponse.write_valid(method, r, _) == WriteResponse.head(method, r) : List<&2, U32>}
+  %Equal.sym(List<&2, U32>, WriteResponse.payload(method, r), [], response_forbidden_payload(method, status, headers, body, representation, forbidden)) : {Bytes.append(WriteResponse.head(method, r), _) == WriteResponse.head(method, r) : List<&2, U32>}
+  Laws.append_nil(U32, WriteResponse.head(method, r))
+
+def response_prefix_safe(+method: Request.Method, +res: Response.Res, valid: {Response.valid(res) == True{} : Bool}) -> {String.contains(Bytes.ascii(WriteResponse.prefix(method, res)), "\r\n\r\n") == False{} : Bool}:
+  match res:
+    case Response.Res{s, hs, b, rep}:
+      +r = {Response.Res{s, hs, b, rep} : Response.Res}
+      %Equal.sym(String, Bytes.ascii(Bytes.encode(WriteResponse.prefix_text(method, r))), WriteResponse.prefix_text(method, r), Line.ascii_encode(WriteResponse.prefix_text(method, r))) : {String.contains(_, "\r\n\r\n") == False{} : Bool}
+      Equal.trans(Bool, String.contains(WriteResponse.status_text(s) ++ WriteResponse.headers_text(WriteResponse.response_headers(method, r)), "\r\n\r\n"), String.contains(WriteResponse.headers_text(WriteResponse.response_headers(method, r)), "\r\n\r\n"), False{}, ResponseLines.clear_scan(WriteResponse.status_text(s), WriteResponse.headers_text(WriteResponse.response_headers(method, r)), "\n\r\n", ResponseFraming.status_value(s)), ResponseLines.headers_blank(WriteResponse.response_headers(method, r), ResponseFraming.response_scannable(method, r, valid)))
+
+def response_length_present(+method: Request.Method, +status: U32, +headers: List<&2, Request.Header>, +body: List<&2, U32>, +representation: Maybe<&2, List<&2, U32>>, valid: {Response.valid(Response.Res{status, headers, body, representation}) == True{} : Bool}, allowed: {WriteResponse.allows_body(status) == True{} : Bool}, not_tunnel: {WriteResponse.tunnel(method, status) == False{} : Bool}) -> {String.contains(Bytes.ascii(Bytes.append(WriteResponse.prefix(method, Response.Res{status, headers, body, representation}), [13, 10])), "\r\ncontent-length: " ++ Nat.show(Response.length(body)) ++ "\r\n") == True{} : Bool}:
+  +r = {Response.Res{status, headers, body, representation} : Response.Res}
+  %Equal.sym(String, Bytes.ascii(Bytes.append(WriteResponse.prefix(method, r), [13, 10])), WriteResponse.prefix_text(method, r) ++ "\r\n", ResponseLines.ascii_prefix_suffix(method, r)) : {String.contains(_, "\r\ncontent-length: " ++ Nat.show(Response.length(body)) ++ "\r\n") == True{} : Bool}
+  %Equal.sym(String, (WriteResponse.status_text(status) ++ WriteResponse.headers_text(WriteResponse.response_headers(method, r))) ++ "\r\n", WriteResponse.status_text(status) ++ (WriteResponse.headers_text(WriteResponse.response_headers(method, r)) ++ "\r\n"), Line.string_assoc(WriteResponse.status_text(status), WriteResponse.headers_text(WriteResponse.response_headers(method, r)), "\r\n")) : {String.contains(_, "\r\ncontent-length: " ++ Nat.show(Response.length(body)) ++ "\r\n") == True{} : Bool}
+  %Equal.sym(List<&2, Request.Header>, WriteResponse.response_headers(method, r), WriteResponse.length_header(Response.length(body)) <> WriteResponse.headers(headers), ResponseFraming.body_headers(method, status, headers, body, representation, allowed, not_tunnel)) : {String.contains(WriteResponse.status_text(status) ++ (WriteResponse.headers_text(_) ++ "\r\n"), "\r\ncontent-length: " ++ Nat.show(Response.length(body)) ++ "\r\n") == True{} : Bool}
+  ResponseLines.contains_prepend(WriteResponse.status_text(status), WriteResponse.headers_text(WriteResponse.length_header(Response.length(body)) <> WriteResponse.headers(headers)) ++ "\r\n", "\r\ncontent-length: " ++ Nat.show(Response.length(body)) ++ "\r\n", ResponseLines.length_present(Response.length(body), WriteResponse.headers(headers)))
+
+def response_length_absent(+method: Request.Method, +status: U32, +headers: List<&2, Request.Header>, +body: List<&2, U32>, +representation: Maybe<&2, List<&2, U32>>, valid: {Response.valid(Response.Res{status, headers, body, representation}) == True{} : Bool}, forbidden: {WriteResponse.forbidden(status) == True{} : Bool}) -> {String.contains(Bytes.ascii(WriteResponse.prefix(method, Response.Res{status, headers, body, representation})), "\r\ncontent-length:") == False{} : Bool}:
+  +r = {Response.Res{status, headers, body, representation} : Response.Res}
+  %Equal.sym(String, Bytes.ascii(Bytes.encode(WriteResponse.prefix_text(method, r))), WriteResponse.prefix_text(method, r), Line.ascii_encode(WriteResponse.prefix_text(method, r))) : {String.contains(_, "\r\ncontent-length:") == False{} : Bool}
+  %Equal.sym(List<&2, Request.Header>, WriteResponse.response_headers(method, r), WriteResponse.headers(headers), ResponseFraming.forbidden_headers(method, status, headers, body, representation, forbidden)) : {String.contains(WriteResponse.status_text(status) ++ WriteResponse.headers_text(_), "\r\ncontent-length:") == False{} : Bool}
+  Equal.trans(Bool, String.contains(WriteResponse.status_text(status) ++ WriteResponse.headers_text(WriteResponse.headers(headers)), "\r\ncontent-length:"), String.contains(WriteResponse.headers_text(WriteResponse.headers(headers)), "\r\ncontent-length:"), False{}, ResponseLines.clear_scan(WriteResponse.status_text(status), WriteResponse.headers_text(WriteResponse.headers(headers)), "\ncontent-length:", ResponseFraming.status_value(status)), ResponseAbsence.filtered_headers_absent(headers, ResponseFraming.valid_headers(status, headers, body, representation, valid)))
+
+def Laws.response_utf8_encode(s, valid):
+  ResponseRuntime.utf8(s, valid)
+
+def response_observed_head(+method: Request.Method, +res: Response.Res) -> ResponseSpec.Head:
+  ResponseSpec.Head{Bytes.encode(WriteResponse.status_text(ResponseStatus.status(res))), WriteResponse.response_headers(method, res)}
+
+def response_split(+method: Request.Method, +res: Response.Res, +valid: {Response.valid(res) == True{} : Bool}) -> {ResponseSpec.split_first(WriteResponse.write(method, res)) == Some{(WriteResponse.prefix(method, res), WriteResponse.payload(method, res))} : Maybe<&2, ResponseSpec.BytePair()>}:
+  %Equal.sym(Bool, Response.valid(res), True{}, valid) : {ResponseSpec.split_first(WriteResponse.write_valid(method, res, _)) == Some{(WriteResponse.prefix(method, res), WriteResponse.payload(method, res))} : Maybe<&2, ResponseSpec.BytePair()>}
+  ResponseSpecProof.split_valid(method, res, valid)
+
+def response_parse(+method: Request.Method, +res: Response.Res, +valid: {Response.valid(res) == True{} : Bool}) -> {ResponseSpec.parse_head(WriteResponse.head(method, res)) == Some{response_observed_head(method, res)} : Maybe<&2, ResponseSpec.Head>}:
+  match res:
+    case Response.Res{s, hs, b, rep}:
+      ResponseSpecProof.parse_valid(method, Response.Res{s, hs, b, rep}, ResponseStatus.response(Response.Res{s, hs, b, rep}, valid), ResponseFraming.response_valid(method, Response.Res{s, hs, b, rep}, valid))
+
+def response_payload_body(+method: Request.Method, +status: U32, +headers: List<&2, Request.Header>, +body: List<&2, U32>, +representation: Maybe<&2, List<&2, U32>>, allowed: {WriteResponse.allows_body(status) == True{} : Bool}, not_head: {WriteResponse.is_head(method) == False{} : Bool}, not_tunnel: {WriteResponse.tunnel(method, status) == False{} : Bool}) -> {WriteResponse.payload(method, Response.Res{status, headers, body, representation}) == body : List<&2, U32>}:
+  %Equal.sym(Bool, WriteResponse.is_head(method) || Bool.not(WriteResponse.allows_body(status)) || WriteResponse.tunnel(method, status), False{}, response_body_condition(method, status, not_head, allowed, not_tunnel)) : {WriteResponse.emitted_body(body, _) == body : List<&2, U32>}
+  {==}
+
+def Laws.response_body_after_first_blank(method, status, headers, body, representation, valid, allowed, not_head, not_tunnel):
+  +r = {Response.Res{status, headers, body, representation} : Response.Res}
+  +head = WriteResponse.prefix(method, r)
+  +parsed = response_observed_head(method, r)
+  +split = { (
+    %response_payload_body(method, status, headers, body, representation, allowed, not_head, not_tunnel) : {ResponseSpec.split_first(WriteResponse.write(method, r)) == Some{(head, _)} : Maybe<&2, ResponseSpec.BytePair()>}
+    response_split(method, r, valid)) : {ResponseSpec.split_first(WriteResponse.write(method, r)) == Some{(head, body)} : Maybe<&2, ResponseSpec.BytePair()>}}
+  +length = { (
+    %Equal.sym(List<&2, Request.Header>, WriteResponse.response_headers(method, r), WriteResponse.length_header(Response.length(body)) <> WriteResponse.headers(headers), ResponseFraming.body_headers(method, status, headers, body, representation, allowed, not_tunnel)) : {Request.lookup(_, "content-length") == [Bytes.encode(Nat.show(List.length(&2, U32, body)))] : List<&2, List<&2, U32>>}
+    %Equal.sym(Nat, Response.length(body), List.length(&2, U32, body), ResponseRuntime.length(body)) : {Request.lookup(WriteResponse.length_header(_) <> WriteResponse.headers(headers), "content-length") == [Bytes.encode(Nat.show(List.length(&2, U32, body)))] : List<&2, List<&2, U32>>}
+    ResponseFields.added_length(List.length(&2, U32, body), headers)) : {Request.lookup(WriteResponse.response_headers(method, r), "content-length") == [Bytes.encode(Nat.show(List.length(&2, U32, body)))] : List<&2, List<&2, U32>>}}
+  (head, (parsed, (split, response_parse(method, r, valid), length, ResponseFields.response_transfer(method, r))))
+
+def Laws.response_forbidden_has_no_body_or_length(method, status, headers, body, representation, valid, forbidden):
+  +r = {Response.Res{status, headers, body, representation} : Response.Res}
+  +head = WriteResponse.prefix(method, r)
+  +parsed = response_observed_head(method, r)
+  +split = { (
+    %response_forbidden_payload(method, status, headers, body, representation, forbidden) : {ResponseSpec.split_first(WriteResponse.write(method, r)) == Some{(head, _)} : Maybe<&2, ResponseSpec.BytePair()>}
+    response_split(method, r, valid)) : {ResponseSpec.split_first(WriteResponse.write(method, r)) == Some{(head, [])} : Maybe<&2, ResponseSpec.BytePair()>}}
+  +length = { (
+    %Equal.sym(List<&2, Request.Header>, WriteResponse.response_headers(method, r), WriteResponse.headers(headers), ResponseFraming.forbidden_headers(method, status, headers, body, representation, forbidden)) : {Request.lookup(_, "content-length") == [] : List<&2, List<&2, U32>>}
+    ResponseFields.length(headers)) : {Request.lookup(WriteResponse.response_headers(method, r), "content-length") == [] : List<&2, List<&2, U32>>}}
+  (head, (parsed, (split, response_parse(method, r, valid), length, ResponseFields.response_transfer(method, r))))
+
+def response_304_tunnel(method: Request.Method) -> {WriteResponse.tunnel(method, 304) == False{} : Bool}:
+  match method:
+    case Request.Get{}:
+      {==}
+    case Request.Head{}:
+      {==}
+    case Request.Post{}:
+      {==}
+    case Request.Put{}:
+      {==}
+    case Request.Delete{}:
+      {==}
+    case Request.Connect{}:
+      {==}
+    case Request.Options{}:
+      {==}
+    case Request.Trace{}:
+      {==}
+    case Request.Patch{}:
+      {==}
+    case Request.Extension{token}:
+      {==}
+
+def response_304_payload(+method: Request.Method, headers: List<&2, Request.Header>, body: List<&2, U32>, representation: Maybe<&2, List<&2, U32>>) -> {WriteResponse.payload(method, Response.Res{304, headers, body, representation}) == [] : List<&2, U32>}:
+  response_empty_when_forbidden(body, WriteResponse.is_head(method), WriteResponse.tunnel(method, 304))
+
+def Laws.response_304_framing(method, headers, body, representation, valid):
+  +r = {Response.Res{304, headers, body, representation} : Response.Res}
+  +head = WriteResponse.prefix(method, r)
+  +parsed = response_observed_head(method, r)
+  +split = { (
+    %response_304_payload(method, headers, body, representation) : {ResponseSpec.split_first(WriteResponse.write(method, r)) == Some{(head, _)} : Maybe<&2, ResponseSpec.BytePair()>}
+    response_split(method, r, valid)) : {ResponseSpec.split_first(WriteResponse.write(method, r)) == Some{(head, [])} : Maybe<&2, ResponseSpec.BytePair()>}}
+  +length = { (
+    %Equal.sym(Bool, WriteResponse.tunnel(method, 304), False{}, response_304_tunnel(method)) : {Request.lookup(WriteResponse.framing_headers(304, body, representation, WriteResponse.headers(headers), False{} || _), "content-length") == ResponseFramingSpec.representation_lengths(representation) : List<&2, List<&2, U32>>}
+    ResponseFields.representation_length(representation, headers)) : {Request.lookup(WriteResponse.response_headers(method, r), "content-length") == ResponseFramingSpec.representation_lengths(representation) : List<&2, List<&2, U32>>}}
+  (head, (parsed, (split, response_parse(method, r, valid), length, ResponseFields.response_transfer(method, r))))
+
+def Laws.response_head_matches_get(res, valid):
+  +head = WriteResponse.prefix(Request.Get{}, res)
+  +get_body = WriteResponse.payload(Request.Get{}, res)
+  +parsed = response_observed_head(Request.Get{}, res)
+  +split_head = { (
+    %response_head_prefix(res) : {ResponseSpec.split_first(WriteResponse.write(Request.Head{}, res)) == Some{(_, [])} : Maybe<&2, ResponseSpec.BytePair()>}
+    %response_head_empty(res) : {ResponseSpec.split_first(WriteResponse.write(Request.Head{}, res)) == Some{(WriteResponse.prefix(Request.Head{}, res), _)} : Maybe<&2, ResponseSpec.BytePair()>}
+    response_split(Request.Head{}, res, valid)) : {ResponseSpec.split_first(WriteResponse.write(Request.Head{}, res)) == Some{(head, [])} : Maybe<&2, ResponseSpec.BytePair()>}}
+  (head, (get_body, (parsed, (response_split(Request.Get{}, res, valid), split_head, response_parse(Request.Get{}, res, valid), ResponseFields.get_length(res), ResponseFields.response_transfer(Request.Get{}, res)))))
