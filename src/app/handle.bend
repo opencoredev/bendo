@@ -1,5 +1,6 @@
 # Network-free entrypoint; only the app dispatcher may perform IO.
 import Base
+import ../mw/response_policy.bend as Policy
 import ../stream.bend as Stream
 import ../http/stream_types.bend as StreamTypes
 import ../http/stream_response.bend as StreamResponse
@@ -100,8 +101,11 @@ def parsed_transport(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Cont
       +initial = RouteSlot.identity(Tag, count, Methods.resolve_with(Tag, kind, compiled, path, method, Methods.defaults()))
       request_ids = Table.scoped_stage_ids(Tag, layers, initial, Table.Request{})
       do IO<Response.Res & (Maybe<&1, StreamTypes.Plan> & IO(Unit))>:
+        +policies : Chan(List<&2, Policy.Policy>) <- Chan.new(List<&2, Policy.Policy>, 1)
+        policy_seeded : Result<&1, &1, List<&2, Policy.Policy>, Unit> <- Chan.send(List<&2, Policy.Policy>, policies, [])
+        Hooks.sent(List<&2, Policy.Policy>, policy_seeded)
         +stream_slot : Chan(StreamTypes.Registration) <- Chan.new(StreamTypes.Registration, 1)
-        +ctx : Context.Ctx<Vars> = Context.with_observation(Vars, Context.variables(Vars, Context.create(req, [], body, pairs)), Obs.with_stream(Obs.empty(), stream_slot))
+        +ctx : Context.Ctx<Vars> = Context.with_observation(Vars, Context.variables(Vars, Context.create(req, [], body, pairs)), Obs.with_policies(Obs.with_stream(Obs.empty(), stream_slot), policies))
         +route_slot : Chan(Maybe<&2, Nat>) <- Chan.new(Maybe<&2, Nat>, 1)
         route_seeded : Result<&1, &1, Maybe<&2, Nat>, Unit> <- Chan.send(Maybe<&2, Nat>, route_slot, initial)
         Hooks.sent(Maybe<&2, Nat>, route_seeded)
@@ -115,9 +119,10 @@ def parsed_transport(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Cont
         after : Response.Res <- Hooks.post(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_after(Tag, plan), latest, env, res)
         +mapped : Response.Res <- Hooks.post(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_map(Tag, plan), latest, env, after)
         +checked : Response.Res = validated(mapped, Response.valid(mapped))
-        recovered : Response.Res <- recover(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_errors(Tag, plan), latest, env, checked, error_response(checked))
-        dated : Response.Res <- DateResponse.ensure(finish(method, recovered))
-        +final : Response.Res <- Obs.finalize(Context.observation(Vars, latest), dated)
+        +recovered : Response.Res <- recover(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_errors(Tag, plan), latest, env, checked, error_response(checked))
+        dated : Response.Res <- DateResponse.ensure(validated(recovered, Response.valid(recovered)))
+        decorated : Response.Res <- Obs.finalize(Context.observation(Vars, latest), dated)
+        +final : Response.Res = finish(method, decorated)
         registration : Maybe<&1, StreamTypes.Registration> <- Stream.take(stream_slot)
         selected : Response.Res & Maybe<&1, StreamTypes.Plan> <- StreamResponse.select(req, final, registration)
         supported : Response.Res & Maybe<&1, StreamTypes.Plan> <- StreamResponse.network(selected, network)

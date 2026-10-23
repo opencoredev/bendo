@@ -77,6 +77,19 @@ import ./proof/crypto-compare-spec.bend as CompareSpec
 import ./proof/jwt-spec.bend as JwtSpec
 import ./src/mw/csrf_policy.bend as CsrfPolicy
 import ./proof/csrf-spec.bend as CsrfSpec
+import ./src/mw/cors_policy.bend as CorsPolicy
+import ./proof/cors-spec.bend as CorsSpec
+import ./src/mw/cors_request.bend as CorsRequest
+import ./src/mw/vary.bend as Vary
+import ./src/mw/response_policy.bend as ResponsePolicy
+import ./src/mw/secure_headers.bend as SecureHeaders
+import ./proof/response-policy-spec.bend as ResponsePolicySpec
+import ./proof/cors-response-spec.bend as CorsResponseSpec
+import ./proof/secure-headers-spec.bend as SecureHeadersSpec
+import ./src/mw/method_override_policy.bend as OverridePolicy
+import ./proof/override-spec.bend as OverrideSpec
+import ./src/mw/trailing_slash_policy.bend as TrailingPolicy
+import ./proof/trailing-spec.bend as TrailingSpec
 
 import ./src/http/date.bend as HttpDate
 import ./proof/date-spec.bend as HttpDateSpec
@@ -1693,3 +1706,241 @@ law etag_middleware_spec:
   for +field: Maybe<&2, String>
   for +res: Response.Res
   {ETag.decide(method, field, res) == LimitsSpec.etag(method, field, res) : Response.Res}
+
+# BND-40: CORS. The grant (the Access-Control-Allow-Origin value and whether
+# credentials are allowed) equals CorsSpec.grant for every policy and Origin
+# field: a wildcard policy answers "*" without credentials; a listed policy
+# answers only a request whose single Origin field serializes to a configured
+# origin, echoing it with that entry's credentials flag.
+law cors_grant_spec:
+  for +origins: CorsPolicy.Origins
+  for +sent: CorsPolicy.Sent
+  {CorsPolicy.grant(origins, sent) == CorsSpec.grant(origins, sent) : Maybe<&2, CorsPolicy.Grant>}
+
+# A wildcard policy never allows credentials, whatever the request.
+law cors_wildcard_never_credentials:
+  for +sent: CorsPolicy.Sent
+  {CorsPolicy.grant(CorsPolicy.Any{}, sent) == Some{CorsPolicy.Grant{"*", False{}}} : Maybe<&2, CorsPolicy.Grant>}
+
+# A listed policy denies a request without a usable origin: no Origin, a
+# repeated Origin, "null", or anything that is not a bare http or https
+# origin. It never falls back to "*".
+law cors_listed_denies_unusable_origin:
+  for +es: List<&2, CorsPolicy.Entry>
+  for +sent: CorsPolicy.Sent
+  for h: {CorsSpec.request_origin(sent) == None{} : Maybe<&2, String>}
+  {CorsPolicy.grant(CorsPolicy.Listed{es}, sent) == None{} : Maybe<&2, CorsPolicy.Grant>}
+
+# Whatever a listed policy grants, with or without credentials, names exactly
+# the request's own serialized origin.
+law cors_listed_grant_echoes_origin:
+  for +es: List<&2, CorsPolicy.Entry>
+  for +sent: CorsPolicy.Sent
+  for +o: String
+  for +c: Bool
+  for h: {CorsPolicy.grant(CorsPolicy.Listed{es}, sent) == Some{CorsPolicy.Grant{o, c}} : Maybe<&2, CorsPolicy.Grant>}
+  {CorsSpec.request_origin(sent) == Some{o} : Maybe<&2, String>}
+
+# Configured origins are compared as their URL origins, in order; entries
+# that are not http or https URLs (including "*" and "null") are dropped.
+law cors_configured_origins:
+  for +xs: List<&2, CorsPolicy.Entry>
+  {CorsPolicy.listed(xs) == CorsPolicy.Listed{CorsSpec.configured(xs)} : CorsPolicy.Origins}
+
+# A preflight is exactly OPTIONS with an Origin field and an
+# Access-Control-Request-Method field; every other request, including other
+# OPTIONS requests, reaches the application.
+law cors_preflight_spec:
+  for +method: Request.Method
+  for +sent: CorsPolicy.Sent
+  for +requests_method: Bool
+  {CorsPolicy.preflight(method, sent, requests_method) == CorsSpec.preflight(method, sent, requests_method) : Bool}
+
+# A preflight answer carries exactly the granted origin, credentials when
+# granted, the configured methods, the configured (or else reflected) headers
+# and the configured max age, in that order; a denied origin gets no CORS
+# field.
+law cors_preflight_fields_spec:
+  for +config: CorsPolicy.Config
+  for +g: Maybe<&2, CorsPolicy.Grant>
+  for +reflected: Maybe<&2, String>
+  {CorsPolicy.preflight_fields(config, g, reflected) == CorsSpec.preflight_fields(config, g, reflected) : List<&2, CorsPolicy.Field>}
+
+# An ordinary response carries exactly the granted origin, credentials when
+# granted and the exposed headers; a denied origin gets no CORS field.
+law cors_actual_fields_spec:
+  for +config: CorsPolicy.Config
+  for +g: Maybe<&2, CorsPolicy.Grant>
+  {CorsPolicy.actual_fields(config, g) == CorsSpec.actual_fields(config, g) : List<&2, CorsPolicy.Field>}
+
+# The CORS policy a request retains, applied at finalization to whatever
+# response reached it, equals CorsResponseSpec.response for every
+# configuration, request and response. The grant, the preflight
+# classification and the requested headers are read from the request's own
+# fields (missing, single or repeated). Status, body, representation and
+# unrelated fields stay as they were; every downstream copy of the six CORS
+# fields, in any case, is dropped; then the complete preflight or actual
+# field set follows, then the Vary merge.
+law cors_response_spec:
+  for +config: CorsPolicy.Config
+  for +req: Request.Req
+  for +res: Response.Res
+  {ResponsePolicy.apply(CorsRequest.policy(config, req), res) == CorsResponseSpec.response(config, req, res) : Response.Res}
+
+# A listed-origin CORS response always ends with exactly one Vary field that
+# covers Origin: "*" when downstream Vary listed "*", otherwise every
+# downstream Vary value byte for byte followed by Origin (and, for a
+# reflecting preflight, Access-Control-Request-Headers) unless already listed.
+# Vary fields are found without regard to name case.
+law cors_vary_origin:
+  for +es: List<&2, CorsPolicy.Entry>
+  for +methods: List<&2, String>
+  for +headers: List<&2, String>
+  for +expose: List<&2, String>
+  for +max_age: Maybe<&2, Nat>
+  for +req: Request.Req
+  for +res: Response.Res
+  {ResponsePolicySpec.vary_values(ResponsePolicySpec.headers(ResponsePolicy.apply(CorsRequest.policy(CorsPolicy.Config{CorsPolicy.Listed{es}, methods, headers, expose, max_age}, req), res))) == ResponsePolicySpec.vary_result(ResponsePolicySpec.vary_values(ResponsePolicySpec.headers(res)), "Origin" <> CorsResponseSpec.request_header_names(CorsResponseSpec.preflight(req), headers)) : List<&2, List<&2, U32>>}
+
+# Adding names to Vary equals the independent merge for every field list.
+law vary_add_spec:
+  for +hs: List<&2, Request.Header>
+  for +names: List<&2, String>
+  {Vary.add(hs, names) == ResponsePolicySpec.vary_add(hs, names) : List<&2, Request.Header>}
+
+# The default security policy, applied to any response, keeps status, body,
+# representation and every unrelated field, drops every copy of the eleven
+# default fields and of X-Powered-By in any case, and appends the eleven
+# literal defaults once each.
+law secure_headers_defaults_spec:
+  for +res: Response.Res
+  {ResponsePolicy.apply(SecureHeaders.policy(SecureHeaders.defaults()), res) == SecureHeadersSpec.secured(res) : Response.Res}
+
+# BND-40: method override. A rewrite happens only for a POST.
+law override_rewrites_only_post:
+  for +allowed: List<&2, Request.Method>
+  for +wire: Request.Method
+  for +values: List<&2, String>
+  for +m: Request.Method
+  for h: {OverridePolicy.decide(allowed, wire, values) == OverridePolicy.Rewrite{m} : OverridePolicy.Outcome}
+  {OverrideSpec.is_post(wire) == True{} : Bool}
+
+# A rewrite never produces GET or HEAD, so CSRF protection still inspects
+# the rewritten request.
+law override_never_safe_destination:
+  for +allowed: List<&2, Request.Method>
+  for +wire: Request.Method
+  for +values: List<&2, String>
+  for +m: Request.Method
+  for h: {OverridePolicy.decide(allowed, wire, values) == OverridePolicy.Rewrite{m} : OverridePolicy.Outcome}
+  {CsrfSpec.reads_only(m) == False{} : Bool}
+
+# A rewrite produces only a method on the configured allowlist.
+law override_destination_listed:
+  for +allowed: List<&2, Request.Method>
+  for +wire: Request.Method
+  for +values: List<&2, String>
+  for +m: Request.Method
+  for h: {OverridePolicy.decide(allowed, wire, values) == OverridePolicy.Rewrite{m} : OverridePolicy.Outcome}
+  {OverrideSpec.listed(m, allowed) == True{} : Bool}
+
+# A POST with two or more override values is rejected.
+law override_rejects_repeated:
+  for +allowed: List<&2, Request.Method>
+  for +v: String
+  for +w: String
+  for +rest: List<&2, String>
+  {OverridePolicy.decide(allowed, Request.Post{}, v <> (w <> rest)) == OverridePolicy.Reject{} : OverridePolicy.Outcome}
+
+# Any other method is kept as sent.
+law override_keeps_non_post:
+  for +allowed: List<&2, Request.Method>
+  for +wire: Request.Method
+  for +values: List<&2, String>
+  for h: {OverrideSpec.is_post(wire) == False{} : Bool}
+  {OverridePolicy.decide(allowed, wire, values) == OverridePolicy.Keep{} : OverridePolicy.Outcome}
+
+# A rewrite never produces a method whose name is GET, HEAD, OPTIONS,
+# CONNECT or TRACE, so no extension method can stand in for one by spelling.
+law override_never_safe_name:
+  for +allowed: List<&2, Request.Method>
+  for +wire: Request.Method
+  for +values: List<&2, String>
+  for +m: Request.Method
+  for h: {OverridePolicy.decide(allowed, wire, values) == OverridePolicy.Rewrite{m} : OverridePolicy.Outcome}
+  {OverrideSpec.named_safe(Request.method_text(m)) == False{} : Bool}
+
+# The whole decision equals OverrideSpec.decide: a non-POST and a POST
+# without a value are kept; two or more values are rejected; one value is
+# trimmed, an empty one keeps the request, and otherwise its uppercase method
+# m keeps POST, rewrites to exactly m when m is listed and not a safe name,
+# and is rejected in every other case.
+law override_decision_spec:
+  for +allowed: List<&2, Request.Method>
+  for +wire: Request.Method
+  for +values: List<&2, String>
+  {OverridePolicy.decide(allowed, wire, values) == OverrideSpec.decide(allowed, wire, values) : OverridePolicy.Outcome}
+
+# A configured allowlist never contains GET or HEAD.
+law override_allowlist_unsafe:
+  for +xs: List<&2, String>
+  {OverrideSpec.all_unsafe(OverridePolicy.allowlist(xs)) == True{} : Bool}
+
+# BND-40: trailing slash. Every redirect target is a same-origin path: one
+# leading '/', never "//" and no character a browser strips or reads as '/'.
+law trailing_redirect_same_origin:
+  for +mode: TrailingPolicy.Mode
+  for +m: Request.Method
+  for +path: String
+  for +q: Maybe<&2, String>
+  for +loc: String
+  for h: {TrailingPolicy.target(mode, m, path, q) == Some{loc} : Maybe<&2, String>}
+  {TrailingSpec.same_origin_path(loc) == True{} : Bool}
+
+# Only GET and HEAD are redirected.
+law trailing_redirect_reads_only:
+  for +mode: TrailingPolicy.Mode
+  for +m: Request.Method
+  for +path: String
+  for +q: Maybe<&2, String>
+  for +loc: String
+  for h: {TrailingPolicy.target(mode, m, path, q) == Some{loc} : Maybe<&2, String>}
+  {CsrfSpec.reads_only(m) == True{} : Bool}
+
+# The full target equals TrailingSpec.target: only GET and HEAD move; trim
+# moves a path ending in '/' to the text before it, append moves a path not
+# ending in '/' to the path plus '/'; the raw query is kept; the result is
+# offered only when it is a same-origin path. Every other request has none.
+law trailing_target_spec:
+  for +mode: TrailingPolicy.Mode
+  for +m: Request.Method
+  for +path: String
+  for +q: Maybe<&2, String>
+  {TrailingPolicy.target(mode, m, path, q) == TrailingSpec.target(mode, m, path, q) : Maybe<&2, String>}
+
+# "/" is never trimmed.
+law trailing_trim_keeps_root:
+  for +m: Request.Method
+  for +q: Maybe<&2, String>
+  {TrailingPolicy.target(TrailingPolicy.Trim{}, m, "/", q) == None{} : Maybe<&2, String>}
+
+# Trimming a GET or HEAD for base + "/" targets base with the raw query
+# unchanged, whenever that target is a same-origin path.
+law trailing_trim_target:
+  for +base: String
+  for +q: Maybe<&2, String>
+  for +m: Request.Method
+  for r: {CsrfSpec.reads_only(m) == True{} : Bool}
+  for ok: {TrailingSpec.same_origin_path(base ++ Request.query_text(q)) == True{} : Bool}
+  {TrailingPolicy.target(TrailingPolicy.Trim{}, m, base ++ "/", q) == Some{base ++ Request.query_text(q)} : Maybe<&2, String>}
+
+# Appending to a GET or HEAD whose path does not end in '/' targets path +
+# "/" with the raw query unchanged, whenever that target is a same-origin path.
+law trailing_append_target:
+  for +path: String
+  for +q: Maybe<&2, String>
+  for +m: Request.Method
+  for r: {CsrfSpec.reads_only(m) == True{} : Bool}
+  for ends: {TrailingSpec.final_slash(path) == False{} : Bool}
+  for ok: {TrailingSpec.same_origin_path(path ++ ("/" ++ Request.query_text(q))) == True{} : Bool}
+  {TrailingPolicy.target(TrailingPolicy.Append{}, m, path, q) == Some{path ++ ("/" ++ Request.query_text(q))} : Maybe<&2, String>}
