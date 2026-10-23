@@ -356,8 +356,11 @@ test("legacy byte responses replace Connection fields and preserve binary framin
   using peer = new Peer(legacy.url);
   peer.socket.write(request("/"));
   const res = await peer.response();
+  const date = res.headers.get("date") ?? "";
+  expect(Math.abs(Date.parse(date) - Date.now())).toBeLessThanOrEqual(2000);
   expect(res.rawHead).toBe(
-    "HTTP/1.1 200 Custom\r\nX-Custom: untouched\r\nX-Dup: one\r\nX-Dup: two\r\nContent-Length: 7\r\nconnection: close",
+    "HTTP/1.1 200 Custom\r\nX-Custom: untouched\r\nX-Dup: one\r\nX-Dup: two\r\nContent-Length: 7\r\nconnection: close\r\ndate: " +
+      date,
   );
   expect(res.body).toBe("\x00\xff\r\n\r\n*");
   expect(res.headers.get("connection")).toBe("close");
