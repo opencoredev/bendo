@@ -2,6 +2,7 @@
 # Agents may add laws. Never delete or weaken one without a written reason
 # in the pull request.
 import Base
+import ./src/app/middleware.bend as Middleware
 import ./src/http/response.bend as Response
 import ./src/http/write_response.bend as WriteResponse
 import ./proof/response-spec.bend as ResponseSpec
@@ -844,3 +845,54 @@ law chunked_roundtrip:
   for +suffix: List<&2, U32>
   for valid: {Chunked.admissible(chunks, limit) == True{} : Bool}
   {Chunked.decode(Bytes.append(Chunked.encode(chunks), suffix), limit) == Chunked.Decoded{List.concat(&2, U32, chunks), [], suffix} : Chunked.DecodeResult}
+
+# BND-22: onion middleware. These equations quantify over every admissible
+# middleware function, context, continuation and result type. R is Type, so
+# the same pure algebra used at runtime also admits IO(Res); no equality of
+# foreign effects is assumed. Functions are erased here, never made copyable.
+
+law middleware_application:
+  for -C: Data
+  for -R: Type
+  for -a: Middleware.Value(C, R)
+  for -b: Middleware.Value(C, R)
+  for -ctx: C
+  for -next: C -> R
+  {Middleware.compose(C, R, a, b, ctx, next) == a(ctx, changed => b(changed, next)) : R}
+
+law middleware_identity_left:
+  for -C: Data
+  for -R: Type
+  for -mw: Middleware.Value(C, R)
+  for -ctx: C
+  for -next: C -> R
+  {Middleware.compose(C, R, Middleware.identity(C, R), mw, ctx, next) == mw(ctx, next) : R}
+
+law middleware_identity_right:
+  for -C: Data
+  for -R: Type
+  for -mw: Middleware.Value(C, R)
+  for -ctx: C
+  for -next: C -> R
+  {Middleware.compose(C, R, mw, Middleware.identity(C, R), ctx, next) == mw(ctx, next) : R}
+
+# An identity inserted between arbitrary prefix/suffix middleware changes no
+# result, including when the prefix short-circuits or changes the context.
+law middleware_identity_insert:
+  for -C: Data
+  for -R: Type
+  for -a: Middleware.Value(C, R)
+  for -b: Middleware.Value(C, R)
+  for -ctx: C
+  for -next: C -> R
+  {Middleware.compose(C, R, a, Middleware.compose(C, R, Middleware.identity(C, R), b), ctx, next) == Middleware.compose(C, R, a, b, ctx, next) : R}
+
+law middleware_associative:
+  for -C: Data
+  for -R: Type
+  for -a: Middleware.Value(C, R)
+  for -b: Middleware.Value(C, R)
+  for -c: Middleware.Value(C, R)
+  for -ctx: C
+  for -next: C -> R
+  {Middleware.compose(C, R, Middleware.compose(C, R, a, b), c, ctx, next) == Middleware.compose(C, R, a, Middleware.compose(C, R, b, c), ctx, next) : R}

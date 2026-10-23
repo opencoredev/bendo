@@ -366,3 +366,11 @@ def Laws.base64_roundtrip(xs, url, padded, valid):
 
 def Laws.chunked_roundtrip(chunks, limit, suffix, valid):
   ChunkedRoundtrip.roundtrip(chunks, limit, suffix, valid)
+
+# BND-22. Unfolding the shared runtime composition primitive proves these
+# equations without restricting middleware to a particular implementation.
+def Laws.middleware_application(C, R, a, b, ctx, next): {==}
+def Laws.middleware_identity_left(C, R, mw, ctx, next): {==}
+def Laws.middleware_identity_right(C, R, mw, ctx, next): {==}
+def Laws.middleware_identity_insert(C, R, a, b, ctx, next): {==}
+def Laws.middleware_associative(C, R, a, b, c, ctx, next): {==}
