@@ -6,6 +6,8 @@ import ./src/http/response.bend as Response
 import ./src/http/write_response.bend as WriteResponse
 import ./proof/response-spec.bend as ResponseSpec
 import ./proof/response-framing-spec.bend as ResponseFramingSpec
+
+import ./src/http/chunked.bend as Chunked
 import ./src/http.bend as Http
 import ./src/http/bytes.bend as Bytes
 import ./src/http/request.bend as Request
@@ -830,3 +832,15 @@ law base64_roundtrip:
   for +padded: Bool
   for valid: {Octets.valid(xs) == True{} : Bool}
   {Base64.decode(Base64.encode(xs, url, padded), url, padded) == Some{xs} : Maybe<&2, List<&2, U32>>}
+
+# BND-8: chunked decoding, for every octet body and producer chunking.
+
+# The independent admissible predicate checks only octets and total body length.
+# Empty producer chunks are allowed and omitted on the wire. The arbitrary
+# suffix represents a following pipelined request and is returned untouched.
+law chunked_roundtrip:
+  for +chunks: List<&2, List<&2, U32>>
+  for +limit: U32
+  for +suffix: List<&2, U32>
+  for valid: {Chunked.admissible(chunks, limit) == True{} : Bool}
+  {Chunked.decode(Bytes.append(Chunked.encode(chunks), suffix), limit) == Chunked.Decoded{List.concat(&2, U32, chunks), [], suffix} : Chunked.DecodeResult}
