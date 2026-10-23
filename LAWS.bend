@@ -1020,12 +1020,17 @@ law cookies_ordered_list_roundtrip:
   for valid: {CookieSpec.entries_valid(entries) == True{} : Bool}
   {Cookie.parse(String.join(CookieSpec.pairs(entries), ";")) == entries : List<&2, Cookie.Entry>}
 
-# BND-33: scalar decoding agrees with an independent specification for EVERY
-# schema and Json tree, including malformed schemas and constructed data.
-# SchemaSpec restates each rule from docs/data/schema.md (scalar counts, the
-# RFC 8259 number grammar, exact decimal values, patterns as regular languages
-# with a size cap, email and URL grammars) and calls no decoder helper.
-# Equality proves both soundness (accepted implies satisfies) and completeness.
+# BND-33, extended by BND-34: decoding agrees with an independent
+# specification for EVERY schema and Json tree, including malformed schemas and
+# constructed data. SchemaSpec restates each rule from docs/data/schema.md
+# (scalar counts, the RFC 8259 number grammar, exact decimal values, patterns
+# as regular languages with a size cap, email and URL grammars; array item
+# counts and items; object key policy, per-key member counts and members;
+# nullables; unions as "some member") and calls no decoder helper. Equality
+# proves both soundness (accepted implies satisfies) and completeness. BND-34
+# added constructors to Schema without changing this statement. On a scalar
+# schema, decode accepts and satisfies holds exactly as in BND-33, so the
+# BND-33 law is this one restricted to scalar schemas.
 
 law schema_acceptance_iff:
   for +schema: Schema.Schema
@@ -1034,10 +1039,25 @@ law schema_acceptance_iff:
 
 # Every success has the right typed constructor AND preserves the exact input
 # payload, including decimal spelling. Failures impose no payload obligation.
+# For compound schemas value_for builds the whole tree: each array item in
+# order, each declared field in schema order from the first member with its
+# key (None when absent), and a union's first accepted member with its index.
+# On scalar schemas value_for and decode are unchanged from BND-33.
 law schema_preserves_typed_value:
   for +schema: Schema.Schema
   for +value: Json.Json
   Schema.Preserves(Schema.value_for(schema, value), Schema.decode(schema, value))
+
+# BND-34: an accepted compound value satisfies every child schema. Each array
+# item satisfies the item schema, each member with a declared key satisfies
+# that field's schema, a non-null value satisfies a nullable's inner schema,
+# and the value satisfies at least one union member. (It follows from
+# schema_acceptance_iff; it is stated on its own so the guarantee is explicit.)
+law schema_children_satisfy:
+  for +schema: Schema.Schema
+  for +value: Json.Json
+  for accepted: {Schema.accepted(Schema.decode(schema, value)) == True{} : Bool}
+  {SchemaSpec.children(schema, value) == True{} : Bool}
 
 # BND-24: selection from source memberships, independent of runtime helpers.
 # Globals precede inherited group/guard placements and then route-local hooks;
