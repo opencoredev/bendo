@@ -1,3 +1,4 @@
+import { connect } from "node:net";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { build, COMPILE_TEST_TIMEOUT_MS, start, type RunningServer } from "./harness.ts";
 
@@ -21,15 +22,38 @@ test("three middleware nest in registration order, including entries after a rou
   expect(res.headers.get("x-handler")).toBe("ran");
 });
 
+async function handlerCount(): Promise<number> {
+  const res = await fetch(server.url + "/__count");
+  expect(res.status).toBe(200);
+  return Number(await res.text());
+}
+
+function headBytes(): Promise<Buffer> {
+  const address = new URL(server.url);
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    const socket = connect(Number(address.port), address.hostname, () => {
+      socket.write("HEAD /transform HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n");
+    });
+    socket.setTimeout(5000, () => socket.destroy(new Error("HEAD exchange timed out")));
+    socket.on("data", (chunk: Buffer) => chunks.push(chunk));
+    socket.on("end", () => resolve(Buffer.concat(chunks)));
+    socket.on("error", reject);
+  });
+}
+
 test("short circuit skips the handler and downstream typed-variable middleware", async () => {
+  const before = await handlerCount();
   const denied = await fetch(server.url + "/private/hello");
   expect(denied.status).toBe(401);
   expect(denied.headers.get("x-handler")).toBeNull();
   expect(await denied.text()).toBe("denied");
+  expect(await handlerCount()).toBe(before);
   const allowed = await fetch(server.url + "/private/hello", { headers: { "x-auth": "yes" } });
   expect(allowed.status).toBe(200);
   expect(allowed.headers.get("x-handler")).toBe("ran");
   expect(await allowed.text()).toBe("handler:Ada");
+  expect(await handlerCount()).toBe(before + 1);
 });
 
 test("post-next middleware transforms status, headers and body before HEAD normalization", async () => {
@@ -37,11 +61,15 @@ test("post-next middleware transforms status, headers and body before HEAD norma
   expect(res.status).toBe(202);
   expect(res.headers.get("x-transformed")).toBe("yes");
   expect(await res.text()).toBe("handler:unset!");
-  const head = await fetch(server.url + "/transform", { method: "HEAD" });
-  expect(head.status).toBe(202);
-  expect(head.headers.get("x-transformed")).toBe("yes");
-  expect(head.headers.get("content-length")).toBe("14");
-  expect(await head.text()).toBe("");
+  const wire = await headBytes();
+  const boundary = wire.indexOf("\r\n\r\n");
+  expect(boundary).toBeGreaterThan(0);
+  const head = wire.subarray(0, boundary).toString("latin1").toLowerCase();
+  expect(head).toStartWith("http/1.1 202 ");
+  expect(head).toContain("\r\nx-transformed: yes");
+  expect(head.split("\r\n")).toContain(`content-length: ${res.headers.get("content-length")}`);
+  expect(res.headers.get("content-length")).toBe("14");
+  expect(wire.subarray(boundary + 4)).toHaveLength(0);
 });
 
 test.each([
@@ -79,6 +107,7 @@ test("middleware registrations do not appear in the route manifest", () => {
   expect(manifest).toEqual({
     bendo: 1,
     routes: [
+      { method: "GET", path: "/__count" },
       { method: "GET", path: "/order" },
       { method: "GET", path: "/private/hello" },
       { method: "GET", path: "/transform" },

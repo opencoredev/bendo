@@ -20,10 +20,13 @@ def ready(result: Result<&2, &2, Methods.BuildError, B.Routes(App.Tag)>) -> IO(U
     case Fail{e}: IO.die(Unit, 1, "table build failed")
     case Done{+table}:
       do IO<Unit>:
-        res : B.Res <- B.handle_with(~App.Vars, ~App.Tag, ~Unit, ~App.handler, ~App.global_middleware, table, Unit{}, Request.Req{Request.Get{}, "/order", None{}, Request.Http11{}, []}, [])
+        +counter : Chan(App.Message) <- Chan.new(App.Message, 128)
+        IO.spawn(Unit, App.actor(counter, 0, App.Poll{}))
+        res : B.Res <- B.handle_with(~App.Vars, ~App.Tag, ~App.Env, ~App.handler, ~App.global_middleware, table, App.Env{counter}, Request.Req{Request.Get{}, "/order", None{}, Request.Http11{}, []}, [])
         check(res, 200, "a-before,b-before,c-before,handler,c-after,b-after,a-after")
-        head : B.Res <- B.handle_with(~App.Vars, ~App.Tag, ~Unit, ~App.handler, ~App.global_middleware, table, Unit{}, Request.Req{Request.Head{}, "/transform", None{}, Request.Http11{}, []}, [])
+        head : B.Res <- B.handle_with(~App.Vars, ~App.Tag, ~App.Env, ~App.handler, ~App.global_middleware, table, App.Env{counter}, Request.Req{Request.Head{}, "/transform", None{}, Request.Http11{}, []}, [])
         check(head, 202, "")
+        Chan.close(App.Message, counter)
 
 def invalid(result: Result<&2, &2, Methods.BuildError, B.Routes(App.Tag)>) -> IO(Unit):
   match result:

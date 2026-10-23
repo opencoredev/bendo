@@ -2,6 +2,8 @@
 # Agents may add laws. Never delete or weaken one without a written reason
 # in the pull request.
 import Base
+import ./src/app/table.bend as Table
+import ./proof/middleware-selection-spec.bend as MiddlewareSelectionSpec
 import ./src/app/middleware.bend as Middleware
 import ./src/http/response.bend as Response
 import ./src/http/write_response.bend as WriteResponse
@@ -896,3 +898,13 @@ law middleware_associative:
   for -ctx: C
   for -next: C -> R
   {Middleware.compose(C, R, Middleware.compose(C, R, a, b), c, ctx, next) == Middleware.compose(C, R, a, Middleware.compose(C, R, b, c), ctx, next) : R}
+
+# Successful construction preserves registration order, duplicates, and raw-path
+# selection, with global and matching path-specific ids still interleaved.
+law middleware_registration_selection:
+  for -Tag: Data
+  for +entries: List<&2, Table.Entry<Tag>>
+  for +table: Table.Table<Tag>
+  for +path: String
+  for built: {Table.build(Tag, entries) == Done{table} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  {MiddlewareSelectionSpec.selected(Tag, table, path) == MiddlewareSelectionSpec.filter(Tag, entries, path) : List<&2, Tag>}

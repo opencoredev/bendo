@@ -1,5 +1,6 @@
 # Proofs of LAWS.bend. Run: bend PROOF.bend --verdict
 import Base
+import ./proof/middleware-selection.bend as MiddlewareSelection
 import ./src/http/response.bend as Response
 import ./src/http/write_response.bend as WriteResponse
 
@@ -374,3 +375,6 @@ def Laws.middleware_identity_left(C, R, mw, ctx, next): {==}
 def Laws.middleware_identity_right(C, R, mw, ctx, next): {==}
 def Laws.middleware_identity_insert(C, R, a, b, ctx, next): {==}
 def Laws.middleware_associative(C, R, a, b, c, ctx, next): {==}
+
+def Laws.middleware_registration_selection(Tag, entries, table, path, built):
+  MiddlewareSelection.selection(Tag, entries, table, path, built)
