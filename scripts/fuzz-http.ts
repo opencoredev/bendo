@@ -413,10 +413,15 @@ type Server = {
   stop: () => Promise<void>;
 };
 
-async function launch(binary: string): Promise<Server> {
-  for (let attempt = 0; attempt < 3; attempt++) {
+/** One readiness probe waits at most this long, so later probes still fit the budget. */
+const PROBE_MS = 2000;
+
+/** `startupMs` bounds the whole start, including retries on a busy port. */
+async function launch(command: readonly string[], startupMs: number): Promise<Server> {
+  const deadline = Date.now() + startupMs;
+  for (let attempt = 0; attempt < 3 && Date.now() < deadline; attempt++) {
     const port = 20000 + Math.floor(Math.random() * 20000);
-    const proc = Bun.spawn([binary], {
+    const proc = Bun.spawn([...command], {
       env: { ...process.env, PORT: String(port) },
       stdout: "pipe",
       stderr: "pipe",
@@ -426,13 +431,16 @@ async function launch(binary: string): Promise<Server> {
       exit = `exit ${code} signal ${proc.signalCode}: ${(await new Response(proc.stderr).text()).trim()}`;
     });
     const url = `http://127.0.0.1:${port}`;
-    const deadline = Date.now() + 20_000;
     while (Date.now() < deadline && exit === undefined) {
+      // A server that accepts TCP but never answers must not outlive the deadline.
+      const signal = AbortSignal.timeout(Math.max(1, Math.min(PROBE_MS, deadline - Date.now())));
       if (
-        await fetch(`${url}/text`).then(
-          () => true,
-          () => false,
-        )
+        await fetch(`${url}/text`, { signal })
+          .then((response) => response.arrayBuffer())
+          .then(
+            () => true,
+            () => false,
+          )
       )
         return {
           url,
@@ -448,7 +456,7 @@ async function launch(binary: string): Promise<Server> {
     proc.kill();
     await proc.exited;
   }
-  throw new Error("fuzz server did not start");
+  throw new Error(`fuzz server did not answer within ${startupMs} ms`);
 }
 
 function rssKiB(pid: number): number {
@@ -460,11 +468,11 @@ function rssKiB(pid: number): number {
   }
 }
 
-async function healthy(url: string): Promise<string | undefined> {
+async function healthy(url: string, deadlineMs: number): Promise<string | undefined> {
   const outcome = await exchangeOutcome({
     url,
     parts: [Buffer.from("GET /text HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")],
-    deadlineMs: CASE_DEADLINE_MS,
+    deadlineMs,
   });
   if (outcome.kind !== "eof") return `health check ${outcome.kind}`;
   try {
@@ -476,47 +484,47 @@ async function healthy(url: string): Promise<string | undefined> {
   }
 }
 
-/** Runs one case; returns a failure reason or the statuses it saw. */
-async function runCase(
-  url: string,
-  item: Case,
-): Promise<
+type CaseResult =
   | { kind: "ok"; reset: boolean; statuses: number[] }
-  | { kind: "fail"; reason: string; output: Buffer }
-> {
+  | { kind: "fail"; reason: string; output: Buffer };
+
+/** Everything received, even before a reset, must be whole, well-framed responses. */
+function framed(bytes: Buffer, reset: boolean): CaseResult {
+  try {
+    return { kind: "ok", reset, statuses: framedResponses(bytes).map((r) => r.status) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      kind: "fail",
+      reason: `ill-framed response${reset ? " before reset" : ""}: ${message}`,
+      output: bytes,
+    };
+  }
+}
+
+/** Runs one case; returns a failure reason or the statuses it saw. */
+async function runCase(url: string, item: Case, deadlineMs: number): Promise<CaseResult> {
   const outcome = await exchangeOutcome({
     url,
     parts: item.parts,
     pauseMs: item.pauseMs,
     halfClose: item.halfClose,
-    deadlineMs: CASE_DEADLINE_MS,
+    deadlineMs,
   });
   switch (outcome.kind) {
     case "timeout":
       return {
         kind: "fail",
-        reason: `hang: no EOF within ${CASE_DEADLINE_MS} ms`,
+        reason: `hang: no EOF within ${deadlineMs} ms`,
         output: outcome.bytes,
       };
     case "error":
       // A reset after the server closes still counts as closing the connection.
       if (!/ECONNRESET|EPIPE/.test(outcome.message))
         return { kind: "fail", reason: outcome.message, output: outcome.bytes };
-      return { kind: "ok", reset: true, statuses: [] };
+      return framed(outcome.bytes, true);
     case "eof":
-      try {
-        return {
-          kind: "ok",
-          reset: false,
-          statuses: framedResponses(outcome.bytes).map((r) => r.status),
-        };
-      } catch (error) {
-        return {
-          kind: "fail",
-          reason: `ill-framed response: ${error instanceof Error ? error.message : String(error)}`,
-          output: outcome.bytes,
-        };
-      }
+      return framed(outcome.bytes, false);
     default: {
       const exhaustive: never = outcome;
       return exhaustive;
@@ -531,7 +539,10 @@ export async function fuzz({
   concurrency = 8,
   healthEvery = 100,
   only,
-  binary = build(FIXTURE),
+  binary,
+  command = [binary ?? build(FIXTURE)],
+  caseDeadlineMs = CASE_DEADLINE_MS,
+  startupMs = 20_000,
   progress,
 }: {
   seed: number;
@@ -541,9 +552,13 @@ export async function fuzz({
   healthEvery?: number;
   only?: number;
   binary?: string;
+  /** Overrides `binary`: the command that starts the server, which listens on $PORT. */
+  command?: readonly string[];
+  caseDeadlineMs?: number;
+  startupMs?: number;
   progress?: (report: Report) => void;
 }): Promise<Report> {
-  const server = await launch(binary);
+  const server = await launch(command, startupMs);
   const started = Date.now();
   const stopAt = started + minutes * 60_000;
   const report: Report = {
@@ -565,7 +580,7 @@ export async function fuzz({
   async function worker() {
     while (!report.failure && next < last && Date.now() < stopAt) {
       const item = makeCase(seed, next++);
-      const result = await runCase(server.url, item);
+      const result = await runCase(server.url, item, caseDeadlineMs);
       const exit = server.exited();
       if (exit !== undefined) return fail({ reason: `server crashed: ${exit}`, case: item });
       if (result.kind === "fail")
@@ -577,7 +592,7 @@ export async function fuzz({
         report.statuses[status] = (report.statuses[status] ?? 0) + 1;
       if (report.cases % healthEvery === 0) {
         health = health.then(async () => {
-          const problem = await healthy(server.url);
+          const problem = await healthy(server.url, caseDeadlineMs);
           report.healthChecks++;
           report.maxRssKiB = Math.max(report.maxRssKiB, rssKiB(server.pid));
           if (problem) fail({ reason: problem });
@@ -591,7 +606,7 @@ export async function fuzz({
     await Promise.all(Array.from({ length: concurrency }, worker));
     await health;
     if (!report.failure) {
-      const problem = await healthy(server.url);
+      const problem = await healthy(server.url, caseDeadlineMs);
       report.healthChecks++;
       if (problem) fail({ reason: problem });
     }

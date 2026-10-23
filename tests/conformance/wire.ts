@@ -31,7 +31,9 @@ function head(wire: Buffer, offset: number): Head {
       throw new Error(`invalid response field: ${JSON.stringify(line)}`);
     const name = field[1].toLowerCase();
     if (headers.has(name)) throw new Error(`duplicate response field: ${name}`);
-    headers.set(name, field[2].trim());
+    // Field OWS is only SP and HTAB (RFC 9110 5.6.3). `trim()` would also drop
+    // NBSP and other Unicode spaces and hide an invalid value.
+    headers.set(name, field[2].replace(/[ \t]+$/, ""));
   }
   if (headers.has("transfer-encoding")) throw new Error("unexpected transfer coding");
   const rawLength = headers.get("content-length");

@@ -102,15 +102,38 @@ Each case goes out in up to six writes with 0 to 2 ms pauses. 97% half-close
 after writing; the rest leave the socket open so the server's own deadlines
 must close it. A case passes when the connection reaches EOF within 10 seconds
 and everything received parses with `framedResponses`. An empty reply is a
-valid close. A reset counts as a close and is tallied separately. The run
-fails on a hang, an ill-framed response, a server exit, or a failed health
-check (`GET /text` on a fresh connection every 100 cases). The report also
-records peak server RSS.
+valid close. A reset counts as a close and is tallied separately, but the
+bytes received before it must still parse as whole responses. The run fails on
+a hang, an ill-framed response, a server exit, or a failed health check
+(`GET /text` on a fresh connection every 100 cases). The report also records
+peak server RSS. Startup has a 20 second budget that also bounds each readiness
+probe, so a server that accepts connections but never answers fails instead of
+stalling the run.
 
 `bun run check` runs a fixed-seed short mode in `tests/fuzz/http.test.ts`:
 seed 20261023, 1500 cases, about 7 seconds. It also requires 200, 400, 404,
 413, 417 and 431 to each appear, so the generator keeps reaching handlers and
 every rejection path.
+
+### Self-test
+
+`tests/fuzz/self-test.test.ts` runs the fuzzer against
+`tests/fuzz/broken-server.ts`, a small Bun server with one mode per failure. It
+answers the readiness probe correctly, then misbehaves on fuzz cases. The
+fuzzer must report each mode with the matching reason:
+
+| Mode | Expected failure |
+| --- | --- |
+| `hang` | no EOF within the case deadline |
+| `missing-length` | ill-framed: missing `Content-Length` |
+| `extra-bytes` | ill-framed: bytes after the body |
+| `bad-status` | ill-framed: invalid status line |
+| `junk-then-reset` | ill-framed before reset: truncated head |
+| `crash` | server exit (or a refused connection right after it) |
+| `silent` | startup fails within its deadline |
+
+Two control modes, `valid` and `valid-then-reset`, send a well-framed 400 and
+must pass. The self-test runs in `bun run check` and takes about 3 seconds.
 
 ### Long runs
 

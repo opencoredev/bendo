@@ -430,6 +430,29 @@ describe("response oracle", () => {
     }
   });
 
+  test("field values lose only SP and HTAB, so other whitespace stays invalid", () => {
+    const ok = (field: string) =>
+      Buffer.from(`HTTP/1.1 200 OK\r\n${field}\r\nConnection: close\r\n\r\nhi`, "latin1");
+    for (const parse of [responses, framedResponses]) {
+      expect(parse(ok("Content-Length: \t2 \t"))[0]?.body.toString()).toBe("hi");
+      for (const field of [
+        "Content-Length: \xa02\xa0",
+        "Content-Length: 2\xa0",
+        "Content-Length: \xa02",
+        "Content-Length: 2\x85",
+      ])
+        expect(() => parse(ok(field))).toThrow("invalid Content-Length");
+      expect(() =>
+        parse(
+          Buffer.from(
+            "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\xa0\r\n\r\n",
+            "latin1",
+          ),
+        ),
+      ).toThrow("400 must close the connection");
+    }
+  });
+
   test("the method-blind oracle resolves HEAD and GET framings", () => {
     const get = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nhi";
     const head = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n";
