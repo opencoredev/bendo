@@ -36,6 +36,12 @@ def request(-Vars: Data, c: Ctx<Vars>) -> Request.Req:
   Ctx{r, p, b, q, s, hs, v, o} = c
   r
 
+# Request-stage rewrites preserve buffered body/query data; route captures are
+# recomputed after the request hook chain has finished.
+def rewrite(-Vars: Data, c: Ctx<Vars>, method: Request.Method, path: String) -> Ctx<Vars>:
+  Ctx{Request.Req{old_method, old_path, query, version, hs}, ps, body, pairs, code, headers, vars} = c
+  Ctx{Request.Req{method, path, query, version, hs}, [], body, pairs, code, headers, vars}
+
 def raw_body(-Vars: Data, c: Ctx<Vars>) -> List<&2, U32>:
   Ctx{r, p, b, q, s, hs, v, o} = c
   b

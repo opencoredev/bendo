@@ -21,6 +21,11 @@ def prepend_global(-Tag: Data, +tag: Tag, +rest: Result<&2, &2, M.BuildError, Li
     case Done{layers}:
       Equal.cong(List<&2, Tag>, List<&2, Tag>, xs => tag <> xs, T.selected(Tag, layers, path), expected, proof)
 
+def prepend_hook(-Tag: Data, +stage: T.Stage, +tag: Tag, +rest: Result<&2, &2, M.BuildError, List<&2, T.Middleware<Tag>>>, +expected: List<&2, Tag>, +path: String, proof: Collected(Tag, rest, expected, path)) -> Collected(Tag, T.prepend(Tag, T.Staged{stage, tag}, rest), expected, path):
+  match rest:
+    case Fail{error}: Unit{}
+    case Done{layers}: proof
+
 def prepend_path(-Tag: Data, +tag: Tag, +pattern: P.Pattern, +rest: Result<&2, &2, M.BuildError, List<&2, T.Middleware<Tag>>>, +expected: List<&2, Tag>, +path: String, proof: Collected(Tag, rest, expected, path)) -> Collected(Tag, T.prepend(Tag, T.Middleware{Some{pattern}, tag}, rest), S.matching(Tag, tag, expected, P.match_path(pattern, path)), path):
   match rest:
     case Fail{error}: Unit{}
@@ -42,6 +47,8 @@ def route_checked(-Tag: Data, +index: Nat, +checked: Result<&2, &2, M.BuildError
 def entries(-Tag: Data, +xs: List<&2, T.Entry<Tag>>, +index: Nat, +path: String) -> Collected(Tag, T.middleware_entries(Tag, xs, index), S.filter(Tag, xs, path), path):
   match xs:
     case Nil{}: {==}
+    case T.Hook{stage, tag} <> tail:
+      prepend_hook(Tag, stage, tag, T.middleware_entries(Tag, tail, 1n+index), S.filter(Tag, tail, path), path, entries(Tag, tail, 1n+index, path))
     case T.Route{r} <> tail:
       route_checked(Tag, index, M.build_table(Tag, [r]), T.middleware_entries(Tag, tail, 1n+index), S.filter(Tag, tail, path), path, entries(Tag, tail, 1n+index, path))
     case T.Use{None{}, tag} <> tail:

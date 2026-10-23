@@ -3,6 +3,7 @@ import Base
 import ./table.bend as Table
 import ./context.bend as Context
 import ./middleware.bend as Middleware
+import ./hooks.bend as Hooks
 import ../data/urlencoded.bend as Query
 import ../router/methods.bend as Methods
 import ../router/spec.bend as Spec
@@ -43,25 +44,74 @@ def params(-Tag: Data, resolution: Methods.Resolution<Tag>) -> Pattern.Params:
     case Methods.Found{Spec.Match{index, tag, ps}, head_from_get}: ps
     case _: []
 
-def resolved_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +resolution: Methods.Resolution<Tag>, ids: List<&2, Tag>, +req: Request.Req, body: List<&2, U32>, pairs: List<&2, Query.Entry>, +env: Env) -> IO(Response.Res):
-  Request.Req{method, path, query, version, headers} = req
-  ctx = Context.variables(Vars, Context.create(req, params(Tag, resolution), body, pairs))
-  onion = Middleware.chain(~Context.Ctx<Vars>, ~IO(Response.Res), ~Tag, ~Env, ~middleware, ids, env)
+# Attach route captures without losing variables or pending response headers.
+def with_params(-Vars: Data, ctx: Context.Ctx<Vars>, ps: Pattern.Params) -> Context.Ctx<Vars>:
+  Context.Ctx{req, old, body, pairs, code, hs, vars} = ctx
+  Context.Ctx{req, ps, body, pairs, code, hs, vars}
+
+def resolved_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +resolution: Methods.Resolution<Tag>, +layers: List<&2, Table.Middleware<Tag>>, ctx: Context.Ctx<Vars>, +env: Env, +slot: Chan(Context.Ctx<Vars>)) -> IO(Response.Res):
+  +routed = with_params(Vars, ctx, params(Tag, resolution))
+  ids = Table.lifecycle_pre(Tag, Table.lifecycle(Tag, layers, Context.path(Vars, routed)))
+  onion = Hooks.chain(~Vars, ~Tag, ~Env, ~middleware, ids, env, slot)
   do IO<Response.Res>:
-    res : Response.Res <- onion(ctx, changed => terminal(~Vars, ~Tag, ~Env, ~dispatch, resolution, changed, env))
-    return finish(method, res)
+    Hooks.remember(Vars, slot, routed)
+    onion(routed, changed => terminal(~Vars, ~Tag, ~Env, ~dispatch, resolution, changed, env))
 
-def parsed_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, env: Env, +req: Request.Req, body: List<&2, U32>, parsed_query: Result<&2, &2, Query.Error, List<&2, Query.Entry>>) -> IO(Response.Res):
-  Table.Table{entries, compiled, middleware_entries} = table
-  Request.Req{+method, +path, query, version, headers} = req
+def route_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, +ctx: Context.Ctx<Vars>, env: Env, slot: Chan(Context.Ctx<Vars>)) -> IO(Response.Res):
+  Table.Table{entries, compiled, layers} = table
+  resolved_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, Methods.resolve(Tag, compiled, Context.path(Vars, ctx), Context.method(Vars, ctx), Methods.defaults()), layers, ctx, env, slot)
+
+def recover(~Vars: Data, ~Tag: Data, ~Env: Data, ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), ids: List<&2, Tag>, ctx: Context.Ctx<Vars>, env: Env, res: Response.Res, failed: Bool) -> IO(Response.Res):
+  match failed:
+    case False{}: IO.pure(Response.Res, res)
+    case True{}: Hooks.post(~Vars, ~Tag, ~Env, ~middleware, ids, ctx, env, res)
+
+def validated(res: Response.Res, valid: Bool) -> Response.Res:
+  match valid:
+    case True{}: res
+    case False{}: Response.body(500, [], [])
+
+def error_response(res: Response.Res) -> Bool:
+  Response.Res{code, hs, body, rep} = res
+  U32.is_ge(code, 400)
+
+# Transport owns the deferred action. This internal entrypoint never runs it.
+def parsed_pending(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +table: Table.Table<Tag>, +env: Env, +req: Request.Req, body: List<&2, U32>, parsed_query: Result<&2, &2, Query.Error, List<&2, Query.Entry>>) -> IO(Response.Res & IO(Unit)):
+  Table.Table{entries, compiled, +layers} = table
+  Request.Req{+method, path, query, version, headers} = req
   match parsed_query:
-    case Fail{error}: IO.pure(Response.Res, finish(method, Response.text(400, "Bad Request")))
+    case Fail{error}: IO.pure(Response.Res & IO(Unit), (finish(method, Response.text(400, "Bad Request")), IO.pure(Unit, Unit{})))
     case Done{pairs}:
-      resolved_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, Methods.resolve(Tag, compiled, path, method, Methods.defaults()), Table.selected(Tag, middleware_entries, path), req, body, pairs, env)
+      +ctx = Context.variables(Vars, Context.create(req, [], body, pairs))
+      +plan = Table.lifecycle(Tag, layers, path)
+      do IO<Response.Res & IO(Unit)>:
+        +slot : Chan(Context.Ctx<Vars>) <- Chan.new(Context.Ctx<Vars>, 1)
+        seeded : Result<&1, &1, Context.Ctx<Vars>, Unit> <- Chan.send(Context.Ctx<Vars>, slot, ctx)
+        Hooks.sent(Context.Ctx<Vars>, seeded)
+        res : Response.Res <- Hooks.chain(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_request(Tag, plan), env, slot, ctx, changed => route_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, table, changed, env, slot))
+        +latest : Context.Ctx<Vars> <- Hooks.recall(Vars, slot)
+        after : Response.Res <- Hooks.post(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_after(Tag, plan), latest, env, res)
+        +mapped : Response.Res <- Hooks.post(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_map(Tag, plan), latest, env, after)
+        +checked : Response.Res = validated(mapped, Response.valid(mapped))
+        recovered : Response.Res <- recover(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_errors(Tag, plan), latest, env, checked, error_response(checked))
+        +final : Response.Res = finish(method, recovered)
+        return (final, Hooks.observe(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_observers(Tag, plan), latest, env, final))
 
-def handle_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, env: Env, +req: Request.Req, body: List<&2, U32>) -> IO(Response.Res):
+def pending_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, env: Env, +req: Request.Req, body: List<&2, U32>) -> IO(Response.Res & IO(Unit)):
   Request.Req{method, path, query, version, headers} = req
-  parsed_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, table, env, req, body, Context.query_pairs(query))
+  parsed_pending(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, table, env, req, body, Context.query_pairs(query))
+
+def returned(result: Response.Res & IO(Unit)) -> IO(Response.Res):
+  (res, after) = result
+  do IO<Response.Res>:
+    after
+    return res
+
+# For network-free consumers, returning the normalized response is the boundary.
+def handle_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, env: Env, req: Request.Req, body: List<&2, U32>) -> IO(Response.Res):
+  do IO<Response.Res>:
+    result : Response.Res & IO(Unit) <- pending_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, table, env, req, body)
+    returned(result)
 
 # Existing apps keep their dispatcher signature. Registering middleware requires
 # handle_with/serve_with so no identifier can be silently ignored.
