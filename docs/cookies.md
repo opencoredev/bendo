@@ -144,7 +144,9 @@ Bend cannot hide the `Keys{first, rest}` constructor, so a `Keys` value can be
 built without `configure`. Every entry point rechecks it with the same rule:
 if any slot is empty or not a Unicode scalar string, `verify`, `read`,
 `verify_digest` and `B.signed_cookie` return `None{}`, `sign` returns `None{}`,
-and `serialize` and `B.set_signed_cookie` return `Cookie.InvalidSecret{}`.
+and `serialize` and `B.set_signed_cookie` return `Cookie.InvalidSecret{}`. The
+value is checked first: a non-scalar value gives `Cookie.InvalidValue{}` under
+any keys.
 
 `B.set_signed_cookie(c, name, value, keys, options)` returns
 `Result<&2, &2, Cookie.Error, B.Ctx>`, just like `set_cookie`. It signs with the
@@ -190,6 +192,14 @@ wire) -> Maybe<&2, String>`, `read(keys, maybe_wire)` and `serialize(name,
 value, keys, options)`. `sign` signs with the first key and returns `None{}` for
 unusable keys or a non-scalar value. `unchecked_sign(key, value) -> String` is
 the raw primitive the others build on; it checks neither the key nor the value.
+
+The module also exposes the internal steps those entry points are built from:
+`matches`, `verify_usable`, `signed` and `serialize_keys`. They take a flag or
+assume keys already passed `usable`, and do **not** recheck the slots, so a
+directly built `Keys` with an empty slot can authenticate a forged cookie
+through them. Treat them like `unchecked_sign`: never call them from
+application code. Use `verify`, `read`, `sign`, `serialize`,
+`B.signed_cookie` and `B.set_signed_cookie`, which always check.
 Run
 `bun test --timeout 30000 tests/cookies-signed.test.ts` for native HTTP and `.mjs`
 roundtrips, rotation, tampering and Hono-algorithm interoperability checks.

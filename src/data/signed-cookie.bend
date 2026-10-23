@@ -63,6 +63,8 @@ def matches_go(keys: List<&2, String>, +value: String, +signature: List<&2, U32>
     case key <> rest:
       matches_go(rest, value, signature, found || Compare.ct_equal(digest(key, value), signature))
 
+# Internal and unchecked: trusts that the keys passed usable. Use the
+# checked entry points (verify, read, sign, serialize) from applications.
 def matches(keys: Keys, value: String, signature: List<&2, U32>) -> Bool:
   Keys{first, rest} = keys
   matches_go(first <> rest, value, signature, False{})
@@ -72,6 +74,8 @@ def verified(value: String, ok: Bool) -> Maybe<&2, String>:
     case True{}: Some{value}
     case False{}: None{}
 
+# Internal and unchecked: trusts that the keys passed usable. Use the
+# checked entry points (verify, read, sign, serialize) from applications.
 def verify_usable(keys: Keys, +value: String, signature: List<&2, U32>, ok: Bool) -> Maybe<&2, String>:
   match ok:
     case True{}: verified(value, matches(keys, value, signature))
@@ -107,6 +111,8 @@ def read(keys: Keys, wire: Maybe<&2, String>) -> Maybe<&2, String>:
     case None{}: None{}
     case Some{value}: verify(keys, value)
 
+# Internal and unchecked: trusts that the keys passed usable. Use the
+# checked entry points (verify, read, sign, serialize) from applications.
 def signed(keys: Keys, +value: String, ok: Bool) -> Maybe<&2, String>:
   match keys ok:
     case _ False{}: None{}
@@ -116,6 +122,8 @@ def signed(keys: Keys, +value: String, ok: Bool) -> Maybe<&2, String>:
 def sign(+keys: Keys, +value: String) -> Maybe<&2, String>:
   signed(keys, value, usable(keys) && scalar_valid(value))
 
+# Internal and unchecked: trusts that the keys passed usable. Use the
+# checked entry points (verify, read, sign, serialize) from applications.
 def serialize_keys(name: String, value: String, keys: Keys, options: Cookie.Options, ok: Bool) -> Result<&2, &2, Cookie.Error, String>:
   match keys ok:
     case _ False{}: Fail{Cookie.InvalidSecret{}}
