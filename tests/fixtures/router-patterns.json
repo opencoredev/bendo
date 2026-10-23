@@ -43,8 +43,8 @@
   },
   {
     "kind": "match",
-    "pattern": "/\u00e9",
-    "path": "/\u00e9",
+    "pattern": "/é",
+    "path": "/é",
     "params": []
   },
   {
@@ -79,7 +79,7 @@
   },
   {
     "kind": "miss",
-    "pattern": "/\u00e9",
+    "pattern": "/é",
     "path": "/%C3%A9"
   },
   {
@@ -138,25 +138,25 @@
     "kind": "match",
     "pattern": "/p/:x",
     "path": "/p/caf%C3%A9",
-    "params": [["x", "caf\u00e9"]]
+    "params": [["x", "café"]]
   },
   {
     "kind": "match",
     "pattern": "/p/:x",
-    "path": "/p/caf\u00e9",
-    "params": [["x", "caf\u00e9"]]
+    "path": "/p/café",
+    "params": [["x", "café"]]
   },
   {
     "kind": "match",
     "pattern": "/p/:x",
     "path": "/p/%F0%9F%98%80",
-    "params": [["x", "\ud83d\ude00"]]
+    "params": [["x", "😀"]]
   },
   {
     "kind": "match",
     "pattern": "/p/:x",
     "path": "/p/%E4%B8%AD",
-    "params": [["x", "\u4e2d"]]
+    "params": [["x", "中"]]
   },
   {
     "kind": "match",
@@ -180,7 +180,7 @@
     "kind": "match",
     "pattern": "/p/:x",
     "path": "/p/%F4%8F%BF%BF",
-    "params": [["x", "\udbff\udfff"]]
+    "params": [["x", "􏿿"]]
   },
   {
     "kind": "match",
@@ -398,7 +398,7 @@
   {
     "kind": "miss",
     "pattern": "/:x{slug}",
-    "path": "/caf\u00e9"
+    "path": "/café"
   },
   {
     "kind": "match",
@@ -778,13 +778,13 @@
   {
     "kind": "fill",
     "pattern": "/:x",
-    "params": [["x", "caf\u00e9"]],
+    "params": [["x", "café"]],
     "filled": "/%63%61%66%C3%A9"
   },
   {
     "kind": "fill",
     "pattern": "/:x",
-    "params": [["x", "\ud83d\ude00"]],
+    "params": [["x", "😀"]],
     "filled": "/%F0%9F%98%80"
   },
   {
@@ -934,55 +934,55 @@
   {
     "kind": "fill",
     "pattern": "/:x",
-    "params": [["x", "\u007f"]],
+    "params": [["x", ""]],
     "filled": "/%7F"
   },
   {
     "kind": "fill",
     "pattern": "/:x",
-    "params": [["x", "\u0080"]],
+    "params": [["x", ""]],
     "filled": "/%C2%80"
   },
   {
     "kind": "fill",
     "pattern": "/:x",
-    "params": [["x", "\u07ff"]],
+    "params": [["x", "߿"]],
     "filled": "/%DF%BF"
   },
   {
     "kind": "fill",
     "pattern": "/:x",
-    "params": [["x", "\u0800"]],
+    "params": [["x", "ࠀ"]],
     "filled": "/%E0%A0%80"
   },
   {
     "kind": "fill",
     "pattern": "/:x",
-    "params": [["x", "\ud7ff"]],
+    "params": [["x", "퟿"]],
     "filled": "/%ED%9F%BF"
   },
   {
     "kind": "fill",
     "pattern": "/:x",
-    "params": [["x", "\ue000"]],
+    "params": [["x", ""]],
     "filled": "/%EE%80%80"
   },
   {
     "kind": "fill",
     "pattern": "/:x",
-    "params": [["x", "\uffff"]],
+    "params": [["x", "￿"]],
     "filled": "/%EF%BF%BF"
   },
   {
     "kind": "fill",
     "pattern": "/:x",
-    "params": [["x", "\ud800\udc00"]],
+    "params": [["x", "𐀀"]],
     "filled": "/%F0%90%80%80"
   },
   {
     "kind": "fill",
     "pattern": "/:x",
-    "params": [["x", "\udbff\udfff"]],
+    "params": [["x", "􏿿"]],
     "filled": "/%F4%8F%BF%BF"
   },
   {
@@ -1222,41 +1222,8 @@
   },
   {
     "kind": "fill",
-    "pattern": "/:a{.+}/:b?",
-    "params": [
-      ["a", "x"],
-      ["b", "y"]
-    ],
-    "filled": "/%78/%79"
-  },
-  {
-    "kind": "fill",
-    "pattern": "/:a{.+}/*tail",
-    "params": [
-      ["a", "x"],
-      ["tail", "y"]
-    ],
-    "filled": "/%78/%79"
-  },
-  {
-    "kind": "fill",
-    "pattern": "/:a{.+}/:b{.+}",
-    "params": [
-      ["a", "x/y"],
-      ["b", "z/w"]
-    ],
-    "filled": "/%78%2F%79/%7A%2F%77"
-  },
-  {
-    "kind": "fill",
     "pattern": "/*/*",
     "params": [["*", "a"]],
-    "filled": "/%61"
-  },
-  {
-    "kind": "fill",
-    "pattern": "/*/:x{.+}",
-    "params": [["x", "a"]],
     "filled": "/%61"
   },
   {
@@ -1275,5 +1242,142 @@
     "kind": "miss",
     "pattern": "/*/*/*/*/*/*/*/*/*/*/z",
     "path": "/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:a{.+}",
+    "path": "/x/y",
+    "error": "InvalidSpan"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:a{.+}/:b",
+    "path": "/x/y",
+    "error": "InvalidSpan"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:a{.+}/:b?",
+    "path": "/x/y",
+    "error": "InvalidSpan"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:a{.+}/*",
+    "path": "/x/y",
+    "error": "InvalidSpan"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:a{.+}/*tail",
+    "path": "/x/y",
+    "error": "InvalidSpan"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:a{.+}/:b{.+}",
+    "path": "/x/y",
+    "error": "InvalidSpan"
+  },
+  {
+    "kind": "error",
+    "pattern": "/*/:x{.+}",
+    "path": "/x/y",
+    "error": "InvalidSpan"
+  },
+  {
+    "kind": "error",
+    "pattern": "/*/:x{.+}/y",
+    "path": "/x/y",
+    "error": "InvalidSpan"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:a{.+}/x/:b{.+}/y",
+    "path": "/x/y",
+    "error": "InvalidSpan"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:a{.+}/x/*",
+    "path": "/x/y",
+    "error": "InvalidSpan"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:a{.+}/%61/:id?",
+    "path": "/x/y",
+    "error": "InvalidSpan"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:a{.+}/x/%2F",
+    "path": "/x/y",
+    "error": "InvalidSpan"
+  },
+  {
+    "kind": "error",
+    "pattern": "/a/*/x/:a{.+}/y",
+    "path": "/x/y",
+    "error": "InvalidSpan"
+  },
+  {
+    "kind": "match",
+    "pattern": "/:prefix{.+}/contents/:id?",
+    "path": "/a/contents/contents",
+    "params": [["prefix", "a/contents"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/:prefix{.+}/contents/:id?",
+    "path": "/a/b/contents/contents/c",
+    "params": [
+      ["prefix", "a/b/contents"],
+      ["id", "c"]
+    ]
+  },
+  {
+    "kind": "match",
+    "pattern": "/%2F/:a{.+}/x/:b/:c?",
+    "path": "/%2F/p/q/x/b1/c1",
+    "params": [
+      ["a", "p/q"],
+      ["b", "b1"],
+      ["c", "c1"]
+    ]
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:a{.+}/x",
+    "path": "/x"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:a{.+}/x",
+    "path": "/a/%GG/x"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/:a{.+}/x/:b?",
+    "params": [
+      ["a", "p/q"],
+      ["b", "x"]
+    ],
+    "filled": "/%70%2F%71/x/%78"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/:a{.+}/x/:b?",
+    "params": [["a", "x"]],
+    "filled": "/%78/x"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/k/:a{.+}/c/c/:b?/:d?",
+    "params": [
+      ["a", "c/c"],
+      ["b", "c"]
+    ],
+    "filled": "/k/%63%2F%63/c/c/%63"
   }
 ]

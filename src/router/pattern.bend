@@ -31,6 +31,7 @@ type ErrorKind is Data:
   WildcardNotLast{}
   OptionalNotLast{}
   InvalidStatic{}
+  InvalidSpan{}
 
 type PatternError is Data:
   PatternError{kind: ErrorKind, segment: String}
@@ -57,6 +58,8 @@ def error_kind(kind: ErrorKind) -> String:
       "OptionalNotLast"
     case InvalidStatic{}:
       "InvalidStatic"
+    case InvalidSpan{}:
+      "InvalidSpan"
 
 def error_message(e: PatternError) -> String:
   PatternError{kind, segment} = e
@@ -282,10 +285,64 @@ def compile_segments(xs: List<&2, String>, +names: List<&2, String>) -> Result<&
 def path_segments(s: String) -> List<&2, String>:
   String.split(s, '/')
 
-def compile_body(t: String) -> Result<&2, &2, PatternError, Pattern>:
+def no_percent(s: String) -> Bool:
+  match s:
+    case SNil{}:
+      True{}
+    case SCon{Chr{+n}, t}:
+      Bool.not(U32.is_eq(n, 37)) && no_percent(t)
+
+# After a span, only statics without `%` and captures may follow.
+def fixed_tail(segs: List<&2, Segment>) -> Bool:
+  match segs:
+    case Nil{}:
+      True{}
+    case Static{raw} <> rest:
+      no_percent(raw) && fixed_tail(rest)
+    case Capture{name, c, optional} <> rest:
+      fixed_tail(rest)
+    case _:
+      False{}
+
+# A span needs a static anchor right after it.
+def span_tail(segs: List<&2, Segment>) -> Bool:
+  match segs:
+    case Static{raw} <> rest:
+      no_percent(raw) && fixed_tail(rest)
+    case _:
+      False{}
+
+def no_span(segs: List<&2, Segment>) -> Bool:
+  match segs:
+    case Nil{}:
+      True{}
+    case Span{name} <> rest:
+      False{}
+    case h <> rest:
+      no_span(rest)
+
+# Spans keep matching linear: no wildcard shares a pattern with a span, and
+# every span is followed by a static anchor and fixed-width segments.
+def spans_ok(segs: List<&2, Segment>) -> Bool:
+  match segs:
+    case Nil{}:
+      True{}
+    case Static{raw} <> rest:
+      spans_ok(rest)
+    case Capture{name, c, optional} <> rest:
+      spans_ok(rest)
+    case Span{name} <> rest:
+      span_tail(rest)
+    case h <> rest:
+      no_span(rest)
+
+def checked(+xs: List<&2, Segment>, t: String) -> Result<&2, &2, PatternError, Pattern>:
+  E.choose(Result<&2, &2, PatternError, Pattern>, spans_ok(xs), u => Done{Pattern{xs}}, u => Fail{PatternError{InvalidSpan{}, t}})
+
+def compile_body(+t: String) -> Result<&2, &2, PatternError, Pattern>:
   do Result<&2, &2, PatternError, Pattern>:
-    xs : List<&2, Segment> <- compile_segments(path_segments(t), Nil{})
-    return Pattern{xs}
+    +xs : List<&2, Segment> <- compile_segments(path_segments(t), Nil{})
+    checked(xs, t)
 
 def compile(source: String) -> Result<&2, &2, PatternError, Pattern>:
   match source:
@@ -311,10 +368,39 @@ def prefer(hit: Maybe<&2, Params>, next: Unit -> Maybe<&2, Params>) -> Maybe<&2,
     case None{}:
       next(Unit{})
 
-def span_result(name: String, raw: String, tail: Maybe<&2, Params>) -> Maybe<&2, Params>:
-  do Maybe<&2, Params>:
-    +value : String <- E.decode(raw)
-    E.choose(Maybe<&2, Params>, value_ok(C.Any{}, value), u => put_capture(name, value, tail), u => None{})
+# A wildcard decodes each raw segment once and joins the decoded values with
+# `/`. A slash cannot sit inside an escape or a UTF-8 sequence, so this equals
+# decoding the joined remainder, and a cached row extends it one segment at a time.
+def join_value(+first: Maybe<&2, String>, tail: List<&2, String>, rest: Maybe<&2, String>) -> Maybe<&2, String>:
+  match tail:
+    case Nil{}:
+      first
+    case h <> t:
+      do Maybe<&2, String>:
+        a : String <- first
+        b : String <- rest
+        return a ++ "/" ++ b
+
+def decode_segments(ps: List<&2, String>) -> Maybe<&2, String>:
+  match ps:
+    case Nil{}:
+      Some{""}
+    case p <> +tail:
+      join_value(E.decode(p), tail, decode_segments(tail))
+
+def wildcard_param(+name: String, value: Maybe<&2, String>) -> Maybe<&2, Params>:
+  match value:
+    case None{}:
+      None{}
+    case Some{v}:
+      Some{[Param{name, v}]}
+
+def wildcard_value(cell: Maybe<&2, Params>) -> Maybe<&2, String>:
+  match cell:
+    case Some{[Param{name, v}]}:
+      Some{v}
+    case _:
+      None{}
 
 # One result for each suffix of the request path, including the empty suffix.
 # Each pattern segment computes its row from the next segment's row. Glob
@@ -342,17 +428,28 @@ def empty_rows(paths: List<&2, String>) -> List<&2, Maybe<&2, Params>>:
     case h <> t:
       None{} <> empty_rows(t)
 
-# The next-row cells are already computed. Try increasing nonempty prefixes;
-# each alternative only decodes its prefix and reads one cell.
-def span_options(paths: List<&2, String>, hits: List<&2, Maybe<&2, Params>>, +name: String, +taken: List<&2, String>) -> Maybe<&2, Params>:
-  match paths hits:
-    case raw <> tail old <> +next:
-      +consumed = List.append(&2, String, taken, [raw])
-      prefer(span_result(name, String.join(consumed, "/"), row_head(next)), u => span_options(tail, next, name, consumed))
+# A span keeps its raw segments most recent first. Only a span whose
+# remainder already matched is joined and decoded.
+def span_value(+name: String, +taken: List<&2, String>, tail: Maybe<&2, Params>) -> Maybe<&2, Params>:
+  match tail:
+    case None{}:
+      None{}
+    case Some{ps}:
+      do Maybe<&2, Params>:
+        +value : String <- E.decode(String.join(List.reverse(&2, String, taken), "/"))
+        E.choose(Maybe<&2, Params>, value_ok(C.Any{}, value), u => Some{Param{name, value} <> ps}, u => None{})
+
+# Spans are greedy: the longest raw prefix whose remainder matches wins.
+# `cells` holds the remainder's result for `paths` and for each suffix.
+def span_scan(paths: List<&2, String>, cells: List<&2, Maybe<&2, Params>>, +name: String, +taken: List<&2, String>) -> Maybe<&2, Params>:
+  match paths cells:
+    case +raw <> tail old <> +next:
+      prefer(span_scan(tail, next, name, raw <> taken), u => span_value(name, raw <> taken, row_head(next)))
     case _ _:
       None{}
 
-def row_one(~equal: String -> String -> Bool, ~starts: String -> String -> Bool, seg: Segment, +last: Bool, +paths: List<&2, String>, +hits: List<&2, Maybe<&2, Params>>) -> Maybe<&2, Params>:
+# `below` is this row's result for the next suffix.
+def row_one(~equal: String -> String -> Bool, ~starts: String -> String -> Bool, seg: Segment, +last: Bool, +paths: List<&2, String>, +hits: List<&2, Maybe<&2, Params>>, below: List<&2, Maybe<&2, Params>>) -> Maybe<&2, Params>:
   match seg paths hits:
     case Static{raw} h <> tail old <> next:
       E.choose(Maybe<&2, Params>, equal(raw, h), u => row_head(next), u => None{})
@@ -362,27 +459,26 @@ def row_one(~equal: String -> String -> Bool, ~starts: String -> String -> Bool,
       do Maybe<&2, Params>:
         +value : String <- E.decode(raw)
         E.choose(Maybe<&2, Params>, value_ok(c, value), u => put_capture(name, value, row_head(next)), u => None{})
-    case Wildcard{name} ps cells:
-      E.choose(Maybe<&2, Params>, last, u => (
-        do Maybe<&2, Params>:
-          value : String <- E.decode(String.join(ps, "/"))
-          return [Param{name, value}]
-      ), u => None{})
+    case Wildcard{name} Nil{} cells:
+      E.choose(Maybe<&2, Params>, last, u => wildcard_param(name, Some{""}), u => None{})
+    case Wildcard{name} raw <> tail cells:
+      E.choose(Maybe<&2, Params>, last, u => wildcard_param(name, join_value(E.decode(raw), tail, wildcard_value(row_head(below)))), u => None{})
     case InteriorWildcard{} ps cells:
-      first_result(cells)
+      prefer(row_head(cells), u => row_head(below))
     case PrefixWildcard{prefix} raw <> tail cells:
       E.choose(Maybe<&2, Params>, last && starts(raw, prefix), u => Some{Nil{}}, u => None{})
     case Span{name} ps cells:
-      span_options(ps, cells, name, Nil{})
+      span_scan(ps, cells, name, Nil{})
     case _ _ _:
       None{}
 
 def rows_for(~equal: String -> String -> Bool, ~starts: String -> String -> Bool, +seg: Segment, +last: Bool, +paths: List<&2, String>, +hits: List<&2, Maybe<&2, Params>>) -> List<&2, Maybe<&2, Params>>:
   match paths hits:
     case Nil{} cells:
-      [row_one(~equal, ~starts, seg, last, Nil{}, cells)]
+      [row_one(~equal, ~starts, seg, last, Nil{}, cells, Nil{})]
     case h <> +tail old <> +next:
-      row_one(~equal, ~starts, seg, last, paths, hits) <> rows_for(~equal, ~starts, seg, last, tail, next)
+      +below = rows_for(~equal, ~starts, seg, last, tail, next)
+      row_one(~equal, ~starts, seg, last, paths, hits, below) <> below
     case h <> tail Nil{}:
       Nil{}
 
@@ -403,9 +499,7 @@ def match_segments(segs: List<&2, Segment>, paths: List<&2, String>) -> Maybe<&2
     case Nil{} h <> t:
       None{}
     case Wildcard{name} <> Nil{} ps:
-      do Maybe<&2, Params>:
-        value : String <- E.decode(String.join(ps, "/"))
-        return [Param{name, value}]
+      wildcard_param(name, decode_segments(ps))
     case Capture{name, c, True{}} <> rest Nil{}:
       match_segments(rest, Nil{})
     case Capture{name, +c, optional} <> rest raw <> tail:
@@ -422,8 +516,8 @@ def match_segments(segs: List<&2, Segment>, paths: List<&2, String>) -> Maybe<&2
       search_segments(InteriorWildcard{} <> rest, ps)
     case PrefixWildcard{prefix} <> rest ps:
       search_segments(PrefixWildcard{prefix} <> rest, ps)
-    case Span{name} <> rest ps:
-      search_segments(Span{name} <> rest, ps)
+    case Span{name} <> +rest +ps:
+      span_scan(ps, match_rows(~String.eq, ~String.starts_with, rest, ps), name, Nil{})
     case _ _:
       None{}
 
@@ -438,12 +532,40 @@ def match_path(pattern: Pattern, path: String) -> Maybe<&2, Params>:
 
 # Method-layer case options change only static comparisons. Captures retain
 # their original bytes and percent-decoding behavior even after a glob/span.
+# This mirrors match_segments with injected comparisons.
+def match_with(~equal: String -> String -> Bool, ~starts: String -> String -> Bool, segs: List<&2, Segment>, paths: List<&2, String>) -> Maybe<&2, Params>:
+  match segs paths:
+    case Nil{} Nil{}:
+      Some{Nil{}}
+    case Nil{} h <> t:
+      None{}
+    case Wildcard{name} <> Nil{} ps:
+      wildcard_param(name, decode_segments(ps))
+    case Capture{name, c, True{}} <> rest Nil{}:
+      match_with(~equal, ~starts, rest, Nil{})
+    case Capture{name, +c, optional} <> rest raw <> tail:
+      do Maybe<&2, Params>:
+        +value : String <- E.decode(raw)
+        E.choose(Maybe<&2, Params>, value_ok(c, value), u => (
+          put_capture(name, value, match_with(~equal, ~starts, rest, tail))
+        ), u => (None{}))
+    case Static{raw} <> rest h <> tail:
+      E.choose(Maybe<&2, Params>, equal(raw, h), u => (
+        match_with(~equal, ~starts, rest, tail)
+      ), u => (None{}))
+    case Span{name} <> +rest +ps:
+      span_scan(ps, match_rows(~equal, ~starts, rest, ps), name, Nil{})
+    case +seg <> +rest +ps:
+      row_head(match_rows(~equal, ~starts, seg <> rest, ps))
+    case _ _:
+      None{}
+
 def match_path_with(~equal: String -> String -> Bool, ~starts: String -> String -> Bool, pattern: Pattern, path: String) -> Maybe<&2, Params>:
   match pattern path:
     case Pattern{Capture{name, c, True{}} <> +rest} "/":
-      E.choose(Maybe<&2, Params>, all_optional(rest), u => Some{Nil{}}, u => row_head(match_rows(~equal, ~starts, Capture{name, c, True{}} <> rest, [""])))
+      E.choose(Maybe<&2, Params>, all_optional(rest), u => Some{Nil{}}, u => match_with(~equal, ~starts, Capture{name, c, True{}} <> rest, [""]))
     case Pattern{segs} SCon{'/', t}:
-      row_head(match_rows(~equal, ~starts, segs, path_segments(t)))
+      match_with(~equal, ~starts, segs, path_segments(t))
     case _ _:
       None{}
 
@@ -457,7 +579,7 @@ def fill_segments(segs: List<&2, Segment>, ps: Params) -> Maybe<&2, List<&2, Str
         tail : List<&2, String> <- fill_segments(rest, values)
         return raw <> tail
     case Capture{name, c, True{}} <> rest Nil{}:
-      fill_segments(rest, Nil{})
+      E.choose(Maybe<&2, List<&2, String>>, all_optional(rest), u => Some{Nil{}}, u => None{})
     case Capture{name, c, optional} <> rest Param{key, +value} <> tail:
       E.choose(Maybe<&2, List<&2, String>>, String.eq(name, key) && value_ok(c, value), u => (
         do Maybe<&2, List<&2, String>>:
@@ -468,8 +590,8 @@ def fill_segments(segs: List<&2, Segment>, ps: Params) -> Maybe<&2, List<&2, Str
       fill_segments(rest, values)
     case PrefixWildcard{prefix} <> Nil{} Nil{}:
       Some{[prefix]}
-    case Span{name} <> rest Param{key, +value} <> tail:
-      E.choose(Maybe<&2, List<&2, String>>, String.eq(name, key) && value_ok(C.Any{}, value), u => (
+    case Span{name} <> +rest Param{key, +value} <> tail:
+      E.choose(Maybe<&2, List<&2, String>>, (String.eq(name, key) && value_ok(C.Any{}, value)) && span_tail(rest), u => (
         do Maybe<&2, List<&2, String>>:
           xs : List<&2, String> <- fill_segments(rest, tail)
           return E.encode(value) <> xs
@@ -495,15 +617,15 @@ def admissible_segments(segs: List<&2, Segment>, ps: Params) -> Bool:
     case Static{raw} <> rest values:
       admissible_segments(rest, values)
     case Capture{name, c, True{}} <> rest Nil{}:
-      admissible_segments(rest, Nil{})
+      all_optional(rest)
     case Capture{name, c, optional} <> rest Param{key, +value} <> tail:
       String.eq(name, key) && value_ok(c, value) && admissible_segments(rest, tail)
     case InteriorWildcard{} <> rest values:
       admissible_segments(rest, values)
     case PrefixWildcard{prefix} <> Nil{} Nil{}:
       True{}
-    case Span{name} <> rest Param{key, +value} <> tail:
-      String.eq(name, key) && value_ok(C.Any{}, value) && admissible_segments(rest, tail)
+    case Span{name} <> +rest Param{key, +value} <> tail:
+      ((String.eq(name, key) && value_ok(C.Any{}, value)) && span_tail(rest)) && admissible_segments(rest, tail)
     case Wildcard{name} <> Nil{} Param{key, +value} <> Nil{}:
       String.eq(name, key) && E.scalars(value)
     case _ _:

@@ -343,7 +343,7 @@ def split_nonempty(s):
 def pattern_good(p: P.Pattern) -> Bool:
   match p:
     case P.Pattern{+segs}:
-      (segments_clean(segs) && segments_shape(segs)) && Bool.not(List.is_empty(&2, P.Segment, segs))
+      ((segments_clean(segs) && segments_shape(segs)) && Bool.not(List.is_empty(&2, P.Segment, segs))) && P.spans_ok(segs)
 
 def pattern_result_good(r: Result<&2, &2, P.PatternError, P.Pattern>) -> Bool:
   match r:
@@ -352,17 +352,28 @@ def pattern_result_good(r: Result<&2, &2, P.PatternError, P.Pattern>) -> Bool:
     case Done{p}:
       pattern_good(p)
 
-def wrap_good(r: Result<&2, &2, P.PatternError, List<&2, P.Segment>>,
+def checked_good(+xs: List<&2, P.Segment>, +t: String, test: Bool,
+    decided: {P.spans_ok(xs) == test : Bool},
+    good: {(segments_clean(xs) && segments_shape(xs)) && Bool.not(List.is_empty(&2, P.Segment, xs)) == True{} : Bool}) ->
+    {pattern_result_good(E.choose(Result<&2, &2, P.PatternError, P.Pattern>, test, u => Done{P.Pattern{xs}}, u => Fail{P.PatternError{P.InvalidSpan{}, t}})) == True{} : Bool}:
+  match test:
+    case False{}:
+      {==}
+    case True{}:
+      %Equal.sym(Bool, (segments_clean(xs) && segments_shape(xs)) && Bool.not(List.is_empty(&2, P.Segment, xs)), True{}, good) : {_ && P.spans_ok(xs) == True{} : Bool}
+      decided
+
+def wrap_good(+t: String, r: Result<&2, &2, P.PatternError, List<&2, P.Segment>>,
     good: {result_good(r, False{}) == True{} : Bool}) ->
-    {pattern_result_good(Result.bind(&2, &2, P.PatternError, List<&2, P.Segment>, P.Pattern, r, xs => Done{P.Pattern{xs}})) == True{} : Bool}:
+    {pattern_result_good(Result.bind(&2, &2, P.PatternError, List<&2, P.Segment>, P.Pattern, r, +xs => P.checked(xs, t))) == True{} : Bool}:
   match r:
     case Fail{e}:
       {==}
-    case Done{xs}:
-      good
+    case Done{+xs}:
+      checked_good(xs, t, P.spans_ok(xs), {==}, good)
 
 def compile_body_good(+t: String) -> {pattern_result_good(P.compile_body(t)) == True{} : Bool}:
-  wrap_good(P.compile_segments(P.path_segments(t), Nil{}), (
+  wrap_good(t, P.compile_segments(P.path_segments(t), Nil{}), (
     %split_nonempty(t) : {result_good(P.compile_segments(P.path_segments(t), Nil{}), _) == True{} : Bool}
     compile_segments_good(P.path_segments(t), Nil{}, Core.clean_split(t))
   ))
