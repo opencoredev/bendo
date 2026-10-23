@@ -12,7 +12,16 @@ import ./jwt.bend as JwtAuth
 import ./csrf.bend as Csrf
 import ./csrf_policy.bend as CsrfPolicy
 
+import ./body_limit.bend as BodyLimit
+import ./timeout.bend as Timeout
+import ./etag.bend as ETag
+import ./cache.bend as Cache
+
 type Builtin is Data:
+  BodyLimit{bytes: U32}
+  Timeout{milliseconds: U32}
+  ETag{}
+  CacheControl{policy: Cache.Policy}
   Logger{}
   RequestId{}
   ServerTiming{}
@@ -25,6 +34,10 @@ type Builtin is Data:
 
 def dispatch(-Vars: Data, id: Builtin, c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
   match id:
+    case BodyLimit{bytes}: BodyLimit.middleware(Vars, bytes, c, next)
+    case Timeout{ms}: Timeout.middleware(Vars, ms, c, next)
+    case ETag{}: ETag.middleware(Vars, c, next)
+    case CacheControl{policy}: Cache.middleware(Vars, policy, c, next)
     case Logger{}: Logger.middleware(Vars, c, next)
     case RequestId{}: RequestId.middleware(Vars, c, next)
     case ServerTiming{}: Timing.middleware(Vars, c, next)
@@ -34,3 +47,9 @@ def dispatch(-Vars: Data, id: Builtin, c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(R
     case BearerAuth{realm, tokens}: Bearer.middleware(Vars, realm, tokens, c, next)
     case Jwt{config}: JwtAuth.middleware(Vars, config, c, next)
     case Csrf{policy}: Csrf.middleware(Vars, policy, c, next)
+
+# A pure selector for transport admission; all other built-ins have no limit.
+def body_limit(id: Builtin) -> Maybe<&2, U32>:
+  match id:
+    case BodyLimit{n}: Some{n}
+    case _: None{}

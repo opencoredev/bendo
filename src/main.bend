@@ -1,6 +1,7 @@
 # Public Bendo entrypoint. Route tags and startup environments are app-owned Data.
 import Base
 import ./mw/builtin.bend as Builtin
+import ./mw/cache.bend as Cache
 import ./mw/server_timing.bend as Timing
 import ./mw/basic_auth.bend as BasicAuth
 import ./mw/jwt.bend as JwtAuth
@@ -181,3 +182,18 @@ def jwt_with(-Vars: Data, config: JwtAuth.Config, c: Context.Ctx<Vars>, next: Js
   JwtAuth.with_claims(Vars, config, c, next)
 def jwt_sign(secret: String, claims: Json.Json) -> Result<&2, &2, Jwt.Error, String>: Jwt.sign(Utf8.encode(secret), claims)
 def jwt_verify(secret: String, token: String, now: Nat, leeway: Nat) -> Result<&2, &2, Jwt.Error, Json.Json>: Jwt.verify(Utf8.encode(secret), token, now, leeway)
+
+# Buffered protection and cache middleware.
+def body_limit(bytes: U32) -> Builtin.Builtin: Builtin.BodyLimit{bytes}
+def timeout(milliseconds: U32) -> Builtin.Builtin: Builtin.Timeout{milliseconds}
+def etag() -> Builtin.Builtin: Builtin.ETag{}
+def cache_control(policy: Cache.Policy) -> Builtin.Builtin: Builtin.CacheControl{policy}
+def cache_no_store() -> Cache.Policy: Cache.NoStore{}
+def cache_no_cache() -> Cache.Policy: Cache.NoCache{}
+def cache_public(max_age: U32, immutable: Bool) -> Cache.Policy: Cache.Public{max_age, immutable}
+def cache_private(max_age: U32) -> Cache.Policy: Cache.Private{max_age}
+def builtin_body_limit(id: Builtin.Builtin) -> Maybe<&2, U32>: Builtin.body_limit(id)
+
+# Select BodyLimit tags before reading request payloads, using original scopes.
+def serve_limits_with(~Vars: Data, ~Tag: Data, ~select: Tag -> Maybe<&2, U32>, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config) -> IO(Unit):
+  Serve.run_limits_with(~Vars, ~Tag, ~select, ~Env, ~dispatch, ~middleware, table, env, config)

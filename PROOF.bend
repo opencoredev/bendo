@@ -1,5 +1,6 @@
 # Proofs of LAWS.bend. Run: bend PROOF.bend --verdict
 import Base
+import ./proof/limits.bend as LimitsProof
 import ./proof/manifest.bend as ManifestProof
 import ./proof/manifest-built.bend as ManifestBuiltProof
 import ./proof/compose.bend as ComposeProof
@@ -611,3 +612,8 @@ def Laws.manifest_exact_routes(Tag, sources, compiled, layers, count):
   ManifestProof.describe(Tag, sources, Methods.raw(Tag, Methods.index_valid(Tag, compiled)))
 def Laws.manifest_built_routes(Tag, entries, table, built):
   ManifestBuiltProof.built_rows(Tag, entries, table, built)
+
+# BND-41
+def Laws.conditional_if_none_match_spec(field, tag): LimitsProof.matches(field, tag)
+def Laws.conditional_304_spec(res): LimitsProof.response(res)
+def Laws.body_limit_spec(length, limit): LimitsProof.within(length, limit)

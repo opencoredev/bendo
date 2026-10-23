@@ -10,6 +10,8 @@ import ./app/manifest.bend as Manifest
 import ./app/table.bend as Table
 import ./app/handle.bend as Handle
 import ./app/context.bend as Context
+import ./app/errors.bend as Errors
+import ./app/body-policy.bend as BodyPolicy
 import ./http/response.bend as Response
 import ./http/write_response.bend as Write
 import ./http/bytes.bend as Bytes
@@ -71,6 +73,15 @@ def reject(s: Socket, status: U32) -> IO(Unit):
     out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- TCP.send_bytes(s, bytes)
     rejected(out)
 
+def reject_body(s: Socket, +req: R.Req) -> IO(Unit):
+  +ctx = Context.create(req, [], [], [])
+  method = Context.method(Unit, ctx)
+  res = Context.error(Unit, Context.header(Unit, ctx, "connection", "close"), Errors.http_error(413, "Content Too Large"))
+  do IO<Unit>:
+    bytes : List<&2, U32> <- DateWire.ensure(Write.write(method, res))
+    out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- TCP.send_bytes(s, bytes)
+    rejected(out)
+
 def continue_result(m: Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>) -> IO(Socket):
   (s, r) = m
   do IO<Socket>:
@@ -102,61 +113,63 @@ def closing(+req: R.Req, state: Connection.State, config: Config.Config) -> Bool
   Connection.closing(req, count, config)
 
 @unsafe
-def talk(~Env: Data, ~app: R.Req -> List<&2, U32> -> Env -> Bool -> IO(Reply), event: ConnectionEvent, +env: Env, +config: Config.Config) -> IO(Unit):
+def talk(~Env: Data, ~select: R.Req -> Env -> U32, ~app: R.Req -> List<&2, U32> -> Env -> Bool -> IO(Reply), event: ConnectionEvent, +env: Env, +config: Config.Config) -> IO(Unit):
   match event:
     case Tick{s, +state}:
       do IO<Unit>:
         now : Nat <- IO.now()
-        talk(~Env, ~app, Work{s, state, Connection.action(state, now)}, env, config)
+        talk(~Env, ~select, ~app, Work{s, state, Connection.action(state, now)}, env, config)
     case Work{s, +state, Connection.Respond{+req, body, rest}}:
       do IO<Unit>:
         reply : Reply <- app(req, body, env, closing(req, state, config))
-        talk(~Env, ~app, Replied{s, state, rest, reply}, env, config)
+        talk(~Env, ~select, ~app, Replied{s, state, rest, reply}, env, config)
     case Replied{s, state, rest, Reply{bytes, close, after}}:
       do IO<Unit>:
         dated : List<&2, U32> <- DateWire.ensure(bytes)
         out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- TCP.send_bytes(s, dated)
         after
-        talk(~Env, ~app, Sent{out, state, rest, close}, env, config)
+        talk(~Env, ~select, ~app, Sent{out, state, rest, close}, env, config)
+    case Work{s, state, Connection.BodyRejected{req}}:
+      reject_body(s, req)
     case Work{s, state, Connection.Reject{status}}:
       reject(s, status)
     case Work{s, state, Connection.Stop{}}:
       Socket.close(s)
     case Work{s, state, Connection.Read{ms}}:
-      IO.bind(Socket & Poll<&1, &1, Result<&1, &1, U32 & String, Maybe<&1, List<&2, U32>>>, Unit>, Unit, TCP.try_recv_bytes(s, 4096, ms), read => talk(~Env, ~app, Read{read, state}, env, config))
+      IO.bind(Socket & Poll<&1, &1, Result<&1, &1, U32 & String, Maybe<&1, List<&2, U32>>>, Unit>, Unit, TCP.try_recv_bytes(s, 4096, ms), read => talk(~Env, ~select, ~app, Read{read, state}, env, config))
     case Read{(s, Ready{Done{Some{xs}}}), state}:
       do IO<Unit>:
         now : Nat <- IO.now()
-        talk(~Env, ~app, Fed{s, Connection.feed(xs, state, now, config)}, env, config)
+        talk(~Env, ~select, ~app, Fed{s, Connection.feed_policy(~Env, ~select, env, xs, state, now, config)}, env, config)
     case Fed{s, (next, send)}:
-      IO.bind(Socket, Unit, interim(s, send), sock => talk(~Env, ~app, Tick{sock, next}, env, config))
+      IO.bind(Socket, Unit, interim(s, send), sock => talk(~Env, ~select, ~app, Tick{sock, next}, env, config))
     case Read{(s, Ready{Done{None{}}}), +state}:
-      talk(~Env, ~app, Work{s, state, Connection.eof(state)}, env, config)
+      talk(~Env, ~select, ~app, Work{s, state, Connection.eof(state)}, env, config)
     case Read{(s, Ready{Fail{e}}), state}:
       Socket.close(s)
     case Read{(s, Wait{u}), state}:
-      talk(~Env, ~app, Tick{s, state}, env, config)
+      talk(~Env, ~select, ~app, Tick{s, state}, env, config)
     case Sent{(s, Done{u}), state, rest, False{}}:
       do IO<Unit>:
         now : Nat <- IO.now()
-        talk(~Env, ~app, Fed{s, Connection.next(state, rest, now, config)}, env, config)
+        talk(~Env, ~select, ~app, Fed{s, Connection.next_policy(~Env, ~select, env, state, rest, now, config)}, env, config)
     case Sent{(s, result), state, rest, close}:
       rejected((s, result))
 
-def conn(~Env: Data, ~app: R.Req -> List<&2, U32> -> Env -> Bool -> IO(Reply), m: Listener & Result<&1, &1, U32 & String, Socket>, +env: Env, +config: Config.Config) -> IO(Listener):
+def conn(~Env: Data, ~select: R.Req -> Env -> U32, ~app: R.Req -> List<&2, U32> -> Env -> Bool -> IO(Reply), m: Listener & Result<&1, &1, U32 & String, Socket>, +env: Env, +config: Config.Config) -> IO(Listener):
   (l, r) = m
   do IO<Listener>:
     s : Socket <- IO.pass(Socket, r)
     now : Nat <- IO.now()
-    IO.spawn(Unit, talk(~Env, ~app, Tick{s, Connection.initial(now, config)}, env, config))
+    IO.spawn(Unit, talk(~Env, ~select, ~app, Tick{s, Connection.initial(now, config)}, env, config))
     return l
 
 @unsafe
-def loop(~Env: Data, ~app: R.Req -> List<&2, U32> -> Env -> Bool -> IO(Reply), l: Listener, +env: Env, +config: Config.Config) -> IO(Unit):
+def loop(~Env: Data, ~select: R.Req -> Env -> U32, ~app: R.Req -> List<&2, U32> -> Env -> Bool -> IO(Reply), l: Listener, +env: Env, +config: Config.Config) -> IO(Unit):
   do IO<Unit>:
     m : Listener & Result<&1, &1, U32 & String, Socket> <- TCP.accept(l)
-    l2 : Listener <- conn(~Env, ~app, m, env, config)
-    loop(~Env, ~app, l2, env, config)
+    l2 : Listener <- conn(~Env, ~select, ~app, m, env, config)
+    loop(~Env, ~select, ~app, l2, env, config)
 
 def port_read(m: Maybe<&2, U32>, +fallback: U32) -> U32:
   match m:
@@ -200,7 +213,7 @@ def legacy_scan(fuel: Nat, xs: List<&2, U32>, line: List<&2, U32>, rev: List<&2,
     case _ _ _:
       Write.write(R.Get{}, Response.body(500, Connection.headers([], True{}), []))
 
-def legacy(~app: R.Req -> List<&2, U32> -> List<&2, U32>, req: R.Req, body: List<&2, U32>, env: Unit, close: Bool) -> IO(Reply):
+def legacy(~app: R.Req -> List<&2, U32> -> List<&2, U32>, req: R.Req, body: List<&2, U32>, env: U32, close: Bool) -> IO(Reply):
   IO.pure(Reply, Reply{legacy_scan(65536n, app(req, body), [], []), True{}, IO.pure(Unit, Unit{})})
 
 def serve_config(~app: R.Req -> List<&2, U32> -> List<&2, U32>, config: Config) -> IO(Unit):
@@ -210,7 +223,7 @@ def serve_config(~app: R.Req -> List<&2, U32> -> List<&2, U32>, config: Config) 
     +port : U32 = port_or(env, fallback)
     l : Listener <- IO.try(Listener, TCP.listen("127.0.0.1", port))
     IO.print("bendo listening on http://127.0.0.1:" ++ U32.show(port))
-    loop(~Unit, ~(req => body => env => close => legacy(~app, req, body, env, close)), l, Unit{}, Config.Config{"127.0.0.1", port, limit, 65536, 5000, 10000, 30000, 1, False{}, Router.Spec{}})
+    loop(~U32, ~(req => env => env), ~(req => body => env => close => legacy(~app, req, body, env, close)), l, limit, Config.Config{"127.0.0.1", port, limit, 65536, 5000, 10000, 30000, 1, False{}, Router.Spec{}})
 
 def serve(~app: R.Req -> List<&2, U32> -> List<&2, U32>, port: U32) -> IO(Unit):
   serve_config(~app, defaults(port))
@@ -221,7 +234,11 @@ def encoded(res: Response.Res) -> List<&2, U32>:
   Bytes.append(Bytes.encode(Write.status_text(status) ++ Write.headers_text(headers) ++ "\r\n\r\n"), body)
 
 type State<-Tag: Data, -Env: Data> is Data:
-  State{table: Table.Table<Tag>, env: Env, router: Router.RouterKind}
+  State{table: Table.Table<Tag>, env: Env, router: Router.RouterKind, body_limit: U32}
+
+def selected_limit(~Tag: Data, ~Env: Data, ~select: Tag -> Maybe<&2, U32>, req: R.Req, state: State<Tag, Env>) -> U32:
+  State{table, env, router, limit} = state
+  BodyPolicy.for_request(~Tag, ~select, req, table, router, limit)
 
 # Handle returns a normalized response, including HEAD's representation length.
 # Do not re-run the writer on its already stripped HEAD payload.
@@ -237,12 +254,12 @@ def prepare_pending(result: Response.Res & IO(Unit), close: Bool) -> Reply:
   prepare(res, close, after)
 
 def respond_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), req: R.Req, body: List<&2, U32>, state: State<Tag, Env>, close: Bool) -> IO(Reply):
-  State{table, env, router} = state
+  State{table, env, router, limit} = state
   do IO<Reply>:
     result : Response.Res & IO(Unit) <- Handle.pending_routed(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, router, table, env, req, body)
     return prepare_pending(result, close)
 
-def startup_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +table: Table.Table<Tag>, env: Env, +config: Config.Config, manifest: Bool) -> IO(Unit):
+def startup_limits_with(~Vars: Data, ~Tag: Data, ~select: Tag -> Maybe<&2, U32>, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +table: Table.Table<Tag>, env: Env, +config: Config.Config, manifest: Bool) -> IO(Unit):
   match config manifest:
     case _ True{}:
       do IO<Unit>:
@@ -254,12 +271,18 @@ def startup_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.
         +port : U32 = Config.port_env(port_env, fallback)
         listener : Listener <- IO.try(Listener, TCP.listen(host, port))
         IO.print("bendo listening on http://" ++ host ++ ":" ++ U32.show(port))
-        loop(~State<Tag, Env>, ~(req => body => state => close => respond_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, req, body, state, close)), listener, State{table, env, router}, config)
+        loop(~State<Tag, Env>, ~(req => state => selected_limit(~Tag, ~Env, ~select, req, state)), ~(req => body => state => close => respond_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, req, body, state, close)), listener, State{table, env, router, limit}, config)
 
-def run_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config) -> IO(Unit):
+def startup_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config, manifest: Bool) -> IO(Unit):
+  startup_limits_with(~Vars, ~Tag, ~(tag => None{}), ~Env, ~dispatch, ~middleware, table, env, config, manifest)
+
+def run_limits_with(~Vars: Data, ~Tag: Data, ~select: Tag -> Maybe<&2, U32>, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config) -> IO(Unit):
   do IO<Unit>:
     args : List<String> <- IO.args()
-    startup_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, table, env, config, Manifest.argv(args))
+    startup_limits_with(~Vars, ~Tag, ~select, ~Env, ~dispatch, ~middleware, table, env, config, Manifest.argv(args))
+
+def run_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config) -> IO(Unit):
+  run_limits_with(~Vars, ~Tag, ~(tag => None{}), ~Env, ~dispatch, ~middleware, table, env, config)
 
 # Compatibility entrypoint for apps without middleware.
 def run(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Handle.Ctx -> Env -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config) -> IO(Unit):

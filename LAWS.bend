@@ -2,6 +2,9 @@
 # Agents may add laws. Never delete or weaken one without a written reason
 # in the pull request.
 import Base
+import ./src/http/conditional.bend as Conditional
+import ./src/mw/body_limit.bend as BodyLimit
+import ./proof/limits-spec.bend as LimitsSpec
 import ./src/app/manifest.bend as Manifest
 import ./proof/manifest-spec.bend as ManifestSpec
 import ./proof/manifest-built-spec.bend as ManifestBuiltSpec
@@ -1561,3 +1564,23 @@ law manifest_built_routes:
   for +table: Table.Table<Tag>
   for built: {Table.build(Tag, entries) == Done{table} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
   {Manifest.rows(Tag, table) == ManifestBuiltSpec.enumerate(Tag, entries) : List<&2, Manifest.Row>}
+
+# BND-41: RFC 9110 weak If-None-Match comparison for arbitrary fields and tags.
+# The independent specification validates every list member and separately
+# asks whether any entity-tag denotes the same opaque validator.
+law conditional_if_none_match_spec:
+  for +field: Maybe<&2, String>
+  for +tag: String
+  {Conditional.matches(field, tag) == LimitsSpec.matches(field, tag) : Bool}
+
+# Exactly cache metadata, in original order (including duplicates); no body,
+# representation witness or content/framing headers survive construction.
+law conditional_304_spec:
+  for +res: Response.Res
+  {Conditional.not_modified(res) == LimitsSpec.response(res) : Response.Res}
+
+# Accept exactly the inclusive byte-length boundary, for every natural length.
+law body_limit_spec:
+  for +length: Nat
+  for +limit: Nat
+  {BodyLimit.accepts(length, limit) == LimitsSpec.within(length, limit) : Bool}
