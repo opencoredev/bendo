@@ -1,5 +1,8 @@
 # Public Bendo entrypoint. Route tags and startup environments are app-owned Data.
 import Base
+import ./stream.bend as Stream
+import ./http/stream_types.bend as StreamTypes
+import ./app/observability.bend as Observation
 import ./mw/builtin.bend as Builtin
 import ./mw/server_timing.bend as Timing
 import ./mw/basic_auth.bend as BasicAuth
@@ -181,3 +184,10 @@ def jwt_with(-Vars: Data, config: JwtAuth.Config, c: Context.Ctx<Vars>, next: Js
   JwtAuth.with_claims(Vars, config, c, next)
 def jwt_sign(secret: String, claims: Json.Json) -> Result<&2, &2, Jwt.Error, String>: Jwt.sign(Utf8.encode(secret), claims)
 def jwt_verify(secret: String, token: String, now: Nat, leeway: Nat) -> Result<&2, &2, Jwt.Error, Json.Json>: Jwt.verify(Utf8.encode(secret), token, now, leeway)
+
+# Pull-based binary streaming through the ordinary routing/middleware lifecycle.
+def StreamConfig() -> Data: StreamTypes.Config
+def StreamStep(-State: Type) -> Type: StreamTypes.Step<State>
+def stream_config() -> StreamTypes.Config: Stream.defaults()
+def stream(~Vars: Data, ~State: Type, ~step: State -> IO(StreamTypes.Step<State>), ~cleanup: State -> IO(Unit), +c: Context.Ctx<Vars>, state: State, config: StreamTypes.Config) -> IO(Response.Res):
+  Stream.register(Observation.stream(Context.observation(Vars, c)), Context.body(Vars, c, [], None{}), Stream.plan(~State, ~step, ~cleanup, state, config))

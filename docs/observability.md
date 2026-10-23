@@ -185,7 +185,7 @@ and Repr-Digest are removed, and the representation witness is cleared.
 Content-Length is recalculated by the HTTP writer, including for HEAD.
 
 This buffers and reparses the body. Use it for debugging buffered JSON responses;
-streaming is outside this API. Place it inside middleware that computes validators
+use [pull streaming](streaming.md) for incremental responses instead. Place it inside middleware that computes validators
 when those validators should describe the formatted body.
 
 Verify with `bun test --timeout 30000 tests/mw-observability.test.ts`.
