@@ -13,7 +13,7 @@
     "check:static": "bun run check:bend && bun run prove && bun run lint && bun run format:check && bun run typecheck && bun run typecheck:bench",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:bench": "bun install --cwd bench/servers --frozen-lockfile && tsc -p bench/tsconfig.json",
-    "check": "bun run check:bend && bun run prove && bun run lint && bun run format:check && bun run typecheck && bun run typecheck:bench && bun run test",
+    "check": "bun run check:static && bun run test:ci",
     "lint": "oxlint --threads=4 --deny-warnings .",
     "format": "oxfmt --threads=4 .",
     "format:check": "oxfmt --threads=4 --check ."
