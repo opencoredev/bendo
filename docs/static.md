@@ -121,7 +121,8 @@ memory in 64 KiB chunks, and a body larger than `max_bytes` gets 500 instead.
 A range within the cap is still served, so large media can be fetched in parts.
 Bodies cost about 16 bytes of memory per octet ([0002](decisions/0002-bytes.md)),
 so the 8 MiB default needs about 128 MiB per response. Files of 4 GiB or more
-are refused, because Base reads files at 32-bit offsets. If a file shrinks
+are refused, because Base reads files at 32-bit offsets. HEAD reads the file as
+GET does, since the response writer derives `Content-Length` from the body. If a file shrinks
 while it is read, the response is 500.
 
 ## Verification
