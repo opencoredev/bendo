@@ -17,6 +17,7 @@ def compiled(-Tag: Data, tag: Tag, rest: List<&2, Tag>, path: String, result: Re
 def filter(-Tag: Data, entries: List<&2, Table.Entry<Tag>>, +path: String) -> List<&2, Tag>:
   match entries:
     case Nil{}: []
+    case Table.Hook{stage, tag} <> rest: filter(Tag, rest, path)
     case Table.Route{registration} <> rest: filter(Tag, rest, path)
     case Table.Use{None{}, tag} <> rest: tag <> filter(Tag, rest, path)
     case Table.Use{Some{source}, tag} <> rest:

@@ -2,13 +2,36 @@ import Base
 import ../router/methods.bend as Methods
 import ../router/pattern.bend as Pattern
 
+type Stage is Data:
+  Request{}
+  Parse{}
+  Transform{}
+  BeforeHandle{}
+  AfterHandle{}
+  MapResponse{}
+  Error{}
+  AfterResponse{}
+
+def stage_number(stage: Stage) -> U32:
+  match stage:
+    case Request{}: 0
+    case Parse{}: 1
+    case Transform{}: 2
+    case BeforeHandle{}: 3
+    case AfterHandle{}: 4
+    case MapResponse{}: 5
+    case Error{}: 6
+    case AfterResponse{}: 7
+
 # Routes and middleware share app-owned identifiers, resolved by separate
 # closed dispatchers. No function or continuation is stored in this table.
 type Entry<-Tag: Data> is Data:
   Route{registration: Methods.Registration(Tag)}
+  Hook{stage: Stage, tag: Tag}
   Use{source: Maybe<&2, String>, tag: Tag}
 
 type Middleware<-Tag: Data> is Data:
+  Staged{stage: Stage, tag: Tag}
   Middleware{pattern: Maybe<&2, Pattern.Pattern>, tag: Tag}
 
 type Table<-Tag: Data> is Data:
@@ -18,6 +41,7 @@ def route_entries(-Tag: Data, xs: List<&2, Entry<Tag>>) -> List<&2, Methods.Regi
   match xs:
     case Nil{}: []
     case Route{r} <> tail: r <> route_entries(Tag, tail)
+    case Hook{stage, tag} <> tail: route_entries(Tag, tail)
     case Use{source, tag} <> tail: route_entries(Tag, tail)
 
 def prepend(-Tag: Data, mw: Middleware<Tag>, rest: Result<&2, &2, Methods.BuildError, List<&2, Middleware<Tag>>>) -> Result<&2, &2, Methods.BuildError, List<&2, Middleware<Tag>>>:
@@ -43,6 +67,8 @@ def middleware_entries(-Tag: Data, xs: List<&2, Entry<Tag>>, +index: Nat) -> Res
     case Nil{}: Done{[]}
     case Route{r} <> tail:
       route_checked(Tag, index, Methods.build_table(Tag, [r]), u => middleware_entries(Tag, tail, 1n+index))
+    case Hook{stage, tag} <> tail:
+      prepend(Tag, Staged{stage, tag}, middleware_entries(Tag, tail, 1n+index))
     case Use{None{}, tag} <> tail:
       prepend(Tag, Middleware{None{}, tag}, middleware_entries(Tag, tail, 1n+index))
     case Use{Some{+source}, tag} <> tail:
@@ -69,6 +95,15 @@ def include(-Tag: Data, tag: Tag, rest: List<&2, Tag>, matches: Bool) -> List<&2
 def selected(-Tag: Data, entries: List<&2, Middleware<Tag>>, +path: String) -> List<&2, Tag>:
   match entries:
     case Nil{}: []
+    case Staged{stage, tag} <> tail: selected(Tag, tail, path)
     case Middleware{None{}, tag} <> tail: tag <> selected(Tag, tail, path)
     case Middleware{Some{p}, tag} <> tail:
       include(Tag, tag, selected(Tag, tail, path), Maybe.is_some(&2, Pattern.Params, Pattern.match_path(p, path)))
+
+# A stable stage filter; legacy middleware remains independently path-selected.
+def stage_ids(-Tag: Data, entries: List<&2, Middleware<Tag>>, +stage: Stage) -> List<&2, Tag>:
+  match entries:
+    case Nil{}: []
+    case Middleware{pattern, tag} <> tail: stage_ids(Tag, tail, stage)
+    case Staged{kind, tag} <> tail:
+      include(Tag, tag, stage_ids(Tag, tail, stage), U32.is_eq(stage_number(kind), stage_number(stage)))
