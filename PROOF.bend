@@ -1,5 +1,7 @@
 # Proofs of LAWS.bend. Run: bend PROOF.bend --verdict
 import Base
+import ./proof/manifest.bend as ManifestProof
+import ./proof/compose.bend as ComposeProof
 
 # BND-31
 import ./proof/cookie-ows.bend as CookieOwsProof
@@ -533,3 +535,8 @@ def Laws.scoped_group_built_selection(Tag, prefix, hooks, inside, outside, route
 
 # BND-25
 def Laws.http_error_private_message(code, message): {==}
+
+# BND-19
+def Laws.manifest_capture_names(segments): ManifestProof.names(segments)
+def Laws.manifest_exact_routes(Tag, sources, compiled, layers, count):
+  ManifestProof.describe(Tag, sources, Methods.raw(Tag, Methods.index_valid(Tag, compiled)))

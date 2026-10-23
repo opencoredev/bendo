@@ -21,6 +21,7 @@ def source_count(-Tag: Data, +xs: List<&2, T.Entry<Tag>>) -> {List.length(&2, M.
       Equal.cong(Nat, Nat, n => 1n+n, List.length(&2, M.Registration(Tag), T.route_entries(Tag, tail)), S.route_count(Tag, tail), source_count(Tag, tail))
     case T.Hook{stage, tag} <> tail: source_count(Tag, tail)
     case T.Use{source, tag} <> tail: source_count(Tag, tail)
+    case T.PrefixedUse{source, tag} <> tail: source_count(Tag, tail)
 
 def hooks(-Tag: Data, +xs: List<&2, T.Placement<Tag>>, +stage: T.Stage) -> {T.hook_ids(Tag, xs, stage) == S.hooks(Tag, xs, stage) : List<&2, Tag>}:
   match xs:
@@ -96,6 +97,8 @@ def entries(-Tag: Data, +xs: List<&2, T.Entry<Tag>>, +index: Nat, +route: Maybe<
       prepend_use(Tag, None{}, tag, T.middleware_entries(Tag, tail, 1n+index), S.route_hooks(Tag, tail, route, stage), route, stage, entries(Tag, tail, 1n+index, route, stage))
     case T.Use{Some{source}, tag} <> tail:
       pattern_built(Tag, index, source, tag, P.compile(source), T.middleware_entries(Tag, tail, 1n+index), S.route_hooks(Tag, tail, route, stage), route, stage, entries(Tag, tail, 1n+index, route, stage))
+    case T.PrefixedUse{source, tag} <> tail:
+      pattern_built(Tag, index, source, tag, P.compile(source), T.middleware_entries(Tag, tail, 1n+index), S.route_hooks(Tag, tail, route, stage), route, stage, entries(Tag, tail, 1n+index, route, stage))
 
 def Built(-Tag: Data, result: Result<&2, &2, M.BuildError, T.Table<Tag>>, expected: List<&2, Tag>, route: Maybe<&2, Nat>, stage: T.Stage) -> Type:
   match result:
@@ -128,6 +131,7 @@ def none_member(-Tag: Data, +xs: List<&2, T.Entry<Tag>>) -> {S.member(Tag, xs, N
     case T.ScopedRoute{r, hooks} <> tail: none_member(Tag, tail)
     case T.Hook{stage, tag} <> tail: none_member(Tag, tail)
     case T.Use{source, tag} <> tail: none_member(Tag, tail)
+    case T.PrefixedUse{source, tag} <> tail: none_member(Tag, tail)
 
 def or_left_false(+a: Bool, +b: Bool, no: {a || b == False{} : Bool}) -> {a == False{} : Bool}:
   match a:
@@ -147,6 +151,7 @@ def nonmember(-Tag: Data, +xs: List<&2, T.Entry<Tag>>, +route: Maybe<&2, Nat>, +
     case T.Route{r} <> tail: nonmember(Tag, tail, route, stage, no)
     case T.Hook{kind, tag} <> tail: nonmember(Tag, tail, route, stage, no)
     case T.Use{source, tag} <> tail: nonmember(Tag, tail, route, stage, no)
+    case T.PrefixedUse{source, tag} <> tail: nonmember(Tag, tail, route, stage, no)
     case T.ScopedRoute{r, placements} <> tail:
       match route:
         case None{}: nonmember(Tag, tail, None{}, stage, no)

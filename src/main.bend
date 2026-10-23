@@ -5,6 +5,8 @@ import ./mw/server_timing.bend as Timing
 import ./app/config.bend as Config
 import ./app/table.bend as Table
 import ./app/scopes.bend as Scopes
+import ./app/compose.bend as Compose
+import ./app/manifest.bend as Manifest
 import ./app/handle.bend as Handle
 import ./app/context.bend as Context
 import ./app/errors.bend as Errors
@@ -68,7 +70,7 @@ def options(-Tag: Data, path: String, tag: Tag) -> Table.Entry<Tag>: Table.Route
 def all(-Tag: Data, path: String, tag: Tag) -> Table.Entry<Tag>: Table.Route{Methods.all(Tag, path, tag)}
 def on(-Tag: Data, methods: List<&2, Request.Method>, path: String, tag: Tag) -> Table.Entry<Tag>: Table.Route{Methods.on(Tag, methods, path, tag)}
 # Adapt a low-level method registration into the public app registration list.
-def route(-Tag: Data, entry: Methods.Registration(Tag)) -> Table.Entry<Tag>: Table.Route{entry}
+def registration(-Tag: Data, entry: Methods.Registration(Tag)) -> Table.Entry<Tag>: Table.Route{entry}
 def use(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Use{None{}, id}
 def use_path(-Tag: Data, pattern: String, id: Tag) -> Table.Entry<Tag>: Table.Use{Some{pattern}, id}
 def on_request(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.Request{}, id}
@@ -88,7 +90,11 @@ def GuardOptions(-Tag: Data) -> Data: Table.GuardOptions<Tag>
 def hook(-Tag: Data, stage: Table.Stage, id: Tag) -> Table.HookSpec<Tag>: Table.HookSpec{stage, id}
 def guard_options(-Tag: Data, hooks: List<&2, Table.HookSpec<Tag>>) -> Table.GuardOptions<Tag>: Table.GuardOptions{hooks, Table.NoSchemas{}}
 def guard(-Tag: Data, options: Table.GuardOptions<Tag>, entries: List<&2, Table.Entry<Tag>>) -> List<&2, Table.Entry<Tag>>: Scopes.guard(Tag, options, entries)
-def group(-Tag: Data, prefix: String, hooks: List<&2, Table.HookSpec<Tag>>, entries: List<&2, Table.Entry<Tag>>) -> List<&2, Table.Entry<Tag>>: Scopes.group(Tag, prefix, hooks, entries)
+def group(-Tag: Data, prefix: String, hooks: List<&2, Table.HookSpec<Tag>>, entries: List<&2, Table.Entry<Tag>>) -> List<&2, Table.Entry<Tag>>: Compose.group(Tag, prefix, hooks, entries)
+# Sub-apps are reusable registration lists sharing the app's tag/dispatcher types.
+def route(-Tag: Data, prefix: String, sub: List<&2, Table.Entry<Tag>>) -> List<&2, Table.Entry<Tag>>: Compose.mount(Tag, prefix, sub)
+def base_path(-Tag: Data, prefix: String, entries: List<&2, Table.Entry<Tag>>) -> List<&2, Table.Entry<Tag>>: Compose.mount(Tag, prefix, entries)
+def show_routes(-Tag: Data, table: Table.Table<Tag>) -> IO(Unit): IO.print(Manifest.table_text(Tag, table))
 def route_hooks(-Tag: Data, registration: Methods.Registration(Tag), hooks: List<&2, Table.HookSpec<Tag>>) -> Table.Entry<Tag>:
   Scopes.local(Tag, registration, hooks)
 

@@ -62,6 +62,8 @@ def entries(-Tag: Data, +xs: List<&2, T.Entry<Tag>>, +index: Nat, +path: String)
       prepend_global(Tag, tag, T.middleware_entries(Tag, tail, 1n+index), S.filter(Tag, tail, path), path, entries(Tag, tail, 1n+index, path))
     case T.Use{Some{source}, tag} <> tail:
       pattern_built(Tag, index, source, tag, P.compile(source), T.middleware_entries(Tag, tail, 1n+index), S.filter(Tag, tail, path), path, entries(Tag, tail, 1n+index, path))
+    case T.PrefixedUse{source, tag} <> tail:
+      pattern_built(Tag, index, source, tag, P.compile(source), T.middleware_entries(Tag, tail, 1n+index), S.filter(Tag, tail, path), path, entries(Tag, tail, 1n+index, path))
 
 def Built(-Tag: Data, result: Result<&2, &2, M.BuildError, T.Table<Tag>>, expected: List<&2, Tag>, path: String) -> Type:
   match result:

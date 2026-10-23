@@ -107,14 +107,14 @@ test("middleware registrations do not appear in the route manifest", () => {
   expect(manifest).toEqual({
     bendo: 1,
     routes: [
-      { method: "GET", path: "/__count" },
-      { method: "GET", path: "/order" },
-      { method: "GET", path: "/private/hello" },
-      { method: "GET", path: "/transform" },
-      { method: "GET", path: "/bad" },
-      { method: "GET", path: "/users/:id" },
-      { method: "GET", path: "/optional/*" },
-      { method: "GET", path: "/plain" },
+      { method: "GET", path: "/__count", params: [] },
+      { method: "GET", path: "/order", params: [] },
+      { method: "GET", path: "/private/hello", params: [] },
+      { method: "GET", path: "/transform", params: [] },
+      { method: "GET", path: "/bad", params: [] },
+      { method: "GET", path: "/users/:id", params: ["id"] },
+      { method: "GET", path: "/optional/*", params: ["*"] },
+      { method: "GET", path: "/plain", params: [] },
     ],
   });
 });

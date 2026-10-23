@@ -159,6 +159,8 @@ def entries(-Tag: Data, +xs: List<&2, T.Entry<Tag>>, +index: Nat, +stage: T.Stag
       prepend_use(Tag, None{}, tag, T.middleware_entries(Tag, tail, 1n+index), S.hooks(Tag, tail, stage), stage, entries(Tag, tail, 1n+index, stage))
     case T.Use{Some{source}, tag} <> tail:
       pattern_built(Tag, index, source, tag, P.compile(source), T.middleware_entries(Tag, tail, 1n+index), S.hooks(Tag, tail, stage), stage, entries(Tag, tail, 1n+index, stage))
+    case T.PrefixedUse{source, tag} <> tail:
+      pattern_built(Tag, index, source, tag, P.compile(source), T.middleware_entries(Tag, tail, 1n+index), S.hooks(Tag, tail, stage), stage, entries(Tag, tail, 1n+index, stage))
 
 def Built(-Tag: Data, result: Result<&2, &2, M.BuildError, T.Table<Tag>>, expected: List<&2, Tag>, stage: T.Stage) -> Type:
   match result:

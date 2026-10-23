@@ -176,3 +176,5 @@ integration suite, TypeScript checks, lint and formatting checks.
 
 The [spec router](router-spec.md) compiles a table of these patterns and selects
 the first match in registration order.
+
+For prefixes, sub-app mounting and nested groups, see [Compose route lists](router-compose.md).

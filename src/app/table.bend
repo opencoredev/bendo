@@ -53,6 +53,8 @@ type Entry<-Tag: Data> is Data:
   ScopedRoute{registration: Methods.Registration(Tag), hooks: List<&2, Placement<Tag>>}
   Hook{stage: Stage, tag: Tag}
   Use{source: Maybe<&2, String>, tag: Tag}
+  # Mounted middleware moves with member routes through subsequent groups.
+  PrefixedUse{source: String, tag: Tag}
 
 type Middleware<-Tag: Data> is Data:
   Staged{stage: Stage, tag: Tag}
@@ -71,6 +73,7 @@ def route_entries(-Tag: Data, xs: List<&2, Entry<Tag>>) -> List<&2, Methods.Regi
     case ScopedRoute{r, hooks} <> +tail: r <> route_entries(Tag, tail)
     case Hook{stage, tag} <> tail: route_entries(Tag, tail)
     case Use{source, tag} <> tail: route_entries(Tag, tail)
+    case PrefixedUse{source, tag} <> tail: route_entries(Tag, tail)
 
 def prepend(-Tag: Data, mw: Middleware<Tag>, rest: Result<&2, &2, Methods.BuildError, List<&2, Middleware<Tag>>>) -> Result<&2, &2, Methods.BuildError, List<&2, Middleware<Tag>>>:
   match rest:
@@ -101,6 +104,8 @@ def middleware_entries(-Tag: Data, xs: List<&2, Entry<Tag>>, +index: Nat) -> Res
       prepend(Tag, Staged{stage, tag}, middleware_entries(Tag, tail, 1n+index))
     case Use{None{}, tag} <> tail:
       prepend(Tag, Middleware{None{}, tag}, middleware_entries(Tag, tail, 1n+index))
+    case PrefixedUse{+source, tag} <> tail:
+      pattern_built(Tag, index, source, tag, Pattern.compile(source), u => middleware_entries(Tag, tail, 1n+index))
     case Use{Some{+source}, tag} <> tail:
       pattern_built(Tag, index, source, tag, Pattern.compile(source), u => middleware_entries(Tag, tail, 1n+index))
 

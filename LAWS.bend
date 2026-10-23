@@ -2,6 +2,9 @@
 # Agents may add laws. Never delete or weaken one without a written reason
 # in the pull request.
 import Base
+import ./src/app/manifest.bend as Manifest
+import ./proof/manifest-spec.bend as ManifestSpec
+import ./proof/compose-laws.bend as ComposeLaws
 
 # BND-31
 import ./proof/cookie-ows-laws.bend as CookieOwsLaws
@@ -1241,3 +1244,18 @@ law http_error_private_message:
   for code: U32
   for message: String
   {Errors.message(Errors.HttpError{code, message, False{}}) == "Internal Server Error" : String}
+
+# BND-19: enumerate capture names from compiled segments, never source guessing.
+law manifest_capture_names:
+  for +segments: List<&2, Pattern.Segment>
+  {Manifest.names(segments) == ManifestSpec.names(segments) : List<&2, String>}
+
+# Exactly the explicit certified routes, normalized methods and ordered names.
+# ALL remains a distinct row; duplicates and registration order are preserved.
+law manifest_exact_routes:
+  for -Tag: Data
+  for +sources: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Index<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
+  {Manifest.rows(Tag, Table.Table{sources, compiled, layers, count}) == ManifestSpec.describe(Tag, sources, Methods.raw(Tag, Methods.index_valid(Tag, compiled))) : List<&2, Manifest.Row>}
