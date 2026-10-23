@@ -13,3 +13,8 @@ def verify(keys: S.Keys, wire: String) -> Maybe<&2, String>:
 
 def serialize(name: String, value: String, keys: S.Keys) -> Result<&2, &2, C.Error, String>:
   S.serialize(name, value, keys, C.defaults())
+
+# Construct an invalid scalar inside Bend; .mjs string arguments are normalized
+# by the compiler's JavaScript interop before the public API sees them.
+def invalid_value(keys: S.Keys) -> Result<&2, &2, C.Error, String>:
+  S.serialize("session", SCon{Chr{55296}, ""}, keys, C.defaults())

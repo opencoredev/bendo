@@ -124,3 +124,59 @@ proof that every Path, Domain, Max-Age, Expires and SameSite payload excludes
 semicolons, CR and LF. Expires is copied verbatim after an independent
 fixed-width date and calendar check; weekday/date agreement remains outside
 this contract.
+
+## Sign and verify cookies
+
+Import `src/data/signed-cookie.bend` as `SignedCookie`. Configure rotation keys
+once at startup with `SignedCookie.configure(["current-secret", "previous-secret"])`.
+It returns `Some{keys}` for a nonempty list of Unicode scalar strings and
+`None{}` for an empty list or an invalid scalar in any key. Handle `None{}` as a
+configuration error before serving requests. Keep keys on the server, load them
+from your secret configuration, and use high-entropy secrets. The `Keys{first,
+rest}` constructor is available for pure code and proofs; callers constructing
+it directly must preserve the same scalar-string precondition.
+
+`B.set_signed_cookie(c, name, value, keys, options)` returns
+`Result<&2, &2, Cookie.Error, B.Ctx>`, just like `set_cookie`. It signs with the
+first key, applies the ordinary cookie name and options checks, and appends one
+Set-Cookie field. Non-scalar values return `Cookie.InvalidValue{}`. Other response
+state and previously appended cookies are preserved. Unlike raw cookie setters,
+this API accepts Unicode, whitespace and delimiters in values because it percent
+encodes the complete signed payload before passing it to the cookie serializer.
+
+`B.signed_cookie(c, name, keys) -> Maybe<&2, String>` reads the first cookie with
+that name and verifies it against every configured key. It returns `Some{value}`
+only after a signature matches. Missing cookies, malformed encodings, unsigned
+cookies and bad signatures all return `None{}`. An invalid first duplicate is
+not skipped in favor of a later valid cookie. Keep the previous key in the list
+until cookies signed with it have expired; remove it to revoke those cookies.
+The generic context module provides both functions with `Vars` as the first
+argument.
+
+The wire format follows Hono's `setSignedCookie`/`getSignedCookie` algorithm:
+percent encode `value + "." + base64(HMAC-SHA256(UTF8(secret), UTF8(value)))`.
+Base64 uses the standard `+` and `/` alphabet with padding. Verification decodes
+percent escapes once, splits at the last dot, and strictly decodes Base64.
+Literal `+` stays a plus, not a form-space. The encoder escapes a few more
+characters than JavaScript's `encodeURIComponent`; both decode to the identical
+signed payload, so cookies interoperate in both directions. The output consists
+only of valid cookie-octets. No BND-31 raw-cookie parsing behavior changes.
+
+For Hono compatibility, the cookie name is **not signed**. A signed value can be
+moved between cookie names that use the same key. Use separate keys for distinct
+purposes or include and validate a purpose field in your application payload.
+Signing authenticates the value; it does not encrypt it or add expiry, replay
+protection or server-side revocation. Use cookie options and application policy
+for those properties.
+
+Verification reuses `src/crypto/compare.bend`'s `ct_equal`, visits every digest
+byte and checks all keys even after a match. This is best-effort constant-time
+comparison: Bend's compiler and runtime do not guarantee constant-time execution.
+Malformed-input rejection, lengths and allocation remain observable.
+
+The pure module exposes `sign(key, value) -> String`, `verify(keys, wire) ->
+Maybe<&2, String>`, and `serialize(name, value, keys, options)`. `sign` is an
+unchecked primitive for scalar strings; use the context setter or `serialize`
+for values from outside your application. Run
+`bun test --timeout 30000 tests/cookies-signed.test.ts` for native HTTP and `.mjs`
+roundtrips, rotation, tampering and Hono-algorithm interoperability checks.
