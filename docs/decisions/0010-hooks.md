@@ -81,8 +81,12 @@ status 400 or higher. Invalid responses produced before `on_error` become an
 empty 500 first. All error hooks then run once in registration order, even if
 an earlier one changes the status to success. Their output is validated again;
 an invalid recovery response fails closed to 500 without recursively calling
-`on_error`. A mapper that replaces an error with a success response has already
-recovered it, so error hooks do not run.
+`on_error`. Request-ID and Server-Timing middleware retain their finalized
+values in framework metadata. After this final validation, missing observability
+headers are restored before observers and transport. Explicit final response
+headers take precedence, with case-insensitive name matching. A mapper that
+replaces an error with a success response has already recovered it, so error
+hooks do not run.
 
 This covers handler and middleware error responses, short-circuit errors,
 404/405 terminals, and response validation errors. It does not catch `IO.die`,

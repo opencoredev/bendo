@@ -127,3 +127,8 @@ Verify with `bun test --timeout 30000 tests/context.test.ts`.
 
 [Middleware](middleware.md) passes the same typed context through an affine
 `next` continuation, so middleware can set variables before the handler runs.
+
+With [request-ID middleware](observability.md#request-id), handlers read
+`C.request_id(Vars, c) -> Maybe<&2, String>`. Framework metadata lives separately
+from the app's typed variables. `B.timing_mark(Vars, c, name, duration_ms)` records
+a named duration in the active request's timing collector and returns `IO(Bool)`.
