@@ -7,6 +7,8 @@ const ROOT = resolve(import.meta.dir, "..");
 
 /** Wall-clock budget for one `bend` compile. CI runners are slower than ms-a2. */
 export const BEND_COMPILE_TIMEOUT = "180s";
+/** Per-test timeout for a test whose body runs one `bend` compile. Above BEND_COMPILE_TIMEOUT. */
+export const COMPILE_TEST_TIMEOUT_MS = 200_000;
 
 export type RunningServer = { url: string; [Symbol.asyncDispose]: () => Promise<void> };
 
@@ -15,10 +17,13 @@ export function build(entry: string): string {
   const bend = findBend();
   if (bend.kind === "missing") throw new Error("bend is not installed");
   const out = join(mkdtempSync(join(tmpdir(), "bendo-test-")), "server");
-  const run = Bun.spawnSync([bend.path, join(ROOT, entry), "-o", out], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+  const run = Bun.spawnSync(
+    ["timeout", "--foreground", BEND_COMPILE_TIMEOUT, bend.path, join(ROOT, entry), "-o", out],
+    {
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
   if (run.exitCode !== 0) throw new Error(`bend build failed:\n${run.stdout}${run.stderr}`);
   return out;
 }
