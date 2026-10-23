@@ -4,42 +4,61 @@ import { build } from "./harness.ts";
 const binary = build("tests/servers/mw-observability.bend");
 const failures = build("tests/observability-failures.bend");
 const logs: string[] = [];
-let pending = "";
-const port = 20000 + Math.floor(Math.random() * 20000);
-const url = `http://127.0.0.1:${port}`;
-const proc = Bun.spawn([binary], {
-  env: { ...process.env, PORT: String(port) },
-  stdout: "ignore",
-  stderr: "pipe",
-});
-const captured = (async () => {
-  const decoder = new TextDecoder();
-  for await (const chunk of proc.stderr) {
-    pending += decoder.decode(chunk, { stream: true });
-    const lines = pending.split("\n");
-    pending = lines.pop() ?? "";
-    logs.push(...lines);
-  }
-})();
+let url = "";
+let proc: Bun.Subprocess<"ignore", "ignore", "pipe"> | undefined;
+let captured: Promise<void> = Promise.resolve();
 
-beforeAll(async () => {
+/** Starts the server on a random port and captures stderr lines. Resolves false if it exits first. */
+async function launch(): Promise<boolean> {
+  const port = 20000 + Math.floor(Math.random() * 20000);
+  url = `http://127.0.0.1:${port}`;
+  logs.length = 0;
+  const child = Bun.spawn([binary], {
+    env: { ...process.env, PORT: String(port) },
+    stdout: "ignore",
+    stderr: "pipe",
+  });
+  proc = child;
+  let pending = "";
+  captured = (async () => {
+    const decoder = new TextDecoder();
+    for await (const chunk of child.stderr) {
+      pending += decoder.decode(chunk, { stream: true });
+      const lines = pending.split("\n");
+      pending = lines.pop() ?? "";
+      logs.push(...lines);
+    }
+  })();
   const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {
-    if (proc.exitCode !== null) throw new Error(`Server exited: ${logs.join("\n")}`);
+    if (child.exitCode !== null) {
+      await captured;
+      return false;
+    }
     if (
       await fetch(url).then(
         () => true,
         () => false,
       )
     )
-      return;
+      return true;
     await Bun.sleep(50);
   }
   throw new Error("Observability server did not start");
-}, 25_000);
+}
+
+// A random port can already be taken; a server that exits before answering is retried on a new one.
+beforeAll(async () => {
+  const failures: string[] = [];
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (await launch()) return;
+    failures.push(`${url}: ${logs.join("\n")}`);
+  }
+  throw new Error(`Server exited before answering:\n${failures.join("\n")}`);
+}, 65_000);
 afterAll(async () => {
-  proc.kill();
-  await proc.exited;
+  proc?.kill();
+  await proc?.exited;
   await captured;
 });
 
