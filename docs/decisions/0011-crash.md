@@ -59,7 +59,9 @@ The laws cover the `Res` that `error` returns, before app hooks run.
   `http_error_tea_only_rendered` pins `http_error(418, "Tea only")` byte for byte.
 - `http_error_private_with_headers` and `http_error_exposed_with_headers`: the
   same two results for a context with any accumulated response headers. The
-  spec lists the headers the client receives (`Spec.headers`): the negotiated
+  spec lists the rendered response's headers before wire framing
+  (`Spec.headers`; the writer then sets `Content-Length` and drops
+  `Transfer-Encoding` as for any response): the negotiated
   `Content-Type` first, every other accumulated header except `Content-Type`
   and `Vary` in its original order, then one `Vary` field. That field copies
   the existing `Vary` values byte for byte, separated by `, `, and appends
@@ -127,7 +129,10 @@ An explicit, case-insensitive `application/json` range in the first Accept
 field opts into JSON, provided its quality is positive. Elements are split at
 commas and parameters at semicolons, outside quoted strings; a backslash
 inside a quoted string escapes the next character. Each parameter is a name
-or a single `name=value`. The `q` parameter must match HTTP's qvalue grammar
+or a single `name=value`; names are not checked further, so an empty
+parameter (`application/json;`) or an empty name (`application/json;=x`) is
+ignored rather than rejected. The choice only selects JSON or text, never what
+a private error reveals. The `q` parameter must match HTTP's qvalue grammar
 (`0` or `1`, then optionally a dot and at most three digits, only zeros after
 `1`). A zero quality, a malformed quality, a bare `q`, or a parameter with two
 `=` signs excludes that range, and an unterminated quoted string excludes the
