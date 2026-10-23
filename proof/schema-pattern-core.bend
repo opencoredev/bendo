@@ -9,6 +9,8 @@ import ./schema-pattern-empty.bend as Empty
 import ./schema-pattern-split.bend as Split
 import ./schema-pattern-cat.bend as Cat
 import ./schema-pattern-strings.bend as W
+import ./schema-pattern-repeat-prefix.bend as Prefix
+import ./schema-pattern-repeat.bend as Repeat
 
 # Some pattern in the list accepts w, per the specification.
 def any_matches(ps: List<&2, P.Pattern>, +w: String) -> Bool:
@@ -109,9 +111,11 @@ def class_one(+rs: List<&2, P.Range>, +c: U32, +t: String) -> {Spec.one(rs, SCon
     case SCon{h, u}: Equal.sym(Bool, (Spec.in_class(rs, c) && False{}), False{}, and_false(Spec.in_class(rs, c)))
 
 # Cat carries its split iteration inside the structural pattern induction.
+# Repeat retains the body facts for all prefixes as a copyable certificate.
 def Claim(+p: P.Pattern, +j: Nat, +c: U32, +t: String) -> Type:
   match p:
     case P.Cat{a, b}: Cat.Positive(a, b, j, c, t) & {Spec.matches(b, SCon{Chr{c}, t}) == any_matches(P.derive(c, b), t) : Bool}
+    case P.Repeat{r, m, n}: Prefix.Facts(r, j, c, t)
     case _: {Spec.matches(p, SCon{Chr{c}, t}) == any_matches(P.derive(c, p), t) : Bool}
 
 def finish(+p: P.Pattern, +c: U32, +t: String, e: Claim(p, Spec.length(t), c, t)) -> {Spec.matches(p, SCon{Chr{c}, t}) == any_matches(P.derive(c, p), t) : Bool}:
@@ -121,7 +125,7 @@ def finish(+p: P.Pattern, +c: U32, +t: String, e: Claim(p, Spec.length(t), c, t)
     case P.Cat{a, b}:
       (ep, eb) = e
       Cat.complete(a, b, c, t, ep, eb)
-    case P.Repeat{r, m, n}: e
+    case P.Repeat{r, m, n}: Repeat.complete(r, m, n, c, t, e)
 
 def cat_next(+a: P.Pattern, +b: P.Pattern, +i: Nat, +c: U32, +t: String, +ej: {Nat.is_le(1n+i, Spec.length(t)) == True{} : Bool}, e: Claim(P.Cat{a, b}, i, c, t), eh: {Spec.matches(a, SCon{Chr{c}, String.take(t, 1n+i)}) == any_matches(P.derive(c, a), String.take(t, 1n+i)) : Bool}) -> Claim(P.Cat{a, b}, 1n+i, c, t):
   (ep, eb) = e
@@ -141,7 +145,12 @@ def derive_go(+p: P.Pattern, +j: Nat, +c: U32, +t: String, +ej: {Nat.is_le(j, Sp
           (Cat.positive_zero(a, b, c, t, finish(a, c, "", derive_go(a, 0n, c, "", {==}))), finish(b, c, t, derive_go(b, Spec.length(t), c, t, W.le_self(Spec.length(t)))))
         case 1n+i:
           cat_next(a, b, i, c, t, ej, derive_go(p, i, c, t, W.le_previous(i, Spec.length(t), ej)), finish(a, c, String.take(t, 1n+i), derive_go(a, Spec.length(String.take(t, 1n+i)), c, String.take(t, 1n+i), W.le_self(Spec.length(String.take(t, 1n+i))))))
-    case P.Repeat{r, m, n}: ?TODO
+    case P.Repeat{r, m, n}:
+      match j:
+        case 0n:
+          finish(r, c, String.take(t, 0n), derive_go(r, Spec.length(String.take(t, 0n)), c, String.take(t, 0n), W.le_self(Spec.length(String.take(t, 0n)))))
+        case 1n+i:
+          (finish(r, c, String.take(t, 1n+i), derive_go(r, Spec.length(String.take(t, 1n+i)), c, String.take(t, 1n+i), W.le_self(Spec.length(String.take(t, 1n+i))))), derive_go(p, i, c, t, W.le_previous(i, Spec.length(t), ej)))
 
 def derive_equiv(+c: U32, +p: P.Pattern, +t: String) -> {Spec.matches(p, SCon{Chr{c}, t}) == any_matches(P.derive(c, p), t) : Bool}:
   finish(p, c, t, derive_go(p, Spec.length(t), c, t, W.le_self(Spec.length(t))))
