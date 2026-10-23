@@ -50,3 +50,6 @@ and `router_fill_match` guarantees that every admissible assignment for a
 compiled entry fills to a routed path, with a winner no later than that entry.
 If no earlier route matches the filled path, the selected tag, index and params
 are exactly those of that entry. The fill guarantee reuses `pattern_fill_match`.
+
+For per-method registration, HEAD fallback, 404/405, and slash/case options,
+use the [method-aware router](router-methods.md).

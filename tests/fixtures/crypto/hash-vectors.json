@@ -1,0 +1,37 @@
+[
+  {
+    "name": "empty",
+    "message": "",
+    "repeat": 1,
+    "sha1": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "name": "abc",
+    "message": "abc",
+    "repeat": 1,
+    "sha1": "a9993e364706816aba3e25717850c26c9cd0d89d",
+    "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+  },
+  {
+    "name": "448-bit",
+    "message": "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq",
+    "repeat": 1,
+    "sha1": "84983e441c3bd26ebaae4aa1f95129e5e54670f1",
+    "sha256": "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
+  },
+  {
+    "name": "896-bit",
+    "message": "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu",
+    "repeat": 1,
+    "sha1": "a49b2446a02c645bf419f995b67091253a04a259",
+    "sha256": "cf5b16a778af8380036ce59e7b0492370b249b11e8f07a51afac45037afee9d1"
+  },
+  {
+    "name": "million-a",
+    "message": "a",
+    "repeat": 1000000,
+    "sha1": "34aa973cd4c4daa4f61eeb2bdbad27316534016f",
+    "sha256": "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0"
+  }
+]
