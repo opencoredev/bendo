@@ -2,6 +2,10 @@
 # Agents may add laws. Never delete or weaken one without a written reason
 # in the pull request.
 import Base
+import ./src/mw/etag.bend as ETag
+import ./src/http/conditional.bend as Conditional
+import ./src/mw/body_limit.bend as BodyLimit
+import ./proof/limits-spec.bend as LimitsSpec
 import ./src/app/manifest.bend as Manifest
 import ./proof/manifest-spec.bend as ManifestSpec
 import ./proof/manifest-built-spec.bend as ManifestBuiltSpec
@@ -1673,6 +1677,35 @@ law stream_rfc_last_chunk:
   for +limit: U32
   for +suffix: List<&2, U32>
   {StreamRfc.parse(48 <> 13 <> 10 <> 13 <> 10 <> suffix, limit) == StreamRfc.Decoded{[], suffix} : StreamRfc.DecodeResult}
+
+# BND-41: RFC 9110 weak If-None-Match comparison for arbitrary fields and tags.
+# The independent specification validates every list member and separately
+# asks whether any entity-tag denotes the same opaque validator.
+law conditional_if_none_match_spec:
+  for +field: Maybe<&2, String>
+  for +tag: String
+  {Conditional.matches(field, tag) == LimitsSpec.matches(field, tag) : Bool}
+
+# Exactly cache metadata, in original order (including duplicates); no body,
+# representation witness or content/framing headers survive construction.
+law conditional_304_spec:
+  for +res: Response.Res
+  {Conditional.not_modified(res) == LimitsSpec.response(res) : Response.Res}
+
+# Accept exactly the inclusive byte-length boundary, for every natural length.
+law body_limit_spec:
+  for +length: Nat
+  for +limit: Nat
+  {BodyLimit.accepts(length, limit) == LimitsSpec.within(length, limit) : Bool}
+
+# The actual middleware decision preserves every ineligible response exactly.
+# Eligible buffered 200 GET/HEAD responses carry the body validator, and become
+# exactly Conditional.not_modified iff the independent field spec matches it.
+law etag_middleware_spec:
+  for +method: Request.Method
+  for +field: Maybe<&2, String>
+  for +res: Response.Res
+  {ETag.decide(method, field, res) == LimitsSpec.etag(method, field, res) : Response.Res}
 
 # BND-40: CORS. The grant (the Access-Control-Allow-Origin value and whether
 # credentials are allowed) equals CorsSpec.grant for every policy and Origin

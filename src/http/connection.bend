@@ -18,6 +18,7 @@ type Action is Data:
   Read{milliseconds: U32}
   Respond{req: R.Req, body: List<&2, U32>, rest: List<&2, U32>}
   Reject{status: U32}
+  BodyRejected{req: R.Req}
   Stop{}
 
 def initial(+now: Nat, config: Config.Config) -> State:
@@ -44,6 +45,8 @@ def action(state: State, now: Nat) -> Action:
   match state:
     case State{Body.Complete{req, body, trailers, rest}, count, phase, at}:
       Respond{req, body, rest}
+    case State{Body.Limited{req}, count, phase, at}:
+      BodyRejected{req}
     case State{Body.Bad{status}, count, phase, at}:
       Reject{status}
     case State{input, count, +phase, at}:
@@ -69,28 +72,40 @@ def fed(pair: Body.State & Bool, count: U32, phase: Phase, +now: Nat, body: U32)
   (+input, interim) = pair
   (State{input, count, phase_for(input, phase, now, body), now}, interim)
 
-def feed_nonempty(xs: List<&2, U32>, state: State, +now: Nat, config: Config.Config) -> State & Bool:
+def feed_nonempty_policy(~Policy: Data, ~select: R.Req -> Policy -> U32, policy: Policy, xs: List<&2, U32>, state: State, +now: Nat, config: Config.Config) -> State & Bool:
   State{input, count, phase, at} = state
   Config.Config{host, port, limit, headers, idle, head, body, max, keep, router} = config
-  fed(Body.feed_limits(xs, input, limit, headers), count, started(phase, now, head), now, body)
+  fed(Body.feed_policy(~Policy, ~select, policy, xs, input, limit, headers), count, started(phase, now, head), now, body)
 
-def feed(xs: List<&2, U32>, state: State, now: Nat, config: Config.Config) -> State & Bool:
+def feed_policy(~Policy: Data, ~select: R.Req -> Policy -> U32, policy: Policy, xs: List<&2, U32>, state: State, now: Nat, config: Config.Config) -> State & Bool:
   match xs:
     case Nil{}: (state, False{})
-    case c <> t: feed_nonempty(c <> t, state, now, config)
+    case c <> t: feed_nonempty_policy(~Policy, ~select, policy, c <> t, state, now, config)
 
-def next_rest(rest: List<&2, U32>, count: U32, +at: Nat, +now: Nat, +config: Config.Config) -> State & Bool:
+def feed_nonempty(xs: List<&2, U32>, state: State, now: Nat, +config: Config.Config) -> State & Bool:
+  feed_nonempty_policy(~Config.Config, ~(req => cfg => Config.body_limit(cfg)), config, xs, state, now, config)
+
+def feed(xs: List<&2, U32>, state: State, now: Nat, +config: Config.Config) -> State & Bool:
+  feed_policy(~Config.Config, ~(req => cfg => Config.body_limit(cfg)), config, xs, state, now, config)
+
+def next_rest_policy(~Policy: Data, ~select: R.Req -> Policy -> U32, +policy: Policy, rest: List<&2, U32>, count: U32, +at: Nat, +now: Nat, +config: Config.Config) -> State & Bool:
   match rest:
     case Nil{}:
       Config.Config{host, port, limit, headers, idle, head, body, max, keep, router} = config
       (State{Body.initial(), (count + 1 : U32), Idle{Nat.add(now, U32.to_nat(idle))}, now}, False{})
     case c <> t:
       Config.Config{host, port, limit, headers, idle, head, body, max, keep, router} = config
-      feed(c <> t, State{Body.initial(), (count + 1 : U32), Idle{now}, at}, at, config)
+      feed_policy(~Policy, ~select, policy, c <> t, State{Body.initial(), (count + 1 : U32), Idle{now}, at}, at, config)
 
-def next(state: State, rest: List<&2, U32>, now: Nat, config: Config.Config) -> State & Bool:
+def next_policy(~Policy: Data, ~select: R.Req -> Policy -> U32, policy: Policy, state: State, rest: List<&2, U32>, now: Nat, config: Config.Config) -> State & Bool:
   State{input, count, phase, at} = state
-  next_rest(rest, count, at, now, config)
+  next_rest_policy(~Policy, ~select, policy, rest, count, at, now, config)
+
+def next_rest(rest: List<&2, U32>, count: U32, at: Nat, now: Nat, +config: Config.Config) -> State & Bool:
+  next_rest_policy(~Config.Config, ~(req => cfg => Config.body_limit(cfg)), config, rest, count, at, now, config)
+
+def next(state: State, rest: List<&2, U32>, now: Nat, +config: Config.Config) -> State & Bool:
+  next_policy(~Config.Config, ~(req => cfg => Config.body_limit(cfg)), config, state, rest, now, config)
 
 # Connection options are comma-separated, case-insensitive tokens across fields.
 def tokens(parts: List<&2, String>, +wanted: String) -> Bool:

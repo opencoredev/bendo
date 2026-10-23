@@ -137,6 +137,8 @@ decision for callback forms, error semantics and the transport boundary.
 
 [Observability middleware](observability.md) provides logger, request ID,
 Server-Timing, powered-by and pretty JSON identifiers.
+[Limits and cache middleware](limits-cache.md) provides early body limits,
+cooperative timeouts, ETag and Cache-Control helpers.
 [Authentication middleware](auth.md) provides basic auth, bearer auth, JWT and
 CSRF identifiers. [Web middleware](web-middleware.md) provides CORS, secure
 headers, method override and trailing-slash identifiers. Wrap `B.Builtin` in your
