@@ -21,6 +21,10 @@ import ./src/router/pattern.bend as Pattern
 import ./src/router/spec.bend as Spec
 import ./src/router/spec-proofs.bend as SpecProof
 
+import ./src/data/hex.bend as Hex
+import ./src/data/base64.bend as Base64
+import ./src/crypto/octets.bend as Octets
+
 # LAW: a text response is a head with no blank line in it, then a blank
 # line, then the body. So the first blank line in the response is the one
 # that ends the head, and a client that cuts there reads the body back.
@@ -709,3 +713,19 @@ law response_utf8_encode:
   for +s: String
   for +valid: {Utf8.valid(s) == True{} : Bool}
   {Utf8.decode(Response.utf8(s)) == Some{s} : Maybe<&2, String>}
+
+# BND-42: encoding inversion over every admissible octet list.
+# Octets.valid explicitly requires (x <= 255 : U32) for every element.
+law hex_roundtrip:
+  for +xs: List<&2, U32>
+  for valid: {Octets.valid(xs) == True{} : Bool}
+  {Hex.decode(Hex.encode(xs)) == Some{xs} : Maybe<&2, List<&2, U32>>}
+
+# Quantifying both flags promises all four RFC 4648 modes: standard/URL,
+# each with required padding or without padding. This is not a sample law.
+law base64_roundtrip:
+  for +xs: List<&2, U32>
+  for +url: Bool
+  for +padded: Bool
+  for valid: {Octets.valid(xs) == True{} : Bool}
+  {Base64.decode(Base64.encode(xs, url, padded), url, padded) == Some{xs} : Maybe<&2, List<&2, U32>>}

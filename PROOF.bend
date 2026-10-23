@@ -40,6 +40,15 @@ import ./src/router/match-proofs.bend as MatchProof
 import ./src/router/spec.bend as Spec
 import ./src/router/spec-proofs.bend as SpecProof
 
+import ./proof/crypto-hex.bend as HexProof
+import ./proof/crypto-base64.bend as Base64Proof
+
+# Check the pure crypto implementations with the strict kernel as well.
+import ./src/crypto/sha1.bend as SHA1
+import ./src/crypto/sha256.bend as SHA256
+import ./src/crypto/hmac.bend as HMAC
+import ./src/crypto/compare.bend as Compare
+
 def Laws.text_body_after_blank(body):
   ("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nConnection: close", ({==}, {==}))
 
@@ -297,3 +306,10 @@ def Laws.response_head_matches_get(res, valid):
     %response_head_empty(res) : {ResponseSpec.split_first(WriteResponse.write(Request.Head{}, res)) == Some{(WriteResponse.prefix(Request.Head{}, res), _)} : Maybe<&2, ResponseSpec.BytePair()>}
     response_split(Request.Head{}, res, valid)) : {ResponseSpec.split_first(WriteResponse.write(Request.Head{}, res)) == Some{(head, [])} : Maybe<&2, ResponseSpec.BytePair()>}}
   (head, (get_body, (parsed, (response_split(Request.Get{}, res, valid), split_head, response_parse(Request.Get{}, res, valid), ResponseFields.get_length(res), ResponseFields.response_transfer(Request.Get{}, res)))))
+
+
+def Laws.hex_roundtrip(xs, valid):
+  HexProof.roundtrip(xs, valid)
+
+def Laws.base64_roundtrip(xs, url, padded, valid):
+  Base64Proof.roundtrip(xs, url, padded, valid)
