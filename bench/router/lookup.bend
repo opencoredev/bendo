@@ -53,12 +53,12 @@ def path_weight(xs: List<&2, String>) -> Nat:
 
 def nodes(trie: T.Trie<U32>) -> Nat:
   match trie:
-    case T.Empty{}:
+    case T.Tip{}:
       0n
     case T.Fork{char, equal, other}:
       1n+Nat.add(nodes(equal), nodes(other))
-    case T.Bucket{entries, child}:
-      1n+nodes(child)
+    case T.Node{entries, kids, other}:
+      1n+Nat.add(List.length(&2, T.Candidate<U32>, entries), Nat.add(nodes(kids), nodes(other)))
 
 def prepared_weight(router: R.Prepared<U32>) -> Nat:
   R.Prepared{table, trie} = router

@@ -67,9 +67,10 @@ and derive typed per-request variables.
 
 `B` also exposes `Req`, `Res`, `ServerConfig`, `RouterKind`, `spec`, `trie`,
 `text`, `body`, `not_modified`, `get`, `head`, `post`, `put`, `patch`, `delete`,
-`options`, `all` and `on`. `spec()` and `trie()` construct router-kind values;
-method-aware dispatch currently uses the reference router. BND-17 integrates trie
-selection. Header limits, idle/head/body timeouts, max requests and keep-alive
+`options`, `all` and `on`. `spec()` and `trie()` construct router-kind values.
+`B.config()` defaults `router` to `trie()`, and `B.serve` resolves methods with
+the configured kind. `B.handle` uses the trie. Both kinds return identical
+results ([trie router](router-trie.md#equivalence-proof)). Header limits, idle/head/body timeouts, max requests and keep-alive
 are enforced by the connection loop. HTTP/1.1 connections persist by default;
 HTTP/1.0 connections always close, including requests for keep-alive. See
 [connection policy](decisions/0009-connections.md) for deadlines and close rules.
