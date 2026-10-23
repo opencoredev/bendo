@@ -51,11 +51,17 @@ def methods(xs: List<&2, Request.Method>, +path: String) -> List<&2, String>:
     case method <> tail:
       ("{\"method\":" ++ quote(Request.method_text(method)) ++ ",\"path\":" ++ quote(path) ++ "}") <> methods(tail, path)
 
+def selector(method: Methods.MethodSelector, path: String) -> List<&2, String>:
+  match method:
+    case Methods.AllMethods{}:
+      ["{\"method\":\"ALL\",\"all\":true,\"path\":" ++ quote(path) ++ "}"]
+    case Methods.OnlyMethods{xs}: methods(xs, path)
+
 # Paths retain their source spelling; methods come from the certified table.
 def entries(-Tag: Data, xs: List<&2, Methods.Registration(Tag)>, table: Methods.Table(Tag)) -> List<&2, String>:
   match xs table:
     case Spec.Registration{path, binding} <> tail Spec.Route{pattern, Methods.Binding{ms, tag}} <> rest:
-      List.append(&2, String, methods(ms, path), entries(Tag, tail, rest))
+      List.append(&2, String, selector(ms, path), entries(Tag, tail, rest))
     case _ _: []
 
 def json(-Tag: Data, table: Table.Table<Tag>) -> String:

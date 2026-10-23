@@ -36,6 +36,8 @@ import ./src/data/utf8.bend as Utf8
 import ./proof/forms.bend as FormSpec
 
 import ./src/router/pattern.bend as Pattern
+import ./src/router/constraint.bend as Constraint
+import ./proof/router-match-spec.bend as MatchSpec
 
 import ./src/router/spec.bend as Spec
 import ./src/router/spec-proofs.bend as SpecProof
@@ -554,7 +556,8 @@ law method_recover:
 # Every successfully compiled pattern roundtrips every independently admissible
 # ordered assignment. Admissibility checks exactly the capture names in order,
 # nonempty present non-wildcard values, constraints and Unicode scalars; only a
-# final optional capture may be omitted, and a wildcard may hold an empty value.
+# trailing chain of optional captures may be omitted, and a wildcard may hold
+# an empty value.
 # It never invokes fill or match_path. Both filling success and matching success
 # are promised, so a filler that always fails cannot satisfy this law.
 law pattern_fill_match:
@@ -565,6 +568,54 @@ law pattern_fill_match:
   for admitted: {Pattern.admissible(pattern, params) == True{} : Bool}
   exs path: String
   {Pattern.fill(pattern, params) == Some{path} : Maybe<&2, String>} & {Pattern.match_path(pattern, path) == Some{params} : Maybe<&2, Pattern.Params>}
+
+# BND-78
+
+# Matching is exactly the independent raw-path specification in
+# proof/router-match-spec.bend, for every pattern value and every raw path:
+# the same hit or miss, the same ordered captures, and the same precedence
+# (optional captures take present segments, interior wildcards take the fewest
+# segments, spans take the most). The specification calls no Pattern helper.
+law pattern_match_spec:
+  for +pattern: Pattern.Pattern
+  for +path: String
+  {Pattern.match_path(pattern, path) == MatchSpec.match_path(pattern, path) : Maybe<&2, Pattern.Params>}
+
+# Each promised syntax form compiles, to the segments the specification reads.
+law compile_bare_star:
+  {Pattern.compile("*") == Done{Pattern.Pattern{[Pattern.Wildcard{"*"}]}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+law compile_prefix_wildcard:
+  {Pattern.compile("/assets*") == Done{Pattern.Pattern{[Pattern.PrefixWildcard{"assets"}]}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+law compile_interior_wildcards:
+  {Pattern.compile("/a/*/b/*") == Done{Pattern.Pattern{[Pattern.Static{"a"}, Pattern.InteriorWildcard{}, Pattern.Static{"b"}, Pattern.Wildcard{"*"}]}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+law compile_optional_chain:
+  {Pattern.compile("/v1/:version?/:platform?") == Done{Pattern.Pattern{[Pattern.Static{"v1"}, Pattern.Capture{"version", Constraint.Any{}, True{}}, Pattern.Capture{"platform", Constraint.Any{}, True{}}]}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+law compile_static_colon:
+  {Pattern.compile("/v1/name:activate") == Done{Pattern.Pattern{[Pattern.Static{"v1"}, Pattern.Static{"name:activate"}]}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+law compile_anchored_span:
+  {Pattern.compile("/:prefix{.+}/contents/:id?") == Done{Pattern.Pattern{[Pattern.Span{"prefix"}, Pattern.Static{"contents"}, Pattern.Capture{"id", Constraint.Any{}, True{}}]}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+# A span needs a static anchor after it.
+law compile_unanchored_span:
+  {Pattern.compile("/:a{.+}/:b") == Fail{Pattern.PatternError{Pattern.InvalidSpan{}, ":a{.+}/:b"}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+# The specification gives the promised raw-path results for those forms.
+law spec_prefix_wildcard:
+  {MatchSpec.match_path(Pattern.Pattern{[Pattern.PrefixWildcard{"assets"}]}, "/assets-v2") == Some{Nil{}} : Maybe<&2, Pattern.Params>} & {MatchSpec.match_path(Pattern.Pattern{[Pattern.PrefixWildcard{"assets"}]}, "/assets/app.js") == Some{Nil{}} : Maybe<&2, Pattern.Params>}
+
+law spec_interior_wildcards:
+  {MatchSpec.match_path(Pattern.Pattern{[Pattern.Static{"a"}, Pattern.InteriorWildcard{}, Pattern.Static{"b"}, Pattern.Wildcard{"*"}]}, "/a/x/y/b/c/d") == Some{[Pattern.Param{"*", "c/d"}]} : Maybe<&2, Pattern.Params>}
+
+law spec_optional_chain:
+  {MatchSpec.match_path(Pattern.Pattern{[Pattern.Static{"v1"}, Pattern.Capture{"version", Constraint.Any{}, True{}}, Pattern.Capture{"platform", Constraint.Any{}, True{}}]}, "/v1/x") == Some{[Pattern.Param{"version", "x"}]} : Maybe<&2, Pattern.Params>}
+
+law spec_greedy_span:
+  {MatchSpec.match_path(Pattern.Pattern{[Pattern.Span{"prefix"}, Pattern.Static{"contents"}, Pattern.Capture{"id", Constraint.Any{}, True{}}]}, "/foo/bar/contents/123") == Some{[Pattern.Param{"prefix", "foo/bar"}, Pattern.Param{"id", "123"}]} : Maybe<&2, Pattern.Params>} & {MatchSpec.match_path(Pattern.Pattern{[Pattern.Span{"prefix"}, Pattern.Static{"contents"}, Pattern.Capture{"id", Constraint.Any{}, True{}}]}, "/a/contents/contents") == Some{[Pattern.Param{"prefix", "a/contents"}]} : Maybe<&2, Pattern.Params>}
 
 # BND-29: URL-encoded data and ordered repeated-key lookup.
 
@@ -762,7 +813,8 @@ law methods_default_path_identity:
   {Methods.match_path(pattern, path, Methods.defaults()) == Pattern.match_path(pattern, path) : Maybe<&2, Pattern.Params>}
 
 # The default first-match statement uses direct Pattern.match_path and an
-# independent token-membership predicate at each List.get registration.
+# independent selector predicate at each List.get registration: AllMethods
+# accepts every method; OnlyMethods uses literal token membership.
 law methods_default_found_first:
   for -T: Data
   for +table: Methods.Valid<T>
@@ -817,7 +869,9 @@ law methods_not_found_iff_all_paths_miss:
 # iff present in ANY path-matching registration or HEAD supplied by GET.
 # Registrations and the request use canonical Method constructors. Output
 # methods are valid too. Every admissible table, pattern, path, option
-# combination and query-method token is covered.
+# combination and query-method token is covered. ExactAllow additionally
+# requires every AllMethods registration to miss the path, so a matching all
+# cannot produce 405. Finite registrations retain the same exact set guarantee.
 law methods_allow_exact:
   for -T: Data
   for +table: Methods.Valid<T>
