@@ -61,3 +61,7 @@ surrogate code points, values above U+10FFFF, and input elements above 255 retur
 a BOM. Raw and percent-encoded octets may contribute to the same character.
 The small pure UTF-8 codec is separate so other data parsers and router work can
 reuse it.
+
+For a body decoder that also accepts multipart uploads, use
+[`src/data/form.bend`](multipart.md). It returns ordered `Field` and `File`
+parts while keeping this module's API unchanged.
