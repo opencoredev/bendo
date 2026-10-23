@@ -52,17 +52,15 @@ test("Hono fixture provenance and every difference remain documented", () => {
       "verbatim upstream request",
       "upstream registration rejection; Bendo probe request added",
       "ALL method matrix from this upstream registration table",
+      "greedy span regression queried against Hono TrieRouter 4.13.13",
     ]).toContain(entry.origin);
     if (entry.honoError) {
       expect(entry.honoError, entry.id).toBe("UnsupportedPathError");
       expect(entry.hono, entry.id).toEqual([]);
       expect(entry.differences, entry.id).toContain("registration-rejection");
     }
-    if (entry.gap !== undefined || entry.gapKinds !== undefined) {
-      expect(entry.gap, entry.id).toBe("BND-78");
-      expect(entry.gapKinds?.length, entry.id).toBeGreaterThan(0);
-    }
-    for (const difference of [...entry.differences, ...(entry.gapKinds ?? [])]) {
+    expect("gap" in entry || "gapKinds" in entry, entry.id).toBe(false);
+    for (const difference of entry.differences) {
       const row = decisions.split("\n").find((line) => line.startsWith(`| ${difference} |`));
       expect(row, `${entry.id}: missing decision group ${difference}`).toBeDefined();
       expect(row, `${entry.id}: not listed in ${difference}`).toContain(entry.id);

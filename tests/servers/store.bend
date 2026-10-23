@@ -1,6 +1,7 @@
 import Base
 import ../../src/main.bend as B
 import ../../src/app/store.bend as Store
+import ../../src/app/store_actor.bend as StoreActor
 import ../../src/router/methods.bend as Methods
 
 def increment(count: U32) -> U32:
@@ -170,7 +171,7 @@ def ready(env: Env, result: Result<&2, &2, Methods.BuildError, B.Routes(Tag)>) -
 def gated(gate: Chan(Unit), requests: Chan(Store.Message<U32>)) -> IO(Unit):
   do IO<Unit>:
     open : Maybe<&1, Unit> <- Chan.recv(Unit, gate)
-    Store.actor(U32, requests, 0, Store.Receive{})
+    StoreActor.actor(U32, requests, 0, Store.Receive{})
 
 def main() -> IO(Unit):
   do IO<Unit>:

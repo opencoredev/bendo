@@ -2,6 +2,7 @@ import Base
 import ../app/context.bend as C
 import ../app/observability.bend as Obs
 import ../app/store.bend as Store
+import ../app/store_actor.bend as StoreActor
 import ../http/response.bend as Response
 import ../http/bytes.bend as Bytes
 
@@ -58,7 +59,7 @@ def close(store: Store.Store<List<&2, Obs.Mark>>) -> IO(Unit):
 
 def run(-Vars: Data, c: C.Ctx<Vars>, id: Maybe<&2, String>, next: C.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
   do IO<Response.Res>:
-    +store : Store.Store<List<&2, Obs.Mark>> <- Store.store(List<&2, Obs.Mark>, [])
+    +store : Store.Store<List<&2, Obs.Mark>> <- StoreActor.store(List<&2, Obs.Mark>, [])
     +finalized : Chan(Maybe<&2, String>) <- Chan.new(Maybe<&2, String>, 1)
     before : Nat <- IO.now()
     res : Response.Res <- next(C.with_observation(Vars, c, Obs.State{id, Some{store}, Some{finalized}}))

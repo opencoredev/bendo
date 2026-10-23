@@ -39,6 +39,7 @@ def same_stage(a: Table.Stage, b: Table.Stage) -> Bool:
     case Table.MapResponse{} Table.MapResponse{}: True{}
     case Table.Error{} Table.Error{}: True{}
     case Table.AfterResponse{} Table.AfterResponse{}: True{}
+    case Table.NotFound{} Table.NotFound{}: True{}
     case _ _: False{}
 
 def keep(-Tag: Data, tag: Tag, rest: List<&2, Tag>, yes: Bool) -> List<&2, Tag>:
