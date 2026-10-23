@@ -57,15 +57,44 @@ The laws cover the `Res` that `error` returns, before app hooks run.
   phrase for an empty message. If the response fails `Response.valid`, or a
   JSON message is not Unicode scalar text, the result is the empty 500.
   `http_error_tea_only_rendered` pins `http_error(418, "Tea only")` byte for byte.
-- `http_error_invalid_header_fallback`: an invalid accumulated header (a value
-  containing a line feed) turns any error into the empty 500.
+- `http_error_private_with_headers` and `http_error_exposed_with_headers`: the
+  same two results for a context with any accumulated response headers. The
+  spec lists the headers the client receives (`Spec.headers`): the negotiated
+  `Content-Type` first, every other accumulated header except `Content-Type`
+  and `Vary` in its original order, then one `Vary` field. That field copies
+  the existing `Vary` values byte for byte, separated by `, `, and appends
+  `Accept`. If any existing value is `*` once SP and HTAB are removed, the
+  field is just `*`.
+- `http_error_inadmissible_fallback`: validation applies to that effective
+  list, after the Vary merge and the Content-Type replacement. If any header
+  in it is not admissible, every error renders the empty 500, whatever its
+  code, message or exposure. `Spec.admissible` restates RFC 9110 field syntax:
+  a nonempty token name in ASCII lowercase, and a value of field octets (HTAB,
+  SP, visible ASCII, obs-text) that neither starts nor ends with SP or HTAB.
+  It shares only the token and field-octet character classes with `Bytes`.
+  `http_error_validity_spec` proves `Response.valid` equals the spec's check,
+  so no header byte the spec rejects reaches the wire.
+  `http_error_invalid_header_fallback` is the instance with an `x-note` value
+  containing a line feed.
 - `http_error_head_no_payload`: a HEAD request's error response is written with
   no payload.
 
-The laws decide JSON-or-text with `Errors.accepts_json` as a hypothesis, or
-with the listed samples. No law states the full Accept grammar. Integration
-tests cover the rest of that policy, plus responses built on a context that
-already has headers.
+Because validation reads the effective headers, an accumulated `Content-Type`
+that the error replaces cannot fail the response. An accumulated Vary value of
+`Origin` plus a trailing space is accepted, because the merged field is
+`Origin , Accept`; the same value with a leading space still fails. `c.text`, `c.json` and the other
+body helpers keep their stricter rule: they reject any invalid accumulated
+header, including one they replace.
+
+The laws above take the JSON-or-text choice as a hypothesis on
+`Errors.accepts_json`, or use the listed samples.
+
+These laws cover `C.error` and everything built on it: `B.error`,
+`B.result` on `Fail`, and the default 404 from `B.not_found` and route misses.
+Three framework responses do not go through it and are not covered: the 405
+for a method mismatch (built with `Context.body` and an `Allow` header), the
+`400 Bad Request` text for a malformed query string, and transport-level
+rejections from the HTTP parser.
 
 Errors become ordinary responses before the existing lifecycle response
 stages. There is no parallel error callback or second dispatcher. `after_handle`
@@ -89,7 +118,7 @@ follow the context accessor's first-field policy.
 
 JSON uses `application/json; charset=utf-8` and the shared writer's escaping:
 `{"error":"Tea only","status":418}`. Text contains just the message. Rendering
-adds Accept to existing Vary fields and preserves `Vary: *`. HEAD uses the
+merges existing Vary fields into one, appends Accept, and preserves `Vary: *`. HEAD uses the
 same representation length but sends no body, through the normal writer.
 
 ## Custom not-found handling

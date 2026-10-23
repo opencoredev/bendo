@@ -1,6 +1,7 @@
 # BND-25: laws about the response Context.error renders, before app hooks.
-# A fresh context has no accumulated response headers; the request, route
-# captures, body, query, status, variables and observation are arbitrary.
+# The first laws fix a fresh context with no accumulated response headers;
+# the request, route captures, body, query, status, variables and observation
+# are arbitrary. Later laws quantify over the accumulated headers too.
 import Base
 import ../src/app/context.bend as C
 import ../src/app/errors.bend as Errors
@@ -111,6 +112,69 @@ law http_error_invalid_header_fallback:
   for +observation: Obs.State
   for +failure: Errors.HttpError
   {C.error(Vars, C.Ctx{req, params, body, pairs, status, [Request.Header{"x-note", Bytes.encode("a\nb")}], vars, observation}, failure) == Response.Res{500, [], [], None{}} : Response.Res}
+
+# Any accumulated response headers. The client receives the negotiated
+# Content-Type first, every other accumulated header except Vary in its order,
+# then one Vary field: the existing Vary values byte for byte followed by
+# Accept, or * when an existing value is a wildcard (Spec.headers). Validation
+# applies to that effective list: the response is delivered only if every one
+# of those headers is admissible (Spec.admissible), and otherwise it is the
+# empty 500, so no inadmissible header byte reaches the wire.
+law http_error_private_with_headers:
+  for -Vars: Data
+  for +req: Request.Req
+  for +params: List<&2, Pattern.Param>
+  for +body: List<&2, U32>
+  for +pairs: List<&2, Query.Entry>
+  for +status: U32
+  for +headers: List<&2, Request.Header>
+  for +vars: Maybe<&2, Vars>
+  for +observation: Obs.State
+  for +code: U32
+  for message: String
+  for +json: Bool
+  for negotiated: {Errors.accepts_json(C.request_header(Vars, C.Ctx{req, params, body, pairs, status, headers, vars, observation}, "accept")) == json : Bool}
+  {C.error(Vars, C.Ctx{req, params, body, pairs, status, headers, vars, observation}, Errors.HttpError{code, message, False{}}) == Spec.private_with(json, code, headers) : Response.Res}
+
+law http_error_exposed_with_headers:
+  for -Vars: Data
+  for +req: Request.Req
+  for +params: List<&2, Pattern.Param>
+  for +body: List<&2, U32>
+  for +pairs: List<&2, Query.Entry>
+  for +status: U32
+  for +headers: List<&2, Request.Header>
+  for +vars: Maybe<&2, Vars>
+  for +observation: Obs.State
+  for +code: U32
+  for +message: String
+  for +json: Bool
+  for in_range: {(code >= 400 : U32) && (code <= 599 : U32) == True{} : Bool}
+  for negotiated: {Errors.accepts_json(C.request_header(Vars, C.Ctx{req, params, body, pairs, status, headers, vars, observation}, "accept")) == json : Bool}
+  {C.error(Vars, C.Ctx{req, params, body, pairs, status, headers, vars, observation}, Errors.HttpError{code, message, True{}}) == Spec.exposed_with(json, code, message, headers) : Response.Res}
+
+# Whenever the effective header list is inadmissible, every error, exposed or
+# not, with any code and message, renders the empty 500.
+law http_error_inadmissible_fallback:
+  for -Vars: Data
+  for +req: Request.Req
+  for +params: List<&2, Pattern.Param>
+  for +body: List<&2, U32>
+  for +pairs: List<&2, Query.Entry>
+  for +status: U32
+  for +headers: List<&2, Request.Header>
+  for +vars: Maybe<&2, Vars>
+  for +observation: Obs.State
+  for +failure: Errors.HttpError
+  for +json: Bool
+  for negotiated: {Errors.accepts_json(C.request_header(Vars, C.Ctx{req, params, body, pairs, status, headers, vars, observation}, "accept")) == json : Bool}
+  for bad: {Spec.admissible(Spec.headers(json, headers)) == False{} : Bool}
+  {C.error(Vars, C.Ctx{req, params, body, pairs, status, headers, vars, observation}, failure) == Response.Res{500, [], [], None{}} : Response.Res}
+
+# The framework's response validity check is exactly the independent one.
+law http_error_validity_spec:
+  for +r: Response.Res
+  {Response.valid(r) == Spec.res_ok(r) : Bool}
 
 # A HEAD request's error response is written with no payload.
 law http_error_head_no_payload:

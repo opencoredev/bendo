@@ -100,6 +100,63 @@ test("error conversion preserves Vary and not-found forwarded context reaches er
   expect(await res.text()).toBe("context visible");
 });
 
+// Raw header bytes, decoded one byte per char, so obs-text is visible.
+function rawHeaders(path: string): Promise<{ status: number; headers: string[] }> {
+  return new Promise((resolve, reject) => {
+    const req = get(server.url + path, { timeout: 5000, headers: { accept: "text/plain" } }, (res) => {
+      res.resume();
+      res.on("end", () => resolve({ status: res.statusCode ?? 0, headers: res.rawHeaders }));
+    });
+    req.on("timeout", () => req.destroy(new Error("timeout")));
+    req.on("error", reject);
+  });
+}
+
+function rawValues(headers: string[], name: string): string[] {
+  const values: string[] = [];
+  for (let i = 0; i + 1 < headers.length; i += 2) {
+    const key = headers[i];
+    const value = headers[i + 1];
+    if (key !== undefined && value !== undefined && key.toLowerCase() === name) values.push(value);
+  }
+  return values;
+}
+
+test("errors validate the headers the client receives, after the Vary merge", async () => {
+  // A trailing space becomes interior once Accept is appended, so it is valid.
+  const trailing = await request("/vary-trailing");
+  expect(trailing.status).toBe(400);
+  expect(trailing.headers.get("vary")).toBe("Origin , Accept");
+  // A leading space stays leading, so the effective field is invalid.
+  const leading = await request("/vary-leading");
+  expect(leading.status).toBe(500);
+  expect(leading.headers.get("vary")).toBeNull();
+  expect(await leading.text()).toBe("");
+  // Existing Vary bytes are copied, not re-encoded: x-é stays C3 A9.
+  const obs = await rawHeaders("/vary-obs");
+  expect(obs.status).toBe(400);
+  expect(rawValues(obs.headers, "vary").map((v) => Buffer.from(v, "latin1").toString("hex"))).toEqual([
+    Buffer.from("x-\u00c3\u00a9, Accept", "latin1").toString("hex"),
+  ]);
+  // Other headers keep their order; the merged Vary field comes last.
+  const kept = await rawHeaders("/vary-kept");
+  expect(kept.status).toBe(400);
+  const names = kept.headers.filter((_, i) => i % 2 === 0).map((n) => n.toLowerCase());
+  expect(names.indexOf("x-a")).toBeLessThan(names.indexOf("x-b"));
+  expect(names.indexOf("x-b")).toBeLessThan(names.indexOf("vary"));
+  expect(rawValues(kept.headers, "vary")).toEqual(["Origin, Accept"]);
+  // A replaced Content-Type never reaches the client, so it cannot fail it.
+  const typed = await request("/replaced-type");
+  expect(typed.status).toBe(400);
+  expect(typed.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+  expect(await typed.text()).toBe("typed");
+  // An invalid header that would be sent turns the error into the empty 500.
+  const bad = await request("/bad-kept");
+  expect(bad.status).toBe(500);
+  expect(bad.headers.get("x-note")).toBeNull();
+  expect(await bad.text()).toBe("");
+});
+
 // Resolve on either a response or a socket error, so the pending request never
 // creates an unhandled rejection when the process dies.
 function onConnection(url: string, agent: Agent): Promise<string> {

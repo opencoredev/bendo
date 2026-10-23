@@ -16,6 +16,7 @@ import ../src/router/pattern.bend as Pattern
 import ../src/data/urlencoded.bend as Query
 import ../src/app/observability.bend as Obs
 import ./chunked-arith.bend as Arith
+import ./error-headers.bend as Hd
 
 def distinguish(b: Bool) -> Type:
   match b:
@@ -320,20 +321,74 @@ def Laws.http_error_tea_only_rendered(Vars, req, params, body, pairs, st, vars, 
   %Equal.sym(Bool, Errors.accepts_json(C.request_header(Vars, C.Ctx{req, params, body, pairs, st, [], vars, obs}, "accept")), json, negotiated) : {C.error_body(Vars, C.vary_accept(Vars, C.Ctx{req, params, body, pairs, st, [], vars, obs}), 418, "Tea only", _) == Spec.tea_only(json) : Response.Res}
   tea_only(Vars, req, params, body, pairs, st, vars, obs, json)
 
-def bad_json(-Vars: Data, +req: Request.Req, +params: List<&2, Pattern.Param>, +body: List<&2, U32>, +pairs: List<&2, Query.Entry>, +st: U32, +vars: Maybe<&2, Vars>, +obs: Obs.State, +code: U32, +text: String, b: Bool) -> {C.error_json_body(Vars, C.vary_accept(Vars, C.Ctx{req, params, body, pairs, st, [Request.Header{"x-note", Bytes.encode("a\nb")}], vars, obs}), code, text, b) == Response.Res{500, [], [], None{}} : Response.Res}:
+# Any accumulated headers: rendering equals Spec.render.
+
+def render_text(-Vars: Data, +req: Request.Req, +params: List<&2, Pattern.Param>, +body: List<&2, U32>, +pairs: List<&2, Query.Entry>, +st: U32, +hs: List<&2, Request.Header>, +vars: Maybe<&2, Vars>, +obs: Obs.State, +code: U32, +text: String) -> {C.error_body(Vars, C.vary_accept(Vars, C.Ctx{req, params, body, pairs, st, hs, vars, obs}), code, text, False{}) == Spec.render(False{}, code, text, hs) : Response.Res}:
+  %Equal.sym(List<&2, Request.Header>, C.type_headers(List.append(&2, Request.Header, C.without(hs, "vary"), [Hd.vary_header(hs)]), Some{"text/plain; charset=utf-8"}), Spec.headers(False{}, hs), Hd.headers_text(hs)) : {C.finalize(Response.Res{code, _, Response.utf8(text), None{}}) == Spec.render(False{}, code, text, hs) : Response.Res}
+  Hd.deliver_spec(Response.Res{code, Spec.headers(False{}, hs), Response.utf8(text), None{}})
+
+def render_json_pick(-Vars: Data, +req: Request.Req, +params: List<&2, Pattern.Param>, +body: List<&2, U32>, +pairs: List<&2, Query.Entry>, +st: U32, +hs: List<&2, Request.Header>, +vars: Maybe<&2, Vars>, +obs: Obs.State, +code: U32, +text: String, b: Bool) -> {C.error_json_body(Vars, C.vary_accept(Vars, C.Ctx{req, params, body, pairs, st, hs, vars, obs}), code, text, b) == Spec.scalar_pick(b, Spec.deliver(Response.Res{code, Spec.headers(True{}, hs), Response.utf8(Spec.json_text(text, code)), None{}})) : Response.Res}:
   match b:
+    case True{}:
+      %Equal.sym(List<&2, Request.Header>, C.type_headers(List.append(&2, Request.Header, C.without(hs, "vary"), [Hd.vary_header(hs)]), Some{"application/json; charset=utf-8"}), Spec.headers(True{}, hs), Hd.headers_json(hs)) : {C.finalize(Response.Res{code, _, Response.utf8(Spec.json_text(text, code)), None{}}) == Spec.deliver(Response.Res{code, Spec.headers(True{}, hs), Response.utf8(Spec.json_text(text, code)), None{}}) : Response.Res}
+      Hd.deliver_spec(Response.Res{code, Spec.headers(True{}, hs), Response.utf8(Spec.json_text(text, code)), None{}})
+    case False{}: {==}
+
+def render_json(-Vars: Data, +req: Request.Req, +params: List<&2, Pattern.Param>, +body: List<&2, U32>, +pairs: List<&2, Query.Entry>, +st: U32, +hs: List<&2, Request.Header>, +vars: Maybe<&2, Vars>, +obs: Obs.State, +code: U32, +text: String) -> {C.error_body(Vars, C.vary_accept(Vars, C.Ctx{req, params, body, pairs, st, hs, vars, obs}), code, text, True{}) == Spec.render(True{}, code, text, hs) : Response.Res}:
+  %Equal.sym(Bool, Json.scalars(text), U.valid(text), scalar_go_valid(text, True{})) : {C.error_json_body(Vars, C.vary_accept(Vars, C.Ctx{req, params, body, pairs, st, hs, vars, obs}), code, text, _) == Spec.render(True{}, code, text, hs) : Response.Res}
+  render_json_pick(Vars, req, params, body, pairs, st, hs, vars, obs, code, text, U.valid(text))
+
+def render_body(-Vars: Data, +req: Request.Req, +params: List<&2, Pattern.Param>, +body: List<&2, U32>, +pairs: List<&2, Query.Entry>, +st: U32, +hs: List<&2, Request.Header>, +vars: Maybe<&2, Vars>, +obs: Obs.State, +code: U32, +text: String, json: Bool) -> {C.error_body(Vars, C.vary_accept(Vars, C.Ctx{req, params, body, pairs, st, hs, vars, obs}), code, text, json) == Spec.render(json, code, text, hs) : Response.Res}:
+  match json:
+    case True{}: render_json(Vars, req, params, body, pairs, st, hs, vars, obs, code, text)
+    case False{}: render_text(Vars, req, params, body, pairs, st, hs, vars, obs, code, text)
+
+def private_render(json: Bool, +code: U32, +hs: List<&2, Request.Header>) -> {Spec.render(json, Errors.status(code), "Internal Server Error", hs) == Spec.private_with(json, code, hs) : Response.Res}:
+  match json:
+    case True{}:
+      %Equal.sym(U32, Errors.status(code), Spec.status(code), status_spec(code)) : {Spec.render(True{}, _, "Internal Server Error", hs) == Spec.private_with(True{}, code, hs) : Response.Res}
+      {==}
+    case False{}:
+      %Equal.sym(U32, Errors.status(code), Spec.status(code), status_spec(code)) : {Spec.render(False{}, _, "Internal Server Error", hs) == Spec.private_with(False{}, code, hs) : Response.Res}
+      {==}
+
+def Laws.http_error_private_with_headers(Vars, req, params, body, pairs, st, hs, vars, obs, code, message, json, negotiated):
+  %Equal.sym(Bool, Errors.accepts_json(C.request_header(Vars, C.Ctx{req, params, body, pairs, st, hs, vars, obs}, "accept")), json, negotiated) : {C.error_body(Vars, C.vary_accept(Vars, C.Ctx{req, params, body, pairs, st, hs, vars, obs}), Errors.status(code), "Internal Server Error", _) == Spec.private_with(json, code, hs) : Response.Res}
+  Equal.trans(Response.Res, C.error_body(Vars, C.vary_accept(Vars, C.Ctx{req, params, body, pairs, st, hs, vars, obs}), Errors.status(code), "Internal Server Error", json), Spec.render(json, Errors.status(code), "Internal Server Error", hs), Spec.private_with(json, code, hs), render_body(Vars, req, params, body, pairs, st, hs, vars, obs, Errors.status(code), "Internal Server Error", json), private_render(json, code, hs))
+
+def Laws.http_error_exposed_with_headers(Vars, req, params, body, pairs, st, hs, vars, obs, code, message, json, in_range, negotiated):
+  %Equal.sym(Bool, (code >= 400 : U32) && (code <= 599 : U32), True{}, in_range) : {C.error_body(Vars, C.vary_accept(Vars, C.Ctx{req, params, body, pairs, st, hs, vars, obs}), Errors.status_valid(code, _), Errors.public_message(Errors.message_default(message, Response.reason(code), String.is_empty(message)), _), Errors.accepts_json(C.request_header(Vars, C.Ctx{req, params, body, pairs, st, hs, vars, obs}, "accept"))) == Spec.exposed_with(json, code, message, hs) : Response.Res}
+  %Equal.sym(Bool, Errors.accepts_json(C.request_header(Vars, C.Ctx{req, params, body, pairs, st, hs, vars, obs}, "accept")), json, negotiated) : {C.error_body(Vars, C.vary_accept(Vars, C.Ctx{req, params, body, pairs, st, hs, vars, obs}), code, Errors.message_default(message, Response.reason(code), String.is_empty(message)), _) == Spec.exposed_with(json, code, message, hs) : Response.Res}
+  %Equal.sym(String, Errors.message_default(message, Response.reason(code), String.is_empty(message)), Spec.public_text(message, code), default_text(message, code)) : {C.error_body(Vars, C.vary_accept(Vars, C.Ctx{req, params, body, pairs, st, hs, vars, obs}), code, _, json) == Spec.exposed_with(json, code, message, hs) : Response.Res}
+  render_body(Vars, req, params, body, pairs, st, hs, vars, obs, code, Spec.public_text(message, code), json)
+
+def scalar_bad(b: Bool, +r: Response.Res, e: {Spec.deliver(r) == Response.Res{500, [], [], None{}} : Response.Res}) -> {Spec.scalar_pick(b, Spec.deliver(r)) == Response.Res{500, [], [], None{}} : Response.Res}:
+  match b:
+    case True{}: e
+    case False{}: {==}
+
+def render_bad(json: Bool, +code: U32, +text: String, +hs: List<&2, Request.Header>, bad: {Spec.admissible(Spec.headers(json, hs)) == False{} : Bool}) -> {Spec.render(json, code, text, hs) == Response.Res{500, [], [], None{}} : Response.Res}:
+  match json:
+    case True{}: scalar_bad(U.valid(text), Response.Res{code, Spec.headers(True{}, hs), Response.utf8(Spec.json_text(text, code)), None{}}, Hd.deliver_bad(code, Spec.headers(True{}, hs), Response.utf8(Spec.json_text(text, code)), bad))
+    case False{}: Hd.deliver_bad(code, Spec.headers(False{}, hs), Response.utf8(text), bad)
+
+def Laws.http_error_inadmissible_fallback(Vars, req, params, body, pairs, st, hs, vars, obs, failure, json, negotiated, bad):
+  match failure:
+    case Errors.HttpError{+code, +message, +expose}:
+      %Equal.sym(Bool, Errors.accepts_json(C.request_header(Vars, C.Ctx{req, params, body, pairs, st, hs, vars, obs}, "accept")), json, negotiated) : {C.error_body(Vars, C.vary_accept(Vars, C.Ctx{req, params, body, pairs, st, hs, vars, obs}), Errors.status(code), Errors.message(Errors.HttpError{code, message, expose}), _) == Response.Res{500, [], [], None{}} : Response.Res}
+      Equal.trans(Response.Res, C.error_body(Vars, C.vary_accept(Vars, C.Ctx{req, params, body, pairs, st, hs, vars, obs}), Errors.status(code), Errors.message(Errors.HttpError{code, message, expose}), json), Spec.render(json, Errors.status(code), Errors.message(Errors.HttpError{code, message, expose}), hs), Response.Res{500, [], [], None{}}, render_body(Vars, req, params, body, pairs, st, hs, vars, obs, Errors.status(code), Errors.message(Errors.HttpError{code, message, expose}), json), render_bad(json, Errors.status(code), Errors.message(Errors.HttpError{code, message, expose}), hs, bad))
+
+def Laws.http_error_validity_spec(r):
+  Hd.valid_spec(r)
+
+# The x-note example is one instance of the universal fallback.
+def note_bad(j: Bool) -> {Spec.admissible(Spec.headers(j, [Request.Header{"x-note", Bytes.encode("a\nb")}])) == False{} : Bool}:
+  match j:
     case True{}: {==}
     case False{}: {==}
 
-def bad_body(-Vars: Data, +req: Request.Req, +params: List<&2, Pattern.Param>, +body: List<&2, U32>, +pairs: List<&2, Query.Entry>, +st: U32, +vars: Maybe<&2, Vars>, +obs: Obs.State, +code: U32, +text: String, json: Bool) -> {C.error_body(Vars, C.vary_accept(Vars, C.Ctx{req, params, body, pairs, st, [Request.Header{"x-note", Bytes.encode("a\nb")}], vars, obs}), code, text, json) == Response.Res{500, [], [], None{}} : Response.Res}:
-  match json:
-    case True{}: bad_json(Vars, req, params, body, pairs, st, vars, obs, code, text, Json.scalars(text))
-    case False{}: {==}
-
 def Laws.http_error_invalid_header_fallback(Vars, req, params, body, pairs, st, vars, obs, failure):
-  match failure:
-    case Errors.HttpError{+code, +message, +expose}:
-      bad_body(Vars, req, params, body, pairs, st, vars, obs, Errors.status(code), Errors.message(Errors.HttpError{code, message, expose}), Errors.accepts_json(C.request_header(Vars, C.Ctx{req, params, body, pairs, st, [Request.Header{"x-note", Bytes.encode("a\nb")}], vars, obs}, "accept")))
+  Laws.http_error_inadmissible_fallback(Vars, req, params, body, pairs, st, [Request.Header{"x-note", Bytes.encode("a\nb")}], vars, obs, failure, Errors.accepts_json(C.request_header(Vars, C.Ctx{req, params, body, pairs, st, [Request.Header{"x-note", Bytes.encode("a\nb")}], vars, obs}, "accept")), {==}, note_bad(Errors.accepts_json(C.request_header(Vars, C.Ctx{req, params, body, pairs, st, [Request.Header{"x-note", Bytes.encode("a\nb")}], vars, obs}, "accept"))))
 
 def head_payload(+r: Response.Res) -> {WriteResponse.payload(Request.Head{}, r) == [] : List<&2, U32>}:
   match r:

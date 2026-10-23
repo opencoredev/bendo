@@ -19,6 +19,12 @@ def respond(+c: B.Ctx, path: String) -> B.Res:
     case "/teapot": B.error(c, B.http_error(418, "tea \"only\"\n☕"))
     case "/vary": B.error(B.header(c, "vary", "Origin, Accept-Encoding"), B.http_error(400, "varied"))
     case "/vary-star": B.error(B.header(c, "vary", "*"), B.http_error(400, "varied"))
+    case "/vary-trailing": B.error(B.header(c, "vary", "Origin "), B.http_error(400, "varied"))
+    case "/vary-leading": B.error(B.header(c, "vary", " Origin"), B.http_error(400, "varied"))
+    case "/vary-obs": B.error(B.header(c, "vary", "x-é"), B.http_error(400, "varied"))
+    case "/vary-kept": B.error(B.header(B.header(B.header(c, "x-a", "1"), "vary", "Origin"), "x-b", "2"), B.http_error(400, "varied"))
+    case "/replaced-type": B.error(B.header(c, "content-type", "text/html\n"), B.http_error(400, "typed"))
+    case "/bad-kept": B.error(B.header(c, "x-note", "a\nb"), B.http_error(400, "noted"))
     case "/result": B.result(c, Fail{B.http_error(418, "result teapot")})
     case "/private": B.error(c, B.http_error(503, "database password=secret stack trace"))
     case "/exposed": B.error(c, Errors.HttpError{503, "Maintenance", True{}})
@@ -86,7 +92,9 @@ def main() -> IO(Unit):
   ready(B.routes(Tag, [
     B.use(Tag, Builtin{B.request_id()}), B.use(Tag, Builtin{B.server_timing()}),
     B.on_error(Tag, Recover{}), B.on_not_found(Tag, Missing{}),
-    B.get(Tag, "/vary", Handler{}), B.get(Tag, "/vary-star", Handler{}), B.get(Tag, "/", Handler{}), B.get(Tag, "/teapot", Handler{}),
+    B.get(Tag, "/vary", Handler{}), B.get(Tag, "/vary-star", Handler{}),
+    B.get(Tag, "/vary-trailing", Handler{}), B.get(Tag, "/vary-leading", Handler{}), B.get(Tag, "/vary-obs", Handler{}),
+    B.get(Tag, "/vary-kept", Handler{}), B.get(Tag, "/replaced-type", Handler{}), B.get(Tag, "/bad-kept", Handler{}), B.get(Tag, "/", Handler{}), B.get(Tag, "/teapot", Handler{}),
     B.get(Tag, "/result", Handler{}), B.get(Tag, "/private", Handler{}),
     B.get(Tag, "/exposed", Handler{}), B.get(Tag, "/invalid", Handler{}),
     B.get(Tag, "/recover", Handler{}), B.get(Tag, "/handler404", Handler{}),

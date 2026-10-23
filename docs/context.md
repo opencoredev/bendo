@@ -79,7 +79,9 @@ status framing; helpers cannot override those rules.
 Invalid status codes, header names, header values, body octets or redirect
 locations fail closed as an empty 500. Header validation follows the HTTP response
 model, including rejection of CR/LF and surrounding whitespace. Setters retain
-invalid data until finalization, so callers cannot accidentally emit it. Do not
+invalid data until finalization, so callers cannot accidentally emit it. Error
+responses validate the headers they would send, after merging Vary and
+replacing Content-Type; see [0011](decisions/0011-crash.md). Do not
 use `header` repeatedly to append Set-Cookie; use `set_cookie` instead.
 
 The request accessor is named `request_header` because Bend does not overload
