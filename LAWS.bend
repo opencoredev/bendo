@@ -8,6 +8,11 @@ import ./proof/cookie-ows-laws.bend as CookieOwsLaws
 import ./proof/cookie-serialization-laws.bend as CookieSerializationLaws
 import ./src/data/cookie.bend as Cookie
 import ./proof/cookie-spec.bend as CookieSpec
+
+# BND-25
+import ./src/app/errors.bend as Errors
+import ./proof/error-laws.bend as ErrorLaws
+
 import ./src/app/table.bend as Table
 import ./src/app/route-slot.bend as RouteSlot
 import ./proof/middleware-selection-spec.bend as MiddlewareSelectionSpec
@@ -1228,3 +1233,11 @@ law scoped_group_built_selection:
   for +stage: Table.Stage
   for +built: {Table.build(Tag, List.append(&2, Table.Entry<Tag>, Scopes.group(Tag, prefix, hooks, inside), outside)) == Done{Table.Table{routes, compiled, layers, count}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
   {Table.scoped_stage_ids(Tag, layers, route, stage) == ScopedSelectionSpec.stage_ids(Tag, List.append(&2, Table.Entry<Tag>, AssemblySpec.group(Tag, prefix, hooks, inside), outside), route, stage) : List<&2, Tag>}
+
+# BND-25: a private HTTP failure's public message is independent of its
+# internal text. proof/error-laws.bend states the same for the rendered
+# response and its wire bytes, and pins the exact output.
+law http_error_private_message:
+  for code: U32
+  for message: String
+  {Errors.message(Errors.HttpError{code, message, False{}}) == "Internal Server Error" : String}

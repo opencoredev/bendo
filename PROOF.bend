@@ -5,6 +5,10 @@ import Base
 import ./proof/cookie-ows.bend as CookieOwsProof
 import ./proof/cookie-serialization.bend as CookieSerializationProof
 import ./proof/cookies.bend as CookieProof
+
+# BND-25
+import ./proof/errors.bend as ErrorProof
+
 import ./src/app/table.bend as Table
 import ./proof/middleware-selection-spec.bend as MiddlewareSelectionSpec
 import ./proof/lifecycle-selection.bend as LifecycleSelection
@@ -526,3 +530,6 @@ def Laws.scoped_guard_built_selection(Tag, options, inside, outside, routes, com
 
 def Laws.scoped_group_built_selection(Tag, prefix, hooks, inside, outside, routes, compiled, layers, count, route, stage, built):
   Assembly.selection(Tag, List.append(&2, Table.Entry<Tag>, Scopes.group(Tag, prefix, hooks, inside), outside), List.append(&2, Table.Entry<Tag>, AssemblySpec.group(Tag, prefix, hooks, inside), outside), routes, compiled, layers, count, route, stage, built, Assembly.context(Tag, [], Scopes.group(Tag, prefix, hooks, inside), AssemblySpec.group(Tag, prefix, hooks, inside), outside, Assembly.group(Tag, prefix, hooks, inside)))
+
+# BND-25
+def Laws.http_error_private_message(code, message): {==}
