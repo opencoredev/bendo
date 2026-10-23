@@ -21,6 +21,9 @@ import ./src/router/pattern.bend as Pattern
 import ./src/router/spec.bend as Spec
 import ./src/router/spec-proofs.bend as SpecProof
 
+import ./src/router/methods.bend as Methods
+import ./src/router/methods-proofs.bend as MethodProof
+
 # LAW: a text response is a head with no blank line in it, then a blank
 # line, then the body. So the first blank line in the response is the one
 # that ends the head, and a client that cuts there reads the body back.
@@ -709,3 +712,101 @@ law response_utf8_encode:
   for +s: String
   for +valid: {Utf8.valid(s) == True{} : Bool}
   {Utf8.decode(Response.utf8(s)) == Some{s} : Maybe<&2, String>}
+
+# BND-18: universal method-aware routing guarantees.
+
+# Every direct Found is the first registration matching both path and method.
+# Indexed eligibility reads List.get and adapts only the requested path options.
+law methods_found_first:
+  for -T: Data
+  for +table: Methods.Valid<T>
+  for +path: String
+  for +method: Request.Method
+  for +opts: Methods.Options
+  for +i: Nat
+  for +tag: T
+  for +params: Pattern.Params
+  for returned: {Methods.resolve(T, table, path, method, opts) == Methods.Found{Spec.Match{i, tag, params}, False{}} : Methods.Resolution<T>}
+  MethodProof.First(T, Methods.raw(T, table), path, method, opts, i, tag, params)
+
+# Default options are exactly the original matcher, for every pattern and path.
+law methods_default_path_identity:
+  for +pattern: Pattern.Pattern
+  for +path: String
+  {Methods.match_path(pattern, path, Methods.defaults()) == Pattern.match_path(pattern, path) : Maybe<&2, Pattern.Params>}
+
+# The default first-match statement uses direct Pattern.match_path and an
+# independent token-membership predicate at each List.get registration.
+law methods_default_found_first:
+  for -T: Data
+  for +table: Methods.Valid<T>
+  for +path: String
+  for +method: Request.Method
+  for +i: Nat
+  for +tag: T
+  for +params: Pattern.Params
+  for returned: {Methods.resolve(T, table, path, method, Methods.defaults()) == Methods.Found{Spec.Match{i, tag, params}, False{}} : Methods.Resolution<T>}
+  MethodProof.DefaultFirst(T, Methods.raw(T, table), path, method, i, tag, params)
+
+# Any explicit HEAD match anywhere in the table defeats every GET fallback.
+# The returned explicit HEAD is itself the first matching HEAD registration.
+law methods_explicit_head_priority:
+  for -T: Data
+  for +table: Methods.Valid<T>
+  for +path: String
+  for +opts: Methods.Options
+  for +i: Nat
+  for +tag: T
+  for +params: Pattern.Params
+  for matched: {MethodProof.match_at(T, Methods.raw(T, table), path, Request.Head{}, opts, i) == Some{MethodProof.At{tag, params}} : Maybe<&2, MethodProof.AtMatch<T>>}
+  MethodProof.HeadPriority(T, Methods.raw(T, table), path, opts)
+
+# A fallback Found requires HEAD, a miss at every HEAD registration index,
+# and exactly the first GET path+method registration, including its params.
+law methods_head_fallback_first_get:
+  for -T: Data
+  for +table: Methods.Valid<T>
+  for +path: String
+  for +method: Request.Method
+  for +opts: Methods.Options
+  for +i: Nat
+  for +tag: T
+  for +params: Pattern.Params
+  for returned: {Methods.resolve(T, table, path, method, opts) == Methods.Found{Spec.Match{i, tag, params}, True{}} : Methods.Resolution<T>}
+  {method == Request.Head{} : Request.Method} & (MethodProof.Misses(T, Methods.raw(T, table), path, Request.Head{}, opts) & MethodProof.First(T, Methods.raw(T, table), path, Request.Get{}, opts, i, tag, params))
+
+# NotFound iff every registered pattern misses the path. NoPaths checks every
+# entry, including registrations whose method list is empty.
+law methods_not_found_iff_all_paths_miss:
+  for -T: Data
+  for +table: Methods.Valid<T>
+  for +path: String
+  for +method: Request.Method
+  for +opts: Methods.Options
+  ({Methods.resolve(T, table, path, method, opts) == Methods.NotFound{} : Methods.Resolution<T>} -> MethodProof.NoPaths(T, Methods.raw(T, table), path, opts)) &
+    (MethodProof.NoPaths(T, Methods.raw(T, table), path, opts) -> {Methods.resolve(T, table, path, method, opts) == Methods.NotFound{} : Methods.Resolution<T>})
+
+# ExactAllow independently requires strict canonical rank/token adjacency,
+# no repeated method token, absence of the requested method, and membership
+# iff present in ANY path-matching registration or HEAD supplied by GET.
+# Registrations and the request use canonical Method constructors. Output
+# methods are valid too. Every admissible table, pattern, path, option
+# combination and query-method token is covered.
+law methods_allow_exact:
+  for -T: Data
+  for +table: Methods.Valid<T>
+  for +path: String
+  for +method: Request.Method
+  for +opts: Methods.Options
+  for +allow: List<&2, Request.Method>
+  for valid: {Request.method_valid(method) == True{} : Bool}
+  for returned: {Methods.resolve(T, table, path, method, opts) == Methods.MethodNotAllowed{allow} : Methods.Resolution<T>}
+  MethodProof.ExactAllow(T, Methods.raw(T, table), path, method, opts, allow)
+
+# Every successful public construction carries valid method-token evidence.
+law methods_build_valid:
+  for -T: Data
+  for +entries: List<&2, Methods.Registration(T)>
+  for +table: Methods.Valid<T>
+  for built: {Methods.build_table(T, entries) == Done{table} : Result<&2, &2, Methods.BuildError, Methods.Valid<T>>}
+  {MethodProof.TableValid(T, Methods.raw(T, table)) == True{} : Bool}
