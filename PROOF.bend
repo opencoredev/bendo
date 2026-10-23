@@ -40,6 +40,18 @@ import ./src/router/match-proofs.bend as MatchProof
 import ./src/router/spec.bend as Spec
 import ./src/router/spec-proofs.bend as SpecProof
 
+import ./src/router/methods.bend as Methods
+import ./src/router/methods-proofs.bend as MethodProof
+
+import ./proof/crypto-hex.bend as HexProof
+import ./proof/crypto-base64.bend as Base64Proof
+
+# Check the pure crypto implementations with the strict kernel as well.
+import ./src/crypto/sha1.bend as SHA1
+import ./src/crypto/sha256.bend as SHA256
+import ./src/crypto/hmac.bend as HMAC
+import ./src/crypto/compare.bend as Compare
+
 def Laws.text_body_after_blank(body):
   ("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nConnection: close", ({==}, {==}))
 
@@ -297,3 +309,50 @@ def Laws.response_head_matches_get(res, valid):
     %response_head_empty(res) : {ResponseSpec.split_first(WriteResponse.write(Request.Head{}, res)) == Some{(WriteResponse.prefix(Request.Head{}, res), _)} : Maybe<&2, ResponseSpec.BytePair()>}
     response_split(Request.Head{}, res, valid)) : {ResponseSpec.split_first(WriteResponse.write(Request.Head{}, res)) == Some{(head, [])} : Maybe<&2, ResponseSpec.BytePair()>}}
   (head, (get_body, (parsed, (response_split(Request.Get{}, res, valid), split_head, response_parse(Request.Get{}, res, valid), ResponseFields.get_length(res), ResponseFields.response_transfer(Request.Get{}, res)))))
+
+# BND-18: universal method-aware routing proofs.
+
+def Laws.methods_found_first(T, table, path, method, opts, i, tag, params, returned):
+  match table:
+    case Methods.Valid{+rows, ok}:
+      MethodProof.found_first(T, rows, path, method, opts, i, tag, params, returned)
+
+def Laws.methods_default_path_identity(pattern, path):
+  MethodProof.default_path(pattern, path)
+
+def Laws.methods_default_found_first(T, table, path, method, i, tag, params, returned):
+  match table:
+    case Methods.Valid{+rows, ok}:
+      MethodProof.default_first(T, rows, path, method, i, tag, params, MethodProof.found_first(T, rows, path, method, Methods.defaults(), i, tag, params, returned))
+
+def Laws.methods_explicit_head_priority(T, table, path, opts, i, tag, params, matched):
+  match table:
+    case Methods.Valid{+rows, ok}:
+      MethodProof.head_priority(T, rows, path, opts, i, tag, params, matched)
+
+def Laws.methods_head_fallback_first_get(T, table, path, method, opts, i, tag, params, returned):
+  match table:
+    case Methods.Valid{+rows, ok}:
+      MethodProof.fallback_first(T, rows, path, method, opts, i, tag, params, returned)
+
+def Laws.methods_not_found_iff_all_paths_miss(T, table, path, method, opts):
+  match table:
+    case Methods.Valid{+rows, ok}:
+      (returned => MethodProof.not_found_only(T, rows, path, method, opts, returned), misses => MethodProof.not_found(T, rows, path, method, opts, misses))
+
+def Laws.methods_allow_exact(T, table, path, method, opts, allow, valid, returned):
+  match table:
+    case Methods.Valid{+rows, ok}:
+      MethodProof.exact_allow(T, rows, path, method, opts, allow, ok, valid, returned)
+
+def Laws.methods_build_valid(T, entries, table, built):
+  match table:
+    case Methods.Valid{rows, ok}:
+      ok
+
+
+def Laws.hex_roundtrip(xs, valid):
+  HexProof.roundtrip(xs, valid)
+
+def Laws.base64_roundtrip(xs, url, padded, valid):
+  Base64Proof.roundtrip(xs, url, padded, valid)
