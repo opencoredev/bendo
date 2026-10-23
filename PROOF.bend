@@ -420,3 +420,6 @@ def Laws.router_kind_spec(T, kind, table, path):
 
 def Laws.methods_router_resolve(T, kind, table, path, method, opts):
   MethodTrieProof.resolve_equal(T, kind, table, path, method, opts)
+
+# BND-25
+def Laws.http_error_private_message(code, message): {==}

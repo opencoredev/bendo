@@ -33,10 +33,10 @@ def finish(method: Request.Method, +res: Response.Res) -> Response.Res:
   finish_valid(method, res, Response.valid(res))
 
 # Routing failures are terminals inside the onion, just like user handlers.
-def terminal(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), resolution: Methods.Resolution<Tag>, ctx: Context.Ctx<Vars>, env: Env) -> IO(Response.Res):
+def terminal(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), missing: List<&2, Tag>, resolution: Methods.Resolution<Tag>, ctx: Context.Ctx<Vars>, env: Env, slot: Chan(Context.Ctx<Vars>)) -> IO(Response.Res):
   match resolution:
     case Methods.NotFound{}:
-      IO.pure(Response.Res, Context.not_found(Vars, ctx))
+      Hooks.chain(~Vars, ~Tag, ~Env, ~middleware, missing, env, slot, ctx, c => IO.pure(Response.Res, Context.not_found(Vars, c)))
     case Methods.MethodNotAllowed{allow}:
       IO.pure(Response.Res, Context.body(Vars, Context.header(Vars, Context.status(Vars, ctx, 405), "allow", Methods.allow_text(allow)), [], None{}))
     case Methods.Found{Spec.Match{index, tag, params}, head_from_get}:
@@ -58,7 +58,7 @@ def resolved_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context
   onion = Hooks.chain(~Vars, ~Tag, ~Env, ~middleware, ids, env, slot)
   do IO<Response.Res>:
     Hooks.remember(Vars, slot, routed)
-    onion(routed, changed => terminal(~Vars, ~Tag, ~Env, ~dispatch, resolution, changed, env))
+    onion(routed, changed => terminal(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, Table.stage_ids(Tag, layers, Table.NotFound{}), resolution, changed, env, slot))
 
 # Route the context on_request produced, through the configured router. Every
 # kind returns Methods.resolve's result (law methods_router_resolve).

@@ -2,6 +2,7 @@
 # Agents may add laws. Never delete or weaken one without a written reason
 # in the pull request.
 import Base
+import ./src/app/errors.bend as Errors
 import ./src/app/table.bend as Table
 import ./proof/middleware-selection-spec.bend as MiddlewareSelectionSpec
 import ./src/app/middleware.bend as Middleware
@@ -981,3 +982,9 @@ law methods_router_resolve:
   for +method: Request.Method
   for +opts: Methods.Options
   {Methods.resolve_with(T, kind, Methods.prepare(T, table), path, method, opts) == Methods.resolve(T, table, path, method, opts) : Methods.Resolution<T>}
+
+# BND-25: a private HTTP failure's message is independent of its internal text.
+law http_error_private_message:
+  for code: U32
+  for message: String
+  {Errors.message(Errors.HttpError{code, message, False{}}) == "Internal Server Error" : String}

@@ -57,7 +57,8 @@ status and headers. The initial status is 200.
   preserves an accumulated Content-Type or leaves it absent. `Some{value}` sets it.
 - `redirect(c, location)` returns an empty 302 response and sets Location.
 - `redirect_status(c, location, code)` accepts only 301, 302, 303, 307 and 308.
-- `not_found(c)` forces 404 with plain-text `Not Found`.
+- `not_found(c)` forces 404 with negotiated `Not Found` (JSON for explicit
+  application/json Accept, otherwise plain text).
 - `status(c, code) -> B.Ctx` changes the pending status.
 - `header(c, name, value) -> B.Ctx` changes a pending response header. Names are
   folded to lowercase; a later setter replaces earlier values of that name.
@@ -132,3 +133,8 @@ With [request-ID middleware](observability.md#request-id), handlers read
 `C.request_id(Vars, c) -> Maybe<&2, String>`. Framework metadata lives separately
 from the app's typed variables. `B.timing_mark(Vars, c, name, duration_ms)` records
 a named duration in the active request's timing collector and returns `IO(Bool)`.
+
+[Typed HTTP errors and custom not-found handlers](decisions/0011-crash.md) use
+`B.error(c, B.http_error(status, message))`, `B.result(c, result)`, and
+`B.on_not_found(Tag, id)`. Private 5xx messages default to `Internal Server Error`;
+existing `on_error` hooks may replace their safe rendered responses.

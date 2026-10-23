@@ -8,6 +8,7 @@ import ../data/urlencoded.bend as Query
 import ../data/utf8.bend as Utf8
 import ../data/json.bend as Json
 import ./observability.bend as Obs
+import ./errors.bend as Errors
 
 type Ctx<-Vars: Data> is Data:
   Ctx{req: Request.Req, params: Pattern.Params, body: List<&2, U32>, pairs: List<&2, Query.Entry>, code: U32, headers: List<&2, Request.Header>, vars: Maybe<&2, Vars>, observation: Obs.State}
@@ -160,8 +161,43 @@ def redirect_status(-Vars: Data, c: Ctx<Vars>, location: String, +code: U32) -> 
 def redirect(-Vars: Data, c: Ctx<Vars>, location: String) -> Response.Res:
   redirect_status(Vars, c, location, 302)
 
+def error_body(-Vars: Data, c: Ctx<Vars>, +code: U32, message: String, json_body: Bool) -> Response.Res:
+  match json_body:
+    case True{}:
+      json(Vars, status(Vars, c, code), Json.JObject{[Json.Field{"error", Json.JString{message}}, Json.Field{"status", Json.JNumber{U32.show(code)}}]})
+    case False{}: text(Vars, status(Vars, c, code), message)
+
+def vary_values(values: List<&2, List<&2, U32>>) -> String:
+  match values:
+    case Nil{}: "Accept"
+    case value <> tail: Bytes.ascii(value) ++ ", " ++ vary_values(tail)
+
+def vary_star(values: List<&2, List<&2, U32>>) -> Bool:
+  match values:
+    case Nil{}: False{}
+    case value <> tail: String.eq(Bytes.ascii(Bytes.trim(value)), "*") || vary_star(tail)
+
+def vary_value(values: List<&2, List<&2, U32>>, star: Bool) -> String:
+  match star:
+    case True{}: "*"
+    case False{}: vary_values(values)
+
+def vary_accept(-Vars: Data, c: Ctx<Vars>) -> Ctx<Vars>:
+  Ctx{r, p, b, q, s, +hs, v, o} = c
+  +values = Request.lookup(hs, "vary")
+  header(Vars, Ctx{r, p, b, q, s, hs, v, o}, "vary", vary_value(values, vary_star(values)))
+
+def error(-Vars: Data, +c: Ctx<Vars>, +failure: Errors.HttpError) -> Response.Res:
+  Errors.HttpError{code, internal, expose} = failure
+  error_body(Vars, vary_accept(Vars, c), Errors.status(code), Errors.message(failure), Errors.accepts_json(request_header(Vars, c, "accept")))
+
+def result(-Vars: Data, c: Ctx<Vars>, value: Result<&2, &2, Errors.HttpError, Response.Res>) -> Response.Res:
+  match value:
+    case Done{res}: res
+    case Fail{failure}: error(Vars, c, failure)
+
 def not_found(-Vars: Data, c: Ctx<Vars>) -> Response.Res:
-  text(Vars, status(Vars, c, 404), "Not Found")
+  error(Vars, c, Errors.http_error(404, "Not Found"))
 
 # Framework metadata is independent of the app-owned Vars record.
 def observation(-Vars: Data, c: Ctx<Vars>) -> Obs.State:

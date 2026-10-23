@@ -17,6 +17,7 @@ def same(+a: T.Stage, +b: T.Stage) -> {U32.is_eq(T.stage_number(a), T.stage_numb
         case T.MapResponse{}: {==}
         case T.Error{}: {==}
         case T.AfterResponse{}: {==}
+        case T.NotFound{}: {==}
     case T.Parse{}:
       match b:
         case T.Request{}: {==}
@@ -27,6 +28,7 @@ def same(+a: T.Stage, +b: T.Stage) -> {U32.is_eq(T.stage_number(a), T.stage_numb
         case T.MapResponse{}: {==}
         case T.Error{}: {==}
         case T.AfterResponse{}: {==}
+        case T.NotFound{}: {==}
     case T.Transform{}:
       match b:
         case T.Request{}: {==}
@@ -37,6 +39,7 @@ def same(+a: T.Stage, +b: T.Stage) -> {U32.is_eq(T.stage_number(a), T.stage_numb
         case T.MapResponse{}: {==}
         case T.Error{}: {==}
         case T.AfterResponse{}: {==}
+        case T.NotFound{}: {==}
     case T.BeforeHandle{}:
       match b:
         case T.Request{}: {==}
@@ -47,6 +50,7 @@ def same(+a: T.Stage, +b: T.Stage) -> {U32.is_eq(T.stage_number(a), T.stage_numb
         case T.MapResponse{}: {==}
         case T.Error{}: {==}
         case T.AfterResponse{}: {==}
+        case T.NotFound{}: {==}
     case T.AfterHandle{}:
       match b:
         case T.Request{}: {==}
@@ -57,6 +61,7 @@ def same(+a: T.Stage, +b: T.Stage) -> {U32.is_eq(T.stage_number(a), T.stage_numb
         case T.MapResponse{}: {==}
         case T.Error{}: {==}
         case T.AfterResponse{}: {==}
+        case T.NotFound{}: {==}
     case T.MapResponse{}:
       match b:
         case T.Request{}: {==}
@@ -67,6 +72,7 @@ def same(+a: T.Stage, +b: T.Stage) -> {U32.is_eq(T.stage_number(a), T.stage_numb
         case T.MapResponse{}: {==}
         case T.Error{}: {==}
         case T.AfterResponse{}: {==}
+        case T.NotFound{}: {==}
     case T.Error{}:
       match b:
         case T.Request{}: {==}
@@ -77,6 +83,7 @@ def same(+a: T.Stage, +b: T.Stage) -> {U32.is_eq(T.stage_number(a), T.stage_numb
         case T.MapResponse{}: {==}
         case T.Error{}: {==}
         case T.AfterResponse{}: {==}
+        case T.NotFound{}: {==}
     case T.AfterResponse{}:
       match b:
         case T.Request{}: {==}
@@ -87,6 +94,18 @@ def same(+a: T.Stage, +b: T.Stage) -> {U32.is_eq(T.stage_number(a), T.stage_numb
         case T.MapResponse{}: {==}
         case T.Error{}: {==}
         case T.AfterResponse{}: {==}
+        case T.NotFound{}: {==}
+    case T.NotFound{}:
+      match b:
+        case T.Request{}: {==}
+        case T.Parse{}: {==}
+        case T.Transform{}: {==}
+        case T.BeforeHandle{}: {==}
+        case T.AfterHandle{}: {==}
+        case T.MapResponse{}: {==}
+        case T.Error{}: {==}
+        case T.AfterResponse{}: {==}
+        case T.NotFound{}: {==}
 
 def Collected(-Tag: Data, result: Result<&2, &2, M.BuildError, List<&2, T.Middleware<Tag>>>, expected: List<&2, Tag>, stage: T.Stage) -> Type:
   match result:
