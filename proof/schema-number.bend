@@ -7,12 +7,13 @@ import ../src/data/schema-spec.bend as Spec
 import ./utf8.bend as UP
 import ./schema-number-arith.bend as Arith
 import ./schema-number-grammar.bend as Grammar
+import ./schema-number-integer.bend as Integer
 
 def number_equiv(+s: String) -> {J.number_valid(s) == Spec.number(s) : Bool}:
   Grammar.number_equiv(s)
 
 def integer_equiv(+s: String) -> {D.is_integer(s) == Spec.integer(s) : Bool}:
-  ?TODO
+  Integer.integer_equiv(s)
 
 def order_equiv(+a: String, +b: String, va: {J.number_valid(a) == True{} : Bool}, vb: {J.number_valid(b) == True{} : Bool}) -> {D.order(a, b) == Spec.order(a, b) : Cmp}:
   ?TODO
