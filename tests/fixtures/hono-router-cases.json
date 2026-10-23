@@ -95,7 +95,9 @@
         "path": "1:1",
         "method": "allow:GET, HEAD, POST, PUT, DELETE, CONNECT, OPTIONS, TRACE, PATCH"
       },
-      "differences": ["method-not-allowed", "all-standard-methods"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["all-standard-methods"]
     },
     {
       "id": "hono-004",
@@ -456,7 +458,9 @@
         "path": "error:0:MissingSlash",
         "method": "error:0:MissingSlash"
       },
-      "differences": ["path-only-syntax"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["bare-wildcard"]
     },
     {
       "id": "hono-016",
@@ -564,7 +568,9 @@
         "path": "error:0:MissingSlash",
         "method": "error:0:MissingSlash"
       },
-      "differences": ["path-only-syntax"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["bare-wildcard"]
     },
     {
       "id": "hono-018",
@@ -602,7 +608,9 @@
         "path": "error:1:MissingSlash",
         "method": "error:1:MissingSlash"
       },
-      "differences": ["path-only-syntax"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["bare-wildcard"]
     },
     {
       "id": "hono-019",
@@ -665,7 +673,7 @@
         "path": "error:0:MissingSlash",
         "method": "error:0:MissingSlash"
       },
-      "differences": ["path-only-syntax"]
+      "differences": ["hostname-dispatch"]
     },
     {
       "id": "hono-021",
@@ -699,7 +707,7 @@
         "path": "error:0:MissingSlash",
         "method": "error:0:MissingSlash"
       },
-      "differences": ["path-only-syntax"]
+      "differences": ["hostname-dispatch"]
     },
     {
       "id": "hono-022",
@@ -733,7 +741,7 @@
         "path": "error:0:MissingSlash",
         "method": "error:0:MissingSlash"
       },
-      "differences": ["path-only-syntax"]
+      "differences": ["hostname-dispatch"]
     },
     {
       "id": "hono-023",
@@ -1054,7 +1062,9 @@
         "path": "error:0:UnknownConstraint",
         "method": "error:0:UnknownConstraint"
       },
-      "differences": ["regex"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["capture-before-suffix"]
     },
     {
       "id": "hono-032",
@@ -1083,7 +1093,9 @@
         "path": "error:0:UnknownConstraint",
         "method": "error:0:UnknownConstraint"
       },
-      "differences": ["regex"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["capture-before-suffix"]
     },
     {
       "id": "hono-033",
@@ -1125,7 +1137,9 @@
         "path": "error:0:UnknownConstraint",
         "method": "error:0:UnknownConstraint"
       },
-      "differences": ["regex"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["capture-before-suffix"]
     },
     {
       "id": "hono-034",
@@ -1167,7 +1181,9 @@
         "path": "error:0:UnknownConstraint",
         "method": "error:0:UnknownConstraint"
       },
-      "differences": ["regex"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["capture-before-suffix"]
     },
     {
       "id": "hono-035",
@@ -1196,7 +1212,9 @@
         "path": "error:0:UnknownConstraint",
         "method": "error:0:UnknownConstraint"
       },
-      "differences": ["regex"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["capture-before-suffix"]
     },
     {
       "id": "hono-036",
@@ -1225,7 +1243,9 @@
         "path": "error:0:UnknownConstraint",
         "method": "error:0:UnknownConstraint"
       },
-      "differences": ["regex"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["capture-before-suffix"]
     },
     {
       "id": "hono-037",
@@ -1254,7 +1274,9 @@
         "path": "error:0:UnknownConstraint",
         "method": "error:0:UnknownConstraint"
       },
-      "differences": ["regex"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["capture-before-suffix"]
     },
     {
       "id": "hono-038",
@@ -1406,7 +1428,9 @@
         "path": "error:2:MissingSlash",
         "method": "error:2:MissingSlash"
       },
-      "differences": ["path-only-syntax"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["bare-wildcard"]
     },
     {
       "id": "hono-042",
@@ -1462,7 +1486,9 @@
         "path": "error:2:MissingSlash",
         "method": "error:2:MissingSlash"
       },
-      "differences": ["path-only-syntax"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["bare-wildcard"]
     },
     {
       "id": "hono-043",
@@ -1510,7 +1536,9 @@
         "path": "error:2:MissingSlash",
         "method": "error:2:MissingSlash"
       },
-      "differences": ["path-only-syntax"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["bare-wildcard"]
     },
     {
       "id": "hono-044",
@@ -1566,7 +1594,9 @@
         "path": "error:2:MissingSlash",
         "method": "error:2:MissingSlash"
       },
-      "differences": ["path-only-syntax"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["bare-wildcard"]
     },
     {
       "id": "hono-045",
@@ -1622,7 +1652,9 @@
         "path": "error:2:MissingSlash",
         "method": "error:2:MissingSlash"
       },
-      "differences": ["path-only-syntax"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["bare-wildcard"]
     },
     {
       "id": "hono-046",
@@ -1670,7 +1702,9 @@
         "path": "error:2:MissingSlash",
         "method": "error:2:MissingSlash"
       },
-      "differences": ["path-only-syntax"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["bare-wildcard"]
     },
     {
       "id": "hono-047",
@@ -1738,7 +1772,9 @@
         "path": "error:1:OptionalNotLast",
         "method": "error:1:OptionalNotLast"
       },
-      "differences": ["terminal-optionals"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["terminal-optionals"]
     },
     {
       "id": "hono-049",
@@ -1772,7 +1808,9 @@
         "path": "error:1:OptionalNotLast",
         "method": "error:1:OptionalNotLast"
       },
-      "differences": ["terminal-optionals"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["terminal-optionals"]
     },
     {
       "id": "hono-050",
@@ -1809,7 +1847,9 @@
         "path": "error:1:OptionalNotLast",
         "method": "error:1:OptionalNotLast"
       },
-      "differences": ["terminal-optionals"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["terminal-optionals"]
     },
     {
       "id": "hono-051",
@@ -1843,7 +1883,9 @@
         "path": "error:1:OptionalNotLast",
         "method": "error:1:OptionalNotLast"
       },
-      "differences": ["terminal-optionals"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["terminal-optionals"]
     },
     {
       "id": "hono-052",
@@ -1877,7 +1919,9 @@
         "path": "error:1:OptionalNotLast",
         "method": "error:1:OptionalNotLast"
       },
-      "differences": ["terminal-optionals"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["terminal-optionals"]
     },
     {
       "id": "hono-053",
@@ -1901,7 +1945,9 @@
         "path": "error:0:WildcardNotLast",
         "method": "error:0:WildcardNotLast"
       },
-      "differences": ["terminal-wildcards"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["terminal-wildcards"]
     },
     {
       "id": "hono-054",
@@ -1930,7 +1976,9 @@
         "path": "error:0:WildcardNotLast",
         "method": "error:0:WildcardNotLast"
       },
-      "differences": ["terminal-wildcards"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["terminal-wildcards"]
     },
     {
       "id": "hono-055",
@@ -1959,7 +2007,9 @@
         "path": "error:0:WildcardNotLast",
         "method": "error:0:WildcardNotLast"
       },
-      "differences": ["terminal-wildcards"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["terminal-wildcards"]
     },
     {
       "id": "hono-056",
@@ -2084,7 +2134,9 @@
         "path": "error:0:InvalidStatic",
         "method": "error:0:InvalidStatic"
       },
-      "differences": ["suffix-wildcards"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["suffix-wildcards"]
     },
     {
       "id": "hono-060",
@@ -2127,7 +2179,9 @@
         "path": "error:0:InvalidStatic",
         "method": "error:0:InvalidStatic"
       },
-      "differences": ["suffix-wildcards"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["suffix-wildcards"]
     },
     {
       "id": "hono-061",
@@ -2151,7 +2205,9 @@
         "path": "error:0:InvalidStatic",
         "method": "error:0:InvalidStatic"
       },
-      "differences": ["suffix-wildcards"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["suffix-wildcards"]
     },
     {
       "id": "hono-062",
@@ -2180,7 +2236,9 @@
         "path": "error:0:InvalidStatic",
         "method": "error:0:InvalidStatic"
       },
-      "differences": ["suffix-wildcards"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["suffix-wildcards"]
     },
     {
       "id": "hono-063",
@@ -2209,7 +2267,9 @@
         "path": "error:0:InvalidStatic",
         "method": "error:0:InvalidStatic"
       },
-      "differences": ["suffix-wildcards"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["suffix-wildcards"]
     },
     {
       "id": "hono-064",
@@ -2238,7 +2298,9 @@
         "path": "error:0:InvalidStatic",
         "method": "error:0:InvalidStatic"
       },
-      "differences": ["suffix-wildcards"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["suffix-wildcards"]
     },
     {
       "id": "hono-065",
@@ -2299,7 +2361,9 @@
         "path": "error:2:MissingSlash",
         "method": "error:2:MissingSlash"
       },
-      "differences": ["path-only-syntax"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["bare-wildcard"]
     },
     {
       "id": "hono-066",
@@ -2356,7 +2420,9 @@
         "path": "error:2:MissingSlash",
         "method": "error:2:MissingSlash"
       },
-      "differences": ["path-only-syntax"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["bare-wildcard"]
     },
     {
       "id": "hono-067",
@@ -2394,7 +2460,9 @@
         "path": "error:1:MissingSlash",
         "method": "error:1:MissingSlash"
       },
-      "differences": ["path-only-syntax"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["bare-wildcard"]
     },
     {
       "id": "hono-068",
@@ -2651,7 +2719,9 @@
         "path": "error:0:MissingSlash",
         "method": "error:0:MissingSlash"
       },
-      "differences": ["path-only-syntax"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["bare-wildcard"]
     },
     {
       "id": "hono-075",
@@ -2718,7 +2788,9 @@
         "path": "error:0:MissingSlash",
         "method": "error:0:MissingSlash"
       },
-      "differences": ["path-only-syntax"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["bare-wildcard"]
     },
     {
       "id": "hono-076",
@@ -2788,7 +2860,9 @@
         "path": "error:0:MissingSlash",
         "method": "error:0:MissingSlash"
       },
-      "differences": ["path-only-syntax"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["bare-wildcard"]
     },
     {
       "id": "hono-077",
@@ -2855,7 +2929,9 @@
         "path": "error:0:MissingSlash",
         "method": "error:0:MissingSlash"
       },
-      "differences": ["path-only-syntax"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["bare-wildcard"]
     },
     {
       "id": "hono-078",
@@ -2918,7 +2994,9 @@
         "path": "error:0:MissingSlash",
         "method": "error:0:MissingSlash"
       },
-      "differences": ["path-only-syntax"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["bare-wildcard"]
     },
     {
       "id": "hono-079",
@@ -2959,7 +3037,9 @@
         "path": "error:1:MissingSlash",
         "method": "error:1:MissingSlash"
       },
-      "differences": ["path-only-syntax"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["bare-wildcard"]
     },
     {
       "id": "hono-080",
@@ -3000,7 +3080,9 @@
         "path": "error:0:MissingSlash",
         "method": "error:0:MissingSlash"
       },
-      "differences": ["path-only-syntax"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["bare-wildcard"]
     },
     {
       "id": "hono-081",
@@ -3285,7 +3367,9 @@
         "path": "error:0:WildcardNotLast",
         "method": "error:0:WildcardNotLast"
       },
-      "differences": ["terminal-wildcards"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["terminal-wildcards"]
     },
     {
       "id": "hono-089",
@@ -3396,7 +3480,9 @@
         "path": "error:0:WildcardNotLast",
         "method": "error:0:WildcardNotLast"
       },
-      "differences": ["terminal-wildcards"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["terminal-wildcards"]
     },
     {
       "id": "hono-093",
@@ -3726,7 +3812,9 @@
         "path": "error:0:WildcardNotLast",
         "method": "error:0:WildcardNotLast"
       },
-      "differences": ["terminal-wildcards"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["terminal-wildcards"]
     },
     {
       "id": "hono-103",
@@ -4114,7 +4202,9 @@
         "path": "error:0:MissingSlash",
         "method": "error:0:MissingSlash"
       },
-      "differences": ["path-only-syntax"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["bare-wildcard"]
     },
     {
       "id": "hono-113",
@@ -4259,7 +4349,9 @@
         "path": "error:1:InvalidStatic",
         "method": "error:1:InvalidStatic"
       },
-      "differences": ["static-punctuation"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["static-punctuation"]
     },
     {
       "id": "hono-118",
@@ -4293,7 +4385,9 @@
         "path": "error:1:InvalidStatic",
         "method": "error:1:InvalidStatic"
       },
-      "differences": ["static-punctuation"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["static-punctuation"]
     },
     {
       "id": "hono-119",
@@ -4327,7 +4421,9 @@
         "path": "error:0:InvalidStatic",
         "method": "error:0:InvalidStatic"
       },
-      "differences": ["static-punctuation"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["static-punctuation"]
     },
     {
       "id": "hono-120",
@@ -4361,7 +4457,9 @@
         "path": "error:0:InvalidStatic",
         "method": "error:0:InvalidStatic"
       },
-      "differences": ["static-punctuation"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["static-punctuation"]
     },
     {
       "id": "hono-121",
@@ -4395,7 +4493,9 @@
         "path": "error:0:WildcardNotLast",
         "method": "error:0:WildcardNotLast"
       },
-      "differences": ["terminal-wildcards"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["terminal-wildcards"]
     },
     {
       "id": "hono-122",
@@ -4817,7 +4917,9 @@
         "path": "error:1:InvalidStatic",
         "method": "error:1:InvalidStatic"
       },
-      "differences": ["suffix-wildcards"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["suffix-wildcards"]
     },
     {
       "id": "hono-135",
@@ -4851,7 +4953,9 @@
         "path": "error:0:InvalidStatic",
         "method": "error:0:InvalidStatic"
       },
-      "differences": ["suffix-wildcards"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["suffix-wildcards"]
     },
     {
       "id": "hono-136",
@@ -5332,309 +5436,6 @@
       "differences": []
     },
     {
-      "id": "hono-152",
-      "source": "src/router/reg-exp-router/router.test.ts",
-      "test": "RegExpRouter > Common > Capture multiple directories and optional > GET /foo/bar/contents/123",
-      "origin": "verbatim upstream request",
-      "routes": [
-        {
-          "method": "GET",
-          "pattern": "/:prefix{.+}/contents/:id?",
-          "handler": "contents"
-        }
-      ],
-      "request": {
-        "method": "GET",
-        "path": "/foo/bar/contents/123"
-      },
-      "hono": [
-        {
-          "handler": "contents",
-          "params": [
-            ["id", "123"],
-            ["prefix", "foo/bar"]
-          ]
-        }
-      ],
-      "honoError": "",
-      "expected": {
-        "path": "error:0:UnknownConstraint",
-        "method": "error:0:UnknownConstraint"
-      },
-      "differences": ["regex"]
-    },
-    {
-      "id": "hono-153",
-      "source": "src/router/reg-exp-router/router.test.ts",
-      "test": "RegExpRouter > Common > Optional route > GET /v1/123/abc",
-      "origin": "verbatim upstream request",
-      "routes": [
-        {
-          "method": "GET",
-          "pattern": "/api/animals/:type?",
-          "handler": "animals"
-        },
-        {
-          "method": "GET",
-          "pattern": "/v1/:version?/:platform?",
-          "handler": "result"
-        }
-      ],
-      "request": {
-        "method": "GET",
-        "path": "/v1/123/abc"
-      },
-      "hono": [
-        {
-          "handler": "result",
-          "params": [
-            ["platform", "abc"],
-            ["version", "123"]
-          ]
-        }
-      ],
-      "honoError": "",
-      "expected": {
-        "path": "error:1:OptionalNotLast",
-        "method": "error:1:OptionalNotLast"
-      },
-      "differences": ["terminal-optionals"]
-    },
-    {
-      "id": "hono-154",
-      "source": "src/router/reg-exp-router/router.test.ts",
-      "test": "RegExpRouter > Common > Multi match > `params` per a handler > GET /entry/123/show",
-      "origin": "verbatim upstream request",
-      "routes": [
-        {
-          "method": "ALL",
-          "pattern": "*",
-          "handler": "middleware a"
-        },
-        {
-          "method": "GET",
-          "pattern": "/entry/:id/*",
-          "handler": "middleware b"
-        },
-        {
-          "method": "GET",
-          "pattern": "/entry/:id/:action",
-          "handler": "action"
-        }
-      ],
-      "request": {
-        "method": "GET",
-        "path": "/entry/123/show"
-      },
-      "hono": [
-        {
-          "handler": "middleware a",
-          "params": []
-        },
-        {
-          "handler": "middleware b",
-          "params": [["id", "123"]]
-        },
-        {
-          "handler": "action",
-          "params": [
-            ["action", "show"],
-            ["id", "123"]
-          ]
-        }
-      ],
-      "honoError": "",
-      "expected": {
-        "path": "error:0:MissingSlash",
-        "method": "error:0:MissingSlash"
-      },
-      "differences": ["path-only-syntax"]
-    },
-    {
-      "id": "hono-155",
-      "source": "src/router/reg-exp-router/router.test.ts",
-      "test": "RegExpRouter > Common > Multi match > Blog > GET /entry/123/comment/456",
-      "origin": "verbatim upstream request",
-      "routes": [
-        {
-          "method": "ALL",
-          "pattern": "*",
-          "handler": "middleware a"
-        },
-        {
-          "method": "GET",
-          "pattern": "*",
-          "handler": "middleware b"
-        },
-        {
-          "method": "GET",
-          "pattern": "/entry",
-          "handler": "get entries"
-        },
-        {
-          "method": "POST",
-          "pattern": "/entry/*",
-          "handler": "middleware c"
-        },
-        {
-          "method": "POST",
-          "pattern": "/entry",
-          "handler": "post entry"
-        },
-        {
-          "method": "GET",
-          "pattern": "/entry/:id",
-          "handler": "get entry"
-        },
-        {
-          "method": "GET",
-          "pattern": "/entry/:id/comment/:comment_id",
-          "handler": "get comment"
-        }
-      ],
-      "request": {
-        "method": "GET",
-        "path": "/entry/123/comment/456"
-      },
-      "hono": [
-        {
-          "handler": "middleware a",
-          "params": []
-        },
-        {
-          "handler": "middleware b",
-          "params": []
-        },
-        {
-          "handler": "get comment",
-          "params": [
-            ["comment_id", "456"],
-            ["id", "123"]
-          ]
-        }
-      ],
-      "honoError": "",
-      "expected": {
-        "path": "error:0:MissingSlash",
-        "method": "error:0:MissingSlash"
-      },
-      "differences": ["path-only-syntax"]
-    },
-    {
-      "id": "hono-156",
-      "source": "src/router/reg-exp-router/router.test.ts",
-      "test": "RegExpRouter > Common > Registration order > handler -> fallback",
-      "origin": "verbatim upstream request",
-      "routes": [
-        {
-          "method": "GET",
-          "pattern": "/:type/:action",
-          "handler": "foo"
-        },
-        {
-          "method": "GET",
-          "pattern": "*",
-          "handler": "fallback"
-        }
-      ],
-      "request": {
-        "method": "GET",
-        "path": "/posts/123"
-      },
-      "hono": [
-        {
-          "handler": "foo",
-          "params": [
-            ["action", "123"],
-            ["type", "posts"]
-          ]
-        },
-        {
-          "handler": "fallback",
-          "params": []
-        }
-      ],
-      "honoError": "",
-      "expected": {
-        "path": "error:1:MissingSlash",
-        "method": "error:1:MissingSlash"
-      },
-      "differences": ["path-only-syntax"]
-    },
-    {
-      "id": "hono-157",
-      "source": "src/router/reg-exp-router/router.test.ts",
-      "test": "RegExpRouter > Common > Registration order > middleware -> handler",
-      "origin": "verbatim upstream request",
-      "routes": [
-        {
-          "method": "GET",
-          "pattern": "*",
-          "handler": "bar"
-        },
-        {
-          "method": "GET",
-          "pattern": "/:type/:action",
-          "handler": "foo"
-        }
-      ],
-      "request": {
-        "method": "GET",
-        "path": "/posts/123"
-      },
-      "hono": [
-        {
-          "handler": "bar",
-          "params": []
-        },
-        {
-          "handler": "foo",
-          "params": [
-            ["action", "123"],
-            ["type", "posts"]
-          ]
-        }
-      ],
-      "honoError": "",
-      "expected": {
-        "path": "error:0:MissingSlash",
-        "method": "error:0:MissingSlash"
-      },
-      "differences": ["path-only-syntax"]
-    },
-    {
-      "id": "hono-158",
-      "source": "src/router/reg-exp-router/router.test.ts",
-      "test": "RegExpRouter > Common > Complex > Regexp",
-      "origin": "verbatim upstream request",
-      "routes": [
-        {
-          "method": "GET",
-          "pattern": "/post/:date{[0-9]+}/:title{[a-z]+}",
-          "handler": "get post"
-        }
-      ],
-      "request": {
-        "method": "GET",
-        "path": "/post/20210101/hello"
-      },
-      "hono": [
-        {
-          "handler": "get post",
-          "params": [
-            ["title", "hello"],
-            ["date", "20210101"]
-          ]
-        }
-      ],
-      "honoError": "",
-      "expected": {
-        "path": "0:0|%64%61%74%65=%32%30%32%31%30%31%30%31|%74%69%74%6C%65=%68%65%6C%6C%6F",
-        "method": "0:0|%64%61%74%65=%32%30%32%31%30%31%30%31|%74%69%74%6C%65=%68%65%6C%6C%6F;head_from_get=false"
-      },
-      "differences": []
-    },
-    {
       "id": "hono-159",
       "source": "src/router/common.case.test.ts",
       "test": "TrieRouter > Common > Unknown method > UNKNOWN_METHOD /all",
@@ -5972,7 +5773,9 @@
         "path": "1:1",
         "method": "allow:GET, HEAD, POST, PUT, DELETE, CONNECT, OPTIONS, TRACE, PATCH"
       },
-      "differences": ["method-not-allowed", "all-standard-methods"]
+      "differences": [],
+      "gap": "BND-78",
+      "gapKinds": ["all-standard-methods"]
     },
     {
       "id": "hono-169",

@@ -1,16 +1,33 @@
 import { afterAll, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import fixture from "./fixtures/hono-router-cases.json";
-import { build } from "./harness.ts";
+import { findBend } from "../packages/bendo/src/bend.ts";
+import { BEND_COMPILE_TIMEOUT } from "./harness.ts";
 
-const binary = build("tests/router-hono-driver.bend");
 const directory = mkdtempSync(join(tmpdir(), "bendo-hono-cases-"));
 afterAll(() => {
-  rmSync(dirname(binary), { recursive: true, force: true });
   rmSync(directory, { recursive: true, force: true });
 });
+
+const binary = join(directory, "driver");
+const bend = findBend();
+if (bend.kind === "missing") throw new Error("bend is not installed");
+const compilation = Bun.spawnSync(
+  [
+    "timeout",
+    "--foreground",
+    BEND_COMPILE_TIMEOUT,
+    bend.path,
+    join(import.meta.dir, "router-hono-driver.bend"),
+    "-o",
+    binary,
+  ],
+  { stdout: "pipe", stderr: "pipe" },
+);
+if (compilation.exitCode !== 0)
+  throw new Error(`Bend compilation failed:\n${compilation.stdout}${compilation.stderr}`);
 
 const decisions = readFileSync(
   new URL("../docs/decisions/0008-router-differences.md", import.meta.url),
@@ -33,7 +50,15 @@ test("Hono fixture provenance and every difference remain documented", () => {
   expect(
     new Set(
       fixture.cases.map(({ routes, request, hono, honoError }) =>
-        JSON.stringify({ routes, request, hono, honoError }),
+        JSON.stringify({
+          routes,
+          request,
+          hono: hono.map(({ handler, params }) => ({
+            handler,
+            params: [...params].sort(([a], [b]) => (a ?? "").localeCompare(b ?? "")),
+          })),
+          honoError,
+        }),
       ),
     ).size,
   ).toBe(fixture.cases.length);
@@ -50,7 +75,11 @@ test("Hono fixture provenance and every difference remain documented", () => {
       expect(entry.hono, entry.id).toEqual([]);
       expect(entry.differences, entry.id).toContain("registration-rejection");
     }
-    for (const difference of entry.differences) {
+    if (entry.gap !== undefined || entry.gapKinds !== undefined) {
+      expect(entry.gap, entry.id).toBe("BND-78");
+      expect(entry.gapKinds?.length, entry.id).toBeGreaterThan(0);
+    }
+    for (const difference of [...entry.differences, ...(entry.gapKinds ?? [])]) {
       const row = decisions.split("\n").find((line) => line.startsWith(`| ${difference} |`));
       expect(row, `${entry.id}: missing decision group ${difference}`).toBeDefined();
       expect(row, `${entry.id}: not listed in ${difference}`).toContain(entry.id);
@@ -58,7 +87,7 @@ test("Hono fixture provenance and every difference remain documented", () => {
   }
 });
 
-test("Hono cases exercise Spec, Trie and method resolution with literal expectations", () => {
+test("Valid Hono tables exercise both engines; invalid tables assert construction errors", () => {
   const start = performance.now();
   // Bounded native batches amortize startup while keeping failure output small.
   for (let offset = 0; offset < fixture.cases.length; offset += 60) {
@@ -95,8 +124,12 @@ test("Hono cases exercise Spec, Trie and method resolution with literal expectat
       expect(fields?.[2], `Methods.resolve: ${context}`).toBe(entry.expected.method);
     }
   }
-  const differences = fixture.cases.filter((entry) => entry.differences.length > 0).length;
+  const gaps = fixture.cases.filter((entry) => "gap" in entry).length;
+  const principled = fixture.cases.filter(
+    (entry) => entry.differences.length > 0 && !("gap" in entry),
+  ).length;
+  const rejected = fixture.cases.filter((entry) => entry.expected.path.startsWith("error:")).length;
   console.log(
-    `Hono cases=${fixture.cases.length} compatible=${fixture.cases.length - differences} documented_differences=${differences} disagreements=0 elapsed_ms=${Math.round(performance.now() - start)}`,
+    `Hono cases=${fixture.cases.length} identical=${fixture.cases.length - principled - gaps} principled=${principled} gap=${gaps} rejected=${rejected} valid=${fixture.cases.length - rejected} valid_engine_disagreements=0 elapsed_ms=${Math.round(performance.now() - start)}`,
   );
 }, 30000);
