@@ -15,7 +15,7 @@ export const SLOW_TEST_TIMEOUT_MS = 120_000;
 
 export type RunningServer = { url: string; [Symbol.asyncDispose]: () => Promise<void> };
 
-type Target = "native" | "mjs";
+type Target = "native" | "mjs" | "js";
 
 let compiler: ReturnType<typeof findBend> | undefined;
 let nativePlatform: string | undefined;
@@ -89,7 +89,7 @@ export function compile(entry: string, target: Target): string {
   }
   const directory = join(ROOT, ".cache/bend", hash.digest("hex"));
   mkdirSync(directory, { recursive: true });
-  const name = target === "mjs" ? "fixture.mjs" : "fixture";
+  const name = target === "native" ? "fixture" : `fixture.${target}`;
   const output = join(directory, name);
   if (existsSync(output)) return output;
   const temporary = mkdtempSync(join(directory, ".compile-"));
