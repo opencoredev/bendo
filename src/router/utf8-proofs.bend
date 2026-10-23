@@ -4,6 +4,7 @@ import Base
 import ./encoding.bend as E
 import ./codec-bits.bend as Bits
 import ./utf8-code.bend as Code
+import ./octet-proofs.bend as Octet
 
 law high_scalar_impossible:
   for +lo: Word(21n)
@@ -101,3 +102,88 @@ law utf8_char_suffix:
 def utf8_char_suffix(n, tail, valid):
   +yes = valid
   rep_suffix(n, Code.represent(n), tail, {==}, Code.representation_value(n), yes, scalar_is_packed(n, yes))
+
+def and_left(+a: Bool, +b: Bool, yes: {a && b == True{} : Bool}) -> {a == True{} : Bool}:
+  match a:
+    case True{}:
+      {==}
+    case False{}:
+      Bits.absurd({False{} == True{} : Bool}, Bits.false_true(yes))
+
+def and_right(+a: Bool, +b: Bool, yes: {a && b == True{} : Bool}) -> {b == True{} : Bool}:
+  match a:
+    case True{}:
+      yes
+    case False{}:
+      Bits.absurd({b == True{} : Bool}, Bits.false_true(yes))
+
+def rep_unescape_suffix(+r: Code.Representation, +tail: String,
+    packed: {Code.is_packed(r) == True{} : Bool}) ->
+    {E.unescape(E.encode_rep(r) ++ tail) == Maybe.bind(&2, List<&2, U32>, List<&2, U32>, E.unescape(tail), bs => Some{List.append(&2, U32, E.bytes_rep(r), bs)}) : Maybe<&2, List<&2, U32>>}:
+  match r:
+    case Code.Packed{+code}:
+      Octet.unescape_structural_suffix(Code.octets(code), tail)
+    case Code.Outside{raw}:
+      Bits.absurd({E.unescape(E.encode_rep(Code.Outside{raw}) ++ tail) == Maybe.bind(&2, List<&2, U32>, List<&2, U32>, E.unescape(tail), bs => Some{List.append(&2, U32, E.bytes_rep(Code.Outside{raw}), bs)}) : Maybe<&2, List<&2, U32>>}, Bits.false_true(packed))
+
+law unescape_char_suffix:
+  for +n: U32
+  for +tail: String
+  for valid: {E.scalar(n) == True{} : Bool}
+  {E.unescape(E.encode_char(n) ++ tail) == Maybe.bind(&2, List<&2, U32>, List<&2, U32>, E.unescape(tail), bs => Some{List.append(&2, U32, E.char_bytes(n), bs)}) : Maybe<&2, List<&2, U32>>}
+
+def unescape_char_suffix(n, tail, valid):
+  rep_unescape_suffix(Code.represent(n), tail, scalar_is_packed(n, valid))
+
+def string_bytes(s: String) -> List<&2, U32>:
+  match s:
+    case SNil{}:
+      Nil{}
+    case SCon{Chr{n}, t}:
+      List.append(&2, U32, E.char_bytes(n), string_bytes(t))
+
+law unescape_string:
+  for +s: String
+  for valid: {E.scalars(s) == True{} : Bool}
+  {E.unescape(E.encode(s)) == Some{string_bytes(s)} : Maybe<&2, List<&2, U32>>}
+
+def unescape_string(s, valid):
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{Chr{+n}, +t}:
+      +yes = valid
+      first = and_left(E.scalar(n), E.scalars(t), yes)
+      rest = and_right(E.scalar(n), E.scalars(t), yes)
+      %Equal.sym(Maybe<&2, List<&2, U32>>, E.unescape(E.encode_char(n) ++ E.encode(t)), Maybe.bind(&2, List<&2, U32>, List<&2, U32>, E.unescape(E.encode(t)), bs => Some{List.append(&2, U32, E.char_bytes(n), bs)}), unescape_char_suffix(n, E.encode(t), first)) : {_ == Some{string_bytes(SCon{Chr{n}, t})} : Maybe<&2, List<&2, U32>>}
+      %Equal.sym(Maybe<&2, List<&2, U32>>, E.unescape(E.encode(t)), Some{string_bytes(t)}, unescape_string(t, rest)) : {Maybe.bind(&2, List<&2, U32>, List<&2, U32>, _, bs => Some{List.append(&2, U32, E.char_bytes(n), bs)}) == Some{string_bytes(SCon{Chr{n}, t})} : Maybe<&2, List<&2, U32>>}
+      {==}
+
+law utf8_string:
+  for +s: String
+  for valid: {E.scalars(s) == True{} : Bool}
+  {Code.decode(string_bytes(s), Code.Start{}) == Some{s} : Maybe<&2, String>}
+
+def utf8_string(s, valid):
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{Chr{+n}, +t}:
+      +yes = valid
+      first = and_left(E.scalar(n), E.scalars(t), yes)
+      rest = and_right(E.scalar(n), E.scalars(t), yes)
+      %Equal.sym(Maybe<&2, String>, Code.decode(List.append(&2, U32, E.char_bytes(n), string_bytes(t)), Code.Start{}), Maybe.bind(&2, String, String, Code.decode(string_bytes(t), Code.Start{}), xs => Some{SCon{Chr{n}, xs}}), utf8_char_suffix(n, string_bytes(t), first)) : {_ == Some{SCon{Chr{n}, t}} : Maybe<&2, String>}
+      %Equal.sym(Maybe<&2, String>, Code.decode(string_bytes(t), Code.Start{}), Some{t}, utf8_string(t, rest)) : {Maybe.bind(&2, String, String, _, xs => Some{SCon{Chr{n}, xs}}) == Some{SCon{Chr{n}, t}} : Maybe<&2, String>}
+      {==}
+
+# The public percent codec roundtrips every string admitted independently by
+# the Unicode-scalar predicate, including empty strings and path separators.
+law codec_roundtrip:
+  for +s: String
+  for valid: {E.scalars(s) == True{} : Bool}
+  {E.decode(E.encode(s)) == Some{s} : Maybe<&2, String>}
+
+def codec_roundtrip(s, valid):
+  +yes = valid
+  %Equal.sym(Maybe<&2, List<&2, U32>>, E.unescape(E.encode(s)), Some{string_bytes(s)}, unescape_string(s, yes)) : {Maybe.bind(&2, List<&2, U32>, String, _, bs => Code.decode(bs, Code.Start{})) == Some{s} : Maybe<&2, String>}
+  utf8_string(s, yes)
