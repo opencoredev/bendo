@@ -70,31 +70,86 @@ minimum/maximum bounds are supported.
 
 ## Patterns
 
-Patterns are structured data, without a regex source parser:
+Patterns are Bend data from `src/data/schema-pattern.bend`; there is no regex
+source parser. A pattern always matches the whole string.
 
 ```python
-S.Class{[S.Range{97, 122}, S.Range{48, 57}], 1n, Some{8n}}
+type Range is Data:
+  Range{lo: U32, hi: U32}
+
+type Pattern is Data:
+  Literal{text: String}
+  Class{ranges: List<&2, Range>}
+  Cat{first: Pattern, second: Pattern}
+  Repeat{body: Pattern, min: Nat, max: Maybe<&2, Nat>}
 ```
 
-This accepts one through eight lowercase ASCII letters or digits. Each range is
-inclusive and must satisfy `0 <= lo <= hi <= 127`. A pattern is one character
-class repeated between its minimum and optional maximum count, matching the
-entire string. Classes may contain any ASCII code point; ranges may overlap.
-An empty class accepts only the empty string when its minimum is zero.
+`Literal{x}` matches exactly the text `x`, which may hold any Unicode scalar
+values. `Class{rs}` matches one scalar inside one of its inclusive ranges.
+Ranges must satisfy `0 <= lo <= hi <= 127`, so classes are ASCII: a non-ASCII
+scalar never matches a class, but a literal can match it. Ranges may overlap,
+and an empty class matches nothing. `Cat{a, b}` matches `a` followed by `b`;
+`P.seq([p1, p2, ...])` builds a sequence, and `seq([])` is `Literal{""}`.
+`Repeat{p, m, Some{n}}` matches `p` between `m` and `n` times, and
+`Repeat{p, m, None{}}` matches it at least `m` times. The body can be any
+pattern, including a sequence, so repetition groups as well as quantifies.
+Counts must satisfy `m <= n`.
 
-`min=0,max=None` is `*`; `min=1,max=None` is `+`;
-`min=0,max=Some{1}` is `?`; equal bounds are `{n}`; other bounds are `{n,m}`.
-There are no sequences, alternations, captures, lookarounds, or negated classes.
-Matching scans text once and checks class membership for each scalar, taking
-O(text length × number of ranges), linear in text length for a fixed schema.
-The scans use tail recursion on both targets.
+These two patterns are a lowercase slug and a US ZIP code:
 
-For BND-37, emit an ECMAScript class using escaped ASCII ranges such as
-`[\x61-\x7a\x30-\x39]`, followed by its quantifier. Prefix `^` and end with
-`(?![\s\S])`, without flags, to require absolute end of input. A bare `$` also
-matches before a final line terminator and would change these semantics. Encode
-an empty class as `[^\s\S]` before quantifying it. JSON Schema `pattern` must
-use these anchors because its default is substring matching.
+```python
+import ../../src/data/schema-pattern.bend as P
+
+def lower() -> P.Pattern:
+  P.Class{[P.Range{97, 122}, P.Range{48, 57}]}
+
+def digit() -> P.Pattern:
+  P.Class{[P.Range{48, 57}]}
+
+# [a-z0-9]+(-[a-z0-9]+)*
+def slug() -> P.Pattern:
+  P.seq([P.Repeat{lower(), 1n, None{}}, P.Repeat{P.Cat{P.Literal{"-"}, P.Repeat{lower(), 1n, None{}}}, 0n, None{}}])
+
+# \d{5}(-\d{4})?
+def zip() -> P.Pattern:
+  P.seq([P.Repeat{digit(), 5n, Some{5n}}, P.Repeat{P.Cat{P.Literal{"-"}, P.Repeat{digit(), 4n, Some{4n}}}, 0n, Some{1n}}])
+```
+
+`P.matches(p, s)` scans the text once with Antimirov partial derivatives: it
+keeps the deduplicated set of patterns that must match the rest of the text.
+The set is bounded by the pattern's size, with a counted repetition counting
+once per remaining count, so the scan is linear in the text for a fixed
+pattern. Every loop over the text is a tail call in native code and `.mjs`.
+There are no alternations, captures, backreferences, lookarounds, or negated
+classes.
+
+### ECMAScript rendering
+
+`P.source(p)` returns the ECMAScript source BND-37 should export as the JSON
+Schema `pattern`. It means the same thing with or without the `u` flag, since
+JSON Schema validators differ on that flag:
+
+| Pattern | Source |
+| --- | --- |
+| `Literal{x}` | each scalar escaped: ASCII as `\xHH`, other BMP scalars as `\uHHHH`, astral scalars as a `\uHHHH\uHHHH` surrogate pair |
+| `Class{rs}` | `[\xHH-\xHH...]`, or `[^\s\S]` when empty |
+| `Cat{a, b}` | source of `a`, then source of `b` |
+| `Repeat{p, m, n}` | `(?:p)` followed by `*`, `+`, `?`, `{m}`, `{m,}` or `{m,n}` |
+
+The whole is `^(?:...)(?![\s\S])`. `(?![\s\S])` is the absolute end of input; a
+bare `$` would also accept a final line terminator. JSON Schema's default is
+substring matching, so both anchors are required. For the slug and ZIP above:
+
+```text
+^(?:(?:[\x61-\x7a\x30-\x39])+(?:\x2d(?:[\x61-\x7a\x30-\x39])+)*)(?![\s\S])
+^(?:(?:[\x30-\x39]){5}(?:\x2d(?:[\x30-\x39]){4})?)(?![\s\S])
+```
+
+Escaping every scalar keeps punctuation such as `.`, `$`, or `{` literal.
+Without the `u` flag a surrogate pair is two code units; a group always wraps a
+repeated body, so a quantifier never splits one. Inputs are already well-formed
+Unicode, so neither mode sees a lone surrogate. Only render valid patterns:
+reversed counts are a syntax error in ECMAScript.
 
 ## Formats
 
@@ -128,9 +183,10 @@ assuming generic JSON Schema `format` implementations agree.
 
 ## Errors and extension points
 
-Malformed bounds, reversed bounds, non-ASCII/reversed pattern ranges, reversed
-pattern counts, and invalid literal/enum members return `InvalidSchema` before
-examining input. `TypeMismatch` means the JSON category differs from the schema.
+Malformed bounds, reversed bounds, non-ASCII or reversed pattern ranges,
+pattern literals with a lone surrogate, reversed counts anywhere in a pattern,
+and invalid literal or enum members return `InvalidSchema` before examining
+input. `TypeMismatch` means the JSON category differs from the schema.
 `Constraint` means a value fails a check, literal membership, or scalar validity.
 Even an otherwise matching enum rejects if another member is malformed.
 
@@ -143,15 +199,27 @@ this generic scalar decoder per field without duplicating scalar checks.
 
 ## Guarantees and verification
 
+`src/data/schema-spec.bend` restates every rule on this page independently of
+the decoder. It reads lengths as a structural count of scalars, numbers by the
+RFC 8259 grammar, decimal values as exact natural numbers (`digits * 10^e`
+compared by cross-multiplying), patterns as regular languages that try every
+way to split the text, and the email and URL formats as direct grammars. It
+imports the schema and pattern modules only for their data types and calls none
+of their functions. It is a specification, not an implementation: it is
+exponential on patterns and unary on numbers.
+
 The BND-33 laws quantify every schema and every JSON tree. The first equates
-successful decoding with the independent `satisfies` predicate, proving both
-soundness and completeness. The second requires the correct typed constructor
-and exact input payload on every successful decode. The predicate states checks
-directly and shares semantic primitives such as decimal ordering and character
-membership; it never calls the decoder or inspects its result.
+successful decoding with `SchemaSpec.satisfies`, proving both soundness and
+completeness against that independent specification. The proof goes through
+one equivalence lemma per check (`proof/schema-*.bend`). The second law
+requires the correct typed constructor and exact input payload on every
+successful decode.
 
 Run `bun run prove` for the strict Lean-backed kernel and
 `bun test --timeout 30000 tests/schema.test.ts` for real native and `.mjs`
-consumers. Tests cover every kind/check, malformed schemas and input, exact
+consumers. Tests cover every kind and check, malformed schemas and input, exact
 boundaries, Unicode scalar lengths, numerical const equality, huge decimal
-orders, and long strings without JavaScript call-stack growth.
+orders, and long strings without JavaScript call-stack growth. For patterns
+they compare the matcher with `new RegExp(P.source(p))` with and without the
+`u` flag on every string up to length three over a mixed alphabet plus random
+strings, and with the specification on short strings.
