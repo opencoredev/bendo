@@ -91,7 +91,7 @@ const cases: Case[] = [
     result:
       'ok:{name="Ada",age=-,address={city="Paris",geo={lat=n48.85,lng=n2.35},zip=-},tags=-,nick="ad"}',
   },
-  // Errors name the path to the first failing child.
+  // The first error names the path to the first failing child.
   {
     schema: "user",
     input: '{"name":"Ada","address":{"city":"Paris","geo":{"lat":48.85,"lng":"x"}}}',
@@ -142,7 +142,7 @@ const cases: Case[] = [
   {
     schema: "user",
     input: `{"name":"Ada","address":${paris},"admin":true}`,
-    result: "error:Constraint::object has an undeclared key",
+    result: "error:Constraint:/admin:object has an undeclared key",
   },
   {
     schema: "strip",
@@ -164,7 +164,7 @@ const cases: Case[] = [
   {
     schema: "empty-object",
     input: '{"a":1}',
-    result: "error:Constraint::object has an undeclared key",
+    result: "error:Constraint:/a:object has an undeclared key",
   },
   // Arrays: bounds are checked before any item, items in order with indices.
   { schema: "items", input: "[1]", result: "ok:[i1]" },
@@ -635,7 +635,7 @@ const bodies: Body[] = [
     label: "unknown keys, Strict",
     schema: "wide",
     make: (n) => members(n, (i) => `k${i}`),
-    result: "error:Constraint::object has an undeclared key",
+    result: "error:Constraint:/k0:object has an undeclared key",
   },
   {
     label: "array over max_items",

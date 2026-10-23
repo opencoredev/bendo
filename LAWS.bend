@@ -2,10 +2,15 @@
 # Agents may add laws. Never delete or weaken one without a written reason
 # in the pull request.
 import Base
+import ./src/mw/etag.bend as ETag
+import ./src/http/conditional.bend as Conditional
+import ./src/mw/body_limit.bend as BodyLimit
+import ./proof/limits-spec.bend as LimitsSpec
 import ./src/app/manifest.bend as Manifest
 import ./proof/manifest-spec.bend as ManifestSpec
 import ./proof/manifest-built-spec.bend as ManifestBuiltSpec
 import ./proof/compose-laws.bend as ComposeLaws
+import ./proof/plugin-laws.bend as PluginLaws
 
 # BND-44
 import ./proof/ip-laws.bend as IpLaws
@@ -1141,6 +1146,66 @@ law schema_children_satisfy:
   for accepted: {Schema.accepted(Schema.decode(schema, value)) == True{} : Bool}
   {SchemaSpec.children(schema, value) == True{} : Bool}
 
+# BND-35: a rejection names where it fails. When decoding rejects a value it
+# lists at least one and at most SchemaSpec.error_cap() (100) errors, and the
+# path of every error is a location where the independent specification finds
+# a failing check (SchemaSpec.error_at): the value there fails its scalar
+# schema, has the wrong kind or array length, matches no union member, is a
+# declared key present a number of times its presence forbids, or is a key
+# Strict does not declare; an invalid schema is one error at the root.
+# Successes impose nothing; schema_acceptance_iff says when decoding succeeds.
+law schema_errors_name_failing_paths:
+  for +schema: Schema.Schema
+  for +value: Json.Json
+  {SchemaSpec.located_errors(schema, value, Schema.decode(schema, value)) == True{} : Bool}
+
+# BND-35: and it names every one. For every path where the specification finds
+# a failing check, decoding rejects and lists an error with exactly that path,
+# unless the list already holds error_cap() errors. Errors are collected across
+# all array items and object fields. Nothing below a failed kind or length
+# check, and nothing inside a union, is a location (SchemaSpec.fault).
+law schema_errors_complete:
+  for +schema: Schema.Schema
+  for +value: Json.Json
+  for +path: List<&2, Schema.PathPart>
+  for fault: {SchemaSpec.error_at(schema, value, path) == True{} : Bool}
+  {SchemaSpec.reported(Schema.decode(schema, value), path) == True{} : Bool}
+
+# BND-35: coercion for text sources (params, query, headers, forms) is exactly
+# the independent restatement SchemaSpec.coerce_text: number tokens under number
+# and integer schemas, "true"/"false" under boolean schemas, items under arrays,
+# the inner schema under nullables, and under an object every declared member,
+# with all members named by an array field gathered in order into one array at
+# the first one's position. JSON bodies are decoded without it.
+law schema_coerce_matches_spec:
+  for +schema: Schema.Schema
+  for +value: Json.Json
+  {Schema.coerce(schema, value) == SchemaSpec.coerce_text(schema, value) : Json.Json}
+
+# BND-35: the BND-33/34 acceptance, preservation and BND-35 error laws hold in
+# text mode, read against the coerced value.
+law schema_coerced_acceptance_iff:
+  for +schema: Schema.Schema
+  for +value: Json.Json
+  {Schema.accepted(Schema.decode_from(Schema.TextSource{}, schema, value)) == SchemaSpec.satisfies(schema, SchemaSpec.coerce_text(schema, value)) : Bool}
+
+law schema_coerced_preserves_typed_value:
+  for +schema: Schema.Schema
+  for +value: Json.Json
+  Schema.Preserves(Schema.value_for(schema, SchemaSpec.coerce_text(schema, value)), Schema.decode_from(Schema.TextSource{}, schema, value))
+
+law schema_coerced_errors_name_failing_paths:
+  for +schema: Schema.Schema
+  for +value: Json.Json
+  {SchemaSpec.located_errors(schema, SchemaSpec.coerce_text(schema, value), Schema.decode_from(Schema.TextSource{}, schema, value)) == True{} : Bool}
+
+law schema_coerced_errors_complete:
+  for +schema: Schema.Schema
+  for +value: Json.Json
+  for +path: List<&2, Schema.PathPart>
+  for fault: {SchemaSpec.error_at(schema, SchemaSpec.coerce_text(schema, value), path) == True{} : Bool}
+  {SchemaSpec.reported(Schema.decode_from(Schema.TextSource{}, schema, value), path) == True{} : Bool}
+
 # BND-24: selection from source memberships, independent of runtime helpers.
 # Globals precede inherited group/guard placements and then route-local hooks;
 # each source order and every duplicate is retained. None denotes no selected
@@ -1603,3 +1668,32 @@ law stream_rfc_last_chunk:
   for +limit: U32
   for +suffix: List<&2, U32>
   {StreamRfc.parse(48 <> 13 <> 10 <> 13 <> 10 <> suffix, limit) == StreamRfc.Decoded{[], suffix} : StreamRfc.DecodeResult}
+
+# BND-41: RFC 9110 weak If-None-Match comparison for arbitrary fields and tags.
+# The independent specification validates every list member and separately
+# asks whether any entity-tag denotes the same opaque validator.
+law conditional_if_none_match_spec:
+  for +field: Maybe<&2, String>
+  for +tag: String
+  {Conditional.matches(field, tag) == LimitsSpec.matches(field, tag) : Bool}
+
+# Exactly cache metadata, in original order (including duplicates); no body,
+# representation witness or content/framing headers survive construction.
+law conditional_304_spec:
+  for +res: Response.Res
+  {Conditional.not_modified(res) == LimitsSpec.response(res) : Response.Res}
+
+# Accept exactly the inclusive byte-length boundary, for every natural length.
+law body_limit_spec:
+  for +length: Nat
+  for +limit: Nat
+  {BodyLimit.accepts(length, limit) == LimitsSpec.within(length, limit) : Bool}
+
+# The actual middleware decision preserves every ineligible response exactly.
+# Eligible buffered 200 GET/HEAD responses carry the body validator, and become
+# exactly Conditional.not_modified iff the independent field spec matches it.
+law etag_middleware_spec:
+  for +method: Request.Method
+  for +field: Maybe<&2, String>
+  for +res: Response.Res
+  {ETag.decide(method, field, res) == LimitsSpec.etag(method, field, res) : Response.Res}
