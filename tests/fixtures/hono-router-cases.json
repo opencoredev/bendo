@@ -1,0 +1,6361 @@
+{
+  "_header": {
+    "credit": "Ported and expanded from Hono router tests, https://github.com/honojs/hono (MIT). Original test names and route/request data retained; shared-suite repeats deduplicated.",
+    "commit": "5ca49b0720755c585c9a9835f0a479ceea36fb52",
+    "license": "MIT License\n\nCopyright (c) 2021 - present, Yusuke Wada and Hono contributors\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n"
+  },
+  "cases": [
+    {
+      "id": "hono-001",
+      "source": "src/router/linear-router/router.test.ts",
+      "test": "LinearRouter > Skip part > GET /products/list",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/products/:id{d+}",
+          "handler": "GET /products/:id{d+}"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/products/list"
+      },
+      "hono": [],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-002",
+      "source": "src/router/pattern-router/router.test.ts",
+      "test": "Pattern > Trailing slash > GET /book/",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/book",
+          "handler": "GET /book"
+        },
+        {
+          "method": "GET",
+          "pattern": "/book/:id",
+          "handler": "GET /book/:id"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/book/"
+      },
+      "hono": [
+        {
+          "handler": "GET /book",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "none",
+        "method": "none"
+      },
+      "differences": ["strict-slash"]
+    },
+    {
+      "id": "hono-003",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Unknown method > UNKNOWN_METHOD /all",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/",
+          "handler": "index"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/all",
+          "handler": "all"
+        }
+      ],
+      "request": {
+        "method": "UNKNOWN_METHOD",
+        "path": "/all"
+      },
+      "hono": [
+        {
+          "handler": "all",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "1:1",
+        "method": "allow:GET, HEAD, POST, PUT, DELETE, CONNECT, OPTIONS, TRACE, PATCH"
+      },
+      "differences": ["method-not-allowed", "all-standard-methods"]
+    },
+    {
+      "id": "hono-004",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Unknown method > UNKNOWN_METHOD /",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/",
+          "handler": "index"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/all",
+          "handler": "all"
+        }
+      ],
+      "request": {
+        "method": "UNKNOWN_METHOD",
+        "path": "/"
+      },
+      "hono": [],
+      "honoError": "",
+      "expected": {
+        "path": "0:0",
+        "method": "allow:GET, HEAD"
+      },
+      "differences": ["method-not-allowed"]
+    },
+    {
+      "id": "hono-005",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Capture Group > Complex capturing group > GET request",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "get",
+          "pattern": "/foo/:capture{ba(r|z)}",
+          "handler": "ok"
+        }
+      ],
+      "request": {
+        "method": "get",
+        "path": "/foo/bar"
+      },
+      "hono": [
+        {
+          "handler": "ok",
+          "params": [["capture", "bar"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-006",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Capture Group > Non-capturing group with prefix > GET /foo/qux",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "get",
+          "pattern": "/foo/:capture{ba(?:r|z)}",
+          "handler": "ok"
+        }
+      ],
+      "request": {
+        "method": "get",
+        "path": "/foo/qux"
+      },
+      "hono": [],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-007",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Capture Group > Non-capturing group with prefix > GET /foo/baz",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "get",
+          "pattern": "/foo/:capture{ba(?:r|z)}",
+          "handler": "ok"
+        }
+      ],
+      "request": {
+        "method": "get",
+        "path": "/foo/baz"
+      },
+      "hono": [
+        {
+          "handler": "ok",
+          "params": [["capture", "baz"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-008",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Capture Group > Non-capturing group with prefix > GET /foo/bar",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "get",
+          "pattern": "/foo/:capture{ba(?:r|z)}",
+          "handler": "ok"
+        }
+      ],
+      "request": {
+        "method": "get",
+        "path": "/foo/bar"
+      },
+      "hono": [
+        {
+          "handler": "ok",
+          "params": [["capture", "bar"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-009",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Capture Group > Non-capturing group > GET /foo/qux",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "get",
+          "pattern": "/foo/:capture{(?:bar|baz)}",
+          "handler": "ok"
+        }
+      ],
+      "request": {
+        "method": "get",
+        "path": "/foo/qux"
+      },
+      "hono": [],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-010",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Capture Group > Non-capturing group > GET /foo/baz",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "get",
+          "pattern": "/foo/:capture{(?:bar|baz)}",
+          "handler": "ok"
+        }
+      ],
+      "request": {
+        "method": "get",
+        "path": "/foo/baz"
+      },
+      "hono": [
+        {
+          "handler": "ok",
+          "params": [["capture", "baz"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-011",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Capture Group > Non-capturing group > GET /foo/bar",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "get",
+          "pattern": "/foo/:capture{(?:bar|baz)}",
+          "handler": "ok"
+        }
+      ],
+      "request": {
+        "method": "get",
+        "path": "/foo/bar"
+      },
+      "hono": [
+        {
+          "handler": "ok",
+          "params": [["capture", "bar"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-012",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Capture Group > Simple capturing group > GET /foo/qux",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "get",
+          "pattern": "/foo/:capture{(bar|baz)}",
+          "handler": "ok"
+        }
+      ],
+      "request": {
+        "method": "get",
+        "path": "/foo/qux"
+      },
+      "hono": [],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-013",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Capture Group > Simple capturing group > GET /foo/baz",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "get",
+          "pattern": "/foo/:capture{(bar|baz)}",
+          "handler": "ok"
+        }
+      ],
+      "request": {
+        "method": "get",
+        "path": "/foo/baz"
+      },
+      "hono": [
+        {
+          "handler": "ok",
+          "params": [["capture", "baz"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-014",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Capture Group > Simple capturing group > GET /foo/bar",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "get",
+          "pattern": "/foo/:capture{(bar|baz)}",
+          "handler": "ok"
+        }
+      ],
+      "request": {
+        "method": "get",
+        "path": "/foo/bar"
+      },
+      "hono": [
+        {
+          "handler": "ok",
+          "params": [["capture", "bar"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-015",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > ALL star, ALL star, GET static, ALL star... > Should return wildcard, star2 and bar",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "ALL",
+          "pattern": "*",
+          "handler": "wildcard"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/a/*",
+          "handler": "star1"
+        },
+        {
+          "method": "GET",
+          "pattern": "/a/foo",
+          "handler": "foo"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/b/*",
+          "handler": "star2"
+        },
+        {
+          "method": "GET",
+          "pattern": "/b/bar",
+          "handler": "bar"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/b/bar"
+      },
+      "hono": [
+        {
+          "handler": "wildcard",
+          "params": []
+        },
+        {
+          "handler": "star2",
+          "params": []
+        },
+        {
+          "handler": "bar",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:MissingSlash",
+        "method": "error:0:MissingSlash"
+      },
+      "differences": ["path-only-syntax"]
+    },
+    {
+      "id": "hono-016",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > GET star, GET static, ALL star... > Should return star1, star2, and bar",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/y/*",
+          "handler": "star1"
+        },
+        {
+          "method": "GET",
+          "pattern": "/y/a",
+          "handler": "a"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/y/b/*",
+          "handler": "star2"
+        },
+        {
+          "method": "GET",
+          "pattern": "/y/b/bar",
+          "handler": "bar"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/y/b/bar"
+      },
+      "hono": [
+        {
+          "handler": "star1",
+          "params": []
+        },
+        {
+          "handler": "star2",
+          "params": []
+        },
+        {
+          "handler": "bar",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0|%2A=%62%2F%62%61%72",
+        "method": "0:0|%2A=%62%2F%62%61%72;head_from_get=false"
+      },
+      "differences": ["wildcard-capture", "first-match"]
+    },
+    {
+      "id": "hono-017",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > GET star, ALL static, GET star... > Should return /x and star",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "star1"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/x",
+          "handler": "/x"
+        },
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "star2"
+        },
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "star3"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/x"
+      },
+      "hono": [
+        {
+          "handler": "star1",
+          "params": []
+        },
+        {
+          "handler": "/x",
+          "params": []
+        },
+        {
+          "handler": "star2",
+          "params": []
+        },
+        {
+          "handler": "star3",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:MissingSlash",
+        "method": "error:0:MissingSlash"
+      },
+      "differences": ["path-only-syntax"]
+    },
+    {
+      "id": "hono-018",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > ALL and Star > Should return /x and star",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "ALL",
+          "pattern": "/x",
+          "handler": "/x"
+        },
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "star"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/x"
+      },
+      "hono": [
+        {
+          "handler": "/x",
+          "params": []
+        },
+        {
+          "handler": "star",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:1:MissingSlash",
+        "method": "error:1:MissingSlash"
+      },
+      "differences": ["path-only-syntax"]
+    },
+    {
+      "id": "hono-019",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > static routes of ALL and GET > get /foo",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "ALL",
+          "pattern": "/foo",
+          "handler": "foo"
+        },
+        {
+          "method": "GET",
+          "pattern": "/bar",
+          "handler": "bar"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/foo"
+      },
+      "hono": [
+        {
+          "handler": "foo",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0",
+        "method": "0:0;head_from_get=false"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-020",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Routing with a hostname > GET /hello",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "www1.example.com/hello",
+          "handler": "www1"
+        },
+        {
+          "method": "GET",
+          "pattern": "www2.example.com/hello",
+          "handler": "www2"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/hello"
+      },
+      "hono": [],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:MissingSlash",
+        "method": "error:0:MissingSlash"
+      },
+      "differences": ["path-only-syntax"]
+    },
+    {
+      "id": "hono-021",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Routing with a hostname > GET www2.example.com/hello",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "www1.example.com/hello",
+          "handler": "www1"
+        },
+        {
+          "method": "GET",
+          "pattern": "www2.example.com/hello",
+          "handler": "www2"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "www2.example.com/hello"
+      },
+      "hono": [
+        {
+          "handler": "www2",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:MissingSlash",
+        "method": "error:0:MissingSlash"
+      },
+      "differences": ["path-only-syntax"]
+    },
+    {
+      "id": "hono-022",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Routing with a hostname > GET www1.example.com/hello",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "www1.example.com/hello",
+          "handler": "www1"
+        },
+        {
+          "method": "GET",
+          "pattern": "www2.example.com/hello",
+          "handler": "www2"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "www1.example.com/hello"
+      },
+      "hono": [
+        {
+          "handler": "www1",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:MissingSlash",
+        "method": "error:0:MissingSlash"
+      },
+      "differences": ["path-only-syntax"]
+    },
+    {
+      "id": "hono-023",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Same path > GET /hey",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/hey",
+          "handler": "Middleware A"
+        },
+        {
+          "method": "GET",
+          "pattern": "/hey",
+          "handler": "Middleware B"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/hey"
+      },
+      "hono": [
+        {
+          "handler": "Middleware A",
+          "params": []
+        },
+        {
+          "handler": "Middleware B",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0",
+        "method": "0:0;head_from_get=false"
+      },
+      "differences": ["first-match"]
+    },
+    {
+      "id": "hono-024",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Empty path segment > GET /u//posts does not match with an empty param",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/u/:id/posts",
+          "handler": "posts"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/u//posts"
+      },
+      "hono": [],
+      "honoError": "",
+      "expected": {
+        "path": "none",
+        "method": "none"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-025",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Empty path segment > GET /u/42/posts",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/u/:id/posts",
+          "handler": "posts"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/u/42/posts"
+      },
+      "hono": [
+        {
+          "handler": "posts",
+          "params": [["id", "42"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0|%69%64=%34%32",
+        "method": "0:0|%69%64=%34%32;head_from_get=false"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-026",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Trailing slash > GET /book",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/book",
+          "handler": "GET /book"
+        },
+        {
+          "method": "GET",
+          "pattern": "/book/:id",
+          "handler": "GET /book/:id"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/book"
+      },
+      "hono": [
+        {
+          "handler": "GET /book",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0",
+        "method": "0:0;head_from_get=false"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-027",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > REST API > GET /users/hono/posts",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/users/:username{[a-z]+}",
+          "handler": "profile"
+        },
+        {
+          "method": "GET",
+          "pattern": "/users/:username{[a-z]+}/posts",
+          "handler": "posts"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/users/hono/posts"
+      },
+      "hono": [
+        {
+          "handler": "posts",
+          "params": [["username", "hono"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "1:1|%75%73%65%72%6E%61%6D%65=%68%6F%6E%6F",
+        "method": "1:1|%75%73%65%72%6E%61%6D%65=%68%6F%6E%6F;head_from_get=false"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-028",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > REST API > GET /users/hono",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/users/:username{[a-z]+}",
+          "handler": "profile"
+        },
+        {
+          "method": "GET",
+          "pattern": "/users/:username{[a-z]+}/posts",
+          "handler": "posts"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/users/hono"
+      },
+      "hono": [
+        {
+          "handler": "profile",
+          "params": [["username", "hono"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0|%75%73%65%72%6E%61%6D%65=%68%6F%6E%6F",
+        "method": "0:0|%75%73%65%72%6E%61%6D%65=%68%6F%6E%6F;head_from_get=false"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-029",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > non ascii characters > GET /()/hono",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "ALL",
+          "pattern": "/$/*",
+          "handler": "middleware $"
+        },
+        {
+          "method": "GET",
+          "pattern": "/$/:name",
+          "handler": "get $ name"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/()/*",
+          "handler": "middleware ()"
+        },
+        {
+          "method": "GET",
+          "pattern": "/()/:name",
+          "handler": "get () name"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/()/hono"
+      },
+      "hono": [
+        {
+          "handler": "middleware ()",
+          "params": []
+        },
+        {
+          "handler": "get () name",
+          "params": [["name", "hono"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "2:2|%2A=%68%6F%6E%6F",
+        "method": "2:2|%2A=%68%6F%6E%6F;head_from_get=false"
+      },
+      "differences": ["wildcard-capture", "first-match"]
+    },
+    {
+      "id": "hono-030",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > non ascii characters > GET /$/hono",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "ALL",
+          "pattern": "/$/*",
+          "handler": "middleware $"
+        },
+        {
+          "method": "GET",
+          "pattern": "/$/:name",
+          "handler": "get $ name"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/()/*",
+          "handler": "middleware ()"
+        },
+        {
+          "method": "GET",
+          "pattern": "/()/:name",
+          "handler": "get () name"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/$/hono"
+      },
+      "hono": [
+        {
+          "handler": "middleware $",
+          "params": []
+        },
+        {
+          "handler": "get $ name",
+          "params": [["name", "hono"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0|%2A=%68%6F%6E%6F",
+        "method": "0:0|%2A=%68%6F%6E%6F;head_from_get=false"
+      },
+      "differences": ["wildcard-capture", "first-match"]
+    },
+    {
+      "id": "hono-031",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Capture multiple directories and optional > GET /foo/bar/contents/123",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:prefix{.+}/contents/:id?",
+          "handler": "contents"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/foo/bar/contents/123"
+      },
+      "hono": [
+        {
+          "handler": "contents",
+          "params": [
+            ["prefix", "foo/bar"],
+            ["id", "123"]
+          ]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-032",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Capture multiple directories and optional > GET /foo/bar/contents",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:prefix{.+}/contents/:id?",
+          "handler": "contents"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/foo/bar/contents"
+      },
+      "hono": [
+        {
+          "handler": "contents",
+          "params": [["prefix", "foo/bar"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-033",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Capture complex multiple directories > GET /part1/middle-b/end-c/latest",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:first{.+}/middle-a/:reference?",
+          "handler": "1"
+        },
+        {
+          "method": "GET",
+          "pattern": "/:first{.+}/middle-b/end-c/:uuid",
+          "handler": "2"
+        },
+        {
+          "method": "GET",
+          "pattern": "/:first{.+}/middle-b/:digest",
+          "handler": "3"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/part1/middle-b/end-c/latest"
+      },
+      "hono": [
+        {
+          "handler": "2",
+          "params": [
+            ["first", "part1"],
+            ["uuid", "latest"]
+          ]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-034",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Capture complex multiple directories > GET /part1/middle-b/latest",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:first{.+}/middle-a/:reference?",
+          "handler": "1"
+        },
+        {
+          "method": "GET",
+          "pattern": "/:first{.+}/middle-b/end-c/:uuid",
+          "handler": "2"
+        },
+        {
+          "method": "GET",
+          "pattern": "/:first{.+}/middle-b/:digest",
+          "handler": "3"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/part1/middle-b/latest"
+      },
+      "hono": [
+        {
+          "handler": "3",
+          "params": [
+            ["first", "part1"],
+            ["digest", "latest"]
+          ]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-035",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Capture simple multiple directories > GET /a/b/c/d/file.html",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:dirs{.+}/file.html",
+          "handler": "file.html"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/a/b/c/d/file.html"
+      },
+      "hono": [
+        {
+          "handler": "file.html",
+          "params": [["dirs", "a/b/c/d"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-036",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Capture simple multiple directories > GET /foo/bar/baz/file.html",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:dirs{.+}/file.html",
+          "handler": "file.html"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/foo/bar/baz/file.html"
+      },
+      "hono": [
+        {
+          "handler": "file.html",
+          "params": [["dirs", "foo/bar/baz"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-037",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Capture simple multiple directories > GET /foo/bar/file.html",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:dirs{.+}/file.html",
+          "handler": "file.html"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/foo/bar/file.html"
+      },
+      "hono": [
+        {
+          "handler": "file.html",
+          "params": [["dirs", "foo/bar"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-038",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Including slashes > GET /js/chunk/nest/123.js",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/js/:filename{[a-z0-9/]+.js}",
+          "handler": "any file"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/js/chunk/nest/123.js"
+      },
+      "hono": [
+        {
+          "handler": "any file",
+          "params": [["filename", "chunk/nest/123.js"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnbalancedBraces",
+        "method": "error:0:UnbalancedBraces"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-039",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Including slashes > GET /js/chunk/123.js",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/js/:filename{[a-z0-9/]+.js}",
+          "handler": "any file"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/js/chunk/123.js"
+      },
+      "hono": [
+        {
+          "handler": "any file",
+          "params": [["filename", "chunk/123.js"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnbalancedBraces",
+        "method": "error:0:UnbalancedBraces"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-040",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Including slashes > GET /js/main.js",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/js/:filename{[a-z0-9/]+.js}",
+          "handler": "any file"
+        },
+        {
+          "method": "GET",
+          "pattern": "/js/main.js",
+          "handler": "main.js"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/js/main.js"
+      },
+      "hono": [
+        {
+          "handler": "any file",
+          "params": [["filename", "main.js"]]
+        },
+        {
+          "handler": "main.js",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnbalancedBraces",
+        "method": "error:0:UnbalancedBraces"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-041",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > long prefix, then star > ALL and GET > GET /long/prefix/test",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "ALL",
+          "pattern": "/long/prefix/*",
+          "handler": "long-prefix"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/long/*",
+          "handler": "long"
+        },
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "star1"
+        },
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "star2"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/long/prefix/test"
+      },
+      "hono": [
+        {
+          "handler": "long-prefix",
+          "params": []
+        },
+        {
+          "handler": "long",
+          "params": []
+        },
+        {
+          "handler": "star1",
+          "params": []
+        },
+        {
+          "handler": "star2",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:2:MissingSlash",
+        "method": "error:2:MissingSlash"
+      },
+      "differences": ["path-only-syntax"]
+    },
+    {
+      "id": "hono-042",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > long prefix, then star > ALL and GET > GET /long/prefix",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "ALL",
+          "pattern": "/long/prefix/*",
+          "handler": "long-prefix"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/long/*",
+          "handler": "long"
+        },
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "star1"
+        },
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "star2"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/long/prefix"
+      },
+      "hono": [
+        {
+          "handler": "long-prefix",
+          "params": []
+        },
+        {
+          "handler": "long",
+          "params": []
+        },
+        {
+          "handler": "star1",
+          "params": []
+        },
+        {
+          "handler": "star2",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:2:MissingSlash",
+        "method": "error:2:MissingSlash"
+      },
+      "differences": ["path-only-syntax"]
+    },
+    {
+      "id": "hono-043",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > long prefix, then star > ALL and GET > GET /",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "ALL",
+          "pattern": "/long/prefix/*",
+          "handler": "long-prefix"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/long/*",
+          "handler": "long"
+        },
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "star1"
+        },
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "star2"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/"
+      },
+      "hono": [
+        {
+          "handler": "star1",
+          "params": []
+        },
+        {
+          "handler": "star2",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:2:MissingSlash",
+        "method": "error:2:MissingSlash"
+      },
+      "differences": ["path-only-syntax"]
+    },
+    {
+      "id": "hono-044",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > long prefix, then star > GET only > GET /long/prefix/test",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/long/prefix/*",
+          "handler": "long-prefix"
+        },
+        {
+          "method": "GET",
+          "pattern": "/long/*",
+          "handler": "long"
+        },
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "star1"
+        },
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "star2"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/long/prefix/test"
+      },
+      "hono": [
+        {
+          "handler": "long-prefix",
+          "params": []
+        },
+        {
+          "handler": "long",
+          "params": []
+        },
+        {
+          "handler": "star1",
+          "params": []
+        },
+        {
+          "handler": "star2",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:2:MissingSlash",
+        "method": "error:2:MissingSlash"
+      },
+      "differences": ["path-only-syntax"]
+    },
+    {
+      "id": "hono-045",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > long prefix, then star > GET only > GET /long/prefix",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/long/prefix/*",
+          "handler": "long-prefix"
+        },
+        {
+          "method": "GET",
+          "pattern": "/long/*",
+          "handler": "long"
+        },
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "star1"
+        },
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "star2"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/long/prefix"
+      },
+      "hono": [
+        {
+          "handler": "long-prefix",
+          "params": []
+        },
+        {
+          "handler": "long",
+          "params": []
+        },
+        {
+          "handler": "star1",
+          "params": []
+        },
+        {
+          "handler": "star2",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:2:MissingSlash",
+        "method": "error:2:MissingSlash"
+      },
+      "differences": ["path-only-syntax"]
+    },
+    {
+      "id": "hono-046",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > long prefix, then star > GET only > GET /",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/long/prefix/*",
+          "handler": "long-prefix"
+        },
+        {
+          "method": "GET",
+          "pattern": "/long/*",
+          "handler": "long"
+        },
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "star1"
+        },
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "star2"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/"
+      },
+      "hono": [
+        {
+          "handler": "star1",
+          "params": []
+        },
+        {
+          "handler": "star2",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:2:MissingSlash",
+        "method": "error:2:MissingSlash"
+      },
+      "differences": ["path-only-syntax"]
+    },
+    {
+      "id": "hono-047",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > All > GET, all hello",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/hello",
+          "handler": "get hello"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/all",
+          "handler": "get all"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/all"
+      },
+      "hono": [
+        {
+          "handler": "get all",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "1:1",
+        "method": "1:1;head_from_get=false"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-048",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Optional route > GET /v1",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/api/animals/:type?",
+          "handler": "animals"
+        },
+        {
+          "method": "GET",
+          "pattern": "/v1/:version?/:platform?",
+          "handler": "result"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/v1"
+      },
+      "hono": [
+        {
+          "handler": "result",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:1:OptionalNotLast",
+        "method": "error:1:OptionalNotLast"
+      },
+      "differences": ["terminal-optionals"]
+    },
+    {
+      "id": "hono-049",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Optional route > GET /v1/123",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/api/animals/:type?",
+          "handler": "animals"
+        },
+        {
+          "method": "GET",
+          "pattern": "/v1/:version?/:platform?",
+          "handler": "result"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/v1/123"
+      },
+      "hono": [
+        {
+          "handler": "result",
+          "params": [["version", "123"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:1:OptionalNotLast",
+        "method": "error:1:OptionalNotLast"
+      },
+      "differences": ["terminal-optionals"]
+    },
+    {
+      "id": "hono-050",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Optional route > GET /v1/123/abc",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/api/animals/:type?",
+          "handler": "animals"
+        },
+        {
+          "method": "GET",
+          "pattern": "/v1/:version?/:platform?",
+          "handler": "result"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/v1/123/abc"
+      },
+      "hono": [
+        {
+          "handler": "result",
+          "params": [
+            ["version", "123"],
+            ["platform", "abc"]
+          ]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:1:OptionalNotLast",
+        "method": "error:1:OptionalNotLast"
+      },
+      "differences": ["terminal-optionals"]
+    },
+    {
+      "id": "hono-051",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Optional route > GET /api/animals",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/api/animals/:type?",
+          "handler": "animals"
+        },
+        {
+          "method": "GET",
+          "pattern": "/v1/:version?/:platform?",
+          "handler": "result"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/animals"
+      },
+      "hono": [
+        {
+          "handler": "animals",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:1:OptionalNotLast",
+        "method": "error:1:OptionalNotLast"
+      },
+      "differences": ["terminal-optionals"]
+    },
+    {
+      "id": "hono-052",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Optional route > GET /api/animals/dog",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/api/animals/:type?",
+          "handler": "animals"
+        },
+        {
+          "method": "GET",
+          "pattern": "/v1/:version?/:platform?",
+          "handler": "result"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/animals/dog"
+      },
+      "hono": [
+        {
+          "handler": "animals",
+          "params": [["type", "dog"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:1:OptionalNotLast",
+        "method": "error:1:OptionalNotLast"
+      },
+      "differences": ["terminal-optionals"]
+    },
+    {
+      "id": "hono-053",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Trailing wildcard after a middle wildcard > GET /a/x/bz",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/a/*/b/*",
+          "handler": "b"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/a/x/bz"
+      },
+      "hono": [],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:WildcardNotLast",
+        "method": "error:0:WildcardNotLast"
+      },
+      "differences": ["terminal-wildcards"]
+    },
+    {
+      "id": "hono-054",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Trailing wildcard after a middle wildcard > GET /a/x/b/c",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/a/*/b/*",
+          "handler": "b"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/a/x/b/c"
+      },
+      "hono": [
+        {
+          "handler": "b",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:WildcardNotLast",
+        "method": "error:0:WildcardNotLast"
+      },
+      "differences": ["terminal-wildcards"]
+    },
+    {
+      "id": "hono-055",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Trailing wildcard after a middle wildcard > GET /a/x/b",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/a/*/b/*",
+          "handler": "b"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/a/x/b"
+      },
+      "hono": [
+        {
+          "handler": "b",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:WildcardNotLast",
+        "method": "error:0:WildcardNotLast"
+      },
+      "differences": ["terminal-wildcards"]
+    },
+    {
+      "id": "hono-056",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Trailing wildcard > GET /pathfoo",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/path/*",
+          "handler": "path"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/pathfoo"
+      },
+      "hono": [],
+      "honoError": "",
+      "expected": {
+        "path": "none",
+        "method": "none"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-057",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Trailing wildcard > GET /path/to/file",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/path/*",
+          "handler": "path"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/path/to/file"
+      },
+      "hono": [
+        {
+          "handler": "path",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0|%2A=%74%6F%2F%66%69%6C%65",
+        "method": "0:0|%2A=%74%6F%2F%66%69%6C%65;head_from_get=false"
+      },
+      "differences": ["wildcard-capture"]
+    },
+    {
+      "id": "hono-058",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Trailing wildcard > GET /path",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/path/*",
+          "handler": "path"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/path"
+      },
+      "hono": [
+        {
+          "handler": "path",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0|%2A=",
+        "method": "0:0|%2A=;head_from_get=false"
+      },
+      "differences": ["wildcard-capture"]
+    },
+    {
+      "id": "hono-059",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Suffix wildcard > associates /assets/app.js before /assets*",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/assets*",
+          "handler": "assets"
+        },
+        {
+          "method": "POST",
+          "pattern": "/assets/app.js",
+          "handler": "/assets/app.js"
+        },
+        {
+          "method": "POST",
+          "pattern": "/assets*",
+          "handler": "/assets*"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/assets/app.js"
+      },
+      "hono": [
+        {
+          "handler": "/assets/app.js",
+          "params": []
+        },
+        {
+          "handler": "/assets*",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:InvalidStatic",
+        "method": "error:0:InvalidStatic"
+      },
+      "differences": ["suffix-wildcards"]
+    },
+    {
+      "id": "hono-060",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Suffix wildcard > associates /assets* before /assets/app.js",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/assets*",
+          "handler": "assets"
+        },
+        {
+          "method": "POST",
+          "pattern": "/assets*",
+          "handler": "/assets*"
+        },
+        {
+          "method": "POST",
+          "pattern": "/assets/app.js",
+          "handler": "/assets/app.js"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/assets/app.js"
+      },
+      "hono": [
+        {
+          "handler": "/assets*",
+          "params": []
+        },
+        {
+          "handler": "/assets/app.js",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:InvalidStatic",
+        "method": "error:0:InvalidStatic"
+      },
+      "differences": ["suffix-wildcards"]
+    },
+    {
+      "id": "hono-061",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Suffix wildcard > GET /asset",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/assets*",
+          "handler": "assets"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/asset"
+      },
+      "hono": [],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:InvalidStatic",
+        "method": "error:0:InvalidStatic"
+      },
+      "differences": ["suffix-wildcards"]
+    },
+    {
+      "id": "hono-062",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Suffix wildcard > GET /assets/app.js",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/assets*",
+          "handler": "assets"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/assets/app.js"
+      },
+      "hono": [
+        {
+          "handler": "assets",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:InvalidStatic",
+        "method": "error:0:InvalidStatic"
+      },
+      "differences": ["suffix-wildcards"]
+    },
+    {
+      "id": "hono-063",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Suffix wildcard > GET /assets-v2",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/assets*",
+          "handler": "assets"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/assets-v2"
+      },
+      "hono": [
+        {
+          "handler": "assets",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:InvalidStatic",
+        "method": "error:0:InvalidStatic"
+      },
+      "differences": ["suffix-wildcards"]
+    },
+    {
+      "id": "hono-064",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Suffix wildcard > GET /assets",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/assets*",
+          "handler": "assets"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/assets"
+      },
+      "hono": [
+        {
+          "handler": "assets",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:InvalidStatic",
+        "method": "error:0:InvalidStatic"
+      },
+      "differences": ["suffix-wildcards"]
+    },
+    {
+      "id": "hono-065",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > star > Under a certain path",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/",
+          "handler": "/"
+        },
+        {
+          "method": "GET",
+          "pattern": "/*",
+          "handler": "/*"
+        },
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "*"
+        },
+        {
+          "method": "GET",
+          "pattern": "/x",
+          "handler": "/x"
+        },
+        {
+          "method": "GET",
+          "pattern": "/x/*",
+          "handler": "/x/*"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/x"
+      },
+      "hono": [
+        {
+          "handler": "/*",
+          "params": []
+        },
+        {
+          "handler": "*",
+          "params": []
+        },
+        {
+          "handler": "/x",
+          "params": []
+        },
+        {
+          "handler": "/x/*",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:2:MissingSlash",
+        "method": "error:2:MissingSlash"
+      },
+      "differences": ["path-only-syntax"]
+    },
+    {
+      "id": "hono-066",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > star > top",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/",
+          "handler": "/"
+        },
+        {
+          "method": "GET",
+          "pattern": "/*",
+          "handler": "/*"
+        },
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "*"
+        },
+        {
+          "method": "GET",
+          "pattern": "/x",
+          "handler": "/x"
+        },
+        {
+          "method": "GET",
+          "pattern": "/x/*",
+          "handler": "/x/*"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/"
+      },
+      "hono": [
+        {
+          "handler": "/",
+          "params": []
+        },
+        {
+          "handler": "/*",
+          "params": []
+        },
+        {
+          "handler": "*",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:2:MissingSlash",
+        "method": "error:2:MissingSlash"
+      },
+      "differences": ["path-only-syntax"]
+    },
+    {
+      "id": "hono-067",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > page > GET /page",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/page",
+          "handler": "page"
+        },
+        {
+          "method": "ALL",
+          "pattern": "*",
+          "handler": "fallback"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/page"
+      },
+      "hono": [
+        {
+          "handler": "page",
+          "params": []
+        },
+        {
+          "handler": "fallback",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:1:MissingSlash",
+        "method": "error:1:MissingSlash"
+      },
+      "differences": ["path-only-syntax"]
+    },
+    {
+      "id": "hono-068",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Duplicate param name > child",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/posts/:id",
+          "handler": "foo"
+        },
+        {
+          "method": "GET",
+          "pattern": "/:id/:action",
+          "handler": "bar"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/posts/get"
+      },
+      "hono": [
+        {
+          "handler": "foo",
+          "params": [["id", "get"]]
+        },
+        {
+          "handler": "bar",
+          "params": [
+            ["id", "posts"],
+            ["action", "get"]
+          ]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0|%69%64=%67%65%74",
+        "method": "0:0|%69%64=%67%65%74;head_from_get=false"
+      },
+      "differences": ["first-match"]
+    },
+    {
+      "id": "hono-069",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Duplicate param name > parent",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:id/:action",
+          "handler": "foo"
+        },
+        {
+          "method": "GET",
+          "pattern": "/posts/:id",
+          "handler": "bar"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/posts/get"
+      },
+      "hono": [
+        {
+          "handler": "foo",
+          "params": [
+            ["id", "posts"],
+            ["action", "get"]
+          ]
+        },
+        {
+          "handler": "bar",
+          "params": [["id", "get"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0|%69%64=%70%6F%73%74%73|%61%63%74%69%6F%6E=%67%65%74",
+        "method": "0:0|%69%64=%70%6F%73%74%73|%61%63%74%69%6F%6E=%67%65%74;head_from_get=false"
+      },
+      "differences": ["first-match"]
+    },
+    {
+      "id": "hono-070",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Duplicate param name > self three times",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:id/:id/:id",
+          "handler": "foo"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/1/2/3"
+      },
+      "hono": [
+        {
+          "handler": "foo",
+          "params": [["id", "1"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:DuplicateName",
+        "method": "error:0:DuplicateName"
+      },
+      "differences": ["unique-params"]
+    },
+    {
+      "id": "hono-071",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Duplicate param name > self with trailing static",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:id/:id/x",
+          "handler": "foo"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/123/456/x"
+      },
+      "hono": [
+        {
+          "handler": "foo",
+          "params": [["id", "123"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:DuplicateName",
+        "method": "error:0:DuplicateName"
+      },
+      "differences": ["unique-params"]
+    },
+    {
+      "id": "hono-072",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Duplicate param name > self",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:id/:id",
+          "handler": "foo"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/123/456"
+      },
+      "hono": [
+        {
+          "handler": "foo",
+          "params": [["id", "123"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:DuplicateName",
+        "method": "error:0:DuplicateName"
+      },
+      "differences": ["unique-params"]
+    },
+    {
+      "id": "hono-073",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Multi match > hierarchy",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/posts/:id/comments/:comment_id",
+          "handler": "foo"
+        },
+        {
+          "method": "GET",
+          "pattern": "/posts/:id",
+          "handler": "bar"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/"
+      },
+      "hono": [],
+      "honoError": "",
+      "expected": {
+        "path": "none",
+        "method": "none"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-074",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Multi match > Blog > DELETE /entry",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "ALL",
+          "pattern": "*",
+          "handler": "middleware a"
+        },
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "middleware b"
+        },
+        {
+          "method": "GET",
+          "pattern": "/entry",
+          "handler": "get entries"
+        },
+        {
+          "method": "POST",
+          "pattern": "/entry/*",
+          "handler": "middleware c"
+        },
+        {
+          "method": "POST",
+          "pattern": "/entry",
+          "handler": "post entry"
+        },
+        {
+          "method": "GET",
+          "pattern": "/entry/:id",
+          "handler": "get entry"
+        },
+        {
+          "method": "GET",
+          "pattern": "/entry/:id/comment/:comment_id",
+          "handler": "get comment"
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "path": "/entry"
+      },
+      "hono": [
+        {
+          "handler": "middleware a",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:MissingSlash",
+        "method": "error:0:MissingSlash"
+      },
+      "differences": ["path-only-syntax"]
+    },
+    {
+      "id": "hono-075",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Multi match > Blog > POST /entry",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "ALL",
+          "pattern": "*",
+          "handler": "middleware a"
+        },
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "middleware b"
+        },
+        {
+          "method": "GET",
+          "pattern": "/entry",
+          "handler": "get entries"
+        },
+        {
+          "method": "POST",
+          "pattern": "/entry/*",
+          "handler": "middleware c"
+        },
+        {
+          "method": "POST",
+          "pattern": "/entry",
+          "handler": "post entry"
+        },
+        {
+          "method": "GET",
+          "pattern": "/entry/:id",
+          "handler": "get entry"
+        },
+        {
+          "method": "GET",
+          "pattern": "/entry/:id/comment/:comment_id",
+          "handler": "get comment"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/entry"
+      },
+      "hono": [
+        {
+          "handler": "middleware a",
+          "params": []
+        },
+        {
+          "handler": "middleware c",
+          "params": []
+        },
+        {
+          "handler": "post entry",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:MissingSlash",
+        "method": "error:0:MissingSlash"
+      },
+      "differences": ["path-only-syntax"]
+    },
+    {
+      "id": "hono-076",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Multi match > Blog > GET /entry/123/comment/456",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "ALL",
+          "pattern": "*",
+          "handler": "middleware a"
+        },
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "middleware b"
+        },
+        {
+          "method": "GET",
+          "pattern": "/entry",
+          "handler": "get entries"
+        },
+        {
+          "method": "POST",
+          "pattern": "/entry/*",
+          "handler": "middleware c"
+        },
+        {
+          "method": "POST",
+          "pattern": "/entry",
+          "handler": "post entry"
+        },
+        {
+          "method": "GET",
+          "pattern": "/entry/:id",
+          "handler": "get entry"
+        },
+        {
+          "method": "GET",
+          "pattern": "/entry/:id/comment/:comment_id",
+          "handler": "get comment"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/entry/123/comment/456"
+      },
+      "hono": [
+        {
+          "handler": "middleware a",
+          "params": []
+        },
+        {
+          "handler": "middleware b",
+          "params": []
+        },
+        {
+          "handler": "get comment",
+          "params": [
+            ["id", "123"],
+            ["comment_id", "456"]
+          ]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:MissingSlash",
+        "method": "error:0:MissingSlash"
+      },
+      "differences": ["path-only-syntax"]
+    },
+    {
+      "id": "hono-077",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Multi match > Blog > GET /entry/123",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "ALL",
+          "pattern": "*",
+          "handler": "middleware a"
+        },
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "middleware b"
+        },
+        {
+          "method": "GET",
+          "pattern": "/entry",
+          "handler": "get entries"
+        },
+        {
+          "method": "POST",
+          "pattern": "/entry/*",
+          "handler": "middleware c"
+        },
+        {
+          "method": "POST",
+          "pattern": "/entry",
+          "handler": "post entry"
+        },
+        {
+          "method": "GET",
+          "pattern": "/entry/:id",
+          "handler": "get entry"
+        },
+        {
+          "method": "GET",
+          "pattern": "/entry/:id/comment/:comment_id",
+          "handler": "get comment"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/entry/123"
+      },
+      "hono": [
+        {
+          "handler": "middleware a",
+          "params": []
+        },
+        {
+          "handler": "middleware b",
+          "params": []
+        },
+        {
+          "handler": "get entry",
+          "params": [["id", "123"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:MissingSlash",
+        "method": "error:0:MissingSlash"
+      },
+      "differences": ["path-only-syntax"]
+    },
+    {
+      "id": "hono-078",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Multi match > Blog > GET /",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "ALL",
+          "pattern": "*",
+          "handler": "middleware a"
+        },
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "middleware b"
+        },
+        {
+          "method": "GET",
+          "pattern": "/entry",
+          "handler": "get entries"
+        },
+        {
+          "method": "POST",
+          "pattern": "/entry/*",
+          "handler": "middleware c"
+        },
+        {
+          "method": "POST",
+          "pattern": "/entry",
+          "handler": "post entry"
+        },
+        {
+          "method": "GET",
+          "pattern": "/entry/:id",
+          "handler": "get entry"
+        },
+        {
+          "method": "GET",
+          "pattern": "/entry/:id/comment/:comment_id",
+          "handler": "get comment"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/"
+      },
+      "hono": [
+        {
+          "handler": "middleware a",
+          "params": []
+        },
+        {
+          "handler": "middleware b",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:MissingSlash",
+        "method": "error:0:MissingSlash"
+      },
+      "differences": ["path-only-syntax"]
+    },
+    {
+      "id": "hono-079",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Registration order > handler -> fallback",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:type/:action",
+          "handler": "foo"
+        },
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "fallback"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/posts/123"
+      },
+      "hono": [
+        {
+          "handler": "foo",
+          "params": [
+            ["type", "posts"],
+            ["action", "123"]
+          ]
+        },
+        {
+          "handler": "fallback",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:1:MissingSlash",
+        "method": "error:1:MissingSlash"
+      },
+      "differences": ["path-only-syntax"]
+    },
+    {
+      "id": "hono-080",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Registration order > middleware -> handler",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "bar"
+        },
+        {
+          "method": "GET",
+          "pattern": "/:type/:action",
+          "handler": "foo"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/posts/123"
+      },
+      "hono": [
+        {
+          "handler": "bar",
+          "params": []
+        },
+        {
+          "handler": "foo",
+          "params": [
+            ["type", "posts"],
+            ["action", "123"]
+          ]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:MissingSlash",
+        "method": "error:0:MissingSlash"
+      },
+      "differences": ["path-only-syntax"]
+    },
+    {
+      "id": "hono-081",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Complex > /*",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/api/*",
+          "handler": "auth middleware"
+        },
+        {
+          "method": "GET",
+          "pattern": "/api",
+          "handler": "top"
+        },
+        {
+          "method": "GET",
+          "pattern": "/api/posts",
+          "handler": "posts"
+        },
+        {
+          "method": "GET",
+          "pattern": "/api/*",
+          "handler": "fallback"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/posts"
+      },
+      "hono": [
+        {
+          "handler": "auth middleware",
+          "params": []
+        },
+        {
+          "handler": "posts",
+          "params": []
+        },
+        {
+          "handler": "fallback",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0|%2A=%70%6F%73%74%73",
+        "method": "0:0|%2A=%70%6F%73%74%73;head_from_get=false"
+      },
+      "differences": ["wildcard-capture", "first-match"]
+    },
+    {
+      "id": "hono-082",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Complex > /*",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/api/*",
+          "handler": "auth middleware"
+        },
+        {
+          "method": "GET",
+          "pattern": "/api",
+          "handler": "top"
+        },
+        {
+          "method": "GET",
+          "pattern": "/api/posts",
+          "handler": "posts"
+        },
+        {
+          "method": "GET",
+          "pattern": "/api/*",
+          "handler": "fallback"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api"
+      },
+      "hono": [
+        {
+          "handler": "auth middleware",
+          "params": []
+        },
+        {
+          "handler": "top",
+          "params": []
+        },
+        {
+          "handler": "fallback",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0|%2A=",
+        "method": "0:0|%2A=;head_from_get=false"
+      },
+      "differences": ["wildcard-capture", "first-match"]
+    },
+    {
+      "id": "hono-083",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Complex > Regexp",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/post/:date{[0-9]+}/:title{[a-z]+}",
+          "handler": "get post"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/post/123/123"
+      },
+      "hono": [],
+      "honoError": "",
+      "expected": {
+        "path": "none",
+        "method": "none"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-084",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Complex > Regexp",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/post/:date{[0-9]+}/:title{[a-z]+}",
+          "handler": "get post"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/post/onetwothree"
+      },
+      "hono": [],
+      "honoError": "",
+      "expected": {
+        "path": "none",
+        "method": "none"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-085",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Complex > Regexp",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/post/:date{[0-9]+}/:title{[a-z]+}",
+          "handler": "get post"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/post/20210101/hello"
+      },
+      "hono": [
+        {
+          "handler": "get post",
+          "params": [
+            ["date", "20210101"],
+            ["title", "hello"]
+          ]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0|%64%61%74%65=%32%30%32%31%30%31%30%31|%74%69%74%6C%65=%68%65%6C%6C%6F",
+        "method": "0:0|%64%61%74%65=%32%30%32%31%30%31%30%31|%74%69%74%6C%65=%68%65%6C%6C%6F;head_from_get=false"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-086",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Complex > Default",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/api/abc",
+          "handler": "get api"
+        },
+        {
+          "method": "GET",
+          "pattern": "/api/*",
+          "handler": "fallback"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/def"
+      },
+      "hono": [
+        {
+          "handler": "fallback",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "1:1|%2A=%64%65%66",
+        "method": "1:1|%2A=%64%65%66;head_from_get=false"
+      },
+      "differences": ["wildcard-capture"]
+    },
+    {
+      "id": "hono-087",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Complex > Default",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/api/abc",
+          "handler": "get api"
+        },
+        {
+          "method": "GET",
+          "pattern": "/api/*",
+          "handler": "fallback"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/abc"
+      },
+      "hono": [
+        {
+          "handler": "get api",
+          "params": []
+        },
+        {
+          "handler": "fallback",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0",
+        "method": "0:0;head_from_get=false"
+      },
+      "differences": ["first-match"]
+    },
+    {
+      "id": "hono-088",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Complex > Wildcard",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/wild/*/card",
+          "handler": "get wildcard"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/wild/xxx/card"
+      },
+      "hono": [
+        {
+          "handler": "get wildcard",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:WildcardNotLast",
+        "method": "error:0:WildcardNotLast"
+      },
+      "differences": ["terminal-wildcards"]
+    },
+    {
+      "id": "hono-089",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Complex > Named Param",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/entry/:id",
+          "handler": "get entry"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/entry-123"
+      },
+      "hono": [],
+      "honoError": "",
+      "expected": {
+        "path": "none",
+        "method": "none"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-090",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Complex > Named Param",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/entry/:id",
+          "handler": "get entry"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/entry/123"
+      },
+      "hono": [
+        {
+          "handler": "get entry",
+          "params": [["id", "123"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0|%69%64=%31%32%33",
+        "method": "0:0|%69%64=%31%32%33;head_from_get=false"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-091",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Reserved words > Reserved words and optional named parameter",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/api/animals/:constructor?",
+          "handler": "animals"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/animals"
+      },
+      "hono": [
+        {
+          "handler": "animals",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0",
+        "method": "0:0;head_from_get=false"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-092",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Reserved words > Reserved words and wildcard",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/wild/*/card",
+          "handler": "get wildcard"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/wild/constructor/card"
+      },
+      "hono": [
+        {
+          "handler": "get wildcard",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:WildcardNotLast",
+        "method": "error:0:WildcardNotLast"
+      },
+      "differences": ["terminal-wildcards"]
+    },
+    {
+      "id": "hono-093",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Reserved words > Reserved words and named parameter",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/entry/:constructor",
+          "handler": "get entry"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/entry/123"
+      },
+      "hono": [
+        {
+          "handler": "get entry",
+          "params": [["constructor", "123"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0|%63%6F%6E%73%74%72%75%63%74%6F%72=%31%32%33",
+        "method": "0:0|%63%6F%6E%73%74%72%75%63%74%6F%72=%31%32%33;head_from_get=false"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-094",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Basic Usage > GET, post hello",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/hello",
+          "handler": "get hello"
+        },
+        {
+          "method": "POST",
+          "pattern": "/hello",
+          "handler": "post hello"
+        },
+        {
+          "method": "PURGE",
+          "pattern": "/hello",
+          "handler": "purge hello"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/"
+      },
+      "hono": [],
+      "honoError": "",
+      "expected": {
+        "path": "none",
+        "method": "none"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-095",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Basic Usage > GET, post hello",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/hello",
+          "handler": "get hello"
+        },
+        {
+          "method": "POST",
+          "pattern": "/hello",
+          "handler": "post hello"
+        },
+        {
+          "method": "PURGE",
+          "pattern": "/hello",
+          "handler": "purge hello"
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "path": "/hello"
+      },
+      "hono": [],
+      "honoError": "",
+      "expected": {
+        "path": "0:0",
+        "method": "allow:GET, HEAD, POST, PURGE"
+      },
+      "differences": ["method-not-allowed"]
+    },
+    {
+      "id": "hono-096",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Basic Usage > GET, post hello",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/hello",
+          "handler": "get hello"
+        },
+        {
+          "method": "POST",
+          "pattern": "/hello",
+          "handler": "post hello"
+        },
+        {
+          "method": "PURGE",
+          "pattern": "/hello",
+          "handler": "purge hello"
+        }
+      ],
+      "request": {
+        "method": "PURGE",
+        "path": "/hello"
+      },
+      "hono": [
+        {
+          "handler": "purge hello",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0",
+        "method": "2:2;head_from_get=false"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-097",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Basic Usage > GET, post hello",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/hello",
+          "handler": "get hello"
+        },
+        {
+          "method": "POST",
+          "pattern": "/hello",
+          "handler": "post hello"
+        },
+        {
+          "method": "PURGE",
+          "pattern": "/hello",
+          "handler": "purge hello"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/hello"
+      },
+      "hono": [
+        {
+          "handler": "post hello",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0",
+        "method": "1:1;head_from_get=false"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-098",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Basic Usage > GET, post hello",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/hello",
+          "handler": "get hello"
+        },
+        {
+          "method": "POST",
+          "pattern": "/hello",
+          "handler": "post hello"
+        },
+        {
+          "method": "PURGE",
+          "pattern": "/hello",
+          "handler": "purge hello"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/hello"
+      },
+      "hono": [
+        {
+          "handler": "get hello",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0",
+        "method": "0:0;head_from_get=false"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-099",
+      "source": "src/router/pattern-router/router.test.ts",
+      "test": "Pattern > Duplicate param name > self",
+      "origin": "upstream registration rejection; Bendo probe request added",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:id/:id",
+          "handler": "foo"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/"
+      },
+      "hono": [],
+      "honoError": "UnsupportedPathError",
+      "expected": {
+        "path": "error:0:DuplicateName",
+        "method": "error:0:DuplicateName"
+      },
+      "differences": ["registration-rejection", "unique-params"]
+    },
+    {
+      "id": "hono-100",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Capture regex param with trailing wildcard and sibling route > GET /regex-abc/123/ghi",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/regex-abc/:id{[0-9]+}/*",
+          "handler": "middleware"
+        },
+        {
+          "method": "GET",
+          "pattern": "/regex-abc/:id{[0-9]+}/def",
+          "handler": "regexp"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/regex-abc/123/ghi"
+      },
+      "hono": [
+        {
+          "handler": "middleware",
+          "params": [["id", "123"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0|%69%64=%31%32%33|%2A=%67%68%69",
+        "method": "0:0|%69%64=%31%32%33|%2A=%67%68%69;head_from_get=false"
+      },
+      "differences": ["wildcard-capture"]
+    },
+    {
+      "id": "hono-101",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Capture regex param with trailing wildcard on empty remainder > GET /123",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:id{[0-9]+}/*",
+          "handler": "regexp"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/123"
+      },
+      "hono": [
+        {
+          "handler": "regexp",
+          "params": [["id", "123"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0|%69%64=%31%32%33|%2A=",
+        "method": "0:0|%69%64=%31%32%33|%2A=;head_from_get=false"
+      },
+      "differences": ["wildcard-capture"]
+    },
+    {
+      "id": "hono-102",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Capture regex pattern has trailing wildcard > GET /foo/bar/file.html",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:dir{[a-z]+}/*/file.html",
+          "handler": "file.html"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/foo/bar/file.html"
+      },
+      "hono": [
+        {
+          "handler": "file.html",
+          "params": [["dir", "foo"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:WildcardNotLast",
+        "method": "error:0:WildcardNotLast"
+      },
+      "differences": ["terminal-wildcards"]
+    },
+    {
+      "id": "hono-103",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Trailing wildcard after a pattern label > GET /user/123/profile with the default pattern in reverse registration order",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/user/:id/profile",
+          "handler": "handler"
+        },
+        {
+          "method": "GET",
+          "pattern": "/user/:userId{[^/]+}/*",
+          "handler": "middleware"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/user/123/profile"
+      },
+      "hono": [
+        {
+          "handler": "handler",
+          "params": [["id", "123"]]
+        },
+        {
+          "handler": "middleware",
+          "params": [["userId", "123"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:1:UnbalancedBraces",
+        "method": "error:1:UnbalancedBraces"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-104",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Trailing wildcard after a pattern label > GET /user/123/profile with the default pattern",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/user/:userId{[^/]+}/*",
+          "handler": "middleware"
+        },
+        {
+          "method": "GET",
+          "pattern": "/user/:id/profile",
+          "handler": "handler"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/user/123/profile"
+      },
+      "hono": [
+        {
+          "handler": "middleware",
+          "params": [["userId", "123"]]
+        },
+        {
+          "handler": "handler",
+          "params": [["id", "123"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnbalancedBraces",
+        "method": "error:0:UnbalancedBraces"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-105",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Trailing wildcard after a pattern label > GET /files/foo/detail with regexp meta characters",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/files/:kind{(?:foo|bar)}/*",
+          "handler": "middleware"
+        },
+        {
+          "method": "GET",
+          "pattern": "/files/:type{(?:foo|bar)}/detail",
+          "handler": "handler"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/files/foo/detail"
+      },
+      "hono": [
+        {
+          "handler": "middleware",
+          "params": [["kind", "foo"]]
+        },
+        {
+          "handler": "handler",
+          "params": [["type", "foo"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-106",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Trailing wildcard after a pattern label > GET /posts/2024/comments with nested braces",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/posts/:year{[0-9]{4}}/*",
+          "handler": "middleware"
+        },
+        {
+          "method": "GET",
+          "pattern": "/posts/:yr{[0-9]{4}}/comments",
+          "handler": "handler"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/posts/2024/comments"
+      },
+      "hono": [
+        {
+          "handler": "middleware",
+          "params": [["year", "2024"]]
+        },
+        {
+          "handler": "handler",
+          "params": [["yr", "2024"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0|%79%65%61%72=%32%30%32%34|%2A=%63%6F%6D%6D%65%6E%74%73",
+        "method": "0:0|%79%65%61%72=%32%30%32%34|%2A=%63%6F%6D%6D%65%6E%74%73;head_from_get=false"
+      },
+      "differences": ["wildcard-capture", "first-match"]
+    },
+    {
+      "id": "hono-107",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Trailing wildcard after a pattern label > POST /all/abc with ALL middleware",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "ALL",
+          "pattern": "/all/:name{[a-z]+}/*",
+          "handler": "middleware"
+        },
+        {
+          "method": "POST",
+          "pattern": "/all/:id{[a-z]+}",
+          "handler": "handler"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/all/abc"
+      },
+      "hono": [
+        {
+          "handler": "middleware",
+          "params": [["name", "abc"]]
+        },
+        {
+          "handler": "handler",
+          "params": [["id", "abc"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0|%6E%61%6D%65=%61%62%63|%2A=",
+        "method": "0:0|%6E%61%6D%65=%61%62%63|%2A=;head_from_get=false"
+      },
+      "differences": ["wildcard-capture", "first-match"]
+    },
+    {
+      "id": "hono-108",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Trailing wildcard after a pattern label > GET /reverse/abc in reverse registration order",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/reverse/:id{[a-z]+}",
+          "handler": "handler"
+        },
+        {
+          "method": "GET",
+          "pattern": "/reverse/:name{[a-z]+}/*",
+          "handler": "middleware"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/reverse/abc"
+      },
+      "hono": [
+        {
+          "handler": "handler",
+          "params": [["id", "abc"]]
+        },
+        {
+          "handler": "middleware",
+          "params": [["name", "abc"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0|%69%64=%61%62%63",
+        "method": "0:0|%69%64=%61%62%63;head_from_get=false"
+      },
+      "differences": ["first-match"]
+    },
+    {
+      "id": "hono-109",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Trailing wildcard after a pattern label > GET /abc",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:name{[a-z]+}/*",
+          "handler": "middleware"
+        },
+        {
+          "method": "GET",
+          "pattern": "/:id{[a-z]+}",
+          "handler": "handler"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/abc"
+      },
+      "hono": [
+        {
+          "handler": "middleware",
+          "params": [["name", "abc"]]
+        },
+        {
+          "handler": "handler",
+          "params": [["id", "abc"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0|%6E%61%6D%65=%61%62%63|%2A=",
+        "method": "0:0|%6E%61%6D%65=%61%62%63|%2A=;head_from_get=false"
+      },
+      "differences": ["wildcard-capture", "first-match"]
+    },
+    {
+      "id": "hono-110",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Trailing wildcard after a label > GET /abc/sub",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:name/*",
+          "handler": "middleware"
+        },
+        {
+          "method": "GET",
+          "pattern": "/:id",
+          "handler": "handler"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/abc/sub"
+      },
+      "hono": [
+        {
+          "handler": "middleware",
+          "params": [["name", "abc"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0|%6E%61%6D%65=%61%62%63|%2A=%73%75%62",
+        "method": "0:0|%6E%61%6D%65=%61%62%63|%2A=%73%75%62;head_from_get=false"
+      },
+      "differences": ["wildcard-capture"]
+    },
+    {
+      "id": "hono-111",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Trailing wildcard after a label > GET /abc",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:name/*",
+          "handler": "middleware"
+        },
+        {
+          "method": "GET",
+          "pattern": "/:id",
+          "handler": "handler"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/abc"
+      },
+      "hono": [
+        {
+          "handler": "middleware",
+          "params": [["name", "abc"]]
+        },
+        {
+          "handler": "handler",
+          "params": [["id", "abc"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0|%6E%61%6D%65=%61%62%63|%2A=",
+        "method": "0:0|%6E%61%6D%65=%61%62%63|%2A=;head_from_get=false"
+      },
+      "differences": ["wildcard-capture", "first-match"]
+    },
+    {
+      "id": "hono-112",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Multi match > `params` per a handler > GET /entry/123/show",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "ALL",
+          "pattern": "*",
+          "handler": "middleware a"
+        },
+        {
+          "method": "GET",
+          "pattern": "/entry/:id/*",
+          "handler": "middleware b"
+        },
+        {
+          "method": "GET",
+          "pattern": "/entry/:id/:action",
+          "handler": "action"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/entry/123/show"
+      },
+      "hono": [
+        {
+          "handler": "middleware a",
+          "params": []
+        },
+        {
+          "handler": "middleware b",
+          "params": [["id", "123"]]
+        },
+        {
+          "handler": "action",
+          "params": [
+            ["id", "123"],
+            ["action", "show"]
+          ]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:MissingSlash",
+        "method": "error:0:MissingSlash"
+      },
+      "differences": ["path-only-syntax"]
+    },
+    {
+      "id": "hono-113",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Complex > Parameter with {.*} regexp",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/files/:name{.*}",
+          "handler": "file"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/files/"
+      },
+      "hono": [
+        {
+          "handler": "file",
+          "params": [["name", ""]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-114",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Complex > Parameter with {.*} regexp",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/files/:name{.*}",
+          "handler": "file"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/files/a/b"
+      },
+      "hono": [
+        {
+          "handler": "file",
+          "params": [["name", "a/b"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-115",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Complex > Parameter with {.*} regexp",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/files/:name{.*}",
+          "handler": "file"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/files/a"
+      },
+      "hono": [
+        {
+          "handler": "file",
+          "params": [["name", "a"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-116",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Complex > Parameter with {.*} regexp",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/files/:name{.*}",
+          "handler": "file"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/files"
+      },
+      "hono": [],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-117",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Static path including a colon in the middle > Should be treated as a static path",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/v1/name2",
+          "handler": "/v1/name2"
+        },
+        {
+          "method": "GET",
+          "pattern": "/v1/name:activate",
+          "handler": "/v1/name:activate"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/v1/name2"
+      },
+      "hono": [
+        {
+          "handler": "/v1/name2",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:1:InvalidStatic",
+        "method": "error:1:InvalidStatic"
+      },
+      "differences": ["static-punctuation"]
+    },
+    {
+      "id": "hono-118",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Static path including a colon in the middle > Should be treated as a static path",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/v1/name2",
+          "handler": "/v1/name2"
+        },
+        {
+          "method": "GET",
+          "pattern": "/v1/name:activate",
+          "handler": "/v1/name:activate"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/v1/name:activate"
+      },
+      "hono": [
+        {
+          "handler": "/v1/name:activate",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:1:InvalidStatic",
+        "method": "error:1:InvalidStatic"
+      },
+      "differences": ["static-punctuation"]
+    },
+    {
+      "id": "hono-119",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Static path including a colon in the middle > Should be treated as a static path",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/v1/name:activate",
+          "handler": "/v1/name:activate"
+        },
+        {
+          "method": "GET",
+          "pattern": "/v1/name2",
+          "handler": "/v1/name2"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/v1/name2"
+      },
+      "hono": [
+        {
+          "handler": "/v1/name2",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:InvalidStatic",
+        "method": "error:0:InvalidStatic"
+      },
+      "differences": ["static-punctuation"]
+    },
+    {
+      "id": "hono-120",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Static path including a colon in the middle > Should be treated as a static path",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/v1/name:activate",
+          "handler": "/v1/name:activate"
+        },
+        {
+          "method": "GET",
+          "pattern": "/v1/name2",
+          "handler": "/v1/name2"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/v1/name:activate"
+      },
+      "hono": [
+        {
+          "handler": "/v1/name:activate",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:InvalidStatic",
+        "method": "error:0:InvalidStatic"
+      },
+      "differences": ["static-punctuation"]
+    },
+    {
+      "id": "hono-121",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Capture a param of a label node created by a middle wildcard > Should capture the param",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/w/*/x",
+          "handler": "wildcard"
+        },
+        {
+          "method": "GET",
+          "pattern": "/w/:id/y",
+          "handler": "label"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/w/123/y"
+      },
+      "hono": [
+        {
+          "handler": "label",
+          "params": [["id", "123"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:WildcardNotLast",
+        "method": "error:0:WildcardNotLast"
+      },
+      "differences": ["terminal-wildcards"]
+    },
+    {
+      "id": "hono-122",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Single character regexp pattern > Should throw an error for a single meta character pattern",
+      "origin": "upstream registration rejection; Bendo probe request added",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:x{.}",
+          "handler": "meta"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/"
+      },
+      "hono": [],
+      "honoError": "UnsupportedPathError",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["registration-rejection", "regex"]
+    },
+    {
+      "id": "hono-123",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Single character regexp pattern > Should coexist with dynamic paths regardless of the order",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:x{a}",
+          "handler": "/:x{a}"
+        },
+        {
+          "method": "GET",
+          "pattern": "/foo/:p",
+          "handler": "/foo/:p"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/foo/v"
+      },
+      "hono": [
+        {
+          "handler": "/foo/:p",
+          "params": [["p", "v"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-124",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Single character regexp pattern > Should coexist with dynamic paths regardless of the order",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:x{a}",
+          "handler": "/:x{a}"
+        },
+        {
+          "method": "GET",
+          "pattern": "/foo/:p",
+          "handler": "/foo/:p"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/a"
+      },
+      "hono": [
+        {
+          "handler": "/:x{a}",
+          "params": [["x", "a"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-125",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Single character regexp pattern > Should coexist with dynamic paths regardless of the order",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/foo/:p",
+          "handler": "/foo/:p"
+        },
+        {
+          "method": "GET",
+          "pattern": "/:x{a}",
+          "handler": "/:x{a}"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/foo/v"
+      },
+      "hono": [
+        {
+          "handler": "/foo/:p",
+          "params": [["p", "v"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:1:UnknownConstraint",
+        "method": "error:1:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-126",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Single character regexp pattern > Should coexist with dynamic paths regardless of the order",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/foo/:p",
+          "handler": "/foo/:p"
+        },
+        {
+          "method": "GET",
+          "pattern": "/:x{a}",
+          "handler": "/:x{a}"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/a"
+      },
+      "hono": [
+        {
+          "handler": "/:x{a}",
+          "params": [["x", "a"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:1:UnknownConstraint",
+        "method": "error:1:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-127",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Single character regexp pattern > Should coexist with static paths regardless of the order",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:y{b}",
+          "handler": "/:y{b}"
+        },
+        {
+          "method": "GET",
+          "pattern": "/foo/bar",
+          "handler": "/foo/bar"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/b"
+      },
+      "hono": [
+        {
+          "handler": "/:y{b}",
+          "params": [["y", "b"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-128",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Single character regexp pattern > Should coexist with static paths regardless of the order",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:y{b}",
+          "handler": "/:y{b}"
+        },
+        {
+          "method": "GET",
+          "pattern": "/foo/bar",
+          "handler": "/foo/bar"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/foo/bar"
+      },
+      "hono": [
+        {
+          "handler": "/foo/bar",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-129",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Single character regexp pattern > Should coexist with static paths regardless of the order",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/foo/bar",
+          "handler": "/foo/bar"
+        },
+        {
+          "method": "GET",
+          "pattern": "/:y{b}",
+          "handler": "/:y{b}"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/b"
+      },
+      "hono": [
+        {
+          "handler": "/:y{b}",
+          "params": [["y", "b"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:1:UnknownConstraint",
+        "method": "error:1:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-130",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Single character regexp pattern > Should coexist with static paths regardless of the order",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/foo/bar",
+          "handler": "/foo/bar"
+        },
+        {
+          "method": "GET",
+          "pattern": "/:y{b}",
+          "handler": "/:y{b}"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/foo/bar"
+      },
+      "hono": [
+        {
+          "handler": "/foo/bar",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:1:UnknownConstraint",
+        "method": "error:1:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-131",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Single character regexp pattern > Should throw an error when a pattern terminal conflicts with a static terminal",
+      "origin": "upstream registration rejection; Bendo probe request added",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:x{a}",
+          "handler": "/:x{a}"
+        },
+        {
+          "method": "GET",
+          "pattern": "/a",
+          "handler": "/a"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/value{a}"
+      },
+      "hono": [],
+      "honoError": "UnsupportedPathError",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["registration-rejection", "regex"]
+    },
+    {
+      "id": "hono-132",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Single character regexp pattern > Should throw an error when a pattern terminal conflicts with a static terminal",
+      "origin": "upstream registration rejection; Bendo probe request added",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/a",
+          "handler": "/a"
+        },
+        {
+          "method": "GET",
+          "pattern": "/:x{a}",
+          "handler": "/:x{a}"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/a"
+      },
+      "hono": [],
+      "honoError": "UnsupportedPathError",
+      "expected": {
+        "path": "error:1:UnknownConstraint",
+        "method": "error:1:UnknownConstraint"
+      },
+      "differences": ["registration-rejection", "regex"]
+    },
+    {
+      "id": "hono-133",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Single character regexp pattern > Should capture a param even if a static path created the node first",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/a/c",
+          "handler": "static"
+        },
+        {
+          "method": "GET",
+          "pattern": "/:x{a}/b",
+          "handler": "pattern"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/a/b"
+      },
+      "hono": [
+        {
+          "handler": "pattern",
+          "params": [["x", "a"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:1:UnknownConstraint",
+        "method": "error:1:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-134",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Wildcard after label > Should prioritize the only wildcard over the tail wildcard regardless of the order",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/a/*",
+          "handler": "/a/*"
+        },
+        {
+          "method": "GET",
+          "pattern": "/a*",
+          "handler": "/a*"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/a"
+      },
+      "hono": [
+        {
+          "handler": "/a*",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:1:InvalidStatic",
+        "method": "error:1:InvalidStatic"
+      },
+      "differences": ["suffix-wildcards"]
+    },
+    {
+      "id": "hono-135",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Wildcard after label > Should prioritize the only wildcard over the tail wildcard regardless of the order",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/a*",
+          "handler": "/a*"
+        },
+        {
+          "method": "GET",
+          "pattern": "/a/*",
+          "handler": "/a/*"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/a"
+      },
+      "hono": [
+        {
+          "handler": "/a*",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:InvalidStatic",
+        "method": "error:0:InvalidStatic"
+      },
+      "differences": ["suffix-wildcards"]
+    },
+    {
+      "id": "hono-136",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Wildcard after label > Should be able to add a tail wildcard after a label",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/api/:x",
+          "handler": "label"
+        },
+        {
+          "method": "GET",
+          "pattern": "/api/*",
+          "handler": "wildcard"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/api/foo"
+      },
+      "hono": [
+        {
+          "handler": "label",
+          "params": [["x", "foo"]]
+        },
+        {
+          "handler": "wildcard",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0|%78=%66%6F%6F",
+        "method": "0:0|%78=%66%6F%6F;head_from_get=false"
+      },
+      "differences": ["first-match"]
+    },
+    {
+      "id": "hono-137",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > UnsupportedPathError > Capture Group > Complex capturing group > GET request",
+      "origin": "upstream registration rejection; Bendo probe request added",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/foo/:capture{ba(r|z)}",
+          "handler": "ok"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/"
+      },
+      "hono": [],
+      "honoError": "UnsupportedPathError",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["registration-rejection", "regex"]
+    },
+    {
+      "id": "hono-138",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > UnsupportedPathError > different methods do not conflict",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/reg-exp/router",
+          "handler": "foo"
+        },
+        {
+          "method": "POST",
+          "pattern": "/reg-exp/:id",
+          "handler": "bar"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/reg-exp/router"
+      },
+      "hono": [
+        {
+          "handler": "bar",
+          "params": [["id", "router"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0",
+        "method": "1:1|%69%64=%72%6F%75%74%65%72;head_from_get=false"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-139",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > UnsupportedPathError > different methods do not conflict",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/reg-exp/router",
+          "handler": "foo"
+        },
+        {
+          "method": "POST",
+          "pattern": "/reg-exp/:id",
+          "handler": "bar"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/reg-exp/router"
+      },
+      "hono": [
+        {
+          "handler": "foo",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0",
+        "method": "0:0;head_from_get=false"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-140",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > UnsupportedPathError > specific-method route added after an ALL route",
+      "origin": "upstream registration rejection; Bendo probe request added",
+      "routes": [
+        {
+          "method": "ALL",
+          "pattern": "/reg-exp/router",
+          "handler": "foo"
+        },
+        {
+          "method": "GET",
+          "pattern": "/reg-exp/:id",
+          "handler": "bar"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/reg-exp/router"
+      },
+      "hono": [],
+      "honoError": "UnsupportedPathError",
+      "expected": {
+        "path": "0:0",
+        "method": "0:0;head_from_get=false"
+      },
+      "differences": ["registration-rejection"]
+    },
+    {
+      "id": "hono-141",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > UnsupportedPathError > ALL route added after a specific-method route",
+      "origin": "upstream registration rejection; Bendo probe request added",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/foo/:a",
+          "handler": "foo"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/foo/:b",
+          "handler": "bar"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/foo/value"
+      },
+      "hono": [],
+      "honoError": "UnsupportedPathError",
+      "expected": {
+        "path": "0:0|%61=%76%61%6C%75%65",
+        "method": "0:0|%61=%76%61%6C%75%65;head_from_get=false"
+      },
+      "differences": ["registration-rejection"]
+    },
+    {
+      "id": "hono-142",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > UnsupportedPathError > different regular expression",
+      "origin": "upstream registration rejection; Bendo probe request added",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:id/:action{create|update}",
+          "handler": "foo"
+        },
+        {
+          "method": "GET",
+          "pattern": "/:id/:action{delete}",
+          "handler": "bar"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/value/value{create|update}"
+      },
+      "hono": [],
+      "honoError": "UnsupportedPathError",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["registration-rejection", "regex"]
+    },
+    {
+      "id": "hono-143",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > UnsupportedPathError > static and dynamic > dynamic first",
+      "origin": "upstream registration rejection; Bendo probe request added",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/reg-exp/:id",
+          "handler": "bar"
+        },
+        {
+          "method": "GET",
+          "pattern": "/reg-exp/router",
+          "handler": "foo"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/reg-exp/value"
+      },
+      "hono": [],
+      "honoError": "UnsupportedPathError",
+      "expected": {
+        "path": "0:0|%69%64=%76%61%6C%75%65",
+        "method": "0:0|%69%64=%76%61%6C%75%65;head_from_get=false"
+      },
+      "differences": ["registration-rejection"]
+    },
+    {
+      "id": "hono-144",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > UnsupportedPathError > static and dynamic > long label",
+      "origin": "upstream registration rejection; Bendo probe request added",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/reg-exp/router",
+          "handler": "foo"
+        },
+        {
+          "method": "GET",
+          "pattern": "/reg-exp/:service",
+          "handler": "bar"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/reg-exp/router"
+      },
+      "hono": [],
+      "honoError": "UnsupportedPathError",
+      "expected": {
+        "path": "0:0",
+        "method": "0:0;head_from_get=false"
+      },
+      "differences": ["registration-rejection"]
+    },
+    {
+      "id": "hono-145",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > UnsupportedPathError > static and dynamic > static first",
+      "origin": "upstream registration rejection; Bendo probe request added",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/reg-exp/router",
+          "handler": "foo"
+        },
+        {
+          "method": "GET",
+          "pattern": "/reg-exp/:id",
+          "handler": "bar"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/reg-exp/router"
+      },
+      "hono": [],
+      "honoError": "UnsupportedPathError",
+      "expected": {
+        "path": "0:0",
+        "method": "0:0;head_from_get=false"
+      },
+      "differences": ["registration-rejection"]
+    },
+    {
+      "id": "hono-146",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > UnsupportedPathError > child",
+      "origin": "upstream registration rejection; Bendo probe request added",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/posts/:id",
+          "handler": "foo"
+        },
+        {
+          "method": "GET",
+          "pattern": "/:id/:action",
+          "handler": "bar"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/posts/value"
+      },
+      "hono": [],
+      "honoError": "UnsupportedPathError",
+      "expected": {
+        "path": "0:0|%69%64=%76%61%6C%75%65",
+        "method": "0:0|%69%64=%76%61%6C%75%65;head_from_get=false"
+      },
+      "differences": ["registration-rejection"]
+    },
+    {
+      "id": "hono-147",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > UnsupportedPathError > parent",
+      "origin": "upstream registration rejection; Bendo probe request added",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:id/:action",
+          "handler": "foo"
+        },
+        {
+          "method": "GET",
+          "pattern": "/posts/:id",
+          "handler": "bar"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/value/value"
+      },
+      "hono": [],
+      "honoError": "UnsupportedPathError",
+      "expected": {
+        "path": "0:0|%69%64=%76%61%6C%75%65|%61%63%74%69%6F%6E=%76%61%6C%75%65",
+        "method": "0:0|%69%64=%76%61%6C%75%65|%61%63%74%69%6F%6E=%76%61%6C%75%65;head_from_get=false"
+      },
+      "differences": ["registration-rejection"]
+    },
+    {
+      "id": "hono-148",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > UnsupportedPathError > Multiple handlers with different label > GET /:class/:id",
+      "origin": "upstream registration rejection; Bendo probe request added",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:type/:id",
+          "handler": ":type"
+        },
+        {
+          "method": "GET",
+          "pattern": "/:class/:id",
+          "handler": ":class"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/value/value"
+      },
+      "hono": [],
+      "honoError": "UnsupportedPathError",
+      "expected": {
+        "path": "0:0|%74%79%70%65=%76%61%6C%75%65|%69%64=%76%61%6C%75%65",
+        "method": "0:0|%74%79%70%65=%76%61%6C%75%65|%69%64=%76%61%6C%75%65;head_from_get=false"
+      },
+      "differences": ["registration-rejection"]
+    },
+    {
+      "id": "hono-149",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > UnsupportedPathError > Ambiguous > GET /entry/:name",
+      "origin": "upstream registration rejection; Bendo probe request added",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:user/entries",
+          "handler": "get user entries"
+        },
+        {
+          "method": "GET",
+          "pattern": "/entry/:name",
+          "handler": "get entry"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/value/entries"
+      },
+      "hono": [],
+      "honoError": "UnsupportedPathError",
+      "expected": {
+        "path": "0:0|%75%73%65%72=%76%61%6C%75%65",
+        "method": "0:0|%75%73%65%72=%76%61%6C%75%65;head_from_get=false"
+      },
+      "differences": ["registration-rejection"]
+    },
+    {
+      "id": "hono-150",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Return value type > Should return [[T, ParamIndexMap][], ParamStash]",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/posts/:id",
+          "handler": "get post"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/posts/1"
+      },
+      "hono": [
+        {
+          "handler": "get post",
+          "params": [["id", "1"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0|%69%64=%31",
+        "method": "0:0|%69%64=%31;head_from_get=false"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-151",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Trailing slash > GET /book/",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/book",
+          "handler": "GET /book"
+        },
+        {
+          "method": "GET",
+          "pattern": "/book/:id",
+          "handler": "GET /book/:id"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/book/"
+      },
+      "hono": [],
+      "honoError": "",
+      "expected": {
+        "path": "none",
+        "method": "none"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-152",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Common > Capture multiple directories and optional > GET /foo/bar/contents/123",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:prefix{.+}/contents/:id?",
+          "handler": "contents"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/foo/bar/contents/123"
+      },
+      "hono": [
+        {
+          "handler": "contents",
+          "params": [
+            ["id", "123"],
+            ["prefix", "foo/bar"]
+          ]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:UnknownConstraint",
+        "method": "error:0:UnknownConstraint"
+      },
+      "differences": ["regex"]
+    },
+    {
+      "id": "hono-153",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Common > Optional route > GET /v1/123/abc",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/api/animals/:type?",
+          "handler": "animals"
+        },
+        {
+          "method": "GET",
+          "pattern": "/v1/:version?/:platform?",
+          "handler": "result"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/v1/123/abc"
+      },
+      "hono": [
+        {
+          "handler": "result",
+          "params": [
+            ["platform", "abc"],
+            ["version", "123"]
+          ]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:1:OptionalNotLast",
+        "method": "error:1:OptionalNotLast"
+      },
+      "differences": ["terminal-optionals"]
+    },
+    {
+      "id": "hono-154",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Common > Multi match > `params` per a handler > GET /entry/123/show",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "ALL",
+          "pattern": "*",
+          "handler": "middleware a"
+        },
+        {
+          "method": "GET",
+          "pattern": "/entry/:id/*",
+          "handler": "middleware b"
+        },
+        {
+          "method": "GET",
+          "pattern": "/entry/:id/:action",
+          "handler": "action"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/entry/123/show"
+      },
+      "hono": [
+        {
+          "handler": "middleware a",
+          "params": []
+        },
+        {
+          "handler": "middleware b",
+          "params": [["id", "123"]]
+        },
+        {
+          "handler": "action",
+          "params": [
+            ["action", "show"],
+            ["id", "123"]
+          ]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:MissingSlash",
+        "method": "error:0:MissingSlash"
+      },
+      "differences": ["path-only-syntax"]
+    },
+    {
+      "id": "hono-155",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Common > Multi match > Blog > GET /entry/123/comment/456",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "ALL",
+          "pattern": "*",
+          "handler": "middleware a"
+        },
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "middleware b"
+        },
+        {
+          "method": "GET",
+          "pattern": "/entry",
+          "handler": "get entries"
+        },
+        {
+          "method": "POST",
+          "pattern": "/entry/*",
+          "handler": "middleware c"
+        },
+        {
+          "method": "POST",
+          "pattern": "/entry",
+          "handler": "post entry"
+        },
+        {
+          "method": "GET",
+          "pattern": "/entry/:id",
+          "handler": "get entry"
+        },
+        {
+          "method": "GET",
+          "pattern": "/entry/:id/comment/:comment_id",
+          "handler": "get comment"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/entry/123/comment/456"
+      },
+      "hono": [
+        {
+          "handler": "middleware a",
+          "params": []
+        },
+        {
+          "handler": "middleware b",
+          "params": []
+        },
+        {
+          "handler": "get comment",
+          "params": [
+            ["comment_id", "456"],
+            ["id", "123"]
+          ]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:MissingSlash",
+        "method": "error:0:MissingSlash"
+      },
+      "differences": ["path-only-syntax"]
+    },
+    {
+      "id": "hono-156",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Common > Registration order > handler -> fallback",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:type/:action",
+          "handler": "foo"
+        },
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "fallback"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/posts/123"
+      },
+      "hono": [
+        {
+          "handler": "foo",
+          "params": [
+            ["action", "123"],
+            ["type", "posts"]
+          ]
+        },
+        {
+          "handler": "fallback",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:1:MissingSlash",
+        "method": "error:1:MissingSlash"
+      },
+      "differences": ["path-only-syntax"]
+    },
+    {
+      "id": "hono-157",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Common > Registration order > middleware -> handler",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "*",
+          "handler": "bar"
+        },
+        {
+          "method": "GET",
+          "pattern": "/:type/:action",
+          "handler": "foo"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/posts/123"
+      },
+      "hono": [
+        {
+          "handler": "bar",
+          "params": []
+        },
+        {
+          "handler": "foo",
+          "params": [
+            ["action", "123"],
+            ["type", "posts"]
+          ]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "error:0:MissingSlash",
+        "method": "error:0:MissingSlash"
+      },
+      "differences": ["path-only-syntax"]
+    },
+    {
+      "id": "hono-158",
+      "source": "src/router/reg-exp-router/router.test.ts",
+      "test": "RegExpRouter > Common > Complex > Regexp",
+      "origin": "verbatim upstream request",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/post/:date{[0-9]+}/:title{[a-z]+}",
+          "handler": "get post"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/post/20210101/hello"
+      },
+      "hono": [
+        {
+          "handler": "get post",
+          "params": [
+            ["title", "hello"],
+            ["date", "20210101"]
+          ]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0|%64%61%74%65=%32%30%32%31%30%31%30%31|%74%69%74%6C%65=%68%65%6C%6C%6F",
+        "method": "0:0|%64%61%74%65=%32%30%32%31%30%31%30%31|%74%69%74%6C%65=%68%65%6C%6C%6F;head_from_get=false"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-159",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Unknown method > UNKNOWN_METHOD /all",
+      "origin": "ALL method matrix from this upstream registration table",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/",
+          "handler": "index"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/all",
+          "handler": "all"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/all"
+      },
+      "hono": [
+        {
+          "handler": "all",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "1:1",
+        "method": "1:1;head_from_get=false"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-160",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Unknown method > UNKNOWN_METHOD /all",
+      "origin": "ALL method matrix from this upstream registration table",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/",
+          "handler": "index"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/all",
+          "handler": "all"
+        }
+      ],
+      "request": {
+        "method": "HEAD",
+        "path": "/all"
+      },
+      "hono": [
+        {
+          "handler": "all",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "1:1",
+        "method": "1:1;head_from_get=false"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-161",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Unknown method > UNKNOWN_METHOD /all",
+      "origin": "ALL method matrix from this upstream registration table",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/",
+          "handler": "index"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/all",
+          "handler": "all"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/all"
+      },
+      "hono": [
+        {
+          "handler": "all",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "1:1",
+        "method": "1:1;head_from_get=false"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-162",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Unknown method > UNKNOWN_METHOD /all",
+      "origin": "ALL method matrix from this upstream registration table",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/",
+          "handler": "index"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/all",
+          "handler": "all"
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "path": "/all"
+      },
+      "hono": [
+        {
+          "handler": "all",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "1:1",
+        "method": "1:1;head_from_get=false"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-163",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Unknown method > UNKNOWN_METHOD /all",
+      "origin": "ALL method matrix from this upstream registration table",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/",
+          "handler": "index"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/all",
+          "handler": "all"
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "path": "/all"
+      },
+      "hono": [
+        {
+          "handler": "all",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "1:1",
+        "method": "1:1;head_from_get=false"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-164",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Unknown method > UNKNOWN_METHOD /all",
+      "origin": "ALL method matrix from this upstream registration table",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/",
+          "handler": "index"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/all",
+          "handler": "all"
+        }
+      ],
+      "request": {
+        "method": "CONNECT",
+        "path": "/all"
+      },
+      "hono": [
+        {
+          "handler": "all",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "1:1",
+        "method": "1:1;head_from_get=false"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-165",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Unknown method > UNKNOWN_METHOD /all",
+      "origin": "ALL method matrix from this upstream registration table",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/",
+          "handler": "index"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/all",
+          "handler": "all"
+        }
+      ],
+      "request": {
+        "method": "OPTIONS",
+        "path": "/all"
+      },
+      "hono": [
+        {
+          "handler": "all",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "1:1",
+        "method": "1:1;head_from_get=false"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-166",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Unknown method > UNKNOWN_METHOD /all",
+      "origin": "ALL method matrix from this upstream registration table",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/",
+          "handler": "index"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/all",
+          "handler": "all"
+        }
+      ],
+      "request": {
+        "method": "TRACE",
+        "path": "/all"
+      },
+      "hono": [
+        {
+          "handler": "all",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "1:1",
+        "method": "1:1;head_from_get=false"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-167",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Unknown method > UNKNOWN_METHOD /all",
+      "origin": "ALL method matrix from this upstream registration table",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/",
+          "handler": "index"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/all",
+          "handler": "all"
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "path": "/all"
+      },
+      "hono": [
+        {
+          "handler": "all",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "1:1",
+        "method": "1:1;head_from_get=false"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-168",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Unknown method > UNKNOWN_METHOD /all",
+      "origin": "ALL method matrix from this upstream registration table",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/",
+          "handler": "index"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/all",
+          "handler": "all"
+        }
+      ],
+      "request": {
+        "method": "PURGE",
+        "path": "/all"
+      },
+      "hono": [
+        {
+          "handler": "all",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "1:1",
+        "method": "allow:GET, HEAD, POST, PUT, DELETE, CONNECT, OPTIONS, TRACE, PATCH"
+      },
+      "differences": ["method-not-allowed", "all-standard-methods"]
+    },
+    {
+      "id": "hono-169",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Unknown method > UNKNOWN_METHOD /",
+      "origin": "ALL method matrix from this upstream registration table",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/",
+          "handler": "index"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/all",
+          "handler": "all"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/"
+      },
+      "hono": [
+        {
+          "handler": "index",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0",
+        "method": "0:0;head_from_get=false"
+      },
+      "differences": []
+    },
+    {
+      "id": "hono-170",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Unknown method > UNKNOWN_METHOD /",
+      "origin": "ALL method matrix from this upstream registration table",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/",
+          "handler": "index"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/all",
+          "handler": "all"
+        }
+      ],
+      "request": {
+        "method": "HEAD",
+        "path": "/"
+      },
+      "hono": [],
+      "honoError": "",
+      "expected": {
+        "path": "0:0",
+        "method": "0:0;head_from_get=true"
+      },
+      "differences": ["head-fallback"]
+    },
+    {
+      "id": "hono-171",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Unknown method > UNKNOWN_METHOD /",
+      "origin": "ALL method matrix from this upstream registration table",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/",
+          "handler": "index"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/all",
+          "handler": "all"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/"
+      },
+      "hono": [],
+      "honoError": "",
+      "expected": {
+        "path": "0:0",
+        "method": "allow:GET, HEAD"
+      },
+      "differences": ["method-not-allowed"]
+    },
+    {
+      "id": "hono-172",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Unknown method > UNKNOWN_METHOD /",
+      "origin": "ALL method matrix from this upstream registration table",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/",
+          "handler": "index"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/all",
+          "handler": "all"
+        }
+      ],
+      "request": {
+        "method": "PUT",
+        "path": "/"
+      },
+      "hono": [],
+      "honoError": "",
+      "expected": {
+        "path": "0:0",
+        "method": "allow:GET, HEAD"
+      },
+      "differences": ["method-not-allowed"]
+    },
+    {
+      "id": "hono-173",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Unknown method > UNKNOWN_METHOD /",
+      "origin": "ALL method matrix from this upstream registration table",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/",
+          "handler": "index"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/all",
+          "handler": "all"
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "path": "/"
+      },
+      "hono": [],
+      "honoError": "",
+      "expected": {
+        "path": "0:0",
+        "method": "allow:GET, HEAD"
+      },
+      "differences": ["method-not-allowed"]
+    },
+    {
+      "id": "hono-174",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Unknown method > UNKNOWN_METHOD /",
+      "origin": "ALL method matrix from this upstream registration table",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/",
+          "handler": "index"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/all",
+          "handler": "all"
+        }
+      ],
+      "request": {
+        "method": "CONNECT",
+        "path": "/"
+      },
+      "hono": [],
+      "honoError": "",
+      "expected": {
+        "path": "0:0",
+        "method": "allow:GET, HEAD"
+      },
+      "differences": ["method-not-allowed"]
+    },
+    {
+      "id": "hono-175",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Unknown method > UNKNOWN_METHOD /",
+      "origin": "ALL method matrix from this upstream registration table",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/",
+          "handler": "index"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/all",
+          "handler": "all"
+        }
+      ],
+      "request": {
+        "method": "OPTIONS",
+        "path": "/"
+      },
+      "hono": [],
+      "honoError": "",
+      "expected": {
+        "path": "0:0",
+        "method": "allow:GET, HEAD"
+      },
+      "differences": ["method-not-allowed"]
+    },
+    {
+      "id": "hono-176",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Unknown method > UNKNOWN_METHOD /",
+      "origin": "ALL method matrix from this upstream registration table",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/",
+          "handler": "index"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/all",
+          "handler": "all"
+        }
+      ],
+      "request": {
+        "method": "TRACE",
+        "path": "/"
+      },
+      "hono": [],
+      "honoError": "",
+      "expected": {
+        "path": "0:0",
+        "method": "allow:GET, HEAD"
+      },
+      "differences": ["method-not-allowed"]
+    },
+    {
+      "id": "hono-177",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Unknown method > UNKNOWN_METHOD /",
+      "origin": "ALL method matrix from this upstream registration table",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/",
+          "handler": "index"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/all",
+          "handler": "all"
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "path": "/"
+      },
+      "hono": [],
+      "honoError": "",
+      "expected": {
+        "path": "0:0",
+        "method": "allow:GET, HEAD"
+      },
+      "differences": ["method-not-allowed"]
+    },
+    {
+      "id": "hono-178",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Unknown method > UNKNOWN_METHOD /",
+      "origin": "ALL method matrix from this upstream registration table",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/",
+          "handler": "index"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/all",
+          "handler": "all"
+        }
+      ],
+      "request": {
+        "method": "PURGE",
+        "path": "/"
+      },
+      "hono": [],
+      "honoError": "",
+      "expected": {
+        "path": "0:0",
+        "method": "allow:GET, HEAD"
+      },
+      "differences": ["method-not-allowed"]
+    },
+    {
+      "id": "hono-179",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > GET star, GET static, ALL star... > Should return star1, star2, and bar",
+      "origin": "ALL method matrix from this upstream registration table",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/y/*",
+          "handler": "star1"
+        },
+        {
+          "method": "GET",
+          "pattern": "/y/a",
+          "handler": "a"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/y/b/*",
+          "handler": "star2"
+        },
+        {
+          "method": "GET",
+          "pattern": "/y/b/bar",
+          "handler": "bar"
+        }
+      ],
+      "request": {
+        "method": "HEAD",
+        "path": "/y/b/bar"
+      },
+      "hono": [
+        {
+          "handler": "star2",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0|%2A=%62%2F%62%61%72",
+        "method": "2:2|%2A=%62%61%72;head_from_get=false"
+      },
+      "differences": ["wildcard-capture"]
+    },
+    {
+      "id": "hono-180",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > GET star, GET static, ALL star... > Should return star1, star2, and bar",
+      "origin": "ALL method matrix from this upstream registration table",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/y/*",
+          "handler": "star1"
+        },
+        {
+          "method": "GET",
+          "pattern": "/y/a",
+          "handler": "a"
+        },
+        {
+          "method": "ALL",
+          "pattern": "/y/b/*",
+          "handler": "star2"
+        },
+        {
+          "method": "GET",
+          "pattern": "/y/b/bar",
+          "handler": "bar"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/y/b/bar"
+      },
+      "hono": [
+        {
+          "handler": "star2",
+          "params": []
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0|%2A=%62%2F%62%61%72",
+        "method": "2:2|%2A=%62%61%72;head_from_get=false"
+      },
+      "differences": ["wildcard-capture"]
+    }
+  ]
+}
