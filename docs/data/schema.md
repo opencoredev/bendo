@@ -1,9 +1,10 @@
-# Scalar schemas
+# Schemas
 
-Import `src/data/schema.bend` to describe scalar constraints as copyable Bend
-`Data` and decode a parsed `Json.Json`. The same pure decoder compiles to native
-code and `.mjs`. This is the scalar foundation for generated record decoders in
-decision [0003](../decisions/0003-typed-values.md).
+Import `src/data/schema.bend` to describe the shape of JSON as copyable Bend
+`Data` and decode a parsed `Json.Json`. Scalar schemas check one value; array,
+object, nullable and union schemas compose them. The same pure decoder compiles
+to native code and `.mjs`. This is the foundation for generated record decoders
+in decision [0003](../decisions/0003-typed-values.md).
 
 ```python
 import Base
@@ -22,7 +23,8 @@ The result is `Done{VString{"Hello"}}`. A generated record decoder can match
 
 ## Schema and value types
 
-`Schema` contains these scalar constructors:
+`Schema` contains six scalar constructors and four compound ones, described in
+[Compound schemas](#compound-schemas):
 
 ```python
 type Schema is Data:
@@ -32,17 +34,24 @@ type Schema is Data:
   BooleanSchema{}
   LiteralSchema{value: Json.Json}
   EnumSchema{values: List<&2, Json.Json>}
+  ArraySchema{items: Schema, min_items: Nat, max_items: Maybe<&2, Nat>}
+  ObjectSchema{fields: List<&2, Field>, unknown: Unknown}
+  NullableSchema{inner: Schema}
+  UnionSchema{members: List<&2, Schema>}
 ```
 
 `decode(schema, json)` returns `Result<&2, &2, Errors(), Value>`.
 `Errors()` is `List<&2, Error>`; each error has a `Code`, a message, and a
-`List<&2, PathPart>`. Scalar errors contain one item with an empty path.
-`PathKey{String}` and `PathIndex{Nat}` reserve the shape for BND-35.
+`List<&2, PathPart>`. Decoding stops at the first failure, so the list holds one
+error. Its path leads from the root to the failing value through `PathKey{String}`
+(an object key) and `PathIndex{Nat}` (an array position); a scalar schema at the
+root gives an empty path. Collecting every error is BND-35 work.
 
-Successful values are `VString{String}`, `VNumber{String}`,
+Successful scalar values are `VString{String}`, `VNumber{String}`,
 `VInteger{String}`, `VBool{Bool}`, or `VLiteral{Json.Json}`. Numbers retain the
 input spelling exactly. Integer values are validated decimals, rather than
-bounded machine integers. `to_json(value)` reconstructs the original input.
+bounded machine integers. `to_json(value)` reconstructs the input; for compound
+values it omits absent fields and keys that `Strip{}` dropped.
 
 All bounds are inclusive. `None{}` means no upper length or numeric bound.
 Number bounds use valid JSON number tokens and exact decimal ordering; they
@@ -242,20 +251,143 @@ it does not perform DNS, restrict destinations, or guarantee fetchability.
 BND-37 should retain these precise restrictions as decoder policy rather than
 assuming generic JSON Schema `format` implementations agree.
 
+## Compound schemas
+
+```python
+type Unknown is Data:
+  Strict{}
+  Strip{}
+
+type Presence is Data:
+  Required{}
+  Optional{}
+
+type Field is Data:
+  Field{key: String, schema: Schema, presence: Presence}
+
+type Value is Data:
+  ...                                  # the scalar values above
+  VNull{}
+  VArray{items: List<&2, Value>}
+  VObject{fields: List<&2, VField>}
+  VUnion{index: Nat, value: Value}
+
+type VField is Data:
+  VField{key: String, value: Maybe<&2, Value>}
+```
+
+This user schema nests three objects:
+
+```python
+def text() -> S.Schema:
+  S.StringSchema{1n, Some{80n}, None{}, S.Plain{}}
+
+def geo() -> S.Schema:
+  S.ObjectSchema{[S.Field{"lat", S.NumberSchema{None{}, None{}}, S.Required{}}, S.Field{"lng", S.NumberSchema{None{}, None{}}, S.Required{}}], S.Strict{}}
+
+def user() -> S.Schema:
+  S.ObjectSchema{[
+    S.Field{"name", text(), S.Required{}},
+    S.Field{"address", S.ObjectSchema{[S.Field{"city", text(), S.Required{}}, S.Field{"geo", geo(), S.Required{}}], S.Strict{}}, S.Required{}},
+    S.Field{"nick", S.NullableSchema{text()}, S.Optional{}},
+  ], S.Strict{}}
+```
+
+Decoding `{"address":{"geo":{"lng":2.35,"lat":48.85},"city":"Paris"},"name":"Ada"}`
+gives fields in schema order, whatever the input order:
+
+```python
+VObject{[
+  VField{"name", Some{VString{"Ada"}}},
+  VField{"address", Some{VObject{[VField{"city", Some{VString{"Paris"}}}, VField{"geo", Some{VObject{[VField{"lat", Some{VNumber{"48.85"}}}, VField{"lng", Some{VNumber{"2.35"}}}]}}}]}}},
+  VField{"nick", None{}},
+]}
+```
+
+A typed record reads those fields by position and never compares a key; the
+preservation law below fixes their order. `tests/fixtures/schema-compound/consumer.bend`
+turns this value into `User{name, Address{city, Geo{lat, lng}, zip}, nick}`,
+which is the shape decision 0003's generator will emit.
+
+### Arrays
+
+`ArraySchema{items, min_items, max_items}` accepts an array with `min_items` to
+`max_items` items (`None{}`: no upper limit), each accepted by `items`. The count
+is checked before any item is decoded, so an oversized body fails without
+decoding its items. The value is `VArray` with each item's value in order. An
+item's error path starts with its zero-based `PathIndex`.
+
+### Objects
+
+`ObjectSchema{fields, unknown}` accepts an object when:
+
+- each declared key appears exactly once if `Required{}`, at most once if
+  `Optional{}`, and its member is accepted by that field's schema;
+- under `Strict{}`, every member's key is declared; under `Strip{}`, undeclared
+  members are ignored and left out of the value, even when they repeat.
+
+Bendo's JSON keeps duplicate keys, and parsers disagree about which duplicate
+wins, so a declared key that appears twice rejects the object with
+`duplicate key` under either policy. The value is `VObject` with one `VField`
+per declared field in schema order, `None{}` for an absent optional field.
+Errors for a member start with its `PathKey`; a missing required key and a
+duplicate key name that key, and an undeclared key under `Strict{}` has an
+empty path.
+
+Optionality lives on the field, not on a schema: JSON has no undefined value,
+so "may be absent" only means something for an object key. Use
+`NullableSchema` for "may be null". BND-35 adds defaults as a third
+`Presence`.
+
+### Nullable and union
+
+`NullableSchema{inner}` accepts null, giving `VNull{}`, and otherwise whatever
+`inner` accepts, giving `inner`'s value unchanged.
+
+`UnionSchema{members}` tries members in order and returns `VUnion{i, value}` for
+the first member `i` (zero-based) that accepts. An empty union accepts nothing.
+When no member accepts, the error is `Constraint` with
+`value matches no union member` and an empty path; member errors are discarded.
+
+### Validity
+
+A compound schema is valid when every part is: `min_items <= max_items`, declared
+keys are well-formed Unicode and distinct within an object, and every child
+schema is valid. The decoder checks the whole tree, including union members it
+may never reach, before reading input, and an invalid tree returns
+`InvalidSchema` with `invalid schema`.
+
+### Cost under attacker input
+
+Decoding never recurses deeper than the schema: an input nested deeper than the
+schema fails at the schema's depth, and the parser already caps nesting at 512.
+Every loop over an attacker-sized array or object is a tail call in native code
+and `.mjs`, so wide bodies use no call stack. An object costs
+O(members × declared fields) for its key checks; there is no per-pair
+comparison between members, so a fixed schema costs time linear in the body.
+A union tries each member on the same value, so a value under nested unions can
+be decoded once per path through them; that factor depends on the schema, not
+on the body. `tests/schema-compound.test.ts` measures 256 KiB and 1 MiB
+bodies (integer arrays, unknown keys, one key repeated, oversized arrays) and
+requires the larger to cost under 8 times the smaller.
+
 ## Errors and extension points
 
 Malformed bounds, reversed bounds, non-ASCII or reversed pattern ranges,
 pattern literals with a lone surrogate, reversed counts anywhere in a pattern,
-patterns over the size cap, and invalid literal or enum members return
-`InvalidSchema` before examining input. `TypeMismatch` means the JSON category
+patterns over the size cap, and invalid literal or enum members, and the compound
+rules under [Validity](#validity) return `InvalidSchema` before examining input. `TypeMismatch` means the JSON category
 differs from the schema. `Constraint` means a value fails a check, literal
 membership, or scalar validity.
 Even an otherwise matching enum rejects if another member is malformed.
 
-There is no coercion, default insertion, or path accumulation yet (BND-35), and
-no route validation (BND-36) or JSON Schema export (BND-37). Object, array,
-optional, nullable, and union variants belong to BND-34. Defaults remain
-annotations until consumers explicitly call a decoder implementing that policy.
+There is no coercion, default insertion, or error accumulation yet (BND-35), and
+no route validation (BND-36) or JSON Schema export (BND-37). BND-37 should export
+`Strict{}` as `additionalProperties: false`, `Optional{}` by omission from
+`required`, nullables and unions as `anyOf`, and must record the duplicate-key,
+first-match and lexical-integer rules as decoder policy, since JSON Schema
+validators do not share them. Defaults remain annotations until consumers
+explicitly call a decoder implementing that policy.
 The prototype generator is unchanged; production record generation can call
 this generic scalar decoder per field without duplicating scalar checks.
 
@@ -270,18 +402,41 @@ the email and URL formats as direct grammars. It imports the schema and pattern
 modules only for their data types and calls none of their functions. It is a specification, not an implementation: it is
 exponential on patterns and unary on numbers.
 
-The BND-33 laws quantify every schema and every JSON tree. The first equates
-successful decoding with `SchemaSpec.satisfies`, proving both soundness and
-completeness against that independent specification. The proof goes through
-one equivalence lemma per check (`proof/schema-*.bend`). The second law
-requires the correct typed constructor and exact input payload on every
-successful decode.
+It states compound rules the same way: an array's item count and every item,
+an object's key policy, the number of members named by each declared key and
+every such member, null or the inner schema, and "some member" for a union.
+The value side of the spec, `Schema.value_for`, builds the expected value tree
+without checking any constraint; for a union it picks the first member that
+`decode` accepts, which the first law ties to the specification.
+
+Three laws quantify every schema and every JSON tree, including malformed
+schemas and constructed data:
+
+- `schema_acceptance_iff` equates successful decoding with
+  `SchemaSpec.satisfies`, proving soundness and completeness. BND-34 extended
+  the `Schema` type without changing the statement; on scalar schemas both
+  sides behave exactly as in BND-33.
+- `schema_preserves_typed_value` requires every success to equal
+  `value_for`: the right constructors, exact scalar payloads, items in order,
+  declared fields in schema order, and the union member's index.
+- `schema_children_satisfy` states the BND-34 guarantee directly: when
+  decoding accepts, every array item, every member with a declared key, the
+  inner value of a non-null nullable, and at least one union member satisfy
+  their own schemas. It follows from the first law.
+
+The scalar proofs go through one equivalence lemma per check
+(`proof/schema-*.bend`); the compound proofs (`proof/schema-compound.bend`)
+follow the decoder's states by induction on the schema and on each list.
 
 Run `bun run prove` for the strict Lean-backed kernel and
-`bun test --timeout 30000 tests/schema.test.ts` for real native and `.mjs`
-consumers. Tests cover every kind and check, malformed schemas and input, exact
+`bun test --timeout 30000 tests/schema.test.ts tests/schema-compound.test.ts`
+for real native and `.mjs` consumers. Tests cover every kind and check, malformed schemas and input, exact
 boundaries, Unicode scalar lengths, numerical const equality, huge decimal
 orders, and long strings without JavaScript call-stack growth. For patterns
 they compare the matcher with `new RegExp(P.source(p))` with and without the
 `u` flag on every string up to length three over a mixed alphabet plus random
-strings, and with the specification on short strings.
+strings, and with the specification on short strings. Compound tests decode
+hand-checked cases in both targets, a three-level typed record, 3,000 seeded
+random schemas and inputs (duplicate and unknown keys included) against an
+independent TypeScript reading of this page and against the specification,
+and megabyte bodies.

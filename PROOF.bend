@@ -18,8 +18,7 @@ import ./proof/scoped-assembly-spec.bend as AssemblySpec
 import ./src/app/scopes.bend as Scopes
 import ./proof/middleware-selection.bend as MiddlewareSelection
 
-import ./proof/schema.bend as SchemaProof
-import ./src/data/schema.bend as Schema
+import ./proof/schema-compound.bend as SchemaProof
 import ./src/http/response.bend as Response
 import ./src/http/write_response.bend as WriteResponse
 
@@ -500,7 +499,10 @@ def Laws.schema_acceptance_iff(schema, value):
   SchemaProof.acceptance_spec(schema, value)
 
 def Laws.schema_preserves_typed_value(schema, value):
-  SchemaProof.preservation(schema, value, Schema.valid(schema))
+  SchemaProof.preservation(schema, value)
+
+def Laws.schema_children_satisfy(schema, value, accepted):
+  SchemaProof.children_law(schema, value, accepted)
 
 # BND-24
 
