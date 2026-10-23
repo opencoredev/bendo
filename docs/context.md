@@ -123,3 +123,6 @@ Existing low-level callers can use `src/http/response.bend` for
 of destructuring context internals.
 
 Verify with `bun test --timeout 30000 tests/context.test.ts`.
+
+[Middleware](middleware.md) passes the same typed context through an affine
+`next` continuation, so middleware can set variables before the handler runs.
