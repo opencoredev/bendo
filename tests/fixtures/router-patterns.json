@@ -1258,5 +1258,22 @@
     "pattern": "/*/:x{.+}",
     "params": [["x", "a"]],
     "filled": "/%61"
+  },
+  {
+    "kind": "error",
+    "pattern": "/assets*/x",
+    "path": "/assets/x",
+    "error": "WildcardNotLast"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:x{.+}?",
+    "path": "/x",
+    "error": "UnknownConstraint"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/*/*/*/*/*/*/*/*/*/*/z",
+    "path": "/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a"
   }
 ]

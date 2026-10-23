@@ -200,6 +200,8 @@ def terminal_error(s: Segment) -> ErrorKind:
   match s:
     case Wildcard{name}:
       WildcardNotLast{}
+    case PrefixWildcard{prefix}:
+      WildcardNotLast{}
     case _:
       OptionalNotLast{}
 
