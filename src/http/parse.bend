@@ -140,6 +140,29 @@ def ordinary_header(r: R.Req, c: U32, rev: List<&2, U32>, ok: Bool) -> State:
     case True{}:
       Headers{r, c <> rev, False{}}
 
+# Valid data bytes take the direct path; controls retain strict CRLF handling.
+def request_octet(ok: Bool, c: U32, rev: List<&2, U32>) -> State:
+  match ok c:
+    case True{} c:
+      RequestLine{c <> rev, False{}}
+    case False{} 13:
+      RequestLine{rev, True{}}
+    case False{} 10:
+      Bad{R.InvalidLineEnding{}}
+    case False{} _:
+      Bad{R.InvalidOctet{}}
+
+def header_octet(ok: Bool, c: U32, r: R.Req, rev: List<&2, U32>) -> State:
+  match ok c:
+    case True{} c:
+      Headers{r, c <> rev, False{}}
+    case False{} 13:
+      Headers{r, rev, True{}}
+    case False{} 10:
+      Bad{R.InvalidLineEnding{}}
+    case False{} _:
+      Bad{R.InvalidOctet{}}
+
 def advance(s: State, +c: U32) -> State:
   match s c:
     case RequestLine{rev, True{}} 10:
@@ -150,18 +173,10 @@ def advance(s: State, +c: U32) -> State:
       Bad{R.InvalidLineEnding{}}
     case Headers{r, rev, True{}} _:
       Bad{R.InvalidLineEnding{}}
-    case RequestLine{rev, False{}} 13:
-      RequestLine{rev, True{}}
-    case Headers{r, rev, False{}} 13:
-      Headers{r, rev, True{}}
-    case RequestLine{rev, False{}} 10:
-      Bad{R.InvalidLineEnding{}}
-    case Headers{r, rev, False{}} 10:
-      Bad{R.InvalidLineEnding{}}
     case RequestLine{rev, False{}} c:
-      ordinary_request(c, rev, (c >= 32 : U32) && (c <= 126 : U32))
+      request_octet((c >= 32 : U32) && (c <= 126 : U32), c, rev)
     case Headers{r, rev, False{}} c:
-      ordinary_header(r, c, rev, Bytes.value_octet(c))
+      header_octet(Bytes.value_octet(c), c, r, rev)
     case Complete{r} _:
       Complete{r}
     case Bad{e} _:
