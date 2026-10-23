@@ -1,5 +1,6 @@
 # Proofs of LAWS.bend. Run: bend PROOF.bend --verdict
 import Base
+import ./src/http/chunked.bend as Chunked
 import ./src/http.bend as Http
 import ./src/http/bytes.bend as Bytes
 import ./src/http/request.bend as Request
@@ -77,3 +78,18 @@ def Laws.parsed_request_line_path(method, path, query, version, valid):
 # The single-header obligation from the request-head round trip.
 def Laws.header_line_roundtrip(req, name, value, valid):
   Laws.header_fields(req, name, value, valid)
+
+# BND-8: chunked encode/decode roundtrip.
+
+def Laws.chunked_roundtrip(chunks, limit, suffix, valid):
+  match chunks:
+    case Nil{}:
+      match suffix:
+        case Nil{}:
+          {==}
+        case c <> t:
+          {==}
+    case Nil{} <> rest:
+      Laws.chunked_roundtrip(rest, limit, suffix, valid)
+    case (c <> tail) <> rest:
+      ?chunked_roundtrip_nonempty_chunk

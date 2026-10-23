@@ -1,43 +1,86 @@
-# The accept loop. The app is a template (~app): Bend cannot copy
-# functions, so the handler is inlined at compile time and may run once
-# per request. Each connection runs in its own computation (IO.spawn).
-# The loop is @unsafe because it runs until the process is killed.
+# One request per connection until BND-11 adds keep-alive. Pure input
+# state lives in http/body.bend; this shell only reads, writes and closes.
 import Base
+import ./http/request.bend as R
+import ./http/body.bend as Body
+
+type Config is Data:
+  Config{port: U32, body_limit: U32}
+
+def defaults(port: U32) -> Config:
+  Config{port, 1048576}
 
 def sent(m: Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>) -> IO(Unit):
   (s, r) = m
   Socket.close(s)
 
-def reply(~app: String -> String, m: Socket & Result<&1, &1, U32 & String, Maybe<&1, String>>) -> IO(Unit):
-  (s, r) = m
-  match r:
-    case Done{Some{req}}:
-      do IO<Unit>:
-        out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- TCP.send(s, app(req))
-        sent(out)
-    case Done{None{}}:
-      Socket.close(s)
-    case Fail{e}:
-      Socket.close(s)
+def status_text(status: U32) -> String:
+  match status:
+    case 413:
+      "413 Content Too Large"
+    case 417:
+      "417 Expectation Failed"
+    case _:
+      "400 Bad Request"
 
-def talk(~app: String -> String, s: Socket) -> IO(Unit):
+def reject(s: Socket, status: U32) -> IO(Unit):
   do IO<Unit>:
-    read : Socket & Result<&1, &1, U32 & String, Maybe<&1, String>> <- TCP.recv(s, 65536)
-    reply(~app, read)
+    out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- TCP.send(s, "HTTP/1.1 " ++ status_text(status) ++ "\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+    sent(out)
 
-def conn(~app: String -> String, m: Listener & Result<&1, &1, U32 & String, Socket>) -> IO(Listener):
+def continue_result(m: Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>) -> IO(Socket):
+  (s, r) = m
+  do IO<Socket>:
+    # Leave failures to the next receive; the socket is always owned/closed.
+    return s
+
+def interim(s: Socket, send: Bool) -> IO(Socket):
+  match send:
+    case False{}:
+      IO.pure(Socket, s)
+    case True{}:
+      do IO<Socket>:
+        out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- TCP.send(s, "HTTP/1.1 100 Continue\r\n\r\n")
+        continue_result(out)
+
+type ConnectionEvent is Type:
+  Work{socket: Socket, state: Body.State}
+  Fed{socket: Socket, pair: Body.State & Bool}
+  Read{read: Socket & Result<&1, &1, U32 & String, Maybe<&1, List<&2, U32>>>, state: Body.State}
+
+@unsafe
+def talk(~app: R.Req -> List<&2, U32> -> List<&2, U32>, event: ConnectionEvent, +limit: U32) -> IO(Unit):
+  match event:
+    case Work{s, Body.Complete{req, body, trailers, rest}}:
+      do IO<Unit>:
+        out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- TCP.send_bytes(s, app(req, body))
+        sent(out)
+    case Work{s, Body.Bad{status}}:
+      reject(s, status)
+    case Work{s, state}:
+      IO.bind(Socket & Result<&1, &1, U32 & String, Maybe<&1, List<&2, U32>>>, Unit, TCP.recv_bytes(s, 4096), read => talk(~app, Read{read, state}, limit))
+    case Read{(sock, Done{Some{xs}}), state}:
+      talk(~app, Fed{sock, Body.feed(xs, state, limit)}, limit)
+    case Fed{sock, (next, send)}:
+      IO.bind(Socket, Unit, interim(sock, send), s => talk(~app, Work{s, next}, limit))
+    case Read{(sock, Done{None{}}), state}:
+      reject(sock, 400)
+    case Read{(sock, Fail{e}), state}:
+      Socket.close(sock)
+
+def conn(~app: R.Req -> List<&2, U32> -> List<&2, U32>, m: Listener & Result<&1, &1, U32 & String, Socket>, limit: U32) -> IO(Listener):
   (l, r) = m
   do IO<Listener>:
     s : Socket <- IO.pass(Socket, r)
-    IO.spawn(Unit, talk(~app, s))
+    IO.spawn(Unit, talk(~app, Work{s, Body.initial()}, limit))
     return l
 
 @unsafe
-def loop(~app: String -> String, l: Listener) -> IO(Unit):
+def loop(~app: R.Req -> List<&2, U32> -> List<&2, U32>, l: Listener, +limit: U32) -> IO(Unit):
   do IO<Unit>:
-    m  : Listener & Result<&1, &1, U32 & String, Socket> <- TCP.accept(l)
-    l2 : Listener <- conn(~app, m)
-    loop(~app, l2)
+    m : Listener & Result<&1, &1, U32 & String, Socket> <- TCP.accept(l)
+    l2 : Listener <- conn(~app, m, limit)
+    loop(~app, l2, limit)
 
 def port_read(m: Maybe<&2, U32>, +fallback: U32) -> U32:
   match m:
@@ -53,11 +96,16 @@ def port_or(r: Result<&1, &1, U32 & String, String>, +fallback: U32) -> U32:
     case Fail{e}:
       fallback
 
-# Serves ~app on 127.0.0.1, on $PORT or the given port.
-def serve(~app: String -> String, +fallback: U32) -> IO(Unit):
+# Temporary config/handler surface; BND-12 adds the full server config,
+# BND-11 the response writer/keep-alive, BND-21 body accessors on context.
+def serve_config(~app: R.Req -> List<&2, U32> -> List<&2, U32>, config: Config) -> IO(Unit):
+  Config{fallback, +limit} = config
   do IO<Unit>:
     env : Result<&1, &1, U32 & String, String> <- IO.get_env("PORT")
     +port : U32 = port_or(env, fallback)
     l : Listener <- IO.try(Listener, TCP.listen("127.0.0.1", port))
     IO.print("bendo listening on http://127.0.0.1:" ++ U32.show(port))
-    loop(~app, l)
+    loop(~app, l, limit)
+
+def serve(~app: R.Req -> List<&2, U32> -> List<&2, U32>, port: U32) -> IO(Unit):
+  serve_config(~app, defaults(port))
