@@ -1,4 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { findBend } from "../packages/bendo/src/bend.ts";
 import { connect } from "node:net";
 import { build, start } from "./harness.ts";
 
@@ -165,6 +169,7 @@ test("public construction normalizes standards, rejects invalid tokens atomicall
     "first:0:direct",
     `405:${standardAllow}`,
     "1:bad:MissingSlash: bad",
+    "405:GET, HEAD",
     "first:0:direct",
     "first:0:fallback",
     "405:GET, HEAD",
@@ -186,3 +191,33 @@ test("public construction normalizes standards, rejects invalid tokens atomicall
     "0:/a:InvalidMethod:BAD TOKEN",
   ]);
 }, 30000);
+
+for (const fixture of ["raw-table", "forged-none", "forged-valid", "forged-checked-none"]) {
+  test(`the compiler rejects the ${fixture} validation bypass`, () => {
+    const bend = findBend();
+    if (bend.kind === "missing") throw new Error("bend is not installed");
+    const directory = mkdtempSync(join(tmpdir(), "bendo-method-bypass-"));
+    try {
+      const result = Bun.spawnSync(
+        [
+          "timeout",
+          "--foreground",
+          "25s",
+          bend.path,
+          join(import.meta.dir, "fixtures/router-methods", `${fixture}.bend`),
+          "-o",
+          join(directory, "bypass.mjs"),
+        ],
+        { stdout: "pipe", stderr: "pipe" },
+      );
+      expect(result.exitCode).toBe(1);
+      const diagnostic = result.stdout.toString() + result.stderr.toString();
+      expect(diagnostic).toContain("SOME PROOFS FAIL");
+      expect(diagnostic).toContain("expected :");
+      expect(diagnostic).toContain("observed :");
+      expect(diagnostic).toContain("Location: main");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  }, 30000);
+}

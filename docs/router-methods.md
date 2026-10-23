@@ -15,7 +15,7 @@ type Tag is Data:
   Read{}
   Create{}
 
-def routes() -> Result<&2, &2, M.BuildError, M.Table(Tag)>:
+def routes() -> Result<&2, &2, M.BuildError, M.Valid<Tag>>:
   M.build_table(Tag, [
     M.get(Tag, "/items/:id", Read{}),
     M.on(Tag, [R.Post{}, R.Put{}], "/items/:id", Create{})
@@ -28,6 +28,23 @@ It fails atomically at the first invalid registration, preserving its index and
 source. `Methods.InvalidPattern{index, source, error}` wraps a pattern error;
 `Methods.InvalidMethod{index, source, token}` identifies an invalid method token.
 Methods are checked before the pattern within each registration.
+
+A successful build returns `Valid<T>`, a copyable table with a proof field:
+
+```python
+type Valid<-T: Data> is Data:
+  Valid{table: Table(T), ok: {TableValid(T, table) == True{} : Bool}}
+```
+
+`TableValid` checks that every method in every registration is valid and uses
+its canonical constructor. `resolve` accepts `Valid<T>`. A raw `Table(T)` cannot
+be passed to it. Bend exports constructors, so callers may construct `Valid`
+directly, but must supply the proof for that exact table. `{==}` cannot prove
+validity for `Extension{"BAD TOKEN"}`. `raw(T, valid)` exposes the underlying
+list for inspection; modifying that list requires a new proof before resolving.
+The low-level `build_methods` helper requires proof that the methods are valid
+when its supplied validation result is `None{}`; a forged `None{}` cannot bypass
+it.
 
 ## Registration and resolution
 
@@ -48,8 +65,9 @@ extension methods. The current request parser rejects CONNECT targets, so a
 pure router call can select CONNECT even though the current HTTP server cannot
 serve it. CONNECT framing remains the response writer's responsibility.
 
-Call `resolve(T, table, path, request_method, opts)` with a raw path excluding
-its query and fragment. It returns one of:
+Call `resolve(T, table, path, request_method, opts)` with the `Valid<T>` returned
+by `build_table` and a raw path excluding its query and fragment. It returns
+one of:
 
 - `Found{hit, head_from_get}`: `hit` is `Spec.Match{index, tag, params}`. The
   first registration matching both path and method wins. An earlier path match
@@ -101,6 +119,10 @@ remain raw rather than percent-decoded, following the
 `bun test tests/router-methods.test.ts` compiles a native Bend server and checks
 method dispatch, exact Allow values, raw HEAD bytes, 404/405, extension methods,
 and all four option combinations. `bun run prove` checks the BND-18 laws;
-`methods_build_valid` proves that every successful public build satisfies the
-`TableValid` hypothesis used by `methods_allow_exact`.
+`methods_build_valid` proves that successful builds carry valid method-token
+evidence. All table-based BND-18 laws quantify over `Valid<T>`;
+`methods_allow_exact` obtains table validity from the value and has no separate
+table-validity hypothesis. Compile-failure fixtures check raw-table resolution,
+the old forged-`None{}` helper call, a forged validation proof, and a forged
+`Valid` proof. A native consumer also constructs a valid table directly.
 `bun run check` runs the full repository gate.

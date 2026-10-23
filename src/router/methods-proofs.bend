@@ -272,7 +272,7 @@ def resolve_correct_direct(-T: Data, +table: M.Table(T), +path: String, +opts: M
           miss_correct(T, table, path, H.Extension{token}, opts, M.path_exists(T, table, path, opts), {==}, eq, Unit{})
 
 def resolve_correct(-T: Data, +table: M.Table(T), +path: String, +method: H.Method, +opts: M.Options) ->
-    ResolutionCorrect(T, table, path, method, opts, M.resolve(T, table, path, method, opts)):
+    ResolutionCorrect(T, table, path, method, opts, M.resolve_direct(T, M.find(T, table, path, method, opts), table, path, method, opts)):
   resolve_correct_direct(T, table, path, opts, M.find(T, table, path, method, opts), method, {==}, route_correct(T, table, path, method, opts))
 
 def missing_direct(-T: Data, +table: M.Table(T), +path: String, +method: H.Method, +opts: M.Options, +no: {M.path_exists(T, table, path, opts) == False{} : Bool}) ->
@@ -301,7 +301,7 @@ def missing_direct(-T: Data, +table: M.Table(T), +path: String, +method: H.Metho
       Equal.cong(Bool, M.Resolution<T>, x => M.miss(T, x, M.canonical(M.matching_methods(T, table, path, opts))), M.path_exists(T, table, path, opts), False{}, no)
 
 def not_found(-T: Data, +table: M.Table(T), +path: String, +method: H.Method, +opts: M.Options, no: NoPaths(T, table, path, opts)) ->
-    {M.resolve(T, table, path, method, opts) == M.NotFound{} : M.Resolution<T>}:
+    {M.resolve_direct(T, M.find(T, table, path, method, opts), table, path, method, opts) == M.NotFound{} : M.Resolution<T>}:
   +absent = paths_none(T, table, path, opts, no)
   %Equal.sym(Maybe<&2, R.Match<T>>, M.find(T, table, path, method, opts), None{}, find_none(T, table, path, method, opts, paths_false(T, table, path, opts, absent))) : {M.resolve_direct(T, _, table, path, method, opts) == M.NotFound{} : M.Resolution<T>}
   missing_direct(T, table, path, method, opts, absent)
@@ -882,81 +882,7 @@ def canonical_request_absent(-T: Data, +table: M.Table(T), +path: String, +metho
 # Admissible registrations use canonical Method constructors. Patterns and
 # method-list shape (including empty lists and duplicates) remain unrestricted.
 def TableValid(-T: Data, table: M.Table(T)) -> Bool:
-  match table:
-    case Nil{}: True{}
-    case R.Route{pattern, M.Binding{methods, tag}} <> tail:
-      Set.list_valid(methods) && TableValid(T, tail)
-
-# A successful public build has no invalid methods, including raw on entries.
-def BuildValid(-T: Data, result: Result<&2, &2, M.BuildError, M.Table(T)>) -> Bool:
-  match result:
-    case Fail{error}: True{}
-    case Done{table}: TableValid(T, table)
-
-def InvalidChecked(+methods: List<&2, H.Method>, invalid: Maybe<&2, String>) -> Type:
-  match invalid:
-    case Some{token}: Unit
-    case None{}: {Set.list_valid(methods) == True{} : Bool}
-
-def invalid_checked_cons(+h: H.Method, +tail: List<&2, H.Method>, +invalid: Maybe<&2, String>,
-    valid: {H.method_valid(h) == True{} : Bool}, rest: InvalidChecked(tail, invalid)) -> InvalidChecked(h <> tail, invalid):
-  match invalid:
-    case Some{token}: Unit{}
-    case None{}:
-      %Equal.sym(Bool, H.method_valid(h), True{}, valid) : {_ && Set.list_valid(tail) == True{} : Bool}
-      rest
-
-def invalid_checked_step(+h: H.Method, +tail: List<&2, H.Method>, test: Bool,
-    decision: {H.method_valid(h) == test : Bool},
-    rest: InvalidChecked(tail, M.invalid_method(tail))) ->
-    InvalidChecked(h <> tail, E.choose(Maybe<&2, String>, test, u => M.invalid_method(tail), u => Some{H.method_text(h)})):
-  match test:
-    case False{}: Unit{}
-    case True{}:
-      invalid_checked_cons(h, tail, M.invalid_method(tail), decision, rest)
-
-def invalid_checked(+methods: List<&2, H.Method>) -> InvalidChecked(methods, M.invalid_method(methods)):
-  match methods:
-    case Nil{}: {==}
-    case +h <> +tail:
-      invalid_checked_step(h, tail, H.method_valid(h), {==}, invalid_checked(tail))
-
-def prepend_valid(-T: Data, +pattern: P.Pattern, +methods: List<&2, H.Method>, +tag: T,
-    +result: Result<&2, &2, M.BuildError, M.Table(T)>,
-    valid: {Set.list_valid(methods) == True{} : Bool},
-    rest: {BuildValid(T, result) == True{} : Bool}) ->
-    {BuildValid(T, M.prepend_built(T, pattern, M.Binding{methods, tag}, result)) == True{} : Bool}:
-  match result:
-    case Fail{error}: {==}
-    case Done{table}:
-      %Equal.sym(Bool, Set.list_valid(methods), True{}, valid) : {_ && TableValid(T, table) == True{} : Bool}
-      rest
-
-def build_pattern_valid(-T: Data, +index: Nat, +source: String, +methods: List<&2, H.Method>, +tag: T,
-    +compiled: Result<&2, &2, P.PatternError, P.Pattern>,
-    rest: Unit -> Result<&2, &2, M.BuildError, M.Table(T)>,
-    valid: {Set.list_valid(methods) == True{} : Bool},
-    good: {BuildValid(T, rest(Unit{})) == True{} : Bool}) ->
-    {BuildValid(T, M.build_pattern(T, index, source, M.Binding{methods, tag}, compiled, rest)) == True{} : Bool}:
-  match compiled:
-    case Fail{error}: {==}
-    case Done{pattern}: prepend_valid(T, pattern, methods, tag, rest(Unit{}), valid, good)
-
-def build_methods_valid(-T: Data, +index: Nat, +source: String, +methods: List<&2, H.Method>, +tag: T,
-    +invalid: Maybe<&2, String>, rest: Unit -> Result<&2, &2, M.BuildError, M.Table(T)>,
-    checked: InvalidChecked(methods, invalid), good: {BuildValid(T, rest(Unit{})) == True{} : Bool}) ->
-    {BuildValid(T, M.build_methods(T, index, source, methods, tag, invalid, rest)) == True{} : Bool}:
-  match invalid:
-    case Some{token}: {==}
-    case None{}: build_pattern_valid(T, index, source, methods, tag, P.compile(source), rest, checked, good)
-
-def build_go_valid(-T: Data, +entries: List<&2, M.Registration(T)>, +index: Nat) ->
-    {BuildValid(T, M.build_go(T, entries, index)) == True{} : Bool}:
-  match entries:
-    case Nil{}: {==}
-    case R.Registration{+source, M.Binding{methods, +tag}} <> +tail:
-      +normalized = M.normalize_methods(methods)
-      build_methods_valid(T, index, source, normalized, tag, M.invalid_method(normalized), u => M.build_go(T, tail, 1n+index), invalid_checked(normalized), build_go_valid(T, tail, 1n+index))
+  M.TableValid(T, table)
 
 def collection_valid_step(+methods: List<&2, H.Method>, +rest: List<&2, H.Method>, test: Bool,
     mv: {Set.list_valid(methods) == True{} : Bool}, rv: {Set.list_valid(rest) == True{} : Bool}) ->
@@ -986,24 +912,24 @@ def allow_from_correct(-T: Data, +table: M.Table(T), +path: String, +method: H.M
   (O.canonical_valid(path_methods(T, table, path, opts), collection_valid(T, table, path, opts, tv)), (O.canonical_order(path_methods(T, table, path, opts)), (O.canonical_unique(path_methods(T, table, path, opts)), (canonical_request_absent(T, table, path, method, opts, valid, direct, get), q => Set.canonical_member(path_methods(T, table, path, opts), q)))))
 
 def exact_allow(-T: Data, +table: M.Table(T), +path: String, +method: H.Method, +opts: M.Options, +allow: List<&2, H.Method>,
-    tv: {TableValid(T, table) == True{} : Bool}, valid: {H.method_valid(method) == True{} : Bool}, returned: {M.resolve(T, table, path, method, opts) == M.MethodNotAllowed{allow} : M.Resolution<T>}) -> ExactAllow(T, table, path, method, opts, allow):
+    tv: {TableValid(T, table) == True{} : Bool}, valid: {H.method_valid(method) == True{} : Bool}, returned: {M.resolve_direct(T, M.find(T, table, path, method, opts), table, path, method, opts) == M.MethodNotAllowed{allow} : M.Resolution<T>}) -> ExactAllow(T, table, path, method, opts, allow):
   allow_from_correct(T, table, path, method, opts, allow, tv, valid, (
     %returned : ResolutionCorrect(T, table, path, method, opts, _)
     resolve_correct(T, table, path, method, opts)))
 
 def found_first(-T: Data, +table: M.Table(T), +path: String, +method: H.Method, +opts: M.Options, +i: Nat, +tag: T, +ps: P.Params,
-    returned: {M.resolve(T, table, path, method, opts) == M.Found{R.Match{i, tag, ps}, False{}} : M.Resolution<T>}) -> First(T, table, path, method, opts, i, tag, ps):
+    returned: {M.resolve_direct(T, M.find(T, table, path, method, opts), table, path, method, opts) == M.Found{R.Match{i, tag, ps}, False{}} : M.Resolution<T>}) -> First(T, table, path, method, opts, i, tag, ps):
   %returned : ResolutionCorrect(T, table, path, method, opts, _)
   resolve_correct(T, table, path, method, opts)
 
 def fallback_first(-T: Data, +table: M.Table(T), +path: String, +method: H.Method, +opts: M.Options, +i: Nat, +tag: T, +ps: P.Params,
-    returned: {M.resolve(T, table, path, method, opts) == M.Found{R.Match{i, tag, ps}, True{}} : M.Resolution<T>}) ->
+    returned: {M.resolve_direct(T, M.find(T, table, path, method, opts), table, path, method, opts) == M.Found{R.Match{i, tag, ps}, True{}} : M.Resolution<T>}) ->
     {method == H.Head{} : H.Method} & (Misses(T, table, path, H.Head{}, opts) & First(T, table, path, H.Get{}, opts, i, tag, ps)):
   %returned : ResolutionCorrect(T, table, path, method, opts, _)
   resolve_correct(T, table, path, method, opts)
 
 def not_found_only(-T: Data, +table: M.Table(T), +path: String, +method: H.Method, +opts: M.Options,
-    returned: {M.resolve(T, table, path, method, opts) == M.NotFound{} : M.Resolution<T>}) -> NoPaths(T, table, path, opts):
+    returned: {M.resolve_direct(T, M.find(T, table, path, method, opts), table, path, method, opts) == M.NotFound{} : M.Resolution<T>}) -> NoPaths(T, table, path, opts):
   %returned : ResolutionCorrect(T, table, path, method, opts, _)
   resolve_correct(T, table, path, method, opts)
 
@@ -1048,7 +974,7 @@ def present_result(-T: Data, +table: M.Table(T), +path: String, +method: H.Metho
       Core.absurd(&hit: R.Match<T> -> {None{} == Some{hit} : Maybe<&2, R.Match<T>>} & Unit, none_some(AtMatch<T>, At{tag, ps}, Equal.trans(Maybe<&2, AtMatch<T>>, None{}, match_at(T, table, path, method, opts, i), Some{At{tag, ps}}, Equal.sym(Maybe<&2, AtMatch<T>>, match_at(T, table, path, method, opts, i), None{}, correct(i)), at)))
 
 def HeadPriority(-T: Data, +table: M.Table(T), +path: String, +opts: M.Options) -> Type:
-  &hit: R.Match<T> -> {M.resolve(T, table, path, H.Head{}, opts) == M.Found{hit, False{}} : M.Resolution<T>} & Outcome(T, table, path, H.Head{}, opts, Some{hit})
+  &hit: R.Match<T> -> {M.resolve_direct(T, M.find(T, table, path, H.Head{}, opts), table, path, H.Head{}, opts) == M.Found{hit, False{}} : M.Resolution<T>} & Outcome(T, table, path, H.Head{}, opts, Some{hit})
 
 def head_witness(-T: Data, +table: M.Table(T), +path: String, +opts: M.Options,
     witness: &hit: R.Match<T> -> {M.find(T, table, path, H.Head{}, opts) == Some{hit} : Maybe<&2, R.Match<T>>} & Unit) -> HeadPriority(T, table, path, opts):

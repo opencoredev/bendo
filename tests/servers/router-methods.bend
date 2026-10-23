@@ -69,7 +69,7 @@ def options(q: Maybe<&2, String>) -> M.Options:
     case _:
       M.defaults()
 
-def respond(table: M.Table(Tag), parsed: Request.ParseResult) -> List<&2, U32>:
+def respond(table: M.Valid<Tag>, parsed: Request.ParseResult) -> List<&2, U32>:
   match parsed:
     case Request.Parsed{Request.Req{+m, p, q, v, hs}, rest}:
       Write.write(m, answer(M.resolve(Tag, table, p, m, options(q))))
@@ -80,7 +80,7 @@ def sent(m: Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>) -> IO
   (s, r) = m
   Socket.close(s)
 
-def finished(table: M.Table(Tag), s: Socket, result: Request.ParseResult) -> IO(Unit):
+def finished(table: M.Valid<Tag>, s: Socket, result: Request.ParseResult) -> IO(Unit):
   do IO<Unit>:
     out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- TCP.send_bytes(s, respond(table, result))
     sent(out)
@@ -93,7 +93,7 @@ def received(m: Socket & Result<&1, &1, U32 & String, Maybe<&1, List<&2, U32>>>,
     case _:
       (sock, (state, Request.Rejected{Request.InvalidRequestLine{}}))
 
-def talk(+table: M.Table(Tag), fuel: Nat, m: Socket & (Parse.State & Request.ParseResult)) -> IO(Unit):
+def talk(+table: M.Valid<Tag>, fuel: Nat, m: Socket & (Parse.State & Request.ParseResult)) -> IO(Unit):
   match fuel:
     case 0n:
       (sock, step) = m
@@ -109,10 +109,10 @@ def talk(+table: M.Table(Tag), fuel: Nat, m: Socket & (Parse.State & Request.Par
         case _:
           finished(table, sock, result)
 
-def read(table: M.Table(Tag), s: Socket) -> IO(Unit):
+def read(table: M.Valid<Tag>, s: Socket) -> IO(Unit):
   talk(table, 128n, (s, (Parse.initial(), Request.NeedMore{})))
 
-def conn(table: M.Table(Tag), m: Listener & Result<&1, &1, U32 & String, Socket>) -> IO(Listener):
+def conn(table: M.Valid<Tag>, m: Listener & Result<&1, &1, U32 & String, Socket>) -> IO(Listener):
   (l, r) = m
   do IO<Listener>:
     s : Socket <- IO.pass(Socket, r)
@@ -120,7 +120,7 @@ def conn(table: M.Table(Tag), m: Listener & Result<&1, &1, U32 & String, Socket>
     return l
 
 @unsafe
-def loop(+table: M.Table(Tag), l: Listener) -> IO(Unit):
+def loop(+table: M.Valid<Tag>, l: Listener) -> IO(Unit):
   do IO<Unit>:
     m : Listener & Result<&1, &1, U32 & String, Socket> <- TCP.accept(l)
     l2 : Listener <- conn(table, m)
@@ -140,7 +140,7 @@ def port_or(r: Result<&1, &1, U32 & String, String>, fallback: U32) -> U32:
     case Fail{e}:
       fallback
 
-def start(table_result: Result<&2, &2, M.BuildError, M.Table(Tag)>) -> IO(Unit):
+def start(table_result: Result<&2, &2, M.BuildError, M.Valid<Tag>>) -> IO(Unit):
   match table_result:
     case Fail{e}:
       IO.die(Unit, 1, "invalid routes")

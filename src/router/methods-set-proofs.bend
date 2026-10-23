@@ -14,11 +14,7 @@ def member(xs: List<&2, H.Method>, +q: H.Method) -> Bool:
       String.eq(H.method_text(h), H.method_text(q)) || member(tail, q)
 
 def list_valid(xs: List<&2, H.Method>) -> Bool:
-  match xs:
-    case Nil{}:
-      True{}
-    case h <> tail:
-      H.method_valid(h) && list_valid(tail)
+  M.list_valid(xs)
 
 # HEAD is identified by the same HTTP token equality as membership.
 def is_head(q: H.Method) -> Bool:
