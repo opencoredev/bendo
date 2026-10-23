@@ -45,6 +45,7 @@ def assemble(-Tag: Data, entries: List<&2, T.Entry<Tag>>, +prefix: String, +inhe
       T.ScopedRoute{registration(Tag, prefix, r), List.append(&2, T.Placement<Tag>, inherited, local)} <> assemble(Tag, tail, prefix, inherited)
     case T.Hook{stage, tag} <> tail: assemble(Tag, tail, prefix, inherited)
     case T.Use{source, tag} <> tail: T.Use{source, tag} <> assemble(Tag, tail, prefix, inherited)
+    case T.PrefixedUse{source, tag} <> tail: T.PrefixedUse{path(prefix, source), tag} <> assemble(Tag, tail, prefix, inherited)
 
 def guard(-Tag: Data, options: T.GuardOptions<Tag>, +entries: List<&2, T.Entry<Tag>>) -> List<&2, T.Entry<Tag>>:
   T.GuardOptions{explicit, schemas} = options

@@ -23,6 +23,8 @@ def filter(-Tag: Data, entries: List<&2, Table.Entry<Tag>>, +path: String) -> Li
     case Table.Use{None{}, tag} <> rest: tag <> filter(Tag, rest, path)
     case Table.Use{Some{source}, tag} <> rest:
       compiled(Tag, tag, filter(Tag, rest, path), path, Pattern.compile(source))
+    case Table.PrefixedUse{source, tag} <> rest:
+      compiled(Tag, tag, filter(Tag, rest, path), path, Pattern.compile(source))
 
 def selected(-Tag: Data, table: Table.Table<Tag>, path: String) -> List<&2, Tag>:
   Table.Table{entries, routes, middleware, count} = table
