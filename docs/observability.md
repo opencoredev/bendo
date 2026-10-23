@@ -69,9 +69,10 @@ and transport send. Marks added in those later stages are outside that collector
 The finalized ID and timing value remain in request metadata. After response
 hooks, error recovery and final validation, Bendo fills missing `X-Request-Id`
 and `Server-Timing` headers, including on replacement 404/405 recovery responses
-and validation-generated 500s. An explicit header on the final response wins;
-name matching ignores case and Bendo does not append another copy. If a hook
-replaces that response again, its missing headers receive the retained values.
+and validation-generated 500s. An explicit `Server-Timing` header wins. An
+explicit request ID wins only when it meets the request-ID validation rule below;
+name matching ignores case and the final response contains at most one request ID.
+If a hook replaces that response again, its missing headers receive the retained values.
 Observers see these final headers.
 
 An `on_after_response` logger sees the final normalized response after the send
@@ -121,7 +122,11 @@ overlong or unsafe values are replaced with 16 cryptographically random bytes,
 encoded as 32 lowercase hex digits. Entropy failure returns an empty 500 and
 skips the handler; there is no fallback identifier or process exit.
 
-The middleware fills the outgoing `x-request-id` when the response has none.
+A valid explicit outgoing `x-request-id` takes precedence over the retained ID.
+The same 1–200 character rule applies to incoming and outgoing IDs, including
+headers set by handlers and response hooks. An invalid outgoing ID is replaced
+with the retained ID, or dropped when no middleware assigned one. Finalization
+matches header names without regard to case and emits at most one `x-request-id`.
 Handlers read `C.request_id(Vars, c) -> Maybe<&2, String>` from
 `src/app/context.bend`. This dedicated metadata survives context setters and
 variable conversion without occupying app-owned `Vars`. The accessor returns

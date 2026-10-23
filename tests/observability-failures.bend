@@ -1,5 +1,6 @@
 # Deterministic error injection without weakening the OS entropy provider.
 import Base
+import ../src/data/utf8.bend as Utf8
 import ../src/main.bend as B
 import ../src/app/context.bend as C
 import ../src/app/observability.bend as Obs
@@ -37,8 +38,22 @@ def closed(state: Obs.State, +c: B.Ctx) -> IO(B.Res):
 def break_collector(+c: B.Ctx) -> IO(B.Res):
   closed(C.observation(Unit, c), c)
 
+def explicit_text(value: Maybe<&2, String>) -> Bool:
+  match value:
+    case Some{text}: String.eq(text, "explicit")
+    case None{}: False{}
+
+def single_id(res: B.Res) -> Bool:
+  Response.Res{code, headers, body, rep} = res
+  match headers:
+    case Request.Header{name, value} <> Nil{}:
+      String.eq(name, "x-request-id") && explicit_text(Utf8.decode(value))
+    case _: False{}
+
 def main() -> IO(Unit):
   do IO<Unit>:
+    mixed : B.Res <- Obs.finalize(Obs.with_id(Obs.empty(), "retained"), Response.body(200, [Request.Header{"X-Request-ID", Response.utf8("explicit")}, Request.Header{"x-request-id", Response.utf8("duplicate")}], []))
+    assert(single_id(mixed), "mixed-case explicit ID wins without duplicates")
     entropy : B.Res <- RequestId.generated(Unit, context(), unreachable, Fail{(5, "injected entropy error")})
     empty_500(entropy, "entropy failure returns empty 500")
     inactive : Bool <- B.timing_mark(Unit, context(), "db", 4n)

@@ -143,7 +143,8 @@ test("entropy and timing collector failures are bounded and fail closed", () => 
   });
   expect(result.exitCode).toBe(0);
   expect(result.stdout.toString()).toBe(
-    "PASS entropy failure returns empty 500\n" +
+    "PASS mixed-case explicit ID wins without duplicates\n" +
+      "PASS entropy failure returns empty 500\n" +
       "PASS inactive timing returns false\n" +
       "PASS late timing write returns false\n" +
       "PASS collector read failure returns empty 500\n",
@@ -205,4 +206,49 @@ test("explicit final response headers take precedence without duplicates", async
   expect(res.status).toBe(200);
   expect(res.headers.get("x-request-id")).toBe("explicit");
   expect(res.headers.get("server-timing")).toBe("custom;dur=7");
+});
+
+test.each(["/hook-outgoing", "/hook-outgoing-handler"])(
+  "outgoing IDs use incoming validation and case-insensitive precedence: %s",
+  async (path) => {
+    for (const outgoing of [
+      "explicit.A_9-1",
+      "a".repeat(200),
+      "a".repeat(201),
+      "unsafe value",
+      'unsafe"value',
+      "é",
+      "",
+    ]) {
+      const res = await fetch(url + path, {
+        headers: {
+          "x-request-id": "retained-42",
+          "x-outgoing-id": outgoing === "é" ? "non-ascii" : outgoing,
+        },
+      });
+      expect(res.status).toBe(200);
+      const expected =
+        outgoing === "explicit.A_9-1" || outgoing === "a".repeat(200) ? outgoing : "retained-42";
+      // Fetch combines duplicate fields with commas, so equality also checks uniqueness.
+      expect(res.headers.get("x-request-id")).toBe(expected);
+    }
+  },
+);
+
+test.each(["a".repeat(201), "unsafe value", 'unsafe"value', "é", ""])(
+  "invalid explicit ID is dropped when no middleware assigned an ID: %s",
+  async (outgoing) => {
+    const res = await fetch(url + "/outgoing", {
+      headers: { "x-outgoing-id": outgoing === "é" ? "non-ascii" : outgoing },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-request-id")).toBeNull();
+  },
+);
+
+test("echoing an unsafe incoming ID cannot bypass generated request-ID validation", async () => {
+  const res = await fetch(url + "/id-echo", { headers: { "x-request-id": "unsafe value" } });
+  const retained = await res.text();
+  expect(retained).toMatch(/^[0-9a-f]{32}$/);
+  expect(res.headers.get("x-request-id")).toBe(retained);
 });

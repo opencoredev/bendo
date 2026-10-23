@@ -11,6 +11,8 @@ type Vars is Data:
 type Tag is Data:
   Hello{}
   Id{}
+  ExplicitId{}
+  EchoId{}
   Json{}
   InvalidJson{}
   PlainText{}
@@ -29,9 +31,18 @@ type Tag is Data:
   HookError{}
   Builtin{id: B.Builtin}
 
+# Select Unicode with an ASCII request marker; HTTP header decoding may reject
+# a client's Latin-1 byte before it reaches the outgoing-ID validation path.
+def outgoing_id(value: String) -> String:
+  match value:
+    case "non-ascii": "é"
+    case _: value
+
 def handle(tag: Tag, +c: B.Context(Vars), env: Unit) -> IO(B.Res):
   match tag:
     case HookId{}: IO.pure(B.Res, C.text(Vars, c, Maybe.default(&2, String, C.request_id(Vars, c), "none") ++ ":" ++ Maybe.default(&2, String, C.param(Vars, c, "id"), "none")))
+    case ExplicitId{}: IO.pure(B.Res, Response.body(200, [Request.Header{"x-request-id", Response.utf8(outgoing_id(Maybe.default(&2, String, C.request_header(Vars, c, "x-outgoing-id"), "")))}], []))
+    case EchoId{}: IO.pure(B.Res, Response.body(200, [Request.Header{"x-request-id", Response.utf8(Maybe.default(&2, String, C.request_header(Vars, c, "x-request-id"), ""))}], Response.utf8(Maybe.default(&2, String, C.request_id(Vars, c), "none"))))
     case Id{}: IO.pure(B.Res, C.text(Vars, c, Maybe.default(&2, String, C.request_id(Vars, c), "none")))
     case Hello{}: IO.pure(B.Res, C.text(Vars, c, "hello"))
     case HandlerError{}: IO.pure(B.Res, Response.text(500, "handler error"))
@@ -65,8 +76,9 @@ def accepted(res: B.Res) -> B.Res:
   Response.Res{code, hs, body, rep} = res
   Response.Res{202, hs, body, rep}
 
-def mapped(res: B.Res, path: String) -> B.Res:
+def mapped(res: B.Res, path: String, outgoing: String) -> B.Res:
   match path:
+    case "/hook-outgoing": Response.body(200, [Request.Header{"x-request-id", Response.utf8(outgoing_id(outgoing))}], [])
     case "/hook-map": Response.text(201, "mapped")
     case "/hook-explicit": Response.body(200, [Request.Header{"x-request-id", Response.utf8("explicit")}, Request.Header{"server-timing", Response.utf8("custom;dur=7")}], [])
     case "/hook-invalid-map": Response.body(200, [Request.Header{"bad", [13]}], [])
@@ -108,7 +120,7 @@ def middleware_go(tag: Tag, +c: B.Context(Vars), env: Unit, next: B.Context(Vars
     case HookMap{}:
       do IO<B.Res>:
         res : B.Res <- next(c)
-        return mapped(res, C.path(Vars, c))
+        return mapped(res, C.path(Vars, c), Maybe.default(&2, String, C.request_header(Vars, c, "x-outgoing-id"), ""))
     case Custom{}: next(C.set(Vars, C.header(Vars, c, "x-custom", "yes"), Vars{"app"}))
     case _: next(c)
 
@@ -131,6 +143,7 @@ def main() -> IO(Unit):
     B.on_after_response(Tag, HookLogger{}),
     B.use(Tag, Builtin{B.logger()}),
     B.use(Tag, Custom{}),
+    B.use_path(Tag, "/id-echo", Builtin{B.request_id()}),
     B.use_path(Tag, "/id", Builtin{B.request_id()}),
     B.use_path(Tag, "/reverse", Builtin{B.request_id()}),
     B.use_path(Tag, "/reverse", Builtin{B.logger()}),
@@ -147,6 +160,10 @@ def main() -> IO(Unit):
     B.get(Tag, "/hook-map", Hello{}),
     B.get(Tag, "/hook-after", Hello{}),
     B.get(Tag, "/hook-explicit", Hello{}),
+    B.get(Tag, "/hook-outgoing", Hello{}),
+    B.get(Tag, "/hook-outgoing-handler", ExplicitId{}),
+    B.get(Tag, "/outgoing", ExplicitId{}),
+    B.get(Tag, "/id-echo", EchoId{}),
     B.get(Tag, "/", Hello{}),
     B.get(Tag, "/id", Id{}),
     B.get(Tag, "/reverse", Id{}),

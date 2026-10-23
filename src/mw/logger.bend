@@ -3,7 +3,7 @@ import ../app/context.bend as C
 import ../http/request.bend as Request
 import ../http/response.bend as Response
 import ./common.bend as Common
-import ./request_id.bend as RequestId
+import ../http/request_id.bend as RequestId
 
 def suffix(id: Maybe<&2, String>) -> String:
   match id:

@@ -2,17 +2,9 @@ import Base
 import ../app/context.bend as C
 import ../app/observability.bend as Obs
 import ../http/response.bend as Response
+import ../http/request_id.bend as RequestId
 import ../crypto/random.bend as Random
 import ../data/json.bend as Json
-
-def safe_char(+c: U32) -> Bool:
-  ((c >= 48 : U32) && (c <= 57 : U32)) || ((c >= 65 : U32) && (c <= 90 : U32)) || ((c >= 97 : U32) && (c <= 122 : U32)) || String.contains("._-", Char.show(Chr{c}))
-
-def valid_go(s: String, fuel: Nat, nonempty: Bool) -> Bool:
-  match s fuel:
-    case SNil{} _: nonempty
-    case SCon{Chr{c}, t} 0n: False{}
-    case SCon{Chr{c}, t} 1n+p: safe_char(c) && valid_go(t, p, True{})
 
 def hex(bytes: List<&2, U32>) -> String:
   match bytes:
@@ -41,7 +33,7 @@ def selected(-Vars: Data, c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res),
 def incoming(-Vars: Data, c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res), id: Maybe<&2, String>) -> IO(Response.Res):
   match id:
     case None{}: selected(Vars, c, next, "", False{})
-    case Some{+value}: selected(Vars, c, next, value, valid_go(value, 200n, False{}))
+    case Some{+value}: selected(Vars, c, next, value, RequestId.valid_go(value, 200n, False{}))
 
 def middleware(-Vars: Data, +c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
   incoming(Vars, c, next, C.request_header(Vars, c, "x-request-id"))
