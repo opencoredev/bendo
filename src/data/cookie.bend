@@ -195,6 +195,64 @@ def domain_valid(s: String) -> Bool:
   +value = s
   (String.length(value) <= 254n : Nat) && labels_valid(String.split(domain_body(value), '.'))
 
+# Stack-safe implementation validators. The recursive definitions above remain
+# the specification; proof/cookie-fast.bend proves equality for every input.
+def attribute_go(s: String, ok: Bool) -> Bool:
+  match s:
+    case SNil{}: ok
+    case SCon{Chr{+c}, t}: attribute_go(t, ok && (c >= 32 : U32) && (c <= 126 : U32) && U32.is_ne(c, 59))
+
+def attribute_fast(s: String) -> Bool:
+  attribute_go(s, True{})
+
+def path_body_fast(s: String) -> Bool:
+  match s:
+    case SCon{Chr{47}, t}: attribute_fast(t)
+    case _: False{}
+
+def path_valid_fast(s: String) -> Bool:
+  +value = s
+  path_body_fast(value) && Bool.not(String.ends_with(value, " "))
+
+def domain_chars_go(s: String, ok: Bool) -> Bool:
+  match s:
+    case SNil{}: ok
+    case SCon{Chr{+c}, t}: domain_chars_go(t, ok && (((c >= 48 : U32) && (c <= 57 : U32)) || ((c >= 65 : U32) && (c <= 90 : U32)) || ((c >= 97 : U32) && (c <= 122 : U32)) || U32.is_eq(c, 45)))
+
+def domain_chars_fast(s: String) -> Bool:
+  domain_chars_go(s, True{})
+
+def length_go(s: String, n: Nat) -> Nat:
+  match s:
+    case SNil{}: n
+    case SCon{h, t}: length_go(t, 1n+n)
+
+def length_fast(s: String) -> Nat:
+  length_go(s, 0n)
+
+def label_valid_fast(+s: String) -> Bool:
+  Bool.not(String.is_empty(s)) && Bool.not(String.starts_with(s, "-")) && Bool.not(String.ends_with(s, "-")) && (length_fast(s) <= 63n : Nat) && domain_chars_fast(s)
+
+def labels_valid_go(xs: List<&2, String>, ok: Bool) -> Bool:
+  match xs:
+    case Nil{}: ok
+    case h <> t: labels_valid_go(t, ok && label_valid_fast(h))
+
+def labels_valid_fast(xs: List<&2, String>) -> Bool:
+  labels_valid_go(xs, True{})
+
+def domain_parts_go(s: String, acc: List<&2, String>) -> List<&2, String>:
+  match s:
+    case SNil{}: acc
+    case SCon{+h, t}: domain_parts_go(t, String.split.fin(h, acc, Char.is_eq(h, '.')))
+
+def domain_parts(s: String) -> List<&2, String>:
+  domain_parts_go(String.reverse(s), [""])
+
+def domain_valid_fast(s: String) -> Bool:
+  +value = s
+  (length_fast(value) <= 254n : Nat) && labels_valid_fast(domain_parts(domain_body(value)))
+
 def digit(+c: U32) -> Bool:
   (c >= 48 : U32) && (c <= 57 : U32)
 
@@ -261,7 +319,7 @@ def require(ok: Bool, error: Error, rest: Result<&2, &2, Error, Unit>) -> Result
 
 def validate(+name: String, +value: String, options: Options) -> Result<&2, &2, Error, Unit>:
   Options{p, d, a, e, +secure, h, s, partitioned} = options
-  require(name_valid(name), InvalidName{}, require(value_valid(value), InvalidValue{}, require(optional_valid(~path_valid, p), InvalidPath{}, require(optional_valid(~domain_valid, d), InvalidDomain{}, require(optional_valid(~expires_valid, e), InvalidExpires{}, require(Bool.not(unrestricted(s)) || secure, SameSiteRequiresSecure{}, require(Bool.not(partitioned) || secure, PartitionedRequiresSecure{}, Done{Unit{}})))))))
+  require(name_valid_fast(name), InvalidName{}, require(value_valid_fast(value), InvalidValue{}, require(optional_valid(~path_valid_fast, p), InvalidPath{}, require(optional_valid(~domain_valid_fast, d), InvalidDomain{}, require(optional_valid(~expires_valid, e), InvalidExpires{}, require(Bool.not(unrestricted(s)) || secure, SameSiteRequiresSecure{}, require(Bool.not(partitioned) || secure, PartitionedRequiresSecure{}, Done{Unit{}})))))))
 
 def option_text(key: String, s: Maybe<&2, String>) -> String:
   match s:

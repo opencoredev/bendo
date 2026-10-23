@@ -5,6 +5,7 @@ import ./cookie-serialization-spec.bend as Spec
 import ./cookie-serialization-laws.bend as Laws
 import ./utf8.bend as U
 import ./cookie-age-safety.bend as Age
+import ./cookie-fast.bend as Fast
 
 def both_equal(+a: Bool, +b: Bool, +c: Bool, +d: Bool, ab: {a == b : Bool}, cd: {c == d : Bool}) -> {a && c == b && d : Bool}:
   Equal.trans(Bool, a && c, b && c, b && d, Equal.cong(Bool, Bool, x => x && c, a, b, ab), Equal.cong(Bool, Bool, x => b && x, c, d, cd))
@@ -2449,6 +2450,13 @@ def unrestricted_equiv(+site: Maybe<&2, C.SameSite>) -> {C.unrestricted(site) ==
     case Some{C.Lax{}}: {==}
     case Some{C.NoRestriction{}}: {==}
 
+def validation_flags_status(+name: String, +value: String, +p: Maybe<&2, String>, +d: Maybe<&2, String>, +e: Bool, +f: Bool, +g: Bool) -> {status(flags(C.name_valid_fast(name), C.value_valid_fast(value), C.optional_valid(~C.path_valid_fast, p), C.optional_valid(~C.domain_valid_fast, d), e, f, g)) == C.name_valid(name) && (C.value_valid(value) && (C.optional_valid(~C.path_valid, p) && (C.optional_valid(~C.domain_valid, d) && (e && (f && g))))) : Bool}:
+  %Equal.sym(Bool, C.name_valid_fast(name), C.name_valid(name), Fast.name_fast(name)) : {status(flags(_, C.value_valid_fast(value), C.optional_valid(~C.path_valid_fast, p), C.optional_valid(~C.domain_valid_fast, d), e, f, g)) == C.name_valid(name) && (C.value_valid(value) && (C.optional_valid(~C.path_valid, p) && (C.optional_valid(~C.domain_valid, d) && (e && (f && g))))) : Bool}
+  %Equal.sym(Bool, C.value_valid_fast(value), C.value_valid(value), Fast.valid_fast(value)) : {status(flags(C.name_valid(name), _, C.optional_valid(~C.path_valid_fast, p), C.optional_valid(~C.domain_valid_fast, d), e, f, g)) == C.name_valid(name) && (C.value_valid(value) && (C.optional_valid(~C.path_valid, p) && (C.optional_valid(~C.domain_valid, d) && (e && (f && g))))) : Bool}
+  %Equal.sym(Bool, C.optional_valid(~C.path_valid_fast, p), C.optional_valid(~C.path_valid, p), Fast.path_option_fast(p)) : {status(flags(C.name_valid(name), C.value_valid(value), _, C.optional_valid(~C.domain_valid_fast, d), e, f, g)) == C.name_valid(name) && (C.value_valid(value) && (C.optional_valid(~C.path_valid, p) && (C.optional_valid(~C.domain_valid, d) && (e && (f && g))))) : Bool}
+  %Equal.sym(Bool, C.optional_valid(~C.domain_valid_fast, d), C.optional_valid(~C.domain_valid, d), Fast.domain_option_fast(d)) : {status(flags(C.name_valid(name), C.value_valid(value), C.optional_valid(~C.path_valid, p), _, e, f, g)) == C.name_valid(name) && (C.value_valid(value) && (C.optional_valid(~C.path_valid, p) && (C.optional_valid(~C.domain_valid, d) && (e && (f && g))))) : Bool}
+  flags_status(C.name_valid(name), C.value_valid(value), C.optional_valid(~C.path_valid, p), C.optional_valid(~C.domain_valid, d), e, f, g)
+
 def validation_status(+name: String, +value: String, +options: C.Options) -> {status(C.validate(name, value, options)) == Spec.admissible(name, value, options) : Bool}:
   match options:
     case C.Options{+p, +d, a, +e, +secure, h, +site, +part}:
@@ -2458,7 +2466,7 @@ def validation_status(+name: String, +value: String, +options: C.Options) -> {st
       %domain_option_equiv(d) : {status(C.validate(name, value, C.Options{p, d, a, e, secure, h, site, part})) == C.name_valid(name) && (C.value_valid(value) && (C.optional_valid(~C.path_valid, p) && (_ && (Spec.optional_valid(~Spec.expires_valid, e) && ((Bool.not(Spec.unrestricted(site)) || secure) && ((Bool.not(part) || secure))))))) : Bool}
       %expires_option_equiv(e) : {status(C.validate(name, value, C.Options{p, d, a, e, secure, h, site, part})) == C.name_valid(name) && (C.value_valid(value) && (C.optional_valid(~C.path_valid, p) && (C.optional_valid(~C.domain_valid, d) && (_ && ((Bool.not(Spec.unrestricted(site)) || secure) && ((Bool.not(part) || secure))))))) : Bool}
       %unrestricted_equiv(site) : {status(C.validate(name, value, C.Options{p, d, a, e, secure, h, site, part})) == C.name_valid(name) && (C.value_valid(value) && (C.optional_valid(~C.path_valid, p) && (C.optional_valid(~C.domain_valid, d) && (C.optional_valid(~C.expires_valid, e) && ((Bool.not(_) || secure) && (Bool.not(part) || secure)))))) : Bool}
-      flags_status(C.name_valid(name), C.value_valid(value), C.optional_valid(~C.path_valid, p), C.optional_valid(~C.domain_valid, d), C.optional_valid(~C.expires_valid, e), (Bool.not(C.unrestricted(site)) || secure), (Bool.not(part) || secure))
+      validation_flags_status(name, value, p, d, C.optional_valid(~C.expires_valid, e), (Bool.not(C.unrestricted(site)) || secure), (Bool.not(part) || secure))
 
 def successful(+name: String, +value: String, +options: C.Options, checked: Result<&2, &2, C.Error, Unit>, ok: {status(checked) == True{} : Bool}) -> {C.serialize_checked(name, value, options, checked) == Done{Spec.wire(name, value, options)} : Result<&2, &2, C.Error, String>}:
   match checked:

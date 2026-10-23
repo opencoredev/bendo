@@ -5,6 +5,7 @@ import { build, compile, start, SLOW_TEST_TIMEOUT_MS } from "./harness.ts";
 const output = compile("tests/fixtures/cookies/consumer.bend", "mjs");
 const binary = build("tests/servers/cookies.bend");
 const parseBinary = build("tests/fixtures/cookies/parse-native.bend");
+const serializeBinary = build("tests/fixtures/cookies/serialize-native.bend");
 const module: unknown = await import(pathToFileURL(output).href);
 if (typeof module !== "object" || module === null || !("default" in module)) {
   throw new Error("Missing Bend exports");
@@ -216,6 +217,155 @@ describe("large cookie lookup on both compiled targets", () => {
           expect(stderr).toBe("");
           expect(exit).toBe(0);
           expect(stdout).toBe(`${native}\n`);
+        }
+      },
+      SLOW_TEST_TIMEOUT_MS,
+    );
+  }
+});
+
+describe("64,000-character Set-Cookie inputs on both compiled targets", () => {
+  const long = "x".repeat(64_000);
+  const path = `/${"x".repeat(63_999)}`;
+  const cases = [
+    { mode: "value", payload: long, expected: done(`a=${long}`), text: `a=${long}` },
+    { mode: "name", payload: long, expected: done(`${long}=v`), text: `${long}=v` },
+    {
+      mode: "path",
+      payload: path,
+      expected: done(
+        `a=v; Path=${path}; Max-Age=60; Expires=Wed, 21 Oct 2015 07:28:00 GMT; Secure; HttpOnly; SameSite=Strict; Partitioned`,
+      ),
+      text: `a=v; Path=${path}; Max-Age=60; Expires=Wed, 21 Oct 2015 07:28:00 GMT; Secure; HttpOnly; SameSite=Strict; Partitioned`,
+    },
+    { mode: "domain", payload: long, expected: fail("InvalidDomain"), text: "InvalidDomain" },
+    {
+      mode: "domain",
+      payload: "a.".repeat(32_000),
+      expected: fail("InvalidDomain"),
+      text: "InvalidDomain",
+    },
+    { mode: "expires", payload: long, expected: fail("InvalidExpires"), text: "InvalidExpires" },
+    {
+      mode: "expires",
+      payload: `Wed, 21 Oct 2015 07:28:00 GMT${"x".repeat(63_971)}`,
+      expected: fail("InvalidExpires"),
+      text: "InvalidExpires",
+    },
+    {
+      mode: "name",
+      payload: `${long.slice(1)};`,
+      expected: fail("InvalidName"),
+      text: "InvalidName",
+    },
+    {
+      mode: "value",
+      payload: `${long.slice(1)};`,
+      expected: fail("InvalidValue"),
+      text: "InvalidValue",
+    },
+    {
+      mode: "path",
+      payload: `${path.slice(0, -1)};`,
+      expected: fail("InvalidPath"),
+      text: "InvalidPath",
+    },
+  ];
+  for (const [index, { mode, payload, expected, text }] of cases.entries()) {
+    test(
+      `Node .mjs ${mode} case ${index}`,
+      async () => {
+        const proc = Bun.spawn(
+          [
+            "node",
+            "--input-type=module",
+            "-e",
+            `import { strict as assert } from "node:assert";
+         const {default: c} = await import(process.argv[1]);
+         assert.deepEqual(c.serialization_case(process.argv[2], process.argv[3]), JSON.parse(process.argv[4]));`,
+            pathToFileURL(output).href,
+            mode,
+            payload,
+            JSON.stringify(expected),
+          ],
+          { stdout: "pipe", stderr: "pipe", timeout: SLOW_TEST_TIMEOUT_MS - 5_000 },
+        );
+        const [stderr, exit] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+        expect(stderr).toBe("");
+        expect(exit).toBe(0);
+      },
+      SLOW_TEST_TIMEOUT_MS,
+    );
+
+    test(
+      `native ${mode} case ${index}`,
+      async () => {
+        const proc = Bun.spawn([serializeBinary, mode, payload], {
+          stdout: "pipe",
+          stderr: "pipe",
+          timeout: SLOW_TEST_TIMEOUT_MS - 5_000,
+        });
+        const [stdout, stderr, exit] = await Promise.all([
+          new Response(proc.stdout).text(),
+          new Response(proc.stderr).text(),
+          proc.exited,
+        ]);
+        expect(stderr).toBe("");
+        expect(exit).toBe(0);
+        expect(stdout).toBe(`${text}\n`);
+      },
+      SLOW_TEST_TIMEOUT_MS,
+    );
+  }
+});
+
+describe("context cookie setters with 64,000-character inputs", () => {
+  const long = "x".repeat(64_000);
+  const path = `/${long.slice(1)}`;
+  const cases = [
+    { mode: "set-name", payload: long, text: `${long}=v` },
+    { mode: "set-value", payload: long, text: `a=${long}` },
+    { mode: "set-path", payload: path, text: `a=v; Path=${path}` },
+    { mode: "delete-path", payload: path, text: `a=; Path=${path}; Max-Age=0` },
+    { mode: "delete-name", payload: long, text: `${long}=; Max-Age=0` },
+    { mode: "set-domain", payload: long, text: "InvalidDomain" },
+    { mode: "delete-domain", payload: long, text: "InvalidDomain" },
+  ];
+  for (const { mode, payload, text } of cases) {
+    test(
+      `Node and native ${mode}`,
+      async () => {
+        const expected = mode.endsWith("domain") ? fail("InvalidDomain") : done(text);
+        for (const args of [
+          [
+            "node",
+            "--input-type=module",
+            "-e",
+            `import { strict as assert } from "node:assert";
+           const {default: c} = await import(process.argv[1]);
+           assert.deepEqual(c.context_case(process.argv[2], process.argv[3]), JSON.parse(process.argv[4]));
+           console.log(process.argv[5]);`,
+            pathToFileURL(output).href,
+            mode,
+            payload,
+            JSON.stringify(expected),
+            text,
+          ],
+          [serializeBinary, mode, payload, "context"],
+        ]) {
+          const proc = Bun.spawn(args, {
+            stdout: "pipe",
+            stderr: "pipe",
+            timeout: SLOW_TEST_TIMEOUT_MS - 5_000,
+          });
+          const [stdout, stderr, exit] = await Promise.all([
+            new Response(proc.stdout).text(),
+            new Response(proc.stderr).text(),
+            proc.exited,
+          ]);
+          expect(stderr).toBe("");
+          expect(exit).toBe(0);
+          expect(stdout).toBe(`${text}\n`);
         }
       },
       SLOW_TEST_TIMEOUT_MS,

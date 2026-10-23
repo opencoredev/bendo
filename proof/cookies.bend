@@ -8,6 +8,7 @@ import ./crypto-support.bend as S
 import ./cookie-spec.bend as Spec
 import ./cookie-serialization-spec.bend as Independent
 import ./cookie-serialization.bend as SerializationProof
+import ./cookie-fast.bend as Fast
 
 def head_valid(+name: String, +value: String, +tail: Bool, ok: {Independent.name_valid(name) && Independent.value_valid(value) && tail == True{} : Bool}) -> {C.name_valid(name) && C.value_valid(value) && tail == True{} : Bool}:
   %Equal.sym(Bool, C.name_valid(name), Independent.name_valid(name), SerializationProof.name_equiv(name)) : {_ && C.value_valid(value) && tail == True{} : Bool}
@@ -342,39 +343,6 @@ def split_name_acc(+name: String, +value: String, +rev: String, +ok: {B.token_ta
 def split_name(+name: String, +value: String, +ok: {B.token_tail(name) == True{} : Bool}) -> {C.split(name ++ "=" ++ value, '=') == (name, Some{value}) : String & Maybe<&2, String>}:
   split_name_acc(name, value, "", ok)
 
-def and_assoc(+a: Bool, +b: Bool, +c: Bool) -> {(a && b) && c == a && (b && c) : Bool}:
-  match a:
-    case True{}: {==}
-    case False{}: {==}
-
-def valid_acc(+s: String, +acc: Bool) -> {C.value_valid_go(s, acc) == acc && C.value_valid(s) : Bool}:
-  match s:
-    case SNil{}:
-      match acc:
-        case True{}: {==}
-        case False{}: {==}
-    case SCon{Chr{+c}, +t}:
-      %Equal.sym(Bool, C.value_valid_go(t, acc && C.octet(c)), (acc && C.octet(c)) && C.value_valid(t), valid_acc(t, acc && C.octet(c))) : {_ == acc && (C.octet(c) && C.value_valid(t)) : Bool}
-      and_assoc(acc, C.octet(c), C.value_valid(t))
-
-def valid_fast(+s: String) -> {C.value_valid_fast(s) == C.value_valid(s) : Bool}:
-  valid_acc(s, True{})
-
-def name_acc(+s: String, +acc: Bool) -> {C.name_valid_go(s, acc) == acc && B.token_tail(s) : Bool}:
-  match s:
-    case SNil{}:
-      match acc:
-        case True{}: {==}
-        case False{}: {==}
-    case SCon{Chr{+c}, +t}:
-      %Equal.sym(Bool, C.name_valid_go(t, acc && B.tchar(c)), (acc && B.tchar(c)) && B.token_tail(t), name_acc(t, acc && B.tchar(c))) : {_ == acc && (B.tchar(c) && B.token_tail(t)) : Bool}
-      and_assoc(acc, B.tchar(c), B.token_tail(t))
-
-def name_fast(+s: String) -> {C.name_valid_fast(s) == C.name_valid(s) : Bool}:
-  match s:
-    case SNil{}: {==}
-    case SCon{Chr{+c}, +t}: name_acc(t, B.tchar(c))
-
 def pair_clean(+name: String, +value: String, +nv: {C.name_valid(name) == True{} : Bool}, +vv: {C.value_valid(value) == True{} : Bool}) -> {clean(C.serialize_pair(name, value)) == True{} : Bool}:
   clean_append(name, "=" ++ value, token_clean_string(name, name_tail(name, nv)), clean_append("=", value, {==}, value_clean_string(value, vv)))
 
@@ -382,8 +350,8 @@ def parse_pair(+name: String, +value: String, +nv: {C.name_valid(name) == True{}
   %Equal.sym(String, C.trim(C.serialize_pair(name, value)), C.serialize_pair(name, value), trim_identity(C.serialize_pair(name, value), pair_clean(name, value, nv, vv))) : {C.pair_parts(C.split(_, '=')) == Some{C.Entry{name, value}} : Maybe<&2, C.Entry>}
   %Equal.sym(String & Maybe<&2, String>, C.split(C.serialize_pair(name, value), '='), (name, Some{value}), split_name(name, value, name_tail(name, nv))) : {C.pair_parts(_) == Some{C.Entry{name, value}} : Maybe<&2, C.Entry>}
   %Equal.sym(Maybe<&2, String>, C.unquote(value), Some{value}, unquote_identity(value, value_clean_string(value, vv))) : {C.pair_value(name, _) == Some{C.Entry{name, value}} : Maybe<&2, C.Entry>}
-  %Equal.sym(Bool, C.name_valid_fast(name), C.name_valid(name), name_fast(name)) : {C.accepted(name, value, _ && C.value_valid_fast(value)) == Some{C.Entry{name, value}} : Maybe<&2, C.Entry>}
-  %Equal.sym(Bool, C.value_valid_fast(value), C.value_valid(value), valid_fast(value)) : {C.accepted(name, value, C.name_valid(name) && _) == Some{C.Entry{name, value}} : Maybe<&2, C.Entry>}
+  %Equal.sym(Bool, C.name_valid_fast(name), C.name_valid(name), Fast.name_fast(name)) : {C.accepted(name, value, _ && C.value_valid_fast(value)) == Some{C.Entry{name, value}} : Maybe<&2, C.Entry>}
+  %Equal.sym(Bool, C.value_valid_fast(value), C.value_valid(value), Fast.valid_fast(value)) : {C.accepted(name, value, C.name_valid(name) && _) == Some{C.Entry{name, value}} : Maybe<&2, C.Entry>}
   %Equal.sym(Bool, C.name_valid(name), True{}, nv) : {C.accepted(name, value, _ && C.value_valid(value)) == Some{C.Entry{name, value}} : Maybe<&2, C.Entry>}
   %Equal.sym(Bool, C.value_valid(value), True{}, vv) : {C.accepted(name, value, _) == Some{C.Entry{name, value}} : Maybe<&2, C.Entry>}
   {==}
@@ -432,6 +400,8 @@ def roundtrip(+name: String, +value: String, +nv: {C.name_valid(name) == True{} 
   {==}
 
 def defaults_checked(+name: String, +value: String, +nv: {C.name_valid(name) == True{} : Bool}, +vv: {C.value_valid(value) == True{} : Bool}) -> {C.serialize(name, value, C.defaults()) == Done{C.serialize_pair(name, value)} : Result<&2, &2, C.Error, String>}:
+  %Equal.sym(Bool, C.name_valid_fast(name), C.name_valid(name), Fast.name_fast(name)) : {C.serialize_checked(name, value, C.defaults(), C.require(_, C.InvalidName{}, C.require(C.value_valid_fast(value), C.InvalidValue{}, Done{Unit{}}))) == Done{C.serialize_pair(name, value)} : Result<&2, &2, C.Error, String>}
+  %Equal.sym(Bool, C.value_valid_fast(value), C.value_valid(value), Fast.valid_fast(value)) : {C.serialize_checked(name, value, C.defaults(), C.require(C.name_valid(name), C.InvalidName{}, C.require(_, C.InvalidValue{}, Done{Unit{}}))) == Done{C.serialize_pair(name, value)} : Result<&2, &2, C.Error, String>}
   %Equal.sym(Bool, C.name_valid(name), True{}, nv) : {C.serialize_checked(name, value, C.defaults(), C.require(_, C.InvalidName{}, C.require(C.value_valid(value), C.InvalidValue{}, Done{Unit{}}))) == Done{C.serialize_pair(name, value)} : Result<&2, &2, C.Error, String>}
   %Equal.sym(Bool, C.value_valid(value), True{}, vv) : {C.serialize_checked(name, value, C.defaults(), C.require(_, C.InvalidValue{}, Done{Unit{}})) == Done{C.serialize_pair(name, value)} : Result<&2, &2, C.Error, String>}
   Equal.cong(String, Result<&2, &2, C.Error, String>, x => Done{x}, C.serialize_pair(name, value) ++ "", C.serialize_pair(name, value), S.string_nil(C.serialize_pair(name, value)))
