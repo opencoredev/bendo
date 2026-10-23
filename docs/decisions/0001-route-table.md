@@ -136,6 +136,8 @@ python3 prototypes/0001-route-table/report.py prototypes/0001-route-table/reprod
 # PASS: all 36 median metrics within 20%; maximum deviation=17.67%
 ```
 
+A third run by the orchestrator on a fresh default sandbox (`bx_v6py45eu`, deleted afterwards) is [`reproduced-3.json`](../../prototypes/0001-route-table/reproduced-3.json). Its 27 pure dispatch medians are all within 18.4% of `results.json`. Its HTTP throughput was higher in every case, by 7% to 22%. Two 5-route cases went past the 20% bar: list by 21.8% and chain by 21.1%. In all three runs the pure ranking is the same in every column: chain fastest, then data, then list. The HTTP ranking at 5 and 50 routes changes from run to run, because the three shapes are within noise of each other there. At 500 routes it is chain, then data, then list each time. HTTP throughput also depends on which host the sandbox lands on, so compare shapes within one run, not absolute req/s across runs. The decision rests on the pure dispatch numbers and the shared metadata, and both held.
+
 ### Reproduce on Boat
 
 Run these commands from the repo root. The trap deletes the sandbox on success or failure; do not run the load script on ms-a2.
