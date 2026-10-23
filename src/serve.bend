@@ -9,6 +9,7 @@ import ./app/config.bend as Config
 import ./app/manifest.bend as Manifest
 import ./app/table.bend as Table
 import ./app/handle.bend as Handle
+import ./app/context.bend as Context
 import ./http/response.bend as Response
 import ./http/write_response.bend as Write
 import ./http/bytes.bend as Bytes
@@ -227,13 +228,13 @@ def prepared(res: Response.Res, +close: Bool) -> Reply:
 def prepare(+res: Response.Res, close: Bool) -> Reply:
   prepared(res, Connection.response_closing(res, close))
 
-def respond(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Handle.Ctx -> Env -> IO(Response.Res), req: R.Req, body: List<&2, U32>, state: State<Tag, Env>, close: Bool) -> IO(Reply):
+def respond_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), req: R.Req, body: List<&2, U32>, state: State<Tag, Env>, close: Bool) -> IO(Reply):
   State{table, env} = state
   do IO<Reply>:
-    res : Response.Res <- Handle.handle(~Tag, ~Env, ~dispatch, table, env, req, body)
+    res : Response.Res <- Handle.handle_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, table, env, req, body)
     return prepare(res, close)
 
-def startup(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Handle.Ctx -> Env -> IO(Response.Res), +table: Table.Table<Tag>, env: Env, +config: Config.Config, manifest: Bool) -> IO(Unit):
+def startup_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +table: Table.Table<Tag>, env: Env, +config: Config.Config, manifest: Bool) -> IO(Unit):
   match config manifest:
     case _ True{}:
       do IO<Unit>:
@@ -245,9 +246,13 @@ def startup(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Handle.Ctx -> Env -> IO(Re
         +port : U32 = Config.port_env(port_env, fallback)
         listener : Listener <- IO.try(Listener, TCP.listen(host, port))
         IO.print("bendo listening on http://" ++ host ++ ":" ++ U32.show(port))
-        loop(~State<Tag, Env>, ~(req => body => state => close => respond(~Tag, ~Env, ~dispatch, req, body, state, close)), listener, State{table, env}, config)
+        loop(~State<Tag, Env>, ~(req => body => state => close => respond_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, req, body, state, close)), listener, State{table, env}, config)
 
-def run(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Handle.Ctx -> Env -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config) -> IO(Unit):
+def run_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config) -> IO(Unit):
   do IO<Unit>:
     args : List<String> <- IO.args()
-    startup(~Tag, ~Env, ~dispatch, table, env, config, Manifest.argv(args))
+    startup_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, table, env, config, Manifest.argv(args))
+
+# Compatibility entrypoint for apps without middleware.
+def run(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Handle.Ctx -> Env -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config) -> IO(Unit):
+  run_with(~Unit, ~Tag, ~Env, ~dispatch, ~(tag => ctx => env => next => Handle.unconfigured(Tag, Env, tag, ctx, env, next)), table, env, config)

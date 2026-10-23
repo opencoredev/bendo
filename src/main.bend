@@ -18,6 +18,7 @@ def Ctx() -> Data: Handle.Ctx
 def Context(-Vars: Data) -> Data: Context.Ctx<Vars>
 def ServerConfig() -> Data: Config.Config
 def RouterKind() -> Data: Router.RouterKind
+def Registration(-Tag: Data) -> Data: Table.Entry<Tag>
 def Routes(-Tag: Data) -> Data: Table.Table<Tag>
 
 def config() -> Config.Config: Config.defaults()
@@ -44,22 +45,33 @@ def redirect(c: Handle.Ctx, location: String) -> Response.Res: Context.redirect(
 def redirect_status(c: Handle.Ctx, location: String, code: U32) -> Response.Res: Context.redirect_status(Unit, c, location, code)
 def not_found(c: Handle.Ctx) -> Response.Res: Context.not_found(Unit, c)
 
-def get(-Tag: Data, path: String, tag: Tag) -> Methods.Registration(Tag): Methods.get(Tag, path, tag)
-def head(-Tag: Data, path: String, tag: Tag) -> Methods.Registration(Tag): Methods.head(Tag, path, tag)
-def post(-Tag: Data, path: String, tag: Tag) -> Methods.Registration(Tag): Methods.post(Tag, path, tag)
-def put(-Tag: Data, path: String, tag: Tag) -> Methods.Registration(Tag): Methods.put(Tag, path, tag)
-def patch(-Tag: Data, path: String, tag: Tag) -> Methods.Registration(Tag): Methods.patch(Tag, path, tag)
-def delete(-Tag: Data, path: String, tag: Tag) -> Methods.Registration(Tag): Methods.delete(Tag, path, tag)
-def options(-Tag: Data, path: String, tag: Tag) -> Methods.Registration(Tag): Methods.options(Tag, path, tag)
-def all(-Tag: Data, path: String, tag: Tag) -> Methods.Registration(Tag): Methods.all(Tag, path, tag)
-def on(-Tag: Data, methods: List<&2, Request.Method>, path: String, tag: Tag) -> Methods.Registration(Tag): Methods.on(Tag, methods, path, tag)
-def routes(-Tag: Data, entries: List<&2, Methods.Registration(Tag)>) -> Result<&2, &2, Methods.BuildError, Table.Table<Tag>>: Table.build(Tag, entries)
+def get(-Tag: Data, path: String, tag: Tag) -> Table.Entry<Tag>: Table.Route{Methods.get(Tag, path, tag)}
+def head(-Tag: Data, path: String, tag: Tag) -> Table.Entry<Tag>: Table.Route{Methods.head(Tag, path, tag)}
+def post(-Tag: Data, path: String, tag: Tag) -> Table.Entry<Tag>: Table.Route{Methods.post(Tag, path, tag)}
+def put(-Tag: Data, path: String, tag: Tag) -> Table.Entry<Tag>: Table.Route{Methods.put(Tag, path, tag)}
+def patch(-Tag: Data, path: String, tag: Tag) -> Table.Entry<Tag>: Table.Route{Methods.patch(Tag, path, tag)}
+def delete(-Tag: Data, path: String, tag: Tag) -> Table.Entry<Tag>: Table.Route{Methods.delete(Tag, path, tag)}
+def options(-Tag: Data, path: String, tag: Tag) -> Table.Entry<Tag>: Table.Route{Methods.options(Tag, path, tag)}
+def all(-Tag: Data, path: String, tag: Tag) -> Table.Entry<Tag>: Table.Route{Methods.all(Tag, path, tag)}
+def on(-Tag: Data, methods: List<&2, Request.Method>, path: String, tag: Tag) -> Table.Entry<Tag>: Table.Route{Methods.on(Tag, methods, path, tag)}
+# Adapt a low-level method registration into the public app registration list.
+def route(-Tag: Data, entry: Methods.Registration(Tag)) -> Table.Entry<Tag>: Table.Route{entry}
+def use(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Use{None{}, id}
+def use_path(-Tag: Data, pattern: String, id: Tag) -> Table.Entry<Tag>: Table.Use{Some{pattern}, id}
+def routes(-Tag: Data, entries: List<&2, Table.Entry<Tag>>) -> Result<&2, &2, Methods.BuildError, Table.Table<Tag>>: Table.build(Tag, entries)
 
 def handle(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Handle.Ctx -> Env -> IO(Response.Res), table: Table.Table<Tag>, env: Env, req: Request.Req, body: List<&2, U32>) -> IO(Response.Res):
   Handle.handle(~Tag, ~Env, ~dispatch, table, env, req, body)
 
 def serve(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Handle.Ctx -> Env -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config) -> IO(Unit):
   Serve.run(~Tag, ~Env, ~dispatch, table, env, config)
+
+# Vars is uniform across every middleware and handler in an app.
+def handle_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, env: Env, req: Request.Req, body: List<&2, U32>) -> IO(Response.Res):
+  Handle.handle_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, table, env, req, body)
+
+def serve_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config) -> IO(Unit):
+  Serve.run_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, table, env, config)
 
 # Store operations use a prefix because B.get registers routes.
 def Store(-S: Data) -> Data: Store.Store<S>
