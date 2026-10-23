@@ -21,14 +21,14 @@ export function build(entry: string): string {
 }
 
 /** Starts a compiled server on a free port and waits until it answers. */
-export async function start(binary: string): Promise<RunningServer> {
+export async function start(binary: string, hostname = "127.0.0.1"): Promise<RunningServer> {
   const port = 20000 + Math.floor(Math.random() * 20000);
   const proc = Bun.spawn([binary], {
     env: { ...process.env, PORT: String(port) },
     stdout: "pipe",
     stderr: "pipe",
   });
-  const url = `http://127.0.0.1:${port}`;
+  const url = `http://${hostname}:${port}`;
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline) {
     const up = await fetch(url).then(
