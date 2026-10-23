@@ -7,11 +7,20 @@ import {
   rmSync,
   mkdtempSync,
   writeFileSync,
+  realpathSync,
 } from "node:fs";
-import { dirname, extname, join, resolve } from "node:path";
+import { extname, join, resolve } from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import { stripVTControlCharacters } from "node:util";
 import { findBend } from "./bend.ts";
+import { mapImports, sourceGraph } from "./sources.ts";
+
+export type Target = "js" | "native";
+export class BuildCancelled extends Error {
+  constructor() {
+    super("Build cancelled");
+  }
+}
 
 export const log = (message: string): void => {
   process.stdout.write(`${message}\n`);
@@ -47,8 +56,12 @@ export async function stop(child: ChildProcess): Promise<void> {
   if (!exited()) throw new Error(`Process ${pid} did not exit after SIGKILL`);
 }
 
-export function launch(binary: string): ChildProcess {
-  return spawn(binary, [], { detached: true, stdio: "inherit" });
+export function launch(binary: string, env = process.env): ChildProcess {
+  return spawn(
+    binary.endsWith(".js") ? process.execPath : binary,
+    binary.endsWith(".js") ? [binary] : [],
+    { detached: true, stdio: "inherit", env },
+  );
 }
 
 /** Parse Bend's source excerpt diagnostics before presenting them to CLI users. */
@@ -67,41 +80,57 @@ export function compilerDiagnostic(
           if (extname(file) !== ".bend") return false;
           return content.toString().split("\n")[Number(line) - 1] === excerpt;
         });
+  // Prefer a compiler-supplied source path when available. Bend 2.0.38
+  // often emits only an unqualified definition name and an excerpt.
+  const located = [...files.keys()].filter((file) => plain.includes(file));
   const location =
-    /([^\s"']+\.bend)(?::\d+)?/.exec(plain)?.[1] ??
-    (matches.length === 1 ? matches[0]?.[0] : entry);
+    (located.length === 1 ? located[0] : undefined) ??
+    (matches.length === 1 ? matches[0]?.[0] : undefined);
   const message = plain
     .split("Location:")[0]
     ?.replace(/^(?:ALL PROOFS CHECK|SOME PROOFS FAIL)\s*/g, "")
     .trim();
-  return `${location}:${line}: ${message || "Bend compilation failed"}`;
+  if (location !== undefined) return `${location}:${line}: ${message || "Bend compilation failed"}`;
+  const candidates = matches.map(([file]) => `${file}:${line}`).join(", ");
+  return `${entry}: location ${matches.length > 1 ? `ambiguous (${candidates})` : "unavailable"}: ${plain || "Bend compilation failed"}`;
 }
 
-/** Decision 0003 integration point. Replace this stage when BND-33–35 codegen lands. */
+/** Decision 0003 integration point. Replace this stage when BND-34/35/55 codegen lands. */
 export async function generateSchemas(): Promise<void> {
-  log("generate: schema generation pending BND-33–35 (no production generator)");
+  log("generate: schema generation pending BND-34/35/55 (no production generator)");
 }
 
 export class Pipeline {
   private child: ChildProcess | undefined;
   private cancelled = false;
 
-  async close(): Promise<void> {
-    this.cancelled = true;
+  async cancelBuild(): Promise<void> {
     if (this.child) await stop(this.child);
   }
 
-  async build(entry: string): Promise<string> {
-    if (this.cancelled) throw new Error("Build cancelled");
+  async close(): Promise<void> {
+    this.cancelled = true;
+    await this.cancelBuild();
+  }
+
+  async build(entry: string, target: Target = "native"): Promise<string> {
+    if (this.cancelled) throw new BuildCancelled();
     await generateSchemas();
     const bend = findBend();
     if (bend.kind === "missing")
       throw new Error("bend not found. Install Bend from https://bend-lang.com");
-    const source = resolve(entry);
+    const source = realpathSync(resolve(entry));
     const hash = createHash("sha256");
     // Include the native toolchain and foreign-effect twins, as in tests/harness.ts.
     hash.update(
-      JSON.stringify(["bendo-cli-v2", bend.path, bend.version, process.platform, process.arch]),
+      JSON.stringify([
+        "bendo-cli-v3",
+        target,
+        bend.path,
+        bend.version,
+        process.platform,
+        process.arch,
+      ]),
     );
     for (const command of [
       [bend.path, "version"],
@@ -113,55 +142,49 @@ export class Pipeline {
       hash.update(`${run.stdout}${run.stderr}`);
     }
     hash.update(readFileSync(bend.path));
-    const graph = new Map<string, Buffer>();
-    const visit = (file: string): void => {
-      if (graph.has(file)) return;
-      const content = readFileSync(file);
-      graph.set(file, content);
+    const graph = sourceGraph(source);
+    for (const [file, content] of graph) {
       hash.update(JSON.stringify([file, content.length]));
       hash.update(content);
-      if (extname(file) !== ".bend") return;
-      for (const match of content
-        .toString()
-        .matchAll(/^\s*import\s+(?:"([^"\n]+)"|(\.{1,2}\/[^\s]+))/gm)) {
-        const imported = match[1] ?? match[2];
-        if (!imported) continue;
-        const dependency = resolve(dirname(file), imported);
-        visit(dependency);
-        if (/\.(c|js)$/.test(dependency)) {
-          const twin = dependency.replace(/\.(c|js)$/, dependency.endsWith(".c") ? ".js" : ".c");
-          if (existsSync(twin)) visit(twin);
-        }
-      }
-    };
-    visit(source);
+    }
     const cache = resolve(".cache/bendo", hash.digest("hex"));
-    const binary = join(cache, "server");
+    const binary = join(cache, target === "js" ? "app.js" : "server");
     if (existsSync(binary)) {
       log("compile: cache hit");
       return binary;
     }
     mkdirSync(cache, { recursive: true });
     const temporary = mkdtempSync(join(cache, ".compile-"));
-    const output = join(temporary, "server");
+    const output = join(temporary, target === "js" ? "app.js" : "server");
     // Compile an immutable tree. A save followed by an undo must never publish
     // a binary made from intermediate live contents under the original hash.
+    // Flat canonical names also support app paths containing spaces, which Bend
+    // does not allow in an unquoted module import. C/JS twins share a stem.
+    const snapshotPath = (file: string): string =>
+      join(
+        temporary,
+        "sources",
+        "module_" +
+          createHash("sha256")
+            .update(file.slice(0, -extname(file).length))
+            .digest("hex") +
+          extname(file),
+      );
+    mkdirSync(join(temporary, "sources"));
     for (const [file, contents] of graph) {
-      const snapshot = join(temporary, "sources", file);
-      mkdirSync(dirname(snapshot), { recursive: true });
       const snapshotContents =
         extname(file) === ".bend"
-          ? contents
-              .toString()
-              .replace(
-                /(^\s*import\s+")(\/[^"\n]+)"/gm,
-                (_match, prefix: string, imported: string) =>
-                  `${prefix}${join(temporary, "sources", imported)}"`,
-              )
+          ? mapImports(
+              contents.toString(),
+              (imported) =>
+                `./${snapshotPath(realpathSync(resolve(file, "..", imported)))
+                  .split("/")
+                  .at(-1)}`,
+            )
           : contents;
-      writeFileSync(snapshot, snapshotContents);
+      writeFileSync(snapshotPath(file), snapshotContents);
     }
-    const snapshotEntry = join(temporary, "sources", source);
+    const snapshotEntry = snapshotPath(source);
     const started = performance.now();
     log(`compile: ${entry}`);
     try {
@@ -193,8 +216,12 @@ export class Pipeline {
         child.once("close", (code) => {
           clearTimeout(timer);
           if (timedOut) reject(new Error(`${entry}:1: compiler timed out after 180s`));
-          else if (code === 0 && !this.cancelled) done();
-          else reject(new Error(compilerDiagnostic(text, entry, graph)));
+          else if (child.signalCode !== null || this.cancelled) reject(new BuildCancelled());
+          else if (code === 0) done();
+          else {
+            for (const file of graph.keys()) text = text.replaceAll(snapshotPath(file), file);
+            reject(new Error(compilerDiagnostic(text, entry, graph)));
+          }
         });
       });
       renameSync(output, binary);

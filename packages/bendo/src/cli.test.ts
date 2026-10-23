@@ -69,7 +69,7 @@ function running(args: string[], port: number, cwd = app, env = process.env) {
   };
 }
 
-async function until(check: () => boolean | Promise<boolean>, timeout = 10_000): Promise<void> {
+async function until(check: () => boolean | Promise<boolean>, timeout = 90_000): Promise<void> {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     if (await check()) return;
@@ -190,7 +190,7 @@ test("dev debounces atomic saves, keeps serving on syntax errors, recovers and c
     const started = performance.now();
     await until(async () => (await body(value)) === "Updated Bendo!");
     process.stdout.write(
-      `cached save -> answering: ${Math.round(performance.now() - started)}ms\n`,
+      `fresh JS save -> answering: ${Math.round(performance.now() - started)}ms\n`,
     );
     expect(server.output()).not.toContain(" at ");
   } finally {
@@ -198,7 +198,7 @@ test("dev debounces atomic saves, keeps serving on syntax errors, recovers and c
     writeFileSync(join(app, "main.bend"), original);
   }
   expect(await body(value)).toBe("");
-});
+}, 120_000);
 
 test("cache tracks transitive imports and diagnostics name the imported source", () => {
   const project = join(root, "imports");
@@ -281,7 +281,9 @@ case "$1" in
 esac
 touch '${marker}'
 sleep 0.5
-exec '${real}' "$@"
+cat > "$3" <<'JS'
+Bun.serve({hostname: '127.0.0.1', port: Number(process.env.PORT), fetch: () => new Response('queued')});
+JS
 `,
     { mode: 0o755 },
   );

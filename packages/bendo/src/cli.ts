@@ -1,17 +1,19 @@
 #!/usr/bin/env bun
-import { copyFileSync, existsSync, mkdirSync, renameSync, watch } from "node:fs";
-import { resolve } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, renameSync, watch, type FSWatcher } from "node:fs";
+import { dirname, resolve } from "node:path";
 import type { ChildProcess } from "node:child_process";
 import pkg from "../package.json" with { type: "json" };
 import { findBend } from "./bend.ts";
-import { Pipeline, launch, log, stop } from "./pipeline.ts";
+import { Pipeline, BuildCancelled, launch, log, stop, type Target } from "./pipeline.ts";
 import { scaffold } from "./scaffold.ts";
+import { sourceGraph } from "./sources.ts";
+import { devProxy, privatePort, waitForServer } from "./dev-server.ts";
 
 const USAGE = `bendo ${pkg.version}
 
 Usage:
   bendo new <dir>       create a minimal app
-  bendo dev [entry]     watch and restart (default: main.bend)
+  bendo dev [entry] [--native]  watch and restart with Bun JS (or native) (default: main.bend)
   bendo build [entry]   build dist/server (default: main.bend)
   bendo start          run dist/server; honors PORT (default: 8787)
   bendo doctor         check that Bend is installed
@@ -42,8 +44,11 @@ async function serve(binary: string): Promise<number> {
   }
 }
 
-async function dev(entry: string): Promise<number> {
+async function dev(entry: string, target: Target): Promise<number> {
   const pipeline = new Pipeline();
+  const proxy = await devProxy();
+  let candidate: ChildProcess | undefined;
+  let buildSignal = new AbortController();
   let server: ChildProcess | undefined;
   let closing = false;
   let revision = 0;
@@ -57,50 +62,91 @@ async function dev(entry: string): Promise<number> {
     if (building || closing) return;
     building = true;
     const current = revision;
+    buildSignal = new AbortController();
     try {
-      const binary = await pipeline.build(entry);
+      refreshImports();
+      const binary = await pipeline.build(entry, target);
       // Skip intermediate builds when a save arrived while Bend was compiling.
       if (closing || current !== revision) return;
       const started = performance.now();
-      if (server) await stop(server);
-      if (closing) return;
-      server = launch(binary);
-      server.once("error", report);
+      const port = await privatePort();
+      if (closing || current !== revision) return;
+      candidate = launch(binary, { ...process.env, PORT: String(port) });
+      candidate.once("error", report);
+      await waitForServer(candidate, port, buildSignal.signal);
+      if (closing || current !== revision) return;
+      const previous = server;
+      server = candidate;
+      candidate = undefined;
       server.once("exit", (code, signal) => {
         if (!closing && code !== 0 && signal === null)
           report(new Error(`server exited (${code}); waiting for a .bend change`));
       });
+      proxy.activate(port);
+      if (previous) await stop(previous);
       log(`restart: launched pid ${server.pid} in ${Math.round(performance.now() - started)}ms`);
     } catch (error) {
-      if (!closing) report(error);
+      if (!closing && current === revision && !(error instanceof BuildCancelled)) report(error);
     } finally {
+      if (candidate) {
+        await stop(candidate);
+        candidate = undefined;
+      }
       building = false;
-      if (!closing && current !== revision) void rebuild();
+      if (!closing && current !== revision && timer === undefined) void rebuild();
     }
   };
-  const watcher = watch(process.cwd(), { recursive: true }, (_event, name) => {
+  const imports = new Map<string, FSWatcher>();
+  const changed = (_event: string, name: string | Buffer | null): void => {
     if (name === null) return;
     const segments = name.toString().split(/[\\/]/);
     if (segments.some((part) => [".cache", "dist", "node_modules", ".git"].includes(part))) return;
     if (!name.toString().endsWith(".bend")) return;
     revision++;
+    buildSignal.abort();
+    // Kill the obsolete process group immediately, without closing the pipeline.
+    void pipeline.cancelBuild().catch(report);
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
+      timer = undefined;
       void rebuild();
     }, 100);
-  });
+  };
+  const refreshImports = (): void => {
+    const directories = new Set<string>();
+    try {
+      sourceGraph(entry, (file) => directories.add(dirname(file)));
+    } catch {
+      /* compiler reports missing imports */
+    }
+    for (const directory of directories) {
+      if (imports.has(directory) || !existsSync(directory)) continue;
+      imports.set(directory, watch(directory, changed));
+    }
+    for (const [directory, watcher] of imports) {
+      if (!directories.has(directory)) {
+        watcher.close();
+        imports.delete(directory);
+      }
+    }
+  };
+  const watcher = watch(process.cwd(), { recursive: true }, changed);
   const shutdown = (): void => {
     if (closing) return;
     closing = true;
     watcher.close();
+    for (const watcher of imports.values()) watcher.close();
+    proxy.close();
+    buildSignal.abort();
     if (timer) clearTimeout(timer);
-    void Promise.all([pipeline.close(), server ? stop(server) : Promise.resolve()]).then(
-      release,
-      (error) => {
-        report(error);
-        release();
-      },
-    );
+    void Promise.all([
+      pipeline.close(),
+      server ? stop(server) : Promise.resolve(),
+      candidate ? stop(candidate) : Promise.resolve(),
+    ]).then(release, (error) => {
+      report(error);
+      release();
+    });
   };
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
@@ -127,7 +173,8 @@ function parseCommand(value: string): Command {
 }
 
 async function main(args: string[]): Promise<number> {
-  const [rawCommand, argument, ...extra] = args;
+  const native = args[0] === "dev" && args.includes("--native");
+  const [rawCommand, argument, ...extra] = native ? args.filter((arg) => arg !== "--native") : args;
   const command = rawCommand;
   if (command === undefined || command === "--help" || command === "-h") {
     log(USAGE);
@@ -197,7 +244,7 @@ async function main(args: string[]): Promise<number> {
     case "dev":
       if (findBend().kind === "missing")
         throw new Error("bend not found. Install Bend from https://bend-lang.com");
-      return dev(argument ?? "main.bend");
+      return dev(argument ?? "main.bend", native ? "native" : "js");
     default: {
       const exhaustive: never = parsed;
       return exhaustive;
