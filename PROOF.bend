@@ -32,6 +32,7 @@ import ./proof/response-spec-proof.bend as ResponseSpecProof
 import ./proof/response-spec.bend as ResponseSpec
 import ./proof/response-framing-spec.bend as ResponseFramingSpec
 import ./proof/chunked.bend as ChunkedProof
+import ./proof/chunked-roundtrip.bend as ChunkedRoundtrip
 
 import ./src/router/proofs.bend as PatternProof
 import ./src/router/pattern.bend as Pattern
@@ -303,13 +304,4 @@ def Laws.response_head_matches_get(res, valid):
 # BND-8: chunked encode/decode roundtrip.
 
 def Laws.chunked_roundtrip(chunks, limit, suffix, valid):
-  match chunks:
-    case Nil{}:
-      Equal.cong(Chunked.State & Chunked.DecodeResult, Chunked.DecodeResult, pair => Chunked.result(pair), Chunked.feed(48 <> 13 <> 10 <> 13 <> 10 <> suffix, Chunked.initial(limit)), (Chunked.Complete{[], []}, Chunked.Decoded{[], [], suffix}), ChunkedProof.scan_terminal(limit, [], suffix))
-    case Nil{} <> rest:
-      Laws.chunked_roundtrip(rest, limit, suffix, valid)
-    case (c <> tail) <> rest:
-      +size = U32.from_nat(List.length(&2, U32, c <> tail))
-      # Expose structural nibbles instead of expanding eight div/mod pairs.
-      %Equal.sym(List<&2, U32>, Chunked.hex_go(8n, size, []), ChunkedProof.hex_bytes(ChunkedProof.hex_digits(8n, size, [])), ChunkedProof.hex_go_digits(8n, size, [])) : {Chunked.decode(Bytes.append(Bytes.append(_, 13 <> 10 <> Bytes.append(c <> tail, 13 <> 10 <> Chunked.encode(rest))), suffix), limit) == Chunked.Decoded{c <> Bytes.append(tail, List.concat(&2, U32, rest)), [], suffix} : Chunked.DecodeResult}
-      ?chunked_roundtrip_nonempty_chunk
+  ChunkedRoundtrip.roundtrip(chunks, limit, suffix, valid)

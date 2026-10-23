@@ -554,3 +554,123 @@ def scan_payload(t, c, budget, acc, left, more, oct, len):
       len2 = Equal.cong(Nat, Nat, x => A.pred(x), 1n+U32.to_nat((left - 1 : U32)), 2n+k, sub)
       %Equal.sym(C.State, C.data_octet(budget, acc, left, c), C.Payload{budget, c <> acc, (left - 1 : U32)}, payload_octet(budget, acc, left, c, octc, left_eq(left, 2n+k, 1, len), left_eq(left, 2n+k, 0, len))) : {C.feed(c2 <> B.append(t2, 13 <> 10 <> more), _) == C.feed(more, C.Size{budget, List.reverse.go(&2, U32, c2 <> t2, c <> acc), [], 0, False{}}) : C.State & C.DecodeResult}
       scan_payload(t2, c2, budget, c <> acc, (left - 1 : U32), more, octr, len2)
+
+# One producer chunk.
+
+def size_nonzero(+size: U32, +k: Nat, exact: {U32.to_nat(size) == 1n+k : Nat}) -> {U32.is_eq(size, 0) == False{} : Bool}:
+  %Equal.sym(Bool, U32.is_eq(size, 0), Nat.is_eq(U32.to_nat(size), U32.to_nat(0)), A.u32_nat_eq(size, 0)) : {_ == False{} : Bool}
+  %Equal.sym(Nat, U32.to_nat(size), 1n+k, exact) : {Nat.is_eq(_, U32.to_nat(0)) == False{} : Bool}
+  {==}
+
+def size_fits(+size: U32, +budget: U32, +k: Nat, exact: {U32.to_nat(size) == 1n+k : Nat}, fit: {Nat.is_le(1n+k, U32.to_nat(budget)) == True{} : Bool}) -> {(size <= budget : U32) == True{} : Bool}:
+  %Equal.sym(Bool, U32.is_le(size, budget), Nat.is_le(U32.to_nat(size), U32.to_nat(budget)), A.u32_nat_le(size, budget)) : {_ == True{} : Bool}
+  %Equal.sym(Nat, U32.to_nat(size), 1n+k, exact) : {Nat.is_le(_, U32.to_nat(budget)) == True{} : Bool}
+  fit
+
+# The encoder's chunk returns the decoder to the next size line, its payload
+# accumulated and its size charged to the budget.
+law chunk_step:
+  for +c: U32
+  for +tail: List<&2, U32>
+  for +more: List<&2, U32>
+  for +budget: U32
+  for +acc: List<&2, U32>
+  for oct: {C.octets(c <> tail) == True{} : Bool}
+  for fit: {Nat.is_le(List.length(&2, U32, c <> tail), U32.to_nat(budget)) == True{} : Bool}
+  {C.feed(B.append(C.hex_go(8n, U32.from_nat(List.length(&2, U32, c <> tail)), []), 13 <> 10 <> c <> B.append(tail, 13 <> 10 <> more)), C.Size{budget, acc, [], 0, False{}}) == C.feed(more, C.Size{(budget - U32.from_nat(List.length(&2, U32, c <> tail)) : U32), List.reverse.go(&2, U32, c <> tail, acc), [], 0, False{}}) : C.State & C.DecodeResult}
+
+def chunk_step(c, tail, more, budget, acc, oct, fit):
+  +fit = fit
+  +size = U32.from_nat(List.length(&2, U32, c <> tail))
+  +k = List.length(&2, U32, tail)
+  +exact = A.from_nat_exact(1n+k, budget, fit)
+  +nz = size_nonzero(size, k, exact)
+  +ds = P.hex_digits(8n, size, [])
+  +x = {c <> B.append(tail, 13 <> 10 <> more) : List<&2, U32>}
+  -goal = C.feed(more, C.Size{(budget - size : U32), List.reverse.go(&2, U32, c <> tail, acc), [], 0, False{}})
+  %Equal.sym(List<&2, U32>, C.hex_go(8n, size, P.hex_bytes([])), P.hex_bytes(ds), P.hex_go_digits(8n, size, [])) : {C.feed(B.append(_, 13 <> 10 <> x), C.Size{budget, acc, [], 0, False{}}) == goal : C.State & C.DecodeResult}
+  %Equal.sym(C.State & C.DecodeResult, C.feed(B.append(P.hex_bytes(ds), 13 <> 10 <> x), C.Size{budget, acc, [], 0, False{}}), C.feed(x, C.start_chunk(budget, acc, C.size_digits(P.hex_bytes(ds), 0, False{}))), size_header(ds, budget, acc, x, hex_digits_length(8n, size, []))) : {_ == goal : C.State & C.DecodeResult}
+  %Equal.sym(Maybe<&2, U32>, C.size_digits(P.hex_bytes(ds), 0, False{}), Some{size}, size_parse(size, nz)) : {C.feed(x, C.start_chunk(budget, acc, _)) == goal : C.State & C.DecodeResult}
+  %Equal.sym(C.State, C.start_chunk(budget, acc, Some{size}), C.Payload{(budget - size : U32), acc, size}, start_payload(budget, acc, size, nz, size_fits(size, budget, k, exact, fit))) : {C.feed(x, _) == goal : C.State & C.DecodeResult}
+  scan_payload(tail, c, (budget - size : U32), acc, size, more, oct, exact)
+
+# Induction over producer chunks.
+
+def done_pair(+rev: List<&2, U32>, +suffix: List<&2, U32>) -> C.State & C.DecodeResult:
+  (C.Complete{List.reverse(&2, U32, rev), []}, C.Decoded{List.reverse(&2, U32, rev), [], suffix})
+
+def rest_fit(+k: Nat, +lr: Nat, +total: Nat, +left: Nat, sum: {Nat.add(k, left) == total : Nat}, fit: {Nat.is_le(Nat.add(k, lr), total) == True{} : Bool}) -> {Nat.is_le(lr, left) == True{} : Bool}:
+  %A.cmp_add_cancel(k, lr, left) : {Cmp.is_le(_) == True{} : Bool}
+  %Equal.sym(Nat, Nat.add(k, left), total, sum) : {Nat.is_le(Nat.add(k, lr), _) == True{} : Bool}
+  fit
+
+def total_fit(+body: List<&2, U32>, +rc: List<&2, U32>, +budget: U32, fit: {Nat.is_le(List.length(&2, U32, B.append(body, rc)), U32.to_nat(budget)) == True{} : Bool}) ->
+    {Nat.is_le(Nat.add(List.length(&2, U32, body), List.length(&2, U32, rc)), U32.to_nat(budget)) == True{} : Bool}:
+  %length_append(body, rc) : {Nat.is_le(_, U32.to_nat(budget)) == True{} : Bool}
+  fit
+
+law roundtrip_from:
+  for +chunks: List<&2, List<&2, U32>>
+  for +budget: U32
+  for +acc: List<&2, U32>
+  for +suffix: List<&2, U32>
+  for oct: {C.octets(List.concat(&2, U32, chunks)) == True{} : Bool}
+  for fit: {Nat.is_le(List.length(&2, U32, List.concat(&2, U32, chunks)), U32.to_nat(budget)) == True{} : Bool}
+  {C.feed(B.append(C.encode(chunks), suffix), C.Size{budget, acc, [], 0, False{}}) == done_pair(List.reverse.go(&2, U32, List.concat(&2, U32, chunks), acc), suffix) : C.State & C.DecodeResult}
+
+def roundtrip_from(chunks, budget, acc, suffix, oct, fit):
+  match chunks:
+    case Nil{}:
+      P.scan_terminal(budget, acc, suffix)
+    case Nil{} <> rest:
+      roundtrip_from(rest, budget, acc, suffix, oct, fit)
+    case (+c <> +tail) <> +rest:
+      +body = {c <> tail : List<&2, U32>}
+      +rc = List.concat(&2, U32, rest)
+      +e = C.encode(rest)
+      +size = U32.from_nat(List.length(&2, U32, body))
+      +k = List.length(&2, U32, tail)
+      +lr = List.length(&2, U32, rc)
+      +both = Equal.trans(Bool, C.octets(body) && C.octets(rc), C.octets(B.append(body, rc)), True{}, Equal.sym(Bool, C.octets(B.append(body, rc)), C.octets(body) && C.octets(rc), P.octets_append(body, rc)), oct)
+      +total = total_fit(body, rc, budget, fit)
+      +fitc = A.le_add_r(1n+k, lr, U32.to_nat(budget), total)
+      +exact = A.from_nat_exact(1n+k, budget, fitc)
+      sub = A.u32_sub_nat(budget, size, size_fits(size, budget, k, exact, fitc))
+      sum = Equal.trans(Nat, Nat.add(1n+k, U32.to_nat((budget - size : U32))), Nat.add(U32.to_nat(size), U32.to_nat((budget - size : U32))), U32.to_nat(budget),
+        Equal.cong(Nat, Nat, x => Nat.add(x, U32.to_nat((budget - size : U32))), 1n+k, U32.to_nat(size), Equal.sym(Nat, U32.to_nat(size), 1n+k, exact)), sub)
+      fitr = rest_fit(1n+k, lr, U32.to_nat(budget), U32.to_nat((budget - size : U32)), sum, total)
+      +h = C.hex_go(8n, size, [])
+      -goal = done_pair(List.reverse.go(&2, U32, B.append(body, rc), acc), suffix)
+      %Equal.sym(List<&2, U32>, B.append(B.append(h, 13 <> 10 <> B.append(body, 13 <> 10 <> e)), suffix), B.append(h, B.append(13 <> 10 <> B.append(body, 13 <> 10 <> e), suffix)), append_assoc(h, 13 <> 10 <> B.append(body, 13 <> 10 <> e), suffix)) : {C.feed(_, C.Size{budget, acc, [], 0, False{}}) == goal : C.State & C.DecodeResult}
+      %Equal.sym(List<&2, U32>, B.append(B.append(tail, 13 <> 10 <> e), suffix), B.append(tail, B.append(13 <> 10 <> e, suffix)), append_assoc(tail, 13 <> 10 <> e, suffix)) : {C.feed(B.append(h, 13 <> 10 <> c <> _), C.Size{budget, acc, [], 0, False{}}) == goal : C.State & C.DecodeResult}
+      Equal.trans(C.State & C.DecodeResult,
+        C.feed(B.append(h, 13 <> 10 <> c <> B.append(tail, 13 <> 10 <> B.append(e, suffix))), C.Size{budget, acc, [], 0, False{}}),
+        C.feed(B.append(e, suffix), C.Size{(budget - size : U32), List.reverse.go(&2, U32, body, acc), [], 0, False{}}),
+        goal,
+        chunk_step(c, tail, B.append(e, suffix), budget, acc, P.both_left(C.octets(body), C.octets(rc), both), fitc),
+        Equal.trans(C.State & C.DecodeResult,
+          C.feed(B.append(e, suffix), C.Size{(budget - size : U32), List.reverse.go(&2, U32, body, acc), [], 0, False{}}),
+          done_pair(List.reverse.go(&2, U32, rc, List.reverse.go(&2, U32, body, acc)), suffix),
+          goal,
+          roundtrip_from(rest, (budget - size : U32), List.reverse.go(&2, U32, body, acc), suffix, P.both_right(C.octets(body), C.octets(rc), both), fitr),
+          Equal.cong(List<&2, U32>, C.State & C.DecodeResult, x => done_pair(x, suffix), List.reverse.go(&2, U32, rc, List.reverse.go(&2, U32, body, acc)), List.reverse.go(&2, U32, B.append(body, rc), acc), Equal.sym(List<&2, U32>, List.reverse.go(&2, U32, B.append(body, rc), acc), List.reverse.go(&2, U32, rc, List.reverse.go(&2, U32, body, acc)), reverse_go_append(body, rc, acc)))))
+
+# The BND-8 round trip, for every admissible producer chunking and suffix.
+law roundtrip:
+  for +chunks: List<&2, List<&2, U32>>
+  for +limit: U32
+  for +suffix: List<&2, U32>
+  for valid: {C.admissible(chunks, limit) == True{} : Bool}
+  {C.decode(B.append(C.encode(chunks), suffix), limit) == C.Decoded{List.concat(&2, U32, chunks), [], suffix} : C.DecodeResult}
+
+def roundtrip(chunks, limit, suffix, valid):
+  +valid = valid
+  +body = List.concat(&2, U32, chunks)
+  +fit = Nat.is_le(List.length(&2, U32, body), U32.to_nat(limit))
+  run = roundtrip_from(chunks, limit, [], suffix, P.both_left(C.octets(body), fit, valid), P.both_right(C.octets(body), fit, valid))
+  Equal.trans(C.DecodeResult,
+    C.decode(B.append(C.encode(chunks), suffix), limit),
+    C.Decoded{List.reverse(&2, U32, List.reverse(&2, U32, body)), [], suffix},
+    C.Decoded{body, [], suffix},
+    Equal.cong(C.State & C.DecodeResult, C.DecodeResult, pair => C.result(pair), C.feed(B.append(C.encode(chunks), suffix), C.initial(limit)), done_pair(List.reverse(&2, U32, body), suffix), run),
+    Equal.cong(List<&2, U32>, C.DecodeResult, x => C.Decoded{x, [], suffix}, List.reverse(&2, U32, List.reverse(&2, U32, body)), body, reverse_reverse(body)))
