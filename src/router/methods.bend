@@ -1,0 +1,232 @@
+# Method-aware reference routing; app tags remain copyable data.
+import Base
+import ./spec.bend as S
+import ./pattern.bend as P
+import ./encoding.bend as E
+import ../http/request.bend as R
+import ../http/bytes.bend as B
+
+type Binding<-T: Data> is Data:
+  Binding{methods: List<&2, R.Method>, tag: T}
+
+def Table(-T: Data) -> Data:
+  S.Table(Binding<T>)
+
+def Registration(-T: Data) -> Data:
+  S.Registration<Binding<T>>
+
+type Options is Data:
+  Options{strict_trailing_slash: Bool, case_sensitive: Bool}
+
+def defaults() -> Options:
+  Options{True{}, True{}}
+
+type Resolution<-T: Data> is Data:
+  Found{hit: S.Match<T>, head_from_get: Bool}
+  MethodNotAllowed{allow: List<&2, R.Method>}
+  NotFound{}
+
+def on(-T: Data, methods: List<&2, R.Method>, path: String, tag: T) -> Registration(T):
+  S.Registration{path, Binding{methods, tag}}
+
+def standard_methods() -> List<&2, R.Method>:
+  [R.Get{}, R.Head{}, R.Post{}, R.Put{}, R.Delete{}, R.Connect{}, R.Options{}, R.Trace{}, R.Patch{}]
+
+def get(-T: Data, path: String, tag: T) -> Registration(T):
+  on(T, [R.Get{}], path, tag)
+
+def post(-T: Data, path: String, tag: T) -> Registration(T):
+  on(T, [R.Post{}], path, tag)
+
+def put(-T: Data, path: String, tag: T) -> Registration(T):
+  on(T, [R.Put{}], path, tag)
+
+def patch(-T: Data, path: String, tag: T) -> Registration(T):
+  on(T, [R.Patch{}], path, tag)
+
+def delete(-T: Data, path: String, tag: T) -> Registration(T):
+  on(T, [R.Delete{}], path, tag)
+
+def options(-T: Data, path: String, tag: T) -> Registration(T):
+  on(T, [R.Options{}], path, tag)
+
+def head(-T: Data, path: String, tag: T) -> Registration(T):
+  on(T, [R.Head{}], path, tag)
+
+def all(-T: Data, path: String, tag: T) -> Registration(T):
+  on(T, standard_methods(), path, tag)
+
+def build_table(-T: Data, entries: List<&2, Registration(T)>) -> Result<&2, &2, S.BuildError, Table(T)>:
+  S.build_table(Binding<T>, entries)
+
+# Strip terminal empty segments, retaining one segment for the root.
+def trim_segments(xs: List<&2, String>) -> List<&2, String>:
+  match xs:
+    case Nil{}:
+      [""]
+    case "" <> tail:
+      trim_segments(tail)
+    case h <> tail:
+      h <> tail
+
+def slash_segments(xs: List<&2, String>, strict: Bool) -> List<&2, String>:
+  match strict:
+    case True{}:
+      xs
+    case False{}:
+      List.reverse(&2, String, trim_segments(List.reverse(&2, String, xs)))
+
+def fold_static(raw: String, sensitive: Bool) -> String:
+  match sensitive:
+    case True{}:
+      raw
+    case False{}:
+      B.fold(raw)
+
+# Fold only path positions occupied by static segments; never captures.
+def adapt_segments(segs: List<&2, P.Segment>, paths: List<&2, String>, +sensitive: Bool) -> List<&2, String>:
+  match segs paths:
+    case P.Static{raw} <> rest h <> tail:
+      fold_static(h, sensitive) <> adapt_segments(rest, tail, sensitive)
+    case P.Capture{name, c, optional} <> rest h <> tail:
+      h <> adapt_segments(rest, tail, sensitive)
+    case _ ps:
+      ps
+
+def pattern_segments(segs: List<&2, P.Segment>, +sensitive: Bool) -> List<&2, P.Segment>:
+  match segs:
+    case Nil{}:
+      Nil{}
+    case P.Static{raw} <> rest:
+      P.Static{fold_static(raw, sensitive)} <> pattern_segments(rest, sensitive)
+    case h <> rest:
+      h <> pattern_segments(rest, sensitive)
+
+def trim_pattern_rev(segs: List<&2, P.Segment>) -> List<&2, P.Segment>:
+  match segs:
+    case Nil{}:
+      [P.Static{""}]
+    case P.Static{""} <> tail:
+      trim_pattern_rev(tail)
+    case h <> tail:
+      h <> tail
+
+def slash_pattern(segs: List<&2, P.Segment>, strict: Bool) -> List<&2, P.Segment>:
+  match strict:
+    case True{}:
+      segs
+    case False{}:
+      List.reverse(&2, P.Segment, trim_pattern_rev(List.reverse(&2, P.Segment, segs)))
+
+def match_path(pattern: P.Pattern, path: String, opts: Options) -> Maybe<&2, P.Params>:
+  match pattern path opts:
+    case P.Pattern{segs} SCon{'/', tail} Options{+strict, +sensitive}:
+      +normalized = slash_pattern(segs, strict)
+      P.match_path(P.Pattern{pattern_segments(normalized, sensitive)}, "/" ++ String.join(adapt_segments(normalized, slash_segments(P.path_segments(tail), strict), sensitive), "/"))
+    case _ _ _:
+      None{}
+
+def contains(methods: List<&2, R.Method>, +method: R.Method) -> Bool:
+  match methods:
+    case Nil{}:
+      False{}
+    case h <> tail:
+      String.eq(R.method_text(h), R.method_text(method)) || contains(tail, method)
+
+def eligible(methods: List<&2, R.Method>, method: R.Method, hit: Maybe<&2, P.Params>) -> Maybe<&2, P.Params>:
+  E.choose(Maybe<&2, P.Params>, contains(methods, method), u => hit, u => None{})
+
+def select(-T: Data, tag: T, hit: Maybe<&2, P.Params>, rest: Unit -> Maybe<&2, S.Match<T>>) -> Maybe<&2, S.Match<T>>:
+  S.select(T, tag, hit, rest)
+
+def find(-T: Data, table: Table(T), +path: String, +method: R.Method, +opts: Options) -> Maybe<&2, S.Match<T>>:
+  match table:
+    case Nil{}:
+      None{}
+    case S.Route{pattern, Binding{methods, tag}} <> +tail:
+      select(T, tag, eligible(methods, method, match_path(pattern, path, opts)), u => find(T, tail, path, method, opts))
+
+# Sorted token set: standards have fixed rank, extensions follow lexically.
+def rank(m: R.Method) -> U32:
+  match m:
+    case R.Get{}: 0
+    case R.Head{}: 1
+    case R.Post{}: 2
+    case R.Put{}: 3
+    case R.Delete{}: 4
+    case R.Connect{}: 5
+    case R.Options{}: 6
+    case R.Trace{}: 7
+    case R.Patch{}: 8
+    case R.Extension{token}: 9
+
+def before(+a: R.Method, +b: R.Method) -> Bool:
+  (rank(a) < rank(b) : U32) || (U32.is_eq(rank(a), rank(b)) && String.is_lt(R.method_text(a), R.method_text(b)))
+
+def insert(+m: R.Method, xs: List<&2, R.Method>) -> List<&2, R.Method>:
+  match xs:
+    case Nil{}:
+      [m]
+    case +h <> +tail:
+      E.choose(List<&2, R.Method>, String.eq(R.method_text(m), R.method_text(h)), u => h <> tail, u => (
+        E.choose(List<&2, R.Method>, before(m, h), u => m <> h <> tail, u => h <> insert(m, tail))
+      ))
+
+def canonical(xs: List<&2, R.Method>) -> List<&2, R.Method>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +h <> tail:
+      +rest = insert(h, canonical(tail))
+      E.choose(List<&2, R.Method>, String.eq(R.method_text(h), "GET"), u => insert(R.Head{}, rest), u => rest)
+
+def matching_methods(-T: Data, table: Table(T), +path: String, +opts: Options) -> List<&2, R.Method>:
+  match table:
+    case Nil{}:
+      Nil{}
+    case S.Route{pattern, Binding{methods, tag}} <> +tail:
+      E.choose(List<&2, R.Method>, Maybe.is_some(&2, P.Params, match_path(pattern, path, opts)), u => List.append(&2, R.Method, methods, matching_methods(T, tail, path, opts)), u => matching_methods(T, tail, path, opts))
+
+def path_exists(-T: Data, table: Table(T), +path: String, +opts: Options) -> Bool:
+  match table:
+    case Nil{}:
+      False{}
+    case S.Route{pattern, binding} <> tail:
+      Maybe.is_some(&2, P.Params, match_path(pattern, path, opts)) || path_exists(T, tail, path, opts)
+
+def miss(-T: Data, exists: Bool, allow: List<&2, R.Method>) -> Resolution<T>:
+  match exists:
+    case True{}:
+      MethodNotAllowed{allow}
+    case False{}:
+      NotFound{}
+
+def fallback(-T: Data, hit: Maybe<&2, S.Match<T>>, rest: Unit -> Resolution<T>) -> Resolution<T>:
+  match hit:
+    case Some{hit}:
+      Found{hit, True{}}
+    case None{}:
+      rest(Unit{})
+
+def resolve_direct(-T: Data, hit: Maybe<&2, S.Match<T>>, +table: Table(T), +path: String, method: R.Method, +opts: Options) -> Resolution<T>:
+  match hit:
+    case Some{hit}:
+      Found{hit, False{}}
+    case None{}:
+      match method:
+        case R.Head{}:
+          fallback(T, find(T, table, path, R.Get{}, opts), u => miss(T, path_exists(T, table, path, opts), canonical(matching_methods(T, table, path, opts))))
+        case _:
+          miss(T, path_exists(T, table, path, opts), canonical(matching_methods(T, table, path, opts)))
+
+def resolve(-T: Data, +table: Table(T), +path: String, +method: R.Method, +opts: Options) -> Resolution<T>:
+  resolve_direct(T, find(T, table, path, method, opts), table, path, method, opts)
+
+def allow_text(xs: List<&2, R.Method>) -> String:
+  match xs:
+    case Nil{}:
+      ""
+    case h <> Nil{}:
+      R.method_text(h)
+    case h <> tail:
+      R.method_text(h) ++ ", " ++ allow_text(tail)
