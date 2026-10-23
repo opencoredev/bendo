@@ -24,6 +24,8 @@ import ./src/http/response.bend as Response
 import ./src/http/write_response.bend as WriteResponse
 
 import ./src/http/chunked.bend as Chunked
+import ./proof/stream.bend as StreamProof
+import ./src/http/stream_framing.bend as StreamFraming
 import ./src/http.bend as Http
 import ./src/http/bytes.bend as Bytes
 import ./src/http/request.bend as Request
@@ -546,3 +548,12 @@ def Laws.http_date_imf_spec(second, bound):
 def Laws.http_date_parse_strict(text, second, ok):
   DateLaws.strict(text, second, ok)
 
+
+def Laws.stream_roundtrip(chunks, limit, suffix, valid):
+  Equal.trans(Chunked.DecodeResult, Chunked.decode(Bytes.append(StreamFraming.wire(chunks), suffix), limit), Chunked.decode(Bytes.append(Chunked.encode(chunks), suffix), limit), Chunked.Decoded{List.concat(&2, U32, chunks), [], suffix}, Equal.cong(List<&2, U32>, Chunked.DecodeResult, wire => Chunked.decode(Bytes.append(wire, suffix), limit), StreamFraming.wire(chunks), Chunked.encode(chunks), StreamProof.canonical(chunks)), ChunkedRoundtrip.roundtrip(chunks, limit, suffix, valid))
+
+def Laws.stream_empty_chunk():
+  {==}
+
+def Laws.stream_chunk_tail(bytes, tail):
+  StreamProof.chunk_tail(bytes, tail)

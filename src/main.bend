@@ -1,5 +1,8 @@
 # Public Bendo entrypoint. Route tags and startup environments are app-owned Data.
 import Base
+import ./stream.bend as Stream
+import ./http/stream_types.bend as StreamTypes
+import ./app/observability.bend as Observation
 import ./mw/builtin.bend as Builtin
 import ./mw/server_timing.bend as Timing
 import ./app/config.bend as Config
@@ -141,3 +144,10 @@ def cookies(c: Handle.Ctx) -> List<&2, Cookie.Entry>: Context.cookies(Unit, c)
 def cookie(c: Handle.Ctx, name: String) -> Maybe<&2, String>: Context.cookie(Unit, c, name)
 def set_cookie(c: Handle.Ctx, name: String, value: String, options: Cookie.Options) -> Result<&2, &2, Cookie.Error, Handle.Ctx>: Context.set_cookie(Unit, c, name, value, options)
 def delete_cookie(c: Handle.Ctx, name: String, options: Cookie.Options) -> Result<&2, &2, Cookie.Error, Handle.Ctx>: Context.delete_cookie(Unit, c, name, options)
+
+# Pull-based binary streaming through the ordinary routing/middleware lifecycle.
+def StreamConfig() -> Data: StreamTypes.Config
+def StreamStep(-State: Type) -> Type: StreamTypes.Step<State>
+def stream_config() -> StreamTypes.Config: Stream.defaults()
+def stream(~Vars: Data, ~State: Type, ~step: State -> IO(StreamTypes.Step<State>), ~cleanup: State -> IO(Unit), +c: Context.Ctx<Vars>, state: State, config: StreamTypes.Config) -> IO(Response.Res):
+  Stream.register(Observation.stream(Context.observation(Vars, c)), Context.body(Vars, c, [], None{}), Stream.plan(~State, ~step, ~cleanup, state, config))

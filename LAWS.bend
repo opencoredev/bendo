@@ -30,6 +30,7 @@ import ./proof/response-spec.bend as ResponseSpec
 import ./proof/response-framing-spec.bend as ResponseFramingSpec
 
 import ./src/http/chunked.bend as Chunked
+import ./src/http/stream_framing.bend as StreamFraming
 import ./src/http.bend as Http
 import ./src/http/bytes.bend as Bytes
 import ./src/http/request.bend as Request
@@ -1284,3 +1285,21 @@ law http_date_parse_strict:
   for ok: {HttpDate.parse_imf(text) == Some{second} : Maybe<&2, Nat>}
   {HttpDate.format_imf(second) == text : String}
 
+
+# BND-48: incremental writes use the existing proven chunked framing, over
+# every admissible partition (including empty chunks), with suffix preservation.
+law stream_roundtrip:
+  for +chunks: List<&2, List<&2, U32>>
+  for +limit: U32
+  for +suffix: List<&2, U32>
+  for valid: {Chunked.admissible(chunks, limit) == True{} : Bool}
+  {Chunked.decode(Bytes.append(StreamFraming.wire(chunks), suffix), limit) == Chunked.Decoded{List.concat(&2, U32, chunks), [], suffix} : Chunked.DecodeResult}
+
+law stream_empty_chunk:
+  {StreamFraming.chunk([]) == [] : List<&2, U32>}
+
+# The actual single-chunk writes compose to the canonical sequence above.
+law stream_chunk_tail:
+  for +bytes: List<&2, U32>
+  for +tail: List<&2, U32>
+  {Bytes.append(StreamFraming.chunk(bytes), tail) == Chunked.encode_chunk(bytes, tail) : List<&2, U32>}
