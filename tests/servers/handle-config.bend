@@ -1,15 +1,14 @@
 import Base
 import ../../src/main.bend as B
 import ../../src/app/config.bend as Config
-import ../../src/app/handle.bend as Context
 import ../../src/router/methods.bend as Methods
 
 type Tag is Data:
   Echo{}
 
 def dispatch(tag: Tag, ctx: B.Ctx, env: Unit) -> IO(B.Res):
-  Context.Ctx{req, params, body} = ctx
-  IO.pure(B.Res, B.body(200, [], body))
+  +c = ctx
+  IO.pure(B.Res, B.body(c, B.raw_body(c), None{}))
 
 def ready(result: Result<&2, &2, Methods.BuildError, B.Routes(Tag)>) -> IO(Unit):
   match result:
