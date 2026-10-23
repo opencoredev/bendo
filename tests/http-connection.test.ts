@@ -1,11 +1,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { connect } from "node:net";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { findBend } from "../packages/bendo/src/bend.ts";
-import { build, start } from "./harness.ts";
+import { build, compile, start } from "./harness.ts";
 
 const binary = build("tests/fixtures/http-connection/server.bend");
 const standard = await start(binary);
@@ -297,17 +293,7 @@ test("101 closes until upgrade handoff is implemented", () =>
 test("417 in pipeline closes before next dispatch", () =>
   closed(request("/", "Expect: kittens\r\n") + request("/ignored"), 417));
 
-const pureDirectory = mkdtempSync(join(tmpdir(), "bendo-connection-pure-"));
-afterAll(() => rmSync(pureDirectory, { recursive: true, force: true }));
-const pureOutput = join(pureDirectory, "connection.mjs");
-const bend = findBend();
-if (bend.kind === "missing") throw new Error("bend is not installed");
-const compiled = Bun.spawnSync(
-  [bend.path, join(import.meta.dir, "fixtures/http-connection/consumer.bend"), "-o", pureOutput],
-  { stdout: "pipe", stderr: "pipe", timeout: 30000 },
-);
-if (compiled.exitCode !== 0)
-  throw new Error(`connection compilation failed: ${compiled.stdout}${compiled.stderr}`);
+const pureOutput = compile("tests/fixtures/http-connection/consumer.bend", "mjs");
 const loaded: unknown = await import(pathToFileURL(pureOutput).href);
 if (typeof loaded !== "object" || loaded === null || !("default" in loaded))
   throw new Error("missing module");

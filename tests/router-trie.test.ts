@@ -1,7 +1,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { build } from "./harness.ts";
 
 type Case = { patterns: string[]; path: string };
@@ -116,7 +116,6 @@ function generatedCases(count: number): Case[] {
 const binary = build("tests/router-trie-driver.bend");
 const directory = mkdtempSync(join(tmpdir(), "bendo-trie-cases-"));
 afterAll(() => {
-  rmSync(dirname(binary), { recursive: true, force: true });
   rmSync(directory, { recursive: true, force: true });
 });
 

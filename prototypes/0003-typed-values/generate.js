@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync, copyFileSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
+import { compile } from "../../tests/harness.ts";
 
 const source = import.meta.dirname;
 const out = resolve(process.argv[2] ?? join(source, "generated"));
@@ -11,7 +12,7 @@ function run(args) {
   const result = spawnSync(args[0], args.slice(1), { encoding: "utf8", timeout: 30000 });
   if (result.status !== 0) throw new Error(`${args.join(" ")}\n${result.stdout}\n${result.stderr}`);
 }
-run(["bend", join(source, "schema.bend"), "-o", join(out, "schema.mjs")]);
+copyFileSync(compile(join(source, "schema.bend"), "mjs"), join(out, "schema.mjs"));
 const { default: schemaModule } = await import(pathToFileURL(join(out, "schema.mjs")).href);
 const schema = schemaModule.todo_schema();
 const fields = [];
@@ -147,7 +148,7 @@ const bridge = readFileSync(join(source, "bridge.js"), "utf8").replace(
 );
 writeFileSync(join(out, "validator.js"), bridge);
 copyFileSync(join(source, "page.html"), join(out, "page.html"));
-run(["bend", join(out, "todo.bend"), "-o", join(out, "todo.mjs")]);
+copyFileSync(compile(join(out, "todo.bend"), "mjs"), join(out, "todo.mjs"));
 run([
   join(source, "../../node_modules/.bin/oxfmt"),
   "--threads=4",

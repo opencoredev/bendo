@@ -4,3 +4,5 @@ dist/
 !packages/**/*.mjs
 /tmp/
 .DS_Store
+
+.cache/
