@@ -4,6 +4,7 @@ import ./mw/builtin.bend as Builtin
 import ./mw/server_timing.bend as Timing
 import ./mw/basic_auth.bend as BasicAuth
 import ./mw/jwt.bend as JwtAuth
+import ./mw/csrf_policy.bend as CsrfPolicy
 import ./crypto/jwt.bend as Jwt
 import ./data/utf8.bend as Utf8
 import ./app/config.bend as Config
@@ -133,7 +134,11 @@ def Credential() -> Data: BasicAuth.Credential
 def credential(username: String, password: String) -> BasicAuth.Credential: BasicAuth.Credential{username, password}
 def basic_auth(realm: String, users: List<&2, BasicAuth.Credential>) -> Builtin.Builtin: Builtin.BasicAuth{realm, users}
 def bearer_auth(realm: String, tokens: List<&2, String>) -> Builtin.Builtin: Builtin.BearerAuth{realm, tokens}
-def csrf(origins: List<&2, String>) -> Builtin.Builtin: Builtin.Csrf{origins}
+# Trust only the listed origins ("https://app.example"; any path is ignored).
+def csrf(origins: List<&2, String>) -> Builtin.Builtin: Builtin.Csrf{CsrfPolicy.policy(origins, None{})}
+# Also trust scheme://Host, for a deployment that knows the scheme browsers
+# use. Behind a TLS-terminating proxy that keeps Host, pass "https".
+def csrf_host(scheme: String, origins: List<&2, String>) -> Builtin.Builtin: Builtin.Csrf{CsrfPolicy.policy(origins, Some{scheme})}
 
 # HS256 with a UTF-8 secret; leeway is the allowed clock skew in seconds.
 def JwtConfig() -> Data: JwtAuth.Config

@@ -12,7 +12,7 @@ The complete compiled example is
 B.use_path(Tag, "/admin/*", Builtin{B.basic_auth("admin", [B.credential("ada", "correct horse")])}),
 B.use_path(Tag, "/api/*", Builtin{B.bearer_auth("api", ["a-long-random-token"])}),
 B.use_path(Tag, "/me/*", Builtin{B.jwt(B.jwt_config("a-long-random-secret", 30n, "me"))}),
-B.use(Tag, Builtin{B.csrf(["https://app.example"])}),
+B.use(Tag, Builtin{B.csrf_host("https", ["https://admin.example"])}),
 ```
 
 Credentials, tokens and secrets are `Data` stored in the route table, the same
@@ -79,6 +79,9 @@ Verification rejects a token, with status 401, when:
   `alg: none` tokens with an empty signature;
 - a segment is not strict unpadded base64url, or the header or payload is not a
   JSON object;
+- the header or the payload repeats a top-level member name (error
+  `duplicate member name`), such as `{"alg":"HS256","alg":"none"}` or
+  `{"exp":2000000000,"exp":1}`;
 - the header's `alg` is anything but the string `HS256`, including `none`,
   `RS256` and `HS512`, or the header has a `crit` field;
 - `exp`, `nbf` or `iat` is present but not a JSON number;
@@ -110,31 +113,62 @@ fails, the response is an empty 500. Cookie tokens are not supported.
 `{"alg":"HS256","typ":"JWT"}` and returns `Result<.., B.JwtError, String>`.
 `B.jwt_verify(secret, token, now, leeway)` returns the claims or the error.
 Both are pure. The tests check every direction against the `jose` npm package.
+Signing a claim set with a repeated member name fails with the same
+`DuplicateMember` error that verifying it would give.
 For byte secrets, use `src/crypto/jwt.bend` (`sign`, `verify`, `error_text`)
 directly.
 
 ## CSRF
 
-`B.csrf(origins)` follows Hono's `csrf` middleware. It inspects only requests
-that a cross-site HTML form could send without a CORS preflight: any method
-other than `GET` and `HEAD`, with a `Content-Type` of
-`application/x-www-form-urlencoded`, `multipart/form-data` or `text/plain`, or
-no `Content-Type` at all. Such a request passes when any of these holds:
+`B.csrf(origins)` and `B.csrf_host(scheme, origins)` follow Hono's `csrf`
+middleware. They inspect only requests that a cross-site HTML form could send
+without a CORS preflight: any method other than `GET` and `HEAD`, with a
+`Content-Type` of `application/x-www-form-urlencoded`, `multipart/form-data` or
+`text/plain`, or no `Content-Type` at all. A JSON request is not inspected,
+because browsers preflight cross-origin JSON; use CORS to control it.
+
+An inspected request passes when any of these holds:
 
 - `Sec-Fetch-Site` is `same-origin`.
-- `Origin` is exactly one of `origins`.
-- `Origin` is `http://` or `https://` followed by the request's `Host` (compared
-  without regard to case).
+- Its claimed origin is one of `origins`.
+- `Sec-Fetch-Site` is not `cross-site`, the middleware was built with
+  `B.csrf_host(scheme, ..)`, and the claimed origin is `scheme://` followed by
+  the request's `Host`.
 
-Without an `Origin` header, the origin part of `Referer` (scheme, `//` and host)
-is checked the same way. Hono does not read `Referer`. Everything else gets
-status 403 with body `Forbidden`, including `Origin: null` and requests with
-neither header.
+Everything else gets status 403 with body `Forbidden`.
 
-Matching the `Host` header assumes the server sees the browser's host. Behind a
-proxy that rewrites `Host`, list your public origin in `origins`. A JSON request
-is not inspected, because browsers preflight cross-origin JSON; use CORS to
-control it.
+The claimed origin is the `Origin` header. Only when `Origin` is absent does
+the middleware use the origin of the `Referer` URL; Hono does not read
+`Referer`. `Origin: null`, a scheme other than `http` or `https`, userinfo, or
+an `Origin` value with a path fails, and so does a request with neither header.
+
+Origins compare as serialized origins: scheme, host and port. Scheme and host
+are compared in lowercase, and the default port is dropped, so
+`https://App.Example:443` equals `https://app.example`, while
+`http://app.example` and `https://app.example:8443` are different origins. IPv6
+hosts keep their brackets and are compared as written, which is how browsers
+send them. Each entry of `origins` may be a full URL; only its origin counts.
+Entries that are not `http` or `https` URLs are ignored.
+
+`Sec-Fetch-Site: cross-site` only blocks the `Host` match. A listed origin is
+trusted even from another site, since listing it is the way to allow one.
+
+### Which constructor to use
+
+The server cannot see the scheme a browser used: behind a proxy, TLS ends
+before Bendo. So `Host` only proves an origin when you supply the scheme.
+
+- Use `B.csrf(["https://app.example"])` when you know your public origin. This
+  is the safest choice and works behind any proxy.
+- Use `B.csrf_host("https", origins)` when one build serves several hostnames
+  over HTTPS through a proxy that passes the browser's `Host` through
+  unchanged. Do not use `"https"` if the app is also reachable over plain HTTP
+  under the same `Host`.
+- Use `B.csrf_host("http", origins)` only for local development over plain
+  HTTP.
+
+A proxy that rewrites `Host` breaks the `Host` match; list the public origin in
+`origins` instead.
 
 ## Constant-time comparison
 

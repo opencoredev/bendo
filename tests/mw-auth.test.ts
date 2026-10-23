@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
+import { connect } from "node:net";
 import { pathToFileURL } from "node:url";
 import { SignJWT, UnsecuredJWT, decodeJwt, jwtVerify } from "jose";
 import { build, compile, start, type RunningServer } from "./harness.ts";
@@ -107,9 +108,12 @@ function b64url(input: string | Buffer): string {
 function hs256(secret: Uint8Array, input: string): string {
   return createHmac("sha256", secret).update(input).digest("base64url");
 }
-function forge(secret: Uint8Array, header: unknown, payload: string): string {
-  const input = `${b64url(JSON.stringify(header))}.${b64url(payload)}`;
+function forgeText(secret: Uint8Array, header: string, payload: string): string {
+  const input = `${b64url(header)}.${b64url(payload)}`;
   return `${input}.${hs256(secret, input)}`;
+}
+function forge(secret: Uint8Array, header: unknown, payload: string): string {
+  return forgeText(secret, JSON.stringify(header), payload);
 }
 
 describe("JWT interop with jose", () => {
@@ -141,11 +145,17 @@ describe("JWT interop with jose", () => {
   test("Bendo verifies its own tokens and jose's typ variants", async () => {
     const secret = secretFor(7);
     const own = signWithBendo(secret, { a: 1 });
-    expect(verifyWithBendo(secret, own, NOW)).toEqual({ kind: "ok", value: '{"a":1}' });
+    expect(verifyWithBendo(secret, own, NOW)).toEqual({
+      kind: "ok",
+      value: '{"a":1}',
+    });
     const typed = await new SignJWT({ a: 2 })
       .setProtectedHeader({ alg: "HS256", typ: "JWT", kid: "k1" })
       .sign(secret);
-    expect(verifyWithBendo(secret, typed, NOW)).toEqual({ kind: "ok", value: '{"a":2}' });
+    expect(verifyWithBendo(secret, typed, NOW)).toEqual({
+      kind: "ok",
+      value: '{"a":2}',
+    });
   });
 });
 
@@ -157,19 +167,31 @@ describe("JWT rejection", () => {
     const at = (claims: object, now: number, leeway = 0) =>
       verifyWithBendo(secret, signWithBendo(secret, claims), now, leeway);
     expect(at({ exp: 1000 }, 999).kind).toBe("ok");
-    expect(at({ exp: 1000 }, 1000)).toEqual({ kind: "err", reason: "token expired" });
+    expect(at({ exp: 1000 }, 1000)).toEqual({
+      kind: "err",
+      reason: "token expired",
+    });
     expect(at({ exp: 1000 }, 1059, 60).kind).toBe("ok");
-    expect(at({ exp: 1000 }, 1060, 60)).toEqual({ kind: "err", reason: "token expired" });
+    expect(at({ exp: 1000 }, 1060, 60)).toEqual({
+      kind: "err",
+      reason: "token expired",
+    });
     expect(at({ exp: 1000.5 }, 1000).kind).toBe("ok");
     expect(at({ exp: 1000.5 }, 1001).kind).toBe("err");
     expect(at({ exp: 0 }, 0, 0).kind).toBe("err");
     expect(at({ exp: -5 }, 0, 100).kind).toBe("err");
     expect(at({ nbf: 1000 }, 1000).kind).toBe("ok");
-    expect(at({ nbf: 1000 }, 999)).toEqual({ kind: "err", reason: "token not yet valid" });
+    expect(at({ nbf: 1000 }, 999)).toEqual({
+      kind: "err",
+      reason: "token not yet valid",
+    });
     expect(at({ nbf: 1000 }, 940, 60).kind).toBe("ok");
     expect(at({ nbf: 1000.5 }, 1000).kind).toBe("err");
     expect(at({ nbf: -1 }, 0).kind).toBe("ok");
-    expect(at({ iat: 1000 }, 999)).toEqual({ kind: "err", reason: "token issued in the future" });
+    expect(at({ iat: 1000 }, 999)).toEqual({
+      kind: "err",
+      reason: "token issued in the future",
+    });
     expect(at({ iat: 1000 }, 1000).kind).toBe("ok");
     expect(at({ iat: 1e30 }, NOW).kind).toBe("err");
     expect(at({ exp: 1e30 }, NOW).kind).toBe("ok");
@@ -278,12 +300,66 @@ describe("JWT rejection", () => {
     ).toEqual({ kind: "err", reason: "invalid header" });
   });
 
+  test("repeated member names are rejected in the header and the claims", async () => {
+    const duplicate: Outcome = { kind: "err", reason: "duplicate member name" };
+    const hs256Header = '{"alg":"HS256"}';
+    const payload = JSON.stringify(base);
+    // jose keeps the last copy, so it rejects these too: alg none, exp 1.
+    const joseRejects: [string, string][] = [
+      ['{"alg":"HS256","alg":"none"}', payload],
+      [hs256Header, '{"exp":2000000000,"exp":1}'],
+    ];
+    for (const [header, body] of joseRejects) {
+      const token = forgeText(secret, header, body);
+      expect(verifyWithBendo(secret, token, NOW)).toEqual(duplicate);
+      await expect(
+        jwtVerify(token, secret, { currentDate: new Date(NOW * 1000) }),
+      ).rejects.toThrow();
+    }
+    // Either copy taken alone would verify, so the first copy cannot decide.
+    const ambiguous: [string, string][] = [
+      ['{"alg":"none","alg":"HS256"}', payload],
+      ['{"alg":"HS256","alg":"HS256"}', payload],
+      ['{"alg":"HS256","typ":"JWT","typ":"JWT"}', payload],
+      ['{"crit":["x"],"alg":"HS256","crit":["y"]}', payload],
+      [hs256Header, '{"exp":1,"exp":2000000000}'],
+      [hs256Header, '{"exp":2000000000,"exp":2000000000}'],
+      [hs256Header, '{"nbf":1,"nbf":4000000000}'],
+      [hs256Header, '{"nbf":4000000000,"nbf":1}'],
+      [hs256Header, '{"iat":1,"iat":4000000000}'],
+      [hs256Header, '{"iat":4000000000,"iat":1}'],
+      [hs256Header, '{"sub":"ada","sub":"root"}'],
+      [hs256Header, '{"sub":"ada","exp":2000000000,"sub":"ada"}'],
+    ];
+    for (const [header, body] of ambiguous) {
+      expect(verifyWithBendo(secret, forgeText(secret, header, body), NOW)).toEqual(duplicate);
+    }
+    // Only top-level names count; nested objects are claim values.
+    expect(
+      verifyWithBendo(secret, forgeText(secret, hs256Header, '{"ctx":{"a":1,"a":2}}'), NOW).kind,
+    ).toBe("ok");
+    expect(
+      verifyWithBendo(
+        secret,
+        forgeText(secret, '{"alg":"HS256","jwk":{"k":"a","k":"b"}}', payload),
+        NOW,
+      ).kind,
+    ).toBe("ok");
+    // Bendo refuses to sign a claim set it would reject.
+    expect(outcome(bendSign(Buffer.from(secret).toString("hex"), '{"a":1,"a":2}'))).toEqual(
+      duplicate,
+    );
+  });
+
   test("malformed tokens are rejected", () => {
     const token = signWithBendo(secret, base);
     const [h, p, s] = token.split(".");
     if (h === undefined || p === undefined || s === undefined) throw new Error("bad token");
     for (const bad of ["", ".", "...", h, `${h}.${p}`, `${token}.`, `${token}.${s}`]) {
-      expect(verifyWithBendo(secret, bad, NOW)).toEqual({ kind: "err", reason: "malformed token" });
+      expect(verifyWithBendo(secret, bad, NOW)).toEqual({
+        kind: "err",
+        reason: "malformed token",
+      });
     }
     // Three empty segments are well formed; the empty signature cannot match.
     expect(verifyWithBendo(secret, "..", NOW)).toEqual({
@@ -421,7 +497,12 @@ describe("JWT middleware", () => {
   const now = () => Math.floor(Date.now() / 1000);
 
   test("passes jose-signed claims to the handler through typed Vars", async () => {
-    const claims = { sub: "ada", role: "admin", exp: now() + 600, iat: now() - 5 };
+    const claims = {
+      sub: "ada",
+      role: "admin",
+      exp: now() + 600,
+      iat: now() - 5,
+    };
     const token = await new SignJWT(claims).setProtectedHeader({ alg: "HS256" }).sign(key);
     const res = await get("/jwt/me", { authorization: `Bearer ${token}` });
     expect(res.status).toBe(200);
@@ -431,9 +512,14 @@ describe("JWT middleware", () => {
 
   test("server-signed tokens verify with jose", async () => {
     const claims = { sub: "José", exp: now() + 600 };
-    const res = await fetch(`${server.url}/sign`, { method: "POST", body: JSON.stringify(claims) });
+    const res = await fetch(`${server.url}/sign`, {
+      method: "POST",
+      body: JSON.stringify(claims),
+    });
     expect(res.status).toBe(200);
-    const { payload } = await jwtVerify(await res.text(), key, { algorithms: ["HS256"] });
+    const { payload } = await jwtVerify(await res.text(), key, {
+      algorithms: ["HS256"],
+    });
     expect(payload).toEqual(claims);
   });
 
@@ -460,6 +546,11 @@ describe("JWT middleware", () => {
       [`${h}.${p}`, "malformed token"],
       [`${h}.${p}$.${s}`, "invalid signature"],
       [forge(key, { alg: "HS256" }, '{"exp":"soon"}'), "invalid exp claim"],
+      [forgeText(key, '{"alg":"HS256","alg":"none"}', '{"sub":"ada"}'), "duplicate member name"],
+      [
+        forgeText(key, '{"alg":"HS256"}', `{"exp":${now() + 600},"exp":1}`),
+        "duplicate member name",
+      ],
     ];
     for (const [token, reason] of cases) {
       const res = await get("/jwt/me", { authorization: `Bearer ${token}` });
@@ -492,11 +583,47 @@ describe("JWT middleware", () => {
 
 describe("CSRF", () => {
   type Unsafe = "POST" | "PUT" | "PATCH" | "DELETE";
-  async function post(headers: Record<string, string>, method: Unsafe = "POST"): Promise<number> {
-    const res = await fetch(`${server.url}/csrf/form`, { method, headers, body: "a=1" });
+  async function post(
+    headers: Record<string, string>,
+    method: Unsafe = "POST",
+    path = "/csrf/form",
+  ): Promise<number> {
+    const res = await fetch(`${server.url}${path}`, {
+      method,
+      headers,
+      body: "a=1",
+    });
     return res.status;
   }
   const form = { "content-type": "application/x-www-form-urlencoded" };
+  // A raw request, so the test controls the Host header.
+  function rawStatus(path: string, fields: Record<string, string>): Promise<number> {
+    const head = Object.entries({
+      ...form,
+      "content-length": "3",
+      connection: "close",
+      ...fields,
+    })
+      .map(([name, value]) => `${name}: ${value}\r\n`)
+      .join("");
+    return new Promise((resolve, reject) => {
+      const target = new URL(server.url);
+      const socket = connect({
+        host: target.hostname,
+        port: Number(target.port),
+      });
+      const chunks: Buffer[] = [];
+      socket.setTimeout(5000, () => socket.destroy(new Error("CSRF socket timed out")));
+      socket.on("connect", () => socket.end(`POST ${path} HTTP/1.1\r\n${head}\r\na=1`));
+      socket.on("data", (chunk: Buffer) => chunks.push(chunk));
+      socket.on("error", reject);
+      socket.on("end", () => {
+        const status = /^HTTP\/1\.1 (\d{3})/.exec(Buffer.concat(chunks).toString("latin1"));
+        if (status?.[1] === undefined) reject(new Error("No status line"));
+        else resolve(Number(status[1]));
+      });
+    });
+  }
 
   test("a cross-origin form post is rejected with 403", async () => {
     for (const type of [
@@ -522,9 +649,10 @@ describe("CSRF", () => {
   test("same-origin, configured and safe requests pass", async () => {
     const own = new URL(server.url);
     expect(await post({ ...form, origin: `http://${own.host}` })).toBe(200);
-    expect(await post({ ...form, origin: `https://${own.host.toUpperCase()}` })).toBe(200);
+    expect(await post({ ...form, origin: `HTTP://${own.host.toUpperCase()}` })).toBe(200);
     expect(await post({ ...form, origin: "https://trusted.example" })).toBe(200);
     expect(await post({ ...form, "sec-fetch-site": "same-origin" })).toBe(200);
+    expect(await post({ ...form, "sec-fetch-site": "Same-Origin" })).toBe(200);
     for (const method of ["GET", "HEAD"]) {
       const res = await fetch(`${server.url}/csrf/form`, {
         method,
@@ -533,18 +661,165 @@ describe("CSRF", () => {
       expect(res.status).toBe(200);
     }
     // JSON cannot be sent cross-origin without a CORS preflight, as in Hono.
-    expect(await post({ "content-type": "application/json", origin: "https://evil.example" })).toBe(
+    expect(
+      await post({
+        "content-type": "application/json",
+        origin: "https://evil.example",
+      }),
+    ).toBe(200);
+  });
+
+  test("the scheme is part of the origin", async () => {
+    const own = new URL(server.url);
+    // /csrf trusts http://Host; /csrf-https trusts https://Host.
+    expect(await post({ ...form, origin: `https://${own.host}` })).toBe(403);
+    expect(await post({ ...form, origin: `http://${own.host}` }, "POST", "/csrf-https/form")).toBe(
+      403,
+    );
+    expect(await post({ ...form, origin: `https://${own.host}` }, "POST", "/csrf-https/form")).toBe(
       200,
     );
+    expect(
+      await post({ ...form, referer: `http://${own.host}/a` }, "POST", "/csrf-https/form"),
+    ).toBe(403);
+    // Configured origins compare by scheme too.
+    for (const origin of ["http://trusted.example", "https://trusted.example:80"]) {
+      expect(await post({ ...form, origin }, "POST", "/csrf-https/form")).toBe(403);
+    }
+  });
+
+  test("ports, case and IPv6 hosts compare as serialized origins", async () => {
+    // Configured as https://Trusted.Example:443/login and http://[::1]:8080.
+    for (const origin of [
+      "https://trusted.example",
+      "https://trusted.example:443",
+      "HTTPS://TRUSTED.EXAMPLE",
+      "http://[::1]:8080",
+    ]) {
+      expect(await post({ ...form, origin }, "POST", "/csrf-https/form")).toBe(200);
+    }
+    for (const origin of [
+      "https://trusted.example:8443",
+      "http://[::1]",
+      "http://[::1]:80",
+      "http://[::2]:8080",
+      "https://trusted.example/login",
+    ]) {
+      expect(await post({ ...form, origin }, "POST", "/csrf-https/form")).toBe(403);
+    }
+    // Host matching, with the Host header set directly.
+    const cases: [string, string, number][] = [
+      ["app.example", "https://app.example", 200],
+      ["app.example:443", "https://app.example", 200],
+      ["APP.example", "https://app.EXAMPLE:443", 200],
+      ["app.example:8443", "https://app.example:8443", 200],
+      ["app.example", "https://app.example:8443", 403],
+      ["app.example:8443", "https://app.example", 403],
+      ["app.example", "http://app.example", 403],
+      ["[::1]:8443", "https://[::1]:8443", 200],
+      ["[::1]", "https://[::1]:443", 200],
+      ["[::1]", "https://[::2]", 403],
+      ["user@app.example", "https://app.example", 403],
+    ];
+    for (const [host, origin, status] of cases) {
+      expect(await rawStatus("/csrf-https/form", { host, origin })).toBe(status);
+    }
+    // Without a configured scheme, Host never vouches for an origin.
+    expect(
+      await rawStatus("/csrf-listed/form", {
+        host: "app.example",
+        origin: "http://app.example",
+      }),
+    ).toBe(403);
+    expect(
+      await rawStatus("/csrf-listed/form", {
+        host: "app.example",
+        origin: "https://app.example",
+      }),
+    ).toBe(403);
+    expect(
+      await rawStatus("/csrf-listed/form", {
+        host: "app.example",
+        origin: "https://trusted.example",
+      }),
+    ).toBe(200);
+  });
+
+  test("Sec-Fetch-Site: cross-site is never overridden by a Host match", async () => {
+    const own = new URL(server.url);
+    expect(
+      await post({
+        ...form,
+        origin: `http://${own.host}`,
+        "sec-fetch-site": "cross-site",
+      }),
+    ).toBe(403);
+    expect(
+      await post({
+        ...form,
+        referer: `http://${own.host}/`,
+        "sec-fetch-site": "Cross-Site",
+      }),
+    ).toBe(403);
+    expect(
+      await rawStatus("/csrf-https/form", {
+        host: "app.example",
+        origin: "https://app.example",
+        "sec-fetch-site": "cross-site",
+      }),
+    ).toBe(403);
+    // A configured origin is trusted even when it is another site.
+    expect(
+      await post({
+        ...form,
+        origin: "https://trusted.example",
+        "sec-fetch-site": "cross-site",
+      }),
+    ).toBe(200);
+    // Other values leave the Origin check in charge.
+    for (const site of ["same-site", "none", "bogus"]) {
+      expect(
+        await post({
+          ...form,
+          origin: `http://${own.host}`,
+          "sec-fetch-site": site,
+        }),
+      ).toBe(200);
+      expect(
+        await post({
+          ...form,
+          origin: "https://evil.example",
+          "sec-fetch-site": site,
+        }),
+      ).toBe(403);
+    }
   });
 
   test("Referer is the fallback when Origin is absent", async () => {
     const own = new URL(server.url);
     expect(await post({ ...form, referer: `http://${own.host}/page?q=1` })).toBe(200);
+    expect(await post({ ...form, referer: `http://${own.host}?q=1` })).toBe(200);
     expect(await post({ ...form, referer: "https://trusted.example/a/b" })).toBe(200);
     expect(await post({ ...form, referer: "https://evil.example/" })).toBe(403);
     expect(await post({ ...form, referer: `http://${own.host}.evil.example/` })).toBe(403);
+    expect(await post({ ...form, referer: `http://evil@${own.host}/` })).toBe(403);
     expect(await post(form)).toBe(403);
+    // Origin wins over Referer, whichever way they disagree.
+    expect(
+      await post({
+        ...form,
+        origin: "https://evil.example",
+        referer: `http://${own.host}/`,
+      }),
+    ).toBe(403);
+    expect(await post({ ...form, origin: "null", referer: `http://${own.host}/` })).toBe(403);
+    expect(
+      await post({
+        ...form,
+        origin: `http://${own.host}`,
+        referer: "https://evil.example/",
+      }),
+    ).toBe(200);
   });
 
   test("suspicious origins are rejected", async () => {
@@ -554,17 +829,27 @@ describe("CSRF", () => {
       `ftp://${own.host}`,
       `http://${own.hostname}:1`,
       `http://${own.host}.evil.example`,
+      `http://${own.host}/`,
+      `http://user@${own.host}`,
       "https://trusted.example.evil",
-      "https://TRUSTED.example",
+      "https://trusted.example/",
       "",
     ]) {
       expect(await post({ ...form, origin })).toBe(403);
     }
     expect(
-      await post({ ...form, origin: "https://evil.example", "sec-fetch-site": "cross-site" }),
+      await post({
+        ...form,
+        origin: "https://evil.example",
+        "sec-fetch-site": "cross-site",
+      }),
     ).toBe(403);
     expect(
-      await post({ ...form, origin: "https://evil.example", "sec-fetch-site": "same-site" }),
+      await post({
+        ...form,
+        origin: "https://evil.example",
+        "sec-fetch-site": "same-site",
+      }),
     ).toBe(403);
   });
 });

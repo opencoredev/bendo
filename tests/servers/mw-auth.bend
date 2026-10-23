@@ -72,7 +72,9 @@ def main() -> IO(Unit):
     B.use_path(Tag, "/jwt/*", Claims{}),
     B.use_path(Tag, "/jwt-plain/*", Builtin{B.jwt(B.jwt_config(secret(), 0n, "plain"))}),
     B.use_path(Tag, "/jwt-skew/*", Skewed{}),
-    B.use_path(Tag, "/csrf/*", Builtin{B.csrf(["https://trusted.example"])}),
+    B.use_path(Tag, "/csrf/*", Builtin{B.csrf_host("http", ["https://trusted.example"])}),
+    B.use_path(Tag, "/csrf-https/*", Builtin{B.csrf_host("HTTPS", ["https://Trusted.Example:443/login", "http://[::1]:8080", "not an origin"])}),
+    B.use_path(Tag, "/csrf-listed/*", Builtin{B.csrf(["https://trusted.example"])}),
     B.get(Tag, "/", Hello{}),
     B.get(Tag, "/basic/ok", Hello{}),
     B.get(Tag, "/bearer/ok", Hello{}),
@@ -80,5 +82,7 @@ def main() -> IO(Unit):
     B.get(Tag, "/jwt-plain/ok", Hello{}),
     B.get(Tag, "/jwt-skew/me", Me{}),
     B.post(Tag, "/sign", Sign{}),
-    B.all(Tag, "/csrf/form", Hello{})
+    B.all(Tag, "/csrf/form", Hello{}),
+    B.all(Tag, "/csrf-https/form", Hello{}),
+    B.all(Tag, "/csrf-listed/form", Hello{})
   ]))

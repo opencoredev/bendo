@@ -16,6 +16,7 @@ type Error is Data:
   BadAlgorithm{}
   BadClaims{}
   BadClaim{name: String}
+  DuplicateMember{}
   Expired{}
   NotYetValid{}
   IssuedInFuture{}
@@ -142,23 +143,38 @@ def written(+secret: List<&2, U32>, result: Result<&2, &2, Json.Error, String>) 
     case Done{text}:
       Done{seal(secret, header(), Utf8.encode(text))}
 
-def claims_object(v: Json.Json) -> Bool:
-  match v:
-    case Json.JObject{fields}:
-      True{}
-    case _:
+def key_in(+key: String, fields: List<&2, Json.Field>) -> Bool:
+  match fields:
+    case Nil{}:
       False{}
+    case Json.Field{k, v} <> t:
+      String.eq(k, key) || key_in(key, t)
 
-def sign_checked(+secret: List<&2, U32>, claims: Json.Json, object: Bool) -> Result<&2, &2, Error, String>:
-  match object:
+# True when no two top-level members share a name. RFC 7515 and 7519 let a
+# parser reject duplicate names, and taking either copy would let the header
+# or the claims mean different things to different verifiers.
+def unique(fields: List<&2, Json.Field>) -> Bool:
+  match fields:
+    case Nil{}:
+      True{}
+    case Json.Field{+k, v} <> +t:
+      Bool.not(key_in(k, t)) && unique(t)
+
+def sign_object(+secret: List<&2, U32>, claims: Json.Json, distinct: Bool) -> Result<&2, &2, Error, String>:
+  match distinct:
     case True{}:
       written(secret, Json.stringify(claims))
     case False{}:
-      Fail{BadClaims{}}
+      Fail{DuplicateMember{}}
 
 # Sign a JSON object claim set with the fixed header {"alg":"HS256","typ":"JWT"}.
-def sign(+secret: List<&2, U32>, +claims: Json.Json) -> Result<&2, &2, Error, String>:
-  sign_checked(secret, claims, claims_object(claims))
+# A claim set with a repeated member name fails, since verify would reject it.
+def sign(+secret: List<&2, U32>, claims: Json.Json) -> Result<&2, &2, Error, String>:
+  match claims:
+    case Json.JObject{+fields}:
+      sign_object(secret, Json.JObject{fields}, unique(fields))
+    case _:
+      Fail{BadClaims{}}
 
 # A NumericDate split exactly into sign, integer digits (no leading zeros;
 # "" is zero) and whether any fractional digit is nonzero.
@@ -358,10 +374,17 @@ def accepted(claims: Json.Json, failure: Maybe<&2, Error>) -> Result<&2, &2, Err
     case None{}: Done{claims}
     case Some{e}: Fail{e}
 
+def claim_fields(+fields: List<&2, Json.Field>, +now: Nat, +leeway: Nat, distinct: Bool) -> Result<&2, &2, Error, Json.Json>:
+  match distinct:
+    case True{}:
+      accepted(Json.JObject{fields}, times(fields, now, leeway))
+    case False{}:
+      Fail{DuplicateMember{}}
+
 def payload_claims(result: Result<&2, &2, Json.Error, Json.Json>, +now: Nat, +leeway: Nat) -> Result<&2, &2, Error, Json.Json>:
   match result:
     case Done{Json.JObject{+fields}}:
-      accepted(Json.JObject{fields}, times(fields, now, leeway))
+      claim_fields(fields, now, leeway, unique(fields))
     case _:
       Fail{BadClaims{}}
 
@@ -386,10 +409,18 @@ def header_checked(payload: List<&2, U32>, +now: Nat, +leeway: Nat, alg: Bool, c
 
 # Only HS256 is accepted; "none", RS256 and every other alg fail. A crit
 # header names extensions this verifier does not implement, so it fails too.
+def header_fields(+fields: List<&2, Json.Field>, payload: List<&2, U32>, +now: Nat, +leeway: Nat, distinct: Bool) -> Result<&2, &2, Error, Json.Json>:
+  match distinct:
+    case True{}:
+      header_checked(payload, now, leeway, alg_ok(Json.lookup(fields, "alg")), absent(Json.lookup(fields, "crit")))
+    case False{}:
+      Fail{DuplicateMember{}}
+
+# A repeated member name fails before any member is read.
 def header_parsed(result: Result<&2, &2, Json.Error, Json.Json>, payload: List<&2, U32>, +now: Nat, +leeway: Nat) -> Result<&2, &2, Error, Json.Json>:
   match result:
     case Done{Json.JObject{+fields}}:
-      header_checked(payload, now, leeway, alg_ok(Json.lookup(fields, "alg")), absent(Json.lookup(fields, "crit")))
+      header_fields(fields, payload, now, leeway, unique(fields))
     case _:
       Fail{BadHeader{}}
 
@@ -414,6 +445,7 @@ def error_text(e: Error) -> String:
     case BadAlgorithm{}: "unsupported algorithm"
     case BadClaims{}: "invalid claims"
     case BadClaim{name}: "invalid " ++ name ++ " claim"
+    case DuplicateMember{}: "duplicate member name"
     case Expired{}: "token expired"
     case NotYetValid{}: "token not yet valid"
     case IssuedInFuture{}: "token issued in the future"
