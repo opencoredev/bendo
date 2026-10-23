@@ -1,6 +1,5 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { findBend } from "./bend.ts";
 
 const bendInstall =
@@ -8,12 +7,14 @@ const bendInstall =
 const elanInstall =
   "curl -fsSL https://elan.lean-lang.org/elan-init.sh -o /tmp/bendo-elan-init.sh && sh /tmp/bendo-elan-init.sh -y --no-modify-path --default-toolchain none";
 
-function pin(name: string): string {
+/** The project's pin file, or the one Bendo ships with when run outside a project. */
+function pinFile(name: string): string {
   const local = resolve(name);
-  return readFileSync(
-    existsSync(local) ? local : resolve(import.meta.dir, "../../..", name),
-    "utf8",
-  ).trim();
+  return existsSync(local) ? local : resolve(import.meta.dir, "../../..", name);
+}
+
+function pin(name: string): string {
+  return readFileSync(pinFile(name), "utf8").trim();
 }
 
 /** What doctor reads from `elan dump-state`: the pin's resolved name and installed toolchains. */
@@ -52,35 +53,33 @@ export function parseElanState(text: string): ElanState | null {
 
 /**
  * Let elan resolve the pin the way `lake` would (shorthand, channels, custom
- * origins, linked and path toolchains), offline. `dump-state --no-net` only
- * reads state; running the Lean proxy, even for `--version`, may install.
+ * origins, linked and path toolchains), offline. `ELAN_TOOLCHAIN` has elan's
+ * highest precedence, so the project pin wins over any inherited override, and
+ * running from the pin file's directory resolves a relative path pin as the
+ * file would. `dump-state --no-net` installs nothing and registers no project;
+ * like any elan command it creates `settings.toml` in an empty `ELAN_HOME`.
+ * Running the Lean proxy, even for `--version`, may install, so doctor never does.
  */
 function leanToolchain(
   elan: string | null,
   text: string,
+  directory: string,
 ): { path: string | null; expected: string | null } {
   if (elan === null) return { path: null, expected: null };
-  const directory = mkdtempSync(join(tmpdir(), "bendo-doctor-"));
-  try {
-    writeFileSync(join(directory, "lean-toolchain"), `${text}\n`);
-    const run = Bun.spawnSync([elan, "dump-state", "--no-net"], {
-      cwd: directory,
-      stdout: "pipe",
-      stderr: "pipe",
-      timeout: 5000,
-    });
-    const state = run.exitCode === 0 ? parseElanState(run.stdout.toString()) : null;
-    if (state === null || state.resolved === null) return { path: null, expected: null };
-    const root = state.installed.get(state.resolved);
-    // Only official releases have a version to compare; channels and custom builds just need to exist.
-    const release = /^leanprover\/lean4:v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)$/.exec(state.resolved);
-    return {
-      path: root === undefined ? null : Bun.which(resolve(root, "bin/lean")),
-      expected: release?.[1] ?? null,
-    };
-  } finally {
-    rmSync(directory, { recursive: true, force: true });
-  }
+  const run = Bun.spawnSync([elan, "dump-state", "--no-net"], {
+    cwd: directory,
+    env: { ...process.env, ELAN_TOOLCHAIN: text },
+    stdout: "pipe",
+    stderr: "pipe",
+    timeout: 5000,
+  });
+  const state = run.exitCode === 0 ? parseElanState(run.stdout.toString()) : null;
+  if (state === null || state.resolved === null) return { path: null, expected: null };
+  // Path toolchains are not listed as installed; elan resolves them to the directory itself.
+  const root = state.installed.get(state.resolved) ?? state.resolved;
+  // Only official releases have a version to compare; channels and custom builds just need to exist.
+  const release = /^leanprover\/lean4:v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)$/.exec(state.resolved);
+  return { path: Bun.which(resolve(directory, root, "bin/lean")), expected: release?.[1] ?? null };
 }
 
 function shellQuote(text: string): string {
@@ -90,7 +89,7 @@ function shellQuote(text: string): string {
 export function doctor(): number {
   let problems = 0;
   const leanPin = pin("lean-toolchain");
-  const lean = leanToolchain(Bun.which("elan"), leanPin);
+  const lean = leanToolchain(Bun.which("elan"), leanPin, dirname(pinFile("lean-toolchain")));
   const leanInstall = `elan toolchain install ${shellQuote(leanPin)}`;
   const bend = findBend();
   const tools = [

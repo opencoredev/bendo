@@ -144,6 +144,48 @@ test("doctor resolves shorthand, custom-origin and linked Lean pins through elan
   }
 });
 
+test("doctor resolves path pins and ignores an inherited ELAN_TOOLCHAIN", () => {
+  const cases = [["absolute"], ["relative"], ["override"]] as const;
+  for (const [mode] of cases) {
+    const project = mkdtempSync(join(root, "pin-"));
+    writeFileSync(join(project, ".bend-version"), "2.8.9\n");
+    fake(project, "bend", "bend 2.8.9");
+    realElan(project);
+    fake(project, "clang", "clang version 18.1.3");
+    fake(project, "bun", "1.4.4");
+    const home = join(project, ".elan");
+    mkdirSync(home);
+    const built = join(project, "built", "bin");
+    mkdirSync(built, { recursive: true });
+    fake(built, "lean", "Lean (version 4.1.0, x86_64)");
+    const env = { ...hidden, PATH: project, ELAN_HOME: home };
+    switch (mode) {
+      case "absolute":
+      case "relative": {
+        const text = mode === "absolute" ? join(project, "built") : "./built";
+        writeFileSync(join(project, "lean-toolchain"), `${text}\n`);
+        const result = run(["doctor"], project, env);
+        expect({ mode, code: result.code, out: result.out }).toMatchObject({ mode, code: 0 });
+        expect(result.out).toContain("lean 4.1.0 at");
+        break;
+      }
+      case "override": {
+        // The project pins a missing release; an installed one in the environment must not satisfy it.
+        writeFileSync(join(project, "lean-toolchain"), "v4.88.0\n");
+        const other = join(home, "toolchains", "leanprover--lean4---v4.99.0", "bin");
+        mkdirSync(other, { recursive: true });
+        fake(other, "lean", "Lean (version 4.99.0, x86_64)");
+        const result = run(["doctor"], project, { ...env, ELAN_TOOLCHAIN: "v4.99.0" });
+        expect(result.code).toBe(1);
+        expect(result.out).toContain("lean: missing");
+        expect(result.out).toContain("elan toolchain install 'v4.88.0'");
+        break;
+      }
+    }
+    expect(existsSync(join(home, "known-projects"))).toBe(false);
+  }
+});
+
 test("doctor reports an unresolved channel pin with its install command", () => {
   const project = mkdtempSync(join(root, "pin-"));
   writeFileSync(join(project, "lean-toolchain"), "stable\n");
