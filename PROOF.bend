@@ -4,6 +4,7 @@ import ./proof/limits.bend as LimitsProof
 import ./proof/manifest.bend as ManifestProof
 import ./proof/manifest-built.bend as ManifestBuiltProof
 import ./proof/compose.bend as ComposeProof
+import ./proof/plugin.bend as PluginProof
 
 # BND-32
 import ./proof/signed-cookie.bend as SignedCookieProof
@@ -30,6 +31,9 @@ import ./src/http/response.bend as Response
 import ./src/http/write_response.bend as WriteResponse
 
 import ./src/http/chunked.bend as Chunked
+import ./proof/stream.bend as StreamProof
+import ./proof/stream-rfc.bend as StreamRfcProof
+import ./src/http/stream_framing.bend as StreamFraming
 import ./src/http.bend as Http
 import ./src/http/bytes.bend as Bytes
 import ./src/http/request.bend as Request
@@ -612,6 +616,22 @@ def Laws.manifest_exact_routes(Tag, sources, compiled, layers, count):
   ManifestProof.describe(Tag, sources, Methods.raw(Tag, Methods.index_valid(Tag, compiled)))
 def Laws.manifest_built_routes(Tag, entries, table, built):
   ManifestBuiltProof.built_rows(Tag, entries, table, built)
+
+
+def Laws.stream_roundtrip(chunks, limit, suffix, valid):
+  Equal.trans(Chunked.DecodeResult, Chunked.decode(Bytes.append(StreamFraming.wire(chunks), suffix), limit), Chunked.decode(Bytes.append(Chunked.encode(chunks), suffix), limit), Chunked.Decoded{List.concat(&2, U32, chunks), [], suffix}, Equal.cong(List<&2, U32>, Chunked.DecodeResult, wire => Chunked.decode(Bytes.append(wire, suffix), limit), StreamFraming.wire(chunks), Chunked.encode(chunks), StreamProof.canonical(chunks)), ChunkedRoundtrip.roundtrip(chunks, limit, suffix, valid))
+
+def Laws.stream_empty_chunk():
+  {==}
+
+def Laws.stream_chunk_tail(bytes, tail):
+  StreamProof.chunk_tail(bytes, tail)
+
+def Laws.stream_rfc_roundtrip(chunks, limit, suffix, valid):
+  StreamRfcProof.wire_roundtrip(chunks, limit, suffix, valid)
+
+def Laws.stream_rfc_last_chunk(limit, suffix):
+  StreamRfcProof.last_chunk(limit, suffix)
 
 # BND-41
 def Laws.conditional_if_none_match_spec(field, tag): LimitsProof.matches(field, tag)
