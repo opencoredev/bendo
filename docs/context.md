@@ -2,7 +2,8 @@
 
 Handlers receive `B.Ctx`, an immutable context for one request. Read request data
 with accessors, pass an updated context to the next handler, and finish with a
-response helper. Startup resources remain in the dispatcher's `env` argument.
+response helper. Startup resources remain in the dispatcher's `env` argument; use a
+[store actor](store.md) for shared mutable state.
 
 ```python
 import Base
