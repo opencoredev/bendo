@@ -352,10 +352,10 @@ def span_options(paths: List<&2, String>, hits: List<&2, Maybe<&2, Params>>, +na
     case _ _:
       None{}
 
-def row_one(seg: Segment, +last: Bool, +paths: List<&2, String>, +hits: List<&2, Maybe<&2, Params>>) -> Maybe<&2, Params>:
+def row_one(~equal: String -> String -> Bool, ~starts: String -> String -> Bool, seg: Segment, +last: Bool, +paths: List<&2, String>, +hits: List<&2, Maybe<&2, Params>>) -> Maybe<&2, Params>:
   match seg paths hits:
     case Static{raw} h <> tail old <> next:
-      E.choose(Maybe<&2, Params>, String.eq(raw, h), u => row_head(next), u => None{})
+      E.choose(Maybe<&2, Params>, equal(raw, h), u => row_head(next), u => None{})
     case Capture{name, c, True{}} Nil{} cells:
       row_head(cells)
     case Capture{name, +c, optional} raw <> tail old <> next:
@@ -371,30 +371,30 @@ def row_one(seg: Segment, +last: Bool, +paths: List<&2, String>, +hits: List<&2,
     case InteriorWildcard{} ps cells:
       first_result(cells)
     case PrefixWildcard{prefix} raw <> tail cells:
-      E.choose(Maybe<&2, Params>, last && String.starts_with(raw, prefix), u => Some{Nil{}}, u => None{})
+      E.choose(Maybe<&2, Params>, last && starts(raw, prefix), u => Some{Nil{}}, u => None{})
     case Span{name} ps cells:
       span_options(ps, cells, name, Nil{})
     case _ _ _:
       None{}
 
-def rows_for(+seg: Segment, +last: Bool, +paths: List<&2, String>, +hits: List<&2, Maybe<&2, Params>>) -> List<&2, Maybe<&2, Params>>:
+def rows_for(~equal: String -> String -> Bool, ~starts: String -> String -> Bool, +seg: Segment, +last: Bool, +paths: List<&2, String>, +hits: List<&2, Maybe<&2, Params>>) -> List<&2, Maybe<&2, Params>>:
   match paths hits:
     case Nil{} cells:
-      [row_one(seg, last, Nil{}, cells)]
+      [row_one(~equal, ~starts, seg, last, Nil{}, cells)]
     case h <> +tail old <> +next:
-      row_one(seg, last, paths, hits) <> rows_for(seg, last, tail, next)
+      row_one(~equal, ~starts, seg, last, paths, hits) <> rows_for(~equal, ~starts, seg, last, tail, next)
     case h <> tail Nil{}:
       Nil{}
 
-def match_rows(segs: List<&2, Segment>, +paths: List<&2, String>) -> List<&2, Maybe<&2, Params>>:
+def match_rows(~equal: String -> String -> Bool, ~starts: String -> String -> Bool, segs: List<&2, Segment>, +paths: List<&2, String>) -> List<&2, Maybe<&2, Params>>:
   match segs:
     case Nil{}:
       empty_rows(paths)
     case seg <> +rest:
-      rows_for(seg, List.is_empty(&2, Segment, rest), paths, match_rows(rest, paths))
+      rows_for(~equal, ~starts, seg, List.is_empty(&2, Segment, rest), paths, match_rows(~equal, ~starts, rest, paths))
 
 def search_segments(segs: List<&2, Segment>, paths: List<&2, String>) -> Maybe<&2, Params>:
-  row_head(match_rows(segs, paths))
+  row_head(match_rows(~String.eq, ~String.starts_with, segs, paths))
 
 def match_segments(segs: List<&2, Segment>, paths: List<&2, String>) -> Maybe<&2, Params>:
   match segs paths:
@@ -433,6 +433,17 @@ def match_path(pattern: Pattern, path: String) -> Maybe<&2, Params>:
       E.choose(Maybe<&2, Params>, all_optional(rest), u => Some{Nil{}}, u => match_segments(Capture{name, c, True{}} <> rest, [""]))
     case Pattern{segs} SCon{'/', t}:
       match_segments(segs, path_segments(t))
+    case _ _:
+      None{}
+
+# Method-layer case options change only static comparisons. Captures retain
+# their original bytes and percent-decoding behavior even after a glob/span.
+def match_path_with(~equal: String -> String -> Bool, ~starts: String -> String -> Bool, pattern: Pattern, path: String) -> Maybe<&2, Params>:
+  match pattern path:
+    case Pattern{Capture{name, c, True{}} <> +rest} "/":
+      E.choose(Maybe<&2, Params>, all_optional(rest), u => Some{Nil{}}, u => row_head(match_rows(~equal, ~starts, Capture{name, c, True{}} <> rest, [""])))
+    case Pattern{segs} SCon{'/', t}:
+      row_head(match_rows(~equal, ~starts, segs, path_segments(t)))
     case _ _:
       None{}
 
