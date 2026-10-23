@@ -495,10 +495,12 @@ describe("streaming bodies above buffer_bytes", () => {
 
   test("streams, HEADs and aborted downloads leave no descriptor open", async () => {
     const before = openFds();
+    // fetch keeps connections alive; each raw request waits about a second
+    // for the server to close, which would not fit the suite's 30 s budget.
     for (let i = 0; i < 20; i++) {
       await (await get("/small/large.bin")).arrayBuffer();
-      await raw("/small/large.bin", "HEAD");
-      await raw("/static/hello.txt", "HEAD");
+      await fetch(server.url + "/small/large.bin", { method: "HEAD" });
+      await fetch(server.url + "/static/hello.txt", { method: "HEAD" });
       // Read the first chunk, then drop the download mid-stream.
       const reader = (await get("/small/large.bin")).body?.getReader();
       await reader?.read();
