@@ -11,6 +11,7 @@ import ./bearer_auth.bend as Bearer
 import ./jwt.bend as JwtAuth
 import ./csrf.bend as Csrf
 import ./csrf_policy.bend as CsrfPolicy
+import ./ip_restriction.bend as IpRestriction
 
 type Builtin is Data:
   Logger{}
@@ -22,6 +23,7 @@ type Builtin is Data:
   BearerAuth{realm: String, tokens: List<&2, String>}
   Jwt{config: JwtAuth.Config}
   Csrf{policy: CsrfPolicy.Policy}
+  IpRestriction{policy: IpRestriction.Policy}
 
 def dispatch(-Vars: Data, id: Builtin, c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
   match id:
@@ -34,3 +36,4 @@ def dispatch(-Vars: Data, id: Builtin, c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(R
     case BearerAuth{realm, tokens}: Bearer.middleware(Vars, realm, tokens, c, next)
     case Jwt{config}: JwtAuth.middleware(Vars, config, c, next)
     case Csrf{policy}: Csrf.middleware(Vars, policy, c, next)
+    case IpRestriction{policy}: IpRestriction.middleware(Vars, policy, c, next)

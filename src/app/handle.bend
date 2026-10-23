@@ -19,6 +19,7 @@ import ../http/response.bend as Response
 import ../http/write_response.bend as Write
 import ../http/bytes.bend as Bytes
 import ../http/date_response.bend as DateResponse
+import ../net/conn_info.bend as Conn
 
 def Ctx() -> Data: Context.Ctx<Unit>
 
@@ -91,7 +92,7 @@ def transport_selected(~Vars: Data, ~Tag: Data, ~Env: Data, ~middleware: Tag -> 
   (+res, stream) = selected
   IO.pure(Response.Res & (Maybe<&1, StreamTypes.Plan> & IO(Unit)), (res, (stream, Hooks.observe(~Vars, ~Tag, ~Env, ~middleware, ids, ctx, env, res))))
 
-def parsed_transport(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +kind: Router.RouterKind, +table: Table.Table<Tag>, +env: Env, +req: Request.Req, body: List<&2, U32>, network: Bool, parsed_query: Result<&2, &2, Query.Error, List<&2, Query.Entry>>) -> IO(Response.Res & (Maybe<&1, StreamTypes.Plan> & IO(Unit))):
+def parsed_transport(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +kind: Router.RouterKind, +table: Table.Table<Tag>, +env: Env, +req: Request.Req, body: List<&2, U32>, network: Bool, peer: Maybe<&2, Conn.ConnInfo>, parsed_query: Result<&2, &2, Query.Error, List<&2, Query.Entry>>) -> IO(Response.Res & (Maybe<&1, StreamTypes.Plan> & IO(Unit))):
   Table.Table{entries, +compiled, +layers, +count} = table
   Request.Req{+method, path, query, version, headers} = req
   match parsed_query:
@@ -101,7 +102,7 @@ def parsed_transport(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Cont
       request_ids = Table.scoped_stage_ids(Tag, layers, initial, Table.Request{})
       do IO<Response.Res & (Maybe<&1, StreamTypes.Plan> & IO(Unit))>:
         +stream_slot : Chan(StreamTypes.Registration) <- Chan.new(StreamTypes.Registration, 1)
-        +ctx : Context.Ctx<Vars> = Context.with_observation(Vars, Context.variables(Vars, Context.create(req, [], body, pairs)), Obs.with_stream(Obs.empty(), stream_slot))
+        +ctx : Context.Ctx<Vars> = Context.with_observation(Vars, Context.variables(Vars, Context.create(req, [], body, pairs)), Obs.with_peer(Obs.with_stream(Obs.empty(), stream_slot), peer))
         +route_slot : Chan(Maybe<&2, Nat>) <- Chan.new(Maybe<&2, Nat>, 1)
         route_seeded : Result<&1, &1, Maybe<&2, Nat>, Unit> <- Chan.send(Maybe<&2, Nat>, route_slot, initial)
         Hooks.sent(Maybe<&2, Nat>, route_seeded)
@@ -132,14 +133,14 @@ def buffered_pending(result: Response.Res & (Maybe<&1, StreamTypes.Plan> & IO(Un
         Stream.cancel(plan)
         return (finish(Request.Get{}, Response.body(500, [], [])), after)
 
-def transport_routed(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), kind: Router.RouterKind, table: Table.Table<Tag>, env: Env, +req: Request.Req, body: List<&2, U32>) -> IO(Response.Res & (Maybe<&1, StreamTypes.Plan> & IO(Unit))):
+def transport_routed(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), kind: Router.RouterKind, table: Table.Table<Tag>, env: Env, +req: Request.Req, body: List<&2, U32>, peer: Maybe<&2, Conn.ConnInfo>) -> IO(Response.Res & (Maybe<&1, StreamTypes.Plan> & IO(Unit))):
   Request.Req{method, path, query, version, headers} = req
-  parsed_transport(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, kind, table, env, req, body, True{}, Context.query_pairs(query))
+  parsed_transport(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, kind, table, env, req, body, True{}, peer, Context.query_pairs(query))
 
 def pending_routed(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), kind: Router.RouterKind, table: Table.Table<Tag>, env: Env, +req: Request.Req, body: List<&2, U32>) -> IO(Response.Res & IO(Unit)):
   Request.Req{method, path, query, version, headers} = req
   do IO<Response.Res & IO(Unit)>:
-    result : Response.Res & (Maybe<&1, StreamTypes.Plan> & IO(Unit)) <- parsed_transport(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, kind, table, env, req, body, False{}, Context.query_pairs(query))
+    result : Response.Res & (Maybe<&1, StreamTypes.Plan> & IO(Unit)) <- parsed_transport(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, kind, table, env, req, body, False{}, None{}, Context.query_pairs(query))
     buffered_pending(result)
 
 def pending_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, env: Env, req: Request.Req, body: List<&2, U32>) -> IO(Response.Res & IO(Unit)):
