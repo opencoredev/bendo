@@ -129,12 +129,14 @@ this contract.
 
 Import `src/data/signed-cookie.bend` as `SignedCookie`. Configure rotation keys
 once at startup with `SignedCookie.configure(["current-secret", "previous-secret"])`.
-It returns `Some{keys}` for a nonempty list of Unicode scalar strings and
-`None{}` for an empty list or an invalid scalar in any key. Handle `None{}` as a
-configuration error before serving requests. Keep keys on the server, load them
+It returns `Some{keys}` for a nonempty list of nonempty Unicode scalar strings
+and `None{}` for an empty list, an empty string in any slot, or an invalid
+scalar in any key. Anyone can compute an HMAC under the empty key, so an empty
+previous-key slot would accept forged cookies; Hono's WebCrypto backend rejects
+empty keys too. Handle `None{}` as a configuration error before serving requests. Keep keys on the server, load them
 from your secret configuration, and use high-entropy secrets. The `Keys{first,
 rest}` constructor is available for pure code and proofs; callers constructing
-it directly must preserve the same scalar-string precondition.
+it directly must preserve the same nonempty scalar-string precondition.
 
 `B.set_signed_cookie(c, name, value, keys, options)` returns
 `Result<&2, &2, Cookie.Error, B.Ctx>`, just like `set_cookie`. It signs with the
@@ -181,13 +183,45 @@ for values from outside your application. Run
 `bun test --timeout 30000 tests/cookies-signed.test.ts` for native HTTP and `.mjs`
 roundtrips, rotation, tampering and Hono-algorithm interoperability checks.
 
-The signed-cookie laws in `proof/signed-cookie-laws.bend` prove structural
-correctness of digest comparison, authentication with the first or any listed
-key, rejection when every listed HMAC differs, empty-list configuration
-rejection, and percent-codec roundtrip. These are checked through `PROOF.bend`.
-They do not yet prove the full public wire roundtrip. The conditional
-`wire_digest` composition lemma still needs universal proofs that HMAC output
-is an octet list, the complete value/dot/Base64 payload contains only Unicode
-scalars, and the last-dot split recovers that payload's value and signature.
-Refinement of arbitrary-wire rejection against an independent wire decoder
-also remains open. The HTTP and `.mjs` tests cover those wire paths at runtime.
+The signed-cookie laws in `proof/signed-cookie-laws.bend` are checked through
+`PROOF.bend`. `proof/signed-cookie-spec.bend` states the independent
+specifications they refer to:
+
+- `configure(keys)` equals `Spec.configure`, which accepts exactly the nonempty
+  lists whose every key is nonempty and `Utf8.valid`. A successful
+  configuration implies every key is nonempty.
+- `sign(key, value)` equals `Spec.signed_wire(key, value)` for every key and
+  value. The spec percent encodes the UTF-8 octets of `value ++ "." ++
+  Spec.base64(HMAC-SHA256(key, value))`: RFC 3986 unreserved octets stay
+  literal and the rest become `%HH` with uppercase hex. `Spec.base64` is RFC
+  4648 stated over bits, with the standard alphabet and `=` padding.
+- `serialize` with `Keys{first, rest}` equals `Cookie.serialize` of the first
+  key's `Spec.signed_wire`, and returns `InvalidValue{}` for non-scalar values.
+  The context setter equals `set_cookie` with that wire value. For an
+  admissible name and options, the emitted field is exactly BND-31's
+  independent `Set-Cookie` serialization of `name=wire`.
+- For every scalar value and every key listed anywhere in `Keys{first, rest}`,
+  `verify(keys, sign(key, value)) == Some{value}`. The proofs establish
+  universally that HMAC output is octets, that the Base64 payload is
+  dot-free scalars and that the last-dot split recovers both halves.
+- Placing the emitted pair in a `"; "`-joined Cookie header, after valid pairs
+  with other names and before any valid pairs (including later duplicates),
+  makes the first-wins lookup plus `read` return the value. The context reader
+  is that lookup followed by verification.
+- For every wire string, `verify(keys, wire)` equals `Spec.verify(keys, wire)`.
+  That spec URL-decodes with `Url.decode`, splits at the last dot with an
+  independent structural definition, strictly decodes the suffix with
+  `Base64.decode`, and accepts only when the bytes equal some listed key's HMAC
+  over the prefix. Malformed or unauthenticated input therefore returns
+  `None{}`, and a signature under any listed key is accepted.
+
+Two laws are still pending. `Spec.verify` relies on the library decoders, and
+these laws would replace them with independent specifications:
+
+- `Base64.decode(s, False{}, True{}) == Some{bytes}` implies
+  `s == Spec.base64(bytes)` and every byte is at most 255. Strict standard
+  Base64 accepts only the canonical encoding.
+- `Url.decode(wire)` equals an independent decoder: RFC 3986 `%HH` escapes
+  with either hex case, a literal `+`, then strict RFC 3629 UTF-8 decoding.
+
+Cookie-name binding is out of scope by design (see above).

@@ -98,6 +98,21 @@ describe("signed cookies on both compiled targets", () => {
     });
   });
 
+  test("rejects an empty secret in any rotation slot", () => {
+    // Anyone can compute HMAC under the empty key, so it must never be configured.
+    expect(configure(list([""]))).toEqual(none);
+    expect(configure(list(["", "strong-current-secret"]))).toEqual(none);
+    expect(configure(list(["strong-current-secret", ""]))).toEqual(none);
+    expect(configure(list(["strong-current-secret", "previous", ""]))).toEqual(none);
+    expect(configure(list(["strong-current-secret", "", "previous"]))).toEqual(none);
+    const forged = honoWire("", "role=admin");
+    const strong = configure(list(["strong-current-secret", "previous"]));
+    if (typeof strong !== "object" || strong === null || !("value" in strong)) {
+      throw new Error("Expected strong keys to configure");
+    }
+    expect(verify(strong.value, forged)).toEqual(none);
+  });
+
   test(
     "roundtrips values, interoperates with Hono's exact algorithm and signs with first key",
     async () => {

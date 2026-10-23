@@ -20,10 +20,17 @@ def scalar_valid_go(s: String, ok: Bool) -> Bool:
 def scalar_valid(s: String) -> Bool:
   scalar_valid_go(s, True{})
 
+# Empty secrets are rejected in every rotation slot, as WebCrypto does: an
+# attacker can compute the HMAC under an empty key.
+def key_valid(s: String) -> Bool:
+  match s:
+    case SNil{}: False{}
+    case SCon{h, t}: scalar_valid(SCon{h, t})
+
 def valid_keys_go(xs: List<&2, String>, ok: Bool) -> Bool:
   match xs:
     case Nil{}: ok
-    case x <> t: valid_keys_go(t, ok && scalar_valid(x))
+    case x <> t: valid_keys_go(t, ok && key_valid(x))
 
 def configured(keys: Keys, ok: Bool) -> Maybe<&2, Keys>:
   match ok:
@@ -33,7 +40,7 @@ def configured(keys: Keys, ok: Bool) -> Maybe<&2, Keys>:
 def configure(xs: List<&2, String>) -> Maybe<&2, Keys>:
   match xs:
     case Nil{}: None{}
-    case +first <> +rest: configured(Keys{first, rest}, valid_keys_go(rest, scalar_valid(first)))
+    case +first <> +rest: configured(Keys{first, rest}, valid_keys_go(rest, key_valid(first)))
 
 def digest(key: String, value: String) -> List<&2, U32>:
   Hmac.sha256(Utf8.encode(key), Utf8.encode(value))
