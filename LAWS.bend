@@ -9,7 +9,11 @@ import ./proof/cookie-serialization-laws.bend as CookieSerializationLaws
 import ./src/data/cookie.bend as Cookie
 import ./proof/cookie-spec.bend as CookieSpec
 import ./src/app/table.bend as Table
+import ./src/app/route-slot.bend as RouteSlot
 import ./proof/middleware-selection-spec.bend as MiddlewareSelectionSpec
+import ./proof/scoped-selection-spec.bend as ScopedSelectionSpec
+import ./proof/scoped-assembly-spec.bend as AssemblySpec
+import ./src/app/scopes.bend as Scopes
 import ./src/app/middleware.bend as Middleware
 
 import ./src/data/schema.bend as Schema
@@ -32,6 +36,8 @@ import ./src/data/utf8.bend as Utf8
 import ./proof/forms.bend as FormSpec
 
 import ./src/router/pattern.bend as Pattern
+import ./src/router/constraint.bend as Constraint
+import ./proof/router-match-spec.bend as MatchSpec
 
 import ./src/router/spec.bend as Spec
 import ./src/router/spec-proofs.bend as SpecProof
@@ -557,7 +563,8 @@ law method_recover:
 # Every successfully compiled pattern roundtrips every independently admissible
 # ordered assignment. Admissibility checks exactly the capture names in order,
 # nonempty present non-wildcard values, constraints and Unicode scalars; only a
-# final optional capture may be omitted, and a wildcard may hold an empty value.
+# trailing chain of optional captures may be omitted, and a wildcard may hold
+# an empty value.
 # It never invokes fill or match_path. Both filling success and matching success
 # are promised, so a filler that always fails cannot satisfy this law.
 law pattern_fill_match:
@@ -568,6 +575,54 @@ law pattern_fill_match:
   for admitted: {Pattern.admissible(pattern, params) == True{} : Bool}
   exs path: String
   {Pattern.fill(pattern, params) == Some{path} : Maybe<&2, String>} & {Pattern.match_path(pattern, path) == Some{params} : Maybe<&2, Pattern.Params>}
+
+# BND-78
+
+# Matching is exactly the independent raw-path specification in
+# proof/router-match-spec.bend, for every pattern value and every raw path:
+# the same hit or miss, the same ordered captures, and the same precedence
+# (optional captures take present segments, interior wildcards take the fewest
+# segments, spans take the most). The specification calls no Pattern helper.
+law pattern_match_spec:
+  for +pattern: Pattern.Pattern
+  for +path: String
+  {Pattern.match_path(pattern, path) == MatchSpec.match_path(pattern, path) : Maybe<&2, Pattern.Params>}
+
+# Each promised syntax form compiles, to the segments the specification reads.
+law compile_bare_star:
+  {Pattern.compile("*") == Done{Pattern.Pattern{[Pattern.Wildcard{"*"}]}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+law compile_prefix_wildcard:
+  {Pattern.compile("/assets*") == Done{Pattern.Pattern{[Pattern.PrefixWildcard{"assets"}]}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+law compile_interior_wildcards:
+  {Pattern.compile("/a/*/b/*") == Done{Pattern.Pattern{[Pattern.Static{"a"}, Pattern.InteriorWildcard{}, Pattern.Static{"b"}, Pattern.Wildcard{"*"}]}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+law compile_optional_chain:
+  {Pattern.compile("/v1/:version?/:platform?") == Done{Pattern.Pattern{[Pattern.Static{"v1"}, Pattern.Capture{"version", Constraint.Any{}, True{}}, Pattern.Capture{"platform", Constraint.Any{}, True{}}]}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+law compile_static_colon:
+  {Pattern.compile("/v1/name:activate") == Done{Pattern.Pattern{[Pattern.Static{"v1"}, Pattern.Static{"name:activate"}]}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+law compile_anchored_span:
+  {Pattern.compile("/:prefix{.+}/contents/:id?") == Done{Pattern.Pattern{[Pattern.Span{"prefix"}, Pattern.Static{"contents"}, Pattern.Capture{"id", Constraint.Any{}, True{}}]}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+# A span needs a static anchor after it.
+law compile_unanchored_span:
+  {Pattern.compile("/:a{.+}/:b") == Fail{Pattern.PatternError{Pattern.InvalidSpan{}, ":a{.+}/:b"}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+# The specification gives the promised raw-path results for those forms.
+law spec_prefix_wildcard:
+  {MatchSpec.match_path(Pattern.Pattern{[Pattern.PrefixWildcard{"assets"}]}, "/assets-v2") == Some{Nil{}} : Maybe<&2, Pattern.Params>} & {MatchSpec.match_path(Pattern.Pattern{[Pattern.PrefixWildcard{"assets"}]}, "/assets/app.js") == Some{Nil{}} : Maybe<&2, Pattern.Params>}
+
+law spec_interior_wildcards:
+  {MatchSpec.match_path(Pattern.Pattern{[Pattern.Static{"a"}, Pattern.InteriorWildcard{}, Pattern.Static{"b"}, Pattern.Wildcard{"*"}]}, "/a/x/y/b/c/d") == Some{[Pattern.Param{"*", "c/d"}]} : Maybe<&2, Pattern.Params>}
+
+law spec_optional_chain:
+  {MatchSpec.match_path(Pattern.Pattern{[Pattern.Static{"v1"}, Pattern.Capture{"version", Constraint.Any{}, True{}}, Pattern.Capture{"platform", Constraint.Any{}, True{}}]}, "/v1/x") == Some{[Pattern.Param{"version", "x"}]} : Maybe<&2, Pattern.Params>}
+
+law spec_greedy_span:
+  {MatchSpec.match_path(Pattern.Pattern{[Pattern.Span{"prefix"}, Pattern.Static{"contents"}, Pattern.Capture{"id", Constraint.Any{}, True{}}]}, "/foo/bar/contents/123") == Some{[Pattern.Param{"prefix", "foo/bar"}, Pattern.Param{"id", "123"}]} : Maybe<&2, Pattern.Params>} & {MatchSpec.match_path(Pattern.Pattern{[Pattern.Span{"prefix"}, Pattern.Static{"contents"}, Pattern.Capture{"id", Constraint.Any{}, True{}}]}, "/a/contents/contents") == Some{[Pattern.Param{"prefix", "a/contents"}]} : Maybe<&2, Pattern.Params>}
 
 # BND-29: URL-encoded data and ordered repeated-key lookup.
 
@@ -765,7 +820,8 @@ law methods_default_path_identity:
   {Methods.match_path(pattern, path, Methods.defaults()) == Pattern.match_path(pattern, path) : Maybe<&2, Pattern.Params>}
 
 # The default first-match statement uses direct Pattern.match_path and an
-# independent token-membership predicate at each List.get registration.
+# independent selector predicate at each List.get registration: AllMethods
+# accepts every method; OnlyMethods uses literal token membership.
 law methods_default_found_first:
   for -T: Data
   for +table: Methods.Valid<T>
@@ -820,7 +876,9 @@ law methods_not_found_iff_all_paths_miss:
 # iff present in ANY path-matching registration or HEAD supplied by GET.
 # Registrations and the request use canonical Method constructors. Output
 # methods are valid too. Every admissible table, pattern, path, option
-# combination and query-method token is covered.
+# combination and query-method token is covered. ExactAllow additionally
+# requires every AllMethods registration to miss the path, so a matching all
+# cannot produce 405. Finite registrations retain the same exact set guarantee.
 law methods_allow_exact:
   for -T: Data
   for +table: Methods.Valid<T>
@@ -938,8 +996,9 @@ law lifecycle_stage_selection:
   for +routes: List<&2, Methods.Registration(Tag)>
   for +compiled: Methods.Index<Tag>
   for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
   for +stage: Table.Stage
-  for built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  for built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers, count}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
   {Table.stage_ids(Tag, layers, stage) == MiddlewareSelectionSpec.hooks(Tag, entries, stage) : List<&2, Tag>}
 
 # The exact plan consumed by Handle: request, ordinary/parse/transform/before,
@@ -954,8 +1013,9 @@ law lifecycle_ordered_selection:
   for +routes: List<&2, Methods.Registration(Tag)>
   for +compiled: Methods.Index<Tag>
   for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
   for +path: String
-  for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers, count}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
   {Table.lifecycle(Tag, layers, path) == MiddlewareSelectionSpec.lifecycle(Tag, entries, path) : Table.Lifecycle<Tag>}
 
 # BND-17: the trie router equals the reference router.
@@ -1039,6 +1099,142 @@ law schema_preserves_typed_value:
   for +schema: Schema.Schema
   for +value: Json.Json
   Schema.Preserves(Schema.value_for(schema, value), Schema.decode(schema, value))
+
+# BND-24: selection from source memberships, independent of runtime helpers.
+# Globals precede inherited group/guard placements and then route-local hooks;
+# each source order and every duplicate is retained. None denotes no selected
+# route, including routing misses and method failures.
+law scoped_stage_selection:
+  for -Tag: Data
+  for +entries: List<&2, Table.Entry<Tag>>
+  for +routes: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Index<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
+  for +route: Maybe<&2, Nat>
+  for +stage: Table.Stage
+  for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers, count}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  {Table.scoped_stage_ids(Tag, layers, route, stage) == ScopedSelectionSpec.stage_ids(Tag, entries, route, stage) : List<&2, Tag>}
+
+law scoped_lifecycle_selection:
+  for -Tag: Data
+  for +entries: List<&2, Table.Entry<Tag>>
+  for +routes: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Index<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
+  for +path: String
+  for +route: Maybe<&2, Nat>
+  for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers, count}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  {Table.scoped_lifecycle(Tag, layers, path, route) == ScopedSelectionSpec.lifecycle(Tag, entries, path, route) : Table.Lifecycle<Tag>}
+
+# Even a matching path grants no scoped hook without route membership.
+law scoped_nonmember_global_only:
+  for -Tag: Data
+  for +entries: List<&2, Table.Entry<Tag>>
+  for +routes: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Index<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
+  for +route: Maybe<&2, Nat>
+  for +stage: Table.Stage
+  for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers, count}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  for no: {ScopedSelectionSpec.member(Tag, entries, route) == False{} : Bool}
+  {Table.scoped_stage_ids(Tag, layers, route, stage) == Table.stage_ids(Tag, layers, stage) : List<&2, Tag>}
+
+law scoped_miss_global_only:
+  for -Tag: Data
+  for +entries: List<&2, Table.Entry<Tag>>
+  for +routes: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Index<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
+  for +stage: Table.Stage
+  for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers, count}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  {Table.scoped_stage_ids(Tag, layers, None{}, stage) == Table.stage_ids(Tag, layers, stage) : List<&2, Tag>}
+
+# The real runtime boundary: every path, method, router kind and option set.
+# This checks forward-router-index to reversed-source-ordinal conversion too;
+# source hook filtering still never consults runtime selection helpers.
+law scoped_resolved_stage_selection:
+  for -Tag: Data
+  for +entries: List<&2, Table.Entry<Tag>>
+  for +routes: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Index<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
+  for +kind: Router.RouterKind
+  for +path: String
+  for +method: Request.Method
+  for +opts: Methods.Options
+  for +stage: Table.Stage
+  for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers, count}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  {Table.scoped_stage_ids(Tag, layers, RouteSlot.identity(Tag, count, Methods.resolve_with(Tag, kind, compiled, path, method, opts)), stage) == ScopedSelectionSpec.stage_ids(Tag, entries, ScopedSelectionSpec.resolved_route(Tag, entries, Methods.resolve_with(Tag, kind, compiled, path, method, opts)), stage) : List<&2, Tag>}
+
+# BND-24: assembly from raw public declarations. Equality includes scope
+# provenance, route paths/tags/order, every duplicate and every placement.
+# The independent fused map puts explicit hooks before direct declarations,
+# and new outer placements before every existing inner/local placement.
+law scoped_guard_assembly:
+  for -Tag: Data
+  for +options: Table.GuardOptions<Tag>
+  for +entries: List<&2, Table.Entry<Tag>>
+  {Scopes.guard(Tag, options, entries) == AssemblySpec.guard(Tag, options, entries) : List<&2, Table.Entry<Tag>>}
+
+law scoped_group_assembly:
+  for -Tag: Data
+  for +prefix: String
+  for +hooks: List<&2, Table.HookSpec<Tag>>
+  for +entries: List<&2, Table.Entry<Tag>>
+  {Scopes.group(Tag, prefix, hooks, entries) == AssemblySpec.group(Tag, prefix, hooks, entries) : List<&2, Table.Entry<Tag>>}
+
+law scoped_local_assembly:
+  for -Tag: Data
+  for +registration: Methods.Registration(Tag)
+  for +hooks: List<&2, Table.HookSpec<Tag>>
+  {Scopes.local(Tag, registration, hooks) == AssemblySpec.local(Tag, registration, hooks) : Table.Entry<Tag>}
+
+# Arbitrary neighbours, including identical paths and hook tags, are untouched.
+# Inside may itself contain any nesting or route-local hooks. Both outer and
+# inner scope constructors retain their provenance and structural order.
+law scoped_nested_assembly_isolation:
+  for -Tag: Data
+  for +before: List<&2, Table.Entry<Tag>>
+  for +options: Table.GuardOptions<Tag>
+  for +prefix: String
+  for +hooks: List<&2, Table.HookSpec<Tag>>
+  for +inside: List<&2, Table.Entry<Tag>>
+  for +after: List<&2, Table.Entry<Tag>>
+  {List.append(&2, Table.Entry<Tag>, before, List.append(&2, Table.Entry<Tag>, Scopes.guard(Tag, options, Scopes.group(Tag, prefix, hooks, inside)), after)) == List.append(&2, Table.Entry<Tag>, before, List.append(&2, Table.Entry<Tag>, AssemblySpec.guard(Tag, options, AssemblySpec.group(Tag, prefix, hooks, inside)), after)) : List<&2, Table.Entry<Tag>>}
+
+law scoped_guard_built_selection:
+  for -Tag: Data
+  for +options: Table.GuardOptions<Tag>
+  for +inside: List<&2, Table.Entry<Tag>>
+  for +outside: List<&2, Table.Entry<Tag>>
+  for +routes: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Index<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
+  for +route: Maybe<&2, Nat>
+  for +stage: Table.Stage
+  for +built: {Table.build(Tag, List.append(&2, Table.Entry<Tag>, Scopes.guard(Tag, options, inside), outside)) == Done{Table.Table{routes, compiled, layers, count}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  {Table.scoped_stage_ids(Tag, layers, route, stage) == ScopedSelectionSpec.stage_ids(Tag, List.append(&2, Table.Entry<Tag>, AssemblySpec.guard(Tag, options, inside), outside), route, stage) : List<&2, Tag>}
+
+law scoped_group_built_selection:
+  for -Tag: Data
+  for +prefix: String
+  for +hooks: List<&2, Table.HookSpec<Tag>>
+  for +inside: List<&2, Table.Entry<Tag>>
+  for +outside: List<&2, Table.Entry<Tag>>
+  for +routes: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Index<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
+  for +route: Maybe<&2, Nat>
+  for +stage: Table.Stage
+  for +built: {Table.build(Tag, List.append(&2, Table.Entry<Tag>, Scopes.group(Tag, prefix, hooks, inside), outside)) == Done{Table.Table{routes, compiled, layers, count}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  {Table.scoped_stage_ids(Tag, layers, route, stage) == ScopedSelectionSpec.stage_ids(Tag, List.append(&2, Table.Entry<Tag>, AssemblySpec.group(Tag, prefix, hooks, inside), outside), route, stage) : List<&2, Tag>}
 
 # BND-43: authentication primitives. These laws state functional results only.
 # Execution time is outside them; see docs/decisions/0012-constant-time-auth.md.
