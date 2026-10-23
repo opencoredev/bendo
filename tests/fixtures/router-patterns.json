@@ -43,8 +43,8 @@
   },
   {
     "kind": "match",
-    "pattern": "/\u00e9",
-    "path": "/\u00e9",
+    "pattern": "/é",
+    "path": "/é",
     "params": []
   },
   {
@@ -79,7 +79,7 @@
   },
   {
     "kind": "miss",
-    "pattern": "/\u00e9",
+    "pattern": "/é",
     "path": "/%C3%A9"
   },
   {
@@ -138,25 +138,25 @@
     "kind": "match",
     "pattern": "/p/:x",
     "path": "/p/caf%C3%A9",
-    "params": [["x", "caf\u00e9"]]
+    "params": [["x", "café"]]
   },
   {
     "kind": "match",
     "pattern": "/p/:x",
-    "path": "/p/caf\u00e9",
-    "params": [["x", "caf\u00e9"]]
+    "path": "/p/café",
+    "params": [["x", "café"]]
   },
   {
     "kind": "match",
     "pattern": "/p/:x",
     "path": "/p/%F0%9F%98%80",
-    "params": [["x", "\ud83d\ude00"]]
+    "params": [["x", "😀"]]
   },
   {
     "kind": "match",
     "pattern": "/p/:x",
     "path": "/p/%E4%B8%AD",
-    "params": [["x", "\u4e2d"]]
+    "params": [["x", "中"]]
   },
   {
     "kind": "match",
@@ -180,7 +180,7 @@
     "kind": "match",
     "pattern": "/p/:x",
     "path": "/p/%F4%8F%BF%BF",
-    "params": [["x", "\udbff\udfff"]]
+    "params": [["x", "􏿿"]]
   },
   {
     "kind": "match",
@@ -398,7 +398,7 @@
   {
     "kind": "miss",
     "pattern": "/:x{slug}",
-    "path": "/caf\u00e9"
+    "path": "/café"
   },
   {
     "kind": "match",
@@ -635,10 +635,9 @@
     "error": "DuplicateName"
   },
   {
-    "kind": "error",
+    "kind": "miss",
     "pattern": "/*/a",
-    "path": "/",
-    "error": "WildcardNotLast"
+    "path": "/"
   },
   {
     "kind": "error",
@@ -731,16 +730,14 @@
     "error": "InvalidClass"
   },
   {
-    "kind": "error",
+    "kind": "miss",
     "pattern": "/a:b",
-    "path": "/",
-    "error": "InvalidStatic"
+    "path": "/"
   },
   {
-    "kind": "error",
+    "kind": "miss",
     "pattern": "/a*",
-    "path": "/",
-    "error": "InvalidStatic"
+    "path": "/"
   },
   {
     "kind": "error",
@@ -781,13 +778,13 @@
   {
     "kind": "fill",
     "pattern": "/:x",
-    "params": [["x", "caf\u00e9"]],
+    "params": [["x", "café"]],
     "filled": "/%63%61%66%C3%A9"
   },
   {
     "kind": "fill",
     "pattern": "/:x",
-    "params": [["x", "\ud83d\ude00"]],
+    "params": [["x", "😀"]],
     "filled": "/%F0%9F%98%80"
   },
   {
@@ -937,55 +934,55 @@
   {
     "kind": "fill",
     "pattern": "/:x",
-    "params": [["x", "\u007f"]],
+    "params": [["x", ""]],
     "filled": "/%7F"
   },
   {
     "kind": "fill",
     "pattern": "/:x",
-    "params": [["x", "\u0080"]],
+    "params": [["x", ""]],
     "filled": "/%C2%80"
   },
   {
     "kind": "fill",
     "pattern": "/:x",
-    "params": [["x", "\u07ff"]],
+    "params": [["x", "߿"]],
     "filled": "/%DF%BF"
   },
   {
     "kind": "fill",
     "pattern": "/:x",
-    "params": [["x", "\u0800"]],
+    "params": [["x", "ࠀ"]],
     "filled": "/%E0%A0%80"
   },
   {
     "kind": "fill",
     "pattern": "/:x",
-    "params": [["x", "\ud7ff"]],
+    "params": [["x", "퟿"]],
     "filled": "/%ED%9F%BF"
   },
   {
     "kind": "fill",
     "pattern": "/:x",
-    "params": [["x", "\ue000"]],
+    "params": [["x", ""]],
     "filled": "/%EE%80%80"
   },
   {
     "kind": "fill",
     "pattern": "/:x",
-    "params": [["x", "\uffff"]],
+    "params": [["x", "￿"]],
     "filled": "/%EF%BF%BF"
   },
   {
     "kind": "fill",
     "pattern": "/:x",
-    "params": [["x", "\ud800\udc00"]],
+    "params": [["x", "𐀀"]],
     "filled": "/%F0%90%80%80"
   },
   {
     "kind": "fill",
     "pattern": "/:x",
-    "params": [["x", "\udbff\udfff"]],
+    "params": [["x", "􏿿"]],
     "filled": "/%F4%8F%BF%BF"
   },
   {
@@ -993,5 +990,234 @@
     "pattern": "/:x{[a/]+}",
     "path": "/a",
     "error": "UnbalancedBraces"
+  },
+  {
+    "kind": "match",
+    "pattern": "*",
+    "path": "/a/b",
+    "params": [["*", "a/b"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "*",
+    "path": "/",
+    "params": [["*", ""]]
+  },
+  {
+    "kind": "miss",
+    "pattern": "*",
+    "path": ""
+  },
+  {
+    "kind": "match",
+    "pattern": "/assets*",
+    "path": "/assets",
+    "params": []
+  },
+  {
+    "kind": "match",
+    "pattern": "/assets*",
+    "path": "/assets-v2",
+    "params": []
+  },
+  {
+    "kind": "match",
+    "pattern": "/assets*",
+    "path": "/assets/app.js",
+    "params": []
+  },
+  {
+    "kind": "match",
+    "pattern": "/assets*",
+    "path": "/assets//x/",
+    "params": []
+  },
+  {
+    "kind": "miss",
+    "pattern": "/assets*",
+    "path": "/asset"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/assets*",
+    "path": "/other/assets"
+  },
+  {
+    "kind": "match",
+    "pattern": "/a/*/b/*",
+    "path": "/a/x/b/c",
+    "params": [["*", "c"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/a/*/b/*",
+    "path": "/a/x/y/b/c",
+    "params": [["*", "c"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/a/*/b/*",
+    "path": "/a/b/c",
+    "params": [["*", "c"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/a/*/b/*",
+    "path": "/a//b/c",
+    "params": [["*", "c"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/a/*/b/*",
+    "path": "/a/x/b",
+    "params": [["*", ""]]
+  },
+  {
+    "kind": "miss",
+    "pattern": "/a/*/b/*",
+    "path": "/a/x/bz"
+  },
+  {
+    "kind": "match",
+    "pattern": "/wild/*/card",
+    "path": "/wild/xxx/card",
+    "params": []
+  },
+  {
+    "kind": "match",
+    "pattern": "/wild/*/card",
+    "path": "/wild/card",
+    "params": []
+  },
+  {
+    "kind": "miss",
+    "pattern": "/wild/*/card",
+    "path": "/wild/cards"
+  },
+  {
+    "kind": "match",
+    "pattern": "/v1/:version?/:platform?",
+    "path": "/v1",
+    "params": []
+  },
+  {
+    "kind": "match",
+    "pattern": "/v1/:version?/:platform?",
+    "path": "/v1/123",
+    "params": [["version", "123"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/v1/:version?/:platform?",
+    "path": "/v1/123/abc",
+    "params": [
+      ["version", "123"],
+      ["platform", "abc"]
+    ]
+  },
+  {
+    "kind": "miss",
+    "pattern": "/v1/:version?/:platform?",
+    "path": "/v1//abc"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/v1/:version?/:platform?",
+    "path": "/v1/1/2/3"
+  },
+  {
+    "kind": "match",
+    "pattern": "/:a?/:b?",
+    "path": "/",
+    "params": []
+  },
+  {
+    "kind": "match",
+    "pattern": "/v1/name:activate",
+    "path": "/v1/name:activate",
+    "params": []
+  },
+  {
+    "kind": "miss",
+    "pattern": "/v1/name:activate",
+    "path": "/v1/name"
+  },
+  {
+    "kind": "match",
+    "pattern": "/:prefix{.+}/contents/:id?",
+    "path": "/foo/bar/contents/123",
+    "params": [
+      ["prefix", "foo/bar"],
+      ["id", "123"]
+    ]
+  },
+  {
+    "kind": "match",
+    "pattern": "/:prefix{.+}/contents/:id?",
+    "path": "/foo/bar/contents",
+    "params": [["prefix", "foo/bar"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/:prefix{.+}/contents/:id?",
+    "path": "/foo%2Fbar/contents",
+    "params": [["prefix", "foo/bar"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/:prefix{.+}/contents/:id?",
+    "path": "/a/contents/b/contents",
+    "params": [["prefix", "a/contents/b"]]
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:prefix{.+}/contents/:id?",
+    "path": "/contents"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:prefix{.+}/contents/:id?",
+    "path": "/%GG/contents"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/assets*",
+    "params": [],
+    "filled": "/assets"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/a/*/b/*",
+    "params": [["*", "x/y"]],
+    "filled": "/a//b/%78%2F%79"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/v1/:version?/:platform?",
+    "params": [],
+    "filled": "/v1"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/v1/:version?/:platform?",
+    "params": [["version", "v2"]],
+    "filled": "/v1/%76%32"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/:a?/:b?",
+    "params": [],
+    "filled": "/"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/:prefix{.+}/contents/:id?",
+    "params": [["prefix", "foo/bar"]],
+    "filled": "/%66%6F%6F%2F%62%61%72/contents"
+  },
+  {
+    "kind": "inadmissible",
+    "pattern": "/v1/:version?/:platform?",
+    "params": [["platform", "abc"]]
   }
 ]
