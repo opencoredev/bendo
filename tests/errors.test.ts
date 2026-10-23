@@ -103,10 +103,14 @@ test("error conversion preserves Vary and not-found forwarded context reaches er
 // Raw header bytes, decoded one byte per char, so obs-text is visible.
 function rawHeaders(path: string): Promise<{ status: number; headers: string[] }> {
   return new Promise((resolve, reject) => {
-    const req = get(server.url + path, { timeout: 5000, headers: { accept: "text/plain" } }, (res) => {
-      res.resume();
-      res.on("end", () => resolve({ status: res.statusCode ?? 0, headers: res.rawHeaders }));
-    });
+    const req = get(
+      server.url + path,
+      { timeout: 5000, headers: { accept: "text/plain" } },
+      (res) => {
+        res.resume();
+        res.on("end", () => resolve({ status: res.statusCode ?? 0, headers: res.rawHeaders }));
+      },
+    );
     req.on("timeout", () => req.destroy(new Error("timeout")));
     req.on("error", reject);
   });
@@ -135,9 +139,9 @@ test("errors validate the headers the client receives, after the Vary merge", as
   // Existing Vary bytes are copied, not re-encoded: x-é stays C3 A9.
   const obs = await rawHeaders("/vary-obs");
   expect(obs.status).toBe(400);
-  expect(rawValues(obs.headers, "vary").map((v) => Buffer.from(v, "latin1").toString("hex"))).toEqual([
-    Buffer.from("x-\u00c3\u00a9, Accept", "latin1").toString("hex"),
-  ]);
+  expect(
+    rawValues(obs.headers, "vary").map((v) => Buffer.from(v, "latin1").toString("hex")),
+  ).toEqual([Buffer.from("x-\u00c3\u00a9, Accept", "latin1").toString("hex")]);
   // Other headers keep their order; the merged Vary field comes last.
   const kept = await rawHeaders("/vary-kept");
   expect(kept.status).toBe(400);
