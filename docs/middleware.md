@@ -132,3 +132,10 @@ after-response. Only request hooks run before routing; ordinary middleware
 still receives route params and now selects paths after request-hook rewrites.
 Response hooks run even when pre-stage middleware short-circuits. See the
 decision for callback forms, error semantics and the transport boundary.
+
+## Built-in middleware
+
+[Observability middleware](observability.md) provides logger, request ID,
+Server-Timing, powered-by and pretty JSON identifiers. Wrap `B.Builtin` in your
+app's tag and delegate that case to `B.builtin(Vars, id, c, next)` alongside your
+own middleware cases.
