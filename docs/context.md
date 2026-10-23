@@ -2,7 +2,8 @@
 
 Handlers receive `B.Ctx`, an immutable context for one request. Read request data
 with accessors, pass an updated context to the next handler, and finish with a
-response helper. Startup resources remain in the dispatcher's `env` argument.
+response helper. Startup resources remain in the dispatcher's `env` argument; use a
+[store actor](store.md) for shared mutable state.
 
 ```python
 import Base
@@ -123,3 +124,6 @@ Existing low-level callers can use `src/http/response.bend` for
 of destructuring context internals.
 
 Verify with `bun test --timeout 30000 tests/context.test.ts`.
+
+[Middleware](middleware.md) passes the same typed context through an affine
+`next` continuation, so middleware can set variables before the handler runs.
