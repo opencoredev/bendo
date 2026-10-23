@@ -8,6 +8,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 boat-sbx exec "$sandbox_id" -- 'mkdir -p /home/user/bendo/src /home/user/bendo/bench'
 boat scp -r src/router "$sandbox_id":/home/user/bendo/src/
+boat scp -r src/http "$sandbox_id":/home/user/bendo/src/
 boat scp -r bench/router "$sandbox_id":/home/user/bendo/bench/
 boat scp .bend-version "$sandbox_id":/home/user/bendo/.bend-version
 boat-sbx exec "$sandbox_id" --cwd /home/user/bendo --timeout 180 -- '
@@ -21,7 +22,10 @@ boat-sbx exec "$sandbox_id" --cwd /home/user/bendo --timeout 180 -- '
 '
 boat-sbx exec "$sandbox_id" --cwd /home/user/bendo --timeout 480 -- \
   "export PATH=\"\$HOME/.bend/bin:\$PATH\"; export BOAT_SANDBOX_ID='$sandbox_id'; timeout 7m python3 -u bench/router/run.py"
+boat-sbx exec "$sandbox_id" --cwd /home/user/bendo --timeout 480 -- \
+  "export PATH=\"\$HOME/.bend/bin:\$PATH\"; export BOAT_SANDBOX_ID='$sandbox_id'; timeout 7m python3 -u bench/router/methods.py"
 boat scp "$sandbox_id":/home/user/bendo/bench/router/results.json bench/router/results.json
+boat scp "$sandbox_id":/home/user/bendo/bench/router/methods-results.json bench/router/methods-results.json
 boat-sbx gc --label "$BOAT_SBX_LABEL"
 boat-sbx ls --label "$BOAT_SBX_LABEL"
 trap - EXIT INT TERM
