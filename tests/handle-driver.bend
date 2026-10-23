@@ -1,6 +1,6 @@
 import Base
 import ../src/main.bend as B
-import ../src/app/handle.bend as Context
+import ../src/app/context.bend as Context
 import ../src/app/manifest.bend as Manifest
 import ../src/app/config.bend as Config
 import ../src/router/methods.bend as Methods
@@ -24,10 +24,10 @@ def params(xs: Pattern.Params) -> String:
 
 def dispatch(tag: Tag, ctx: B.Ctx, env: Env) -> IO(B.Res):
   match tag ctx env:
-    case Todo{} Context.Ctx{req, ps, body} Env{prefix}:
-      IO.pure(B.Res, B.text(200, prefix ++ params(ps) ++ ":" ++ Bytes.ascii(body)))
+    case Todo{} Context.Ctx{req, ps, body, pairs, code, headers, vars} Env{prefix}:
+      IO.pure(B.Res, Response.text(200, prefix ++ params(ps) ++ ":" ++ Bytes.ascii(body)))
     case Broken{} _ _:
-      IO.pure(B.Res, B.body(200, [Request.Header{"bad", [13, 10]}], []))
+      IO.pure(B.Res, Response.body(200, [Request.Header{"bad", [13, 10]}], []))
 
 def assert(ok: Bool, message: String) -> IO(Unit):
   match ok:

@@ -1,7 +1,13 @@
 # Proofs of LAWS.bend. Run: bend PROOF.bend --verdict
 import Base
+import ./src/app/table.bend as Table
+import ./proof/middleware-selection-spec.bend as MiddlewareSelectionSpec
+import ./proof/lifecycle-selection.bend as LifecycleSelection
+import ./proof/middleware-selection.bend as MiddlewareSelection
 import ./src/http/response.bend as Response
 import ./src/http/write_response.bend as WriteResponse
+
+import ./src/http/chunked.bend as Chunked
 import ./src/http.bend as Http
 import ./src/http/bytes.bend as Bytes
 import ./src/http/request.bend as Request
@@ -30,6 +36,9 @@ import ./proof/response-status.bend as ResponseStatus
 import ./proof/response-spec-proof.bend as ResponseSpecProof
 import ./proof/response-spec.bend as ResponseSpec
 import ./proof/response-framing-spec.bend as ResponseFramingSpec
+
+import ./proof/chunked.bend as ChunkedProof
+import ./proof/chunked-roundtrip.bend as ChunkedRoundtrip
 
 import ./src/router/proofs.bend as PatternProof
 import ./src/router/pattern.bend as Pattern
@@ -361,6 +370,38 @@ def Laws.hex_roundtrip(xs, valid):
 
 def Laws.base64_roundtrip(xs, url, padded, valid):
   Base64Proof.roundtrip(xs, url, padded, valid)
+
+# BND-8: chunked encode/decode roundtrip.
+
+def Laws.chunked_roundtrip(chunks, limit, suffix, valid):
+  ChunkedRoundtrip.roundtrip(chunks, limit, suffix, valid)
+
+# BND-22. Unfolding the shared runtime composition primitive proves these
+# equations without restricting middleware to a particular implementation.
+def Laws.middleware_application(C, R, a, b, ctx, next): {==}
+def Laws.middleware_identity_left(C, R, mw, ctx, next): {==}
+def Laws.middleware_identity_right(C, R, mw, ctx, next): {==}
+def Laws.middleware_identity_insert(C, R, a, b, ctx, next): {==}
+def Laws.middleware_associative(C, R, a, b, c, ctx, next): {==}
+
+def Laws.middleware_registration_selection(Tag, entries, table, path, built):
+  MiddlewareSelection.selection(Tag, entries, table, path, built)
+
+# BND-23
+def Laws.lifecycle_stage_selection(Tag, entries, routes, compiled, layers, stage, built):
+  LifecycleSelection.selection(Tag, entries, routes, compiled, layers, stage, built)
+
+def Laws.lifecycle_ordered_selection(Tag, entries, routes, compiled, layers, path, built):
+  %Equal.sym(List<&2, Tag>, Table.stage_ids(Tag, layers, Table.Request{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Request{}), LifecycleSelection.selection(Tag, entries, routes, compiled, layers, Table.Request{}, built)) : {Table.Lifecycle{_, List.concat(&2, Tag, [Table.selected(Tag, layers, path), Table.stage_ids(Tag, layers, Table.Parse{}), Table.stage_ids(Tag, layers, Table.Transform{}), Table.stage_ids(Tag, layers, Table.BeforeHandle{})]), Table.stage_ids(Tag, layers, Table.AfterHandle{}), Table.stage_ids(Tag, layers, Table.MapResponse{}), Table.stage_ids(Tag, layers, Table.Error{}), Table.stage_ids(Tag, layers, Table.AfterResponse{})} == MiddlewareSelectionSpec.lifecycle(Tag, entries, path) : Table.Lifecycle<Tag>}
+  %Equal.sym(List<&2, Tag>, Table.selected(Tag, layers, path), MiddlewareSelectionSpec.filter(Tag, entries, path), MiddlewareSelection.selection(Tag, entries, Table.Table{routes, compiled, layers}, path, built)) : {Table.Lifecycle{MiddlewareSelectionSpec.hooks(Tag, entries, Table.Request{}), List.concat(&2, Tag, [_, Table.stage_ids(Tag, layers, Table.Parse{}), Table.stage_ids(Tag, layers, Table.Transform{}), Table.stage_ids(Tag, layers, Table.BeforeHandle{})]), Table.stage_ids(Tag, layers, Table.AfterHandle{}), Table.stage_ids(Tag, layers, Table.MapResponse{}), Table.stage_ids(Tag, layers, Table.Error{}), Table.stage_ids(Tag, layers, Table.AfterResponse{})} == MiddlewareSelectionSpec.lifecycle(Tag, entries, path) : Table.Lifecycle<Tag>}
+  %Equal.sym(List<&2, Tag>, Table.stage_ids(Tag, layers, Table.Parse{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Parse{}), LifecycleSelection.selection(Tag, entries, routes, compiled, layers, Table.Parse{}, built)) : {Table.Lifecycle{MiddlewareSelectionSpec.hooks(Tag, entries, Table.Request{}), List.concat(&2, Tag, [MiddlewareSelectionSpec.filter(Tag, entries, path), _, Table.stage_ids(Tag, layers, Table.Transform{}), Table.stage_ids(Tag, layers, Table.BeforeHandle{})]), Table.stage_ids(Tag, layers, Table.AfterHandle{}), Table.stage_ids(Tag, layers, Table.MapResponse{}), Table.stage_ids(Tag, layers, Table.Error{}), Table.stage_ids(Tag, layers, Table.AfterResponse{})} == MiddlewareSelectionSpec.lifecycle(Tag, entries, path) : Table.Lifecycle<Tag>}
+  %Equal.sym(List<&2, Tag>, Table.stage_ids(Tag, layers, Table.Transform{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Transform{}), LifecycleSelection.selection(Tag, entries, routes, compiled, layers, Table.Transform{}, built)) : {Table.Lifecycle{MiddlewareSelectionSpec.hooks(Tag, entries, Table.Request{}), List.concat(&2, Tag, [MiddlewareSelectionSpec.filter(Tag, entries, path), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Parse{}), _, Table.stage_ids(Tag, layers, Table.BeforeHandle{})]), Table.stage_ids(Tag, layers, Table.AfterHandle{}), Table.stage_ids(Tag, layers, Table.MapResponse{}), Table.stage_ids(Tag, layers, Table.Error{}), Table.stage_ids(Tag, layers, Table.AfterResponse{})} == MiddlewareSelectionSpec.lifecycle(Tag, entries, path) : Table.Lifecycle<Tag>}
+  %Equal.sym(List<&2, Tag>, Table.stage_ids(Tag, layers, Table.BeforeHandle{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.BeforeHandle{}), LifecycleSelection.selection(Tag, entries, routes, compiled, layers, Table.BeforeHandle{}, built)) : {Table.Lifecycle{MiddlewareSelectionSpec.hooks(Tag, entries, Table.Request{}), List.concat(&2, Tag, [MiddlewareSelectionSpec.filter(Tag, entries, path), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Parse{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Transform{}), _]), Table.stage_ids(Tag, layers, Table.AfterHandle{}), Table.stage_ids(Tag, layers, Table.MapResponse{}), Table.stage_ids(Tag, layers, Table.Error{}), Table.stage_ids(Tag, layers, Table.AfterResponse{})} == MiddlewareSelectionSpec.lifecycle(Tag, entries, path) : Table.Lifecycle<Tag>}
+  %Equal.sym(List<&2, Tag>, Table.stage_ids(Tag, layers, Table.AfterHandle{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.AfterHandle{}), LifecycleSelection.selection(Tag, entries, routes, compiled, layers, Table.AfterHandle{}, built)) : {Table.Lifecycle{MiddlewareSelectionSpec.hooks(Tag, entries, Table.Request{}), List.concat(&2, Tag, [MiddlewareSelectionSpec.filter(Tag, entries, path), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Parse{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Transform{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.BeforeHandle{})]), _, Table.stage_ids(Tag, layers, Table.MapResponse{}), Table.stage_ids(Tag, layers, Table.Error{}), Table.stage_ids(Tag, layers, Table.AfterResponse{})} == MiddlewareSelectionSpec.lifecycle(Tag, entries, path) : Table.Lifecycle<Tag>}
+  %Equal.sym(List<&2, Tag>, Table.stage_ids(Tag, layers, Table.MapResponse{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.MapResponse{}), LifecycleSelection.selection(Tag, entries, routes, compiled, layers, Table.MapResponse{}, built)) : {Table.Lifecycle{MiddlewareSelectionSpec.hooks(Tag, entries, Table.Request{}), List.concat(&2, Tag, [MiddlewareSelectionSpec.filter(Tag, entries, path), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Parse{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Transform{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.BeforeHandle{})]), MiddlewareSelectionSpec.hooks(Tag, entries, Table.AfterHandle{}), _, Table.stage_ids(Tag, layers, Table.Error{}), Table.stage_ids(Tag, layers, Table.AfterResponse{})} == MiddlewareSelectionSpec.lifecycle(Tag, entries, path) : Table.Lifecycle<Tag>}
+  %Equal.sym(List<&2, Tag>, Table.stage_ids(Tag, layers, Table.Error{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Error{}), LifecycleSelection.selection(Tag, entries, routes, compiled, layers, Table.Error{}, built)) : {Table.Lifecycle{MiddlewareSelectionSpec.hooks(Tag, entries, Table.Request{}), List.concat(&2, Tag, [MiddlewareSelectionSpec.filter(Tag, entries, path), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Parse{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Transform{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.BeforeHandle{})]), MiddlewareSelectionSpec.hooks(Tag, entries, Table.AfterHandle{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.MapResponse{}), _, Table.stage_ids(Tag, layers, Table.AfterResponse{})} == MiddlewareSelectionSpec.lifecycle(Tag, entries, path) : Table.Lifecycle<Tag>}
+  %Equal.sym(List<&2, Tag>, Table.stage_ids(Tag, layers, Table.AfterResponse{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.AfterResponse{}), LifecycleSelection.selection(Tag, entries, routes, compiled, layers, Table.AfterResponse{}, built)) : {Table.Lifecycle{MiddlewareSelectionSpec.hooks(Tag, entries, Table.Request{}), List.concat(&2, Tag, [MiddlewareSelectionSpec.filter(Tag, entries, path), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Parse{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Transform{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.BeforeHandle{})]), MiddlewareSelectionSpec.hooks(Tag, entries, Table.AfterHandle{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.MapResponse{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Error{}), _} == MiddlewareSelectionSpec.lifecycle(Tag, entries, path) : Table.Lifecycle<Tag>}
+  {==}
 
 # BND-17: trie router equivalence.
 

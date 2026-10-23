@@ -59,36 +59,41 @@ def expected(+r: R.Req, +xs: List<&2, U32>, +limit: U32, expect: U32) -> State &
     case e:
       can_continue(begin(r, xs, F.framing(r, limit), limit), e, List.is_empty(&2, U32, xs))
 
-def head_advance(s: Parse.State, c: U32, over: Bool) -> Parse.State:
+# Limit includes leading CRLFs and the head terminator, never body/suffix bytes.
+def head_step(s: Parse.State, c: U32, bytes: U32, over: Bool) -> State:
   match over:
-    case True{}:
-      Parse.Bad{R.InvalidHeaderValue{}}
-    case False{}:
-      Parse.advance(s, c)
+    case True{}: Bad{431}
+    case False{}: Head{Parse.advance(s, c), (bytes + 1 : U32)}
 
-# Count only consumed head octets. Body bytes coalesced in the same receive
-# must not change whether the head fits the limit.
-def head_feed(xs: List<&2, U32>, s: Parse.State, +bytes: U32, +limit: U32) -> State & Bool:
-  match xs s:
-    case xs Parse.Complete{+r}:
+def head_scan(xs: List<&2, U32>, state: State, +limit: U32, +headers: U32) -> State & Bool:
+  match xs state:
+    case xs Head{Parse.Complete{+r}, bytes}:
       expected(r, xs, limit, F.expectation(r))
-    case _ Parse.Bad{e}:
+    case _ Head{Parse.Bad{e}, bytes}:
       (Bad{400}, False{})
     case Nil{} s:
-      (Head{s, bytes}, False{})
-    case c <> t s:
-      head_feed(t, head_advance(s, c, (bytes >= 65536 : U32)), (bytes + 1 : U32), limit)
+      (s, False{})
+    case c <> t Head{s, +bytes}:
+      head_scan(t, head_step(s, c, bytes, (bytes >= headers : U32)), limit, headers)
+    case _ s:
+      (s, False{})
 
-def feed(+xs: List<&2, U32>, state: State, limit: U32) -> State & Bool:
+def head_feed(xs: List<&2, U32>, s: Parse.State, bytes: U32, limit: U32, headers: U32) -> State & Bool:
+  head_scan(xs, Head{s, bytes}, limit, headers)
+
+def feed_limits(xs: List<&2, U32>, state: State, limit: U32, headers: U32) -> State & Bool:
   match state:
-    case Head{s, +bytes}:
-      head_feed(xs, s, bytes, limit)
+    case Head{s, bytes}:
+      head_feed(xs, s, bytes, limit, headers)
     case Fixed{r, n, rev}:
       (fixed(U32.to_nat(n), xs, r, rev), False{})
     case Chunks{r, s}:
       (chunks_result(r, C.feed(xs, s)), False{})
     case s:
       (s, False{})
+
+def feed(xs: List<&2, U32>, state: State, limit: U32) -> State & Bool:
+  feed_limits(xs, state, limit, 65536)
 
 def initial() -> State:
   Head{Parse.initial(), 0}

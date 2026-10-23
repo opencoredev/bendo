@@ -61,17 +61,19 @@ are app-owned `Data` types. Startup state travels in `env`.
   decimal `PORT` between 1 and 65535 overrides `config.port`; missing, malformed,
   zero or out-of-range values use the configured port.
 
-`B.Ctx` currently aliases `src/app/handle.bend`'s `Ctx{req, params, body}`.
-Import that module to destructure the record. BND-21 replaces this minimal
-context with the accessor API.
+`B.Ctx` aliases `src/app/context.bend`'s `Ctx<Unit>`. Use the
+[context accessors and helpers](context.md) to read requests, build responses,
+and derive typed per-request variables.
 
 `B` also exposes `Req`, `Res`, `ServerConfig`, `RouterKind`, `spec`, `trie`,
 `text`, `body`, `not_modified`, `get`, `head`, `post`, `put`, `patch`, `delete`,
 `options`, `all` and `on`. `spec()` and `trie()` construct router-kind values.
 `B.config()` defaults `router` to `trie()`, and `B.serve` resolves methods with
 the configured kind. `B.handle` uses the trie. Both kinds return identical
-results ([trie router](router-trie.md#equivalence-proof)). Header limits, timeout
-fields, max requests and keep-alive are reserved for BND-11. Connections currently serve one request and close.
+results ([trie router](router-trie.md#equivalence-proof)). Header limits, idle/head/body timeouts, max requests and keep-alive
+are enforced by the connection loop. HTTP/1.1 connections persist by default;
+HTTP/1.0 connections always close, including requests for keep-alive. See
+[connection policy](decisions/0009-connections.md) for deadlines and close rules.
 
 The legacy byte-handler `Serve.serve` and two-field `Serve.Config` remain available
 for existing low-level consumers. New applications use `B.serve` and `B.config`.

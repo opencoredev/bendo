@@ -1,11 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { findBend } from "../packages/bendo/src/bend.ts";
 import { connect } from "node:net";
-import { build, start } from "./harness.ts";
+import { build, compile, start } from "./harness.ts";
 
 const binary = build("tests/fixtures/http-body/server.bend");
 const server = await start(binary);
@@ -52,7 +48,7 @@ function status(response: Buffer, code: number): void {
   expect(response.toString("latin1").split("\r\n")[0]).toBe(
     `HTTP/1.1 ${code} ${code === 200 ? "OK" : code === 413 ? "Content Too Large" : code === 417 ? "Expectation Failed" : "Bad Request"}`,
   );
-  expect(response.toString("latin1")).toContain("Connection: close\r\n");
+  expect(response.toString("latin1").toLowerCase()).toContain("connection: close\r\n");
 }
 function body(response: Buffer): Buffer {
   return response.subarray(response.indexOf("\r\n\r\n") + 4);
@@ -152,7 +148,7 @@ describe("request body framing over real TCP", () => {
       // write side open: the server must bound teardown without client EOF.
       const response = await exchange([raw]);
       status(response, code);
-      expect(response.toString("latin1")).toContain("Content-Length: 0\r\n");
+      expect(response.toString("latin1").toLowerCase()).toContain("content-length: 0\r\n");
       expect(body(response)).toHaveLength(0);
     });
   }
@@ -248,17 +244,7 @@ describe("request body framing over real TCP", () => {
 
 // A native TCP write can be coalesced. Feed the real compiled pure decoder
 // at every boundary as well, including size digits, CRLF, data and trailers.
-const directory = mkdtempSync(join(tmpdir(), "bendo-body-pure-"));
-afterAll(() => rmSync(directory, { recursive: true, force: true }));
-const output = join(directory, "body.mjs");
-const bend = findBend();
-if (bend.kind === "missing") throw new Error("bend is not installed");
-const compiled = Bun.spawnSync(
-  [bend.path, join(import.meta.dir, "fixtures/http-body/consumer.bend"), "-o", output],
-  { stdout: "pipe", stderr: "pipe", timeout: 30000 },
-);
-if (compiled.exitCode !== 0)
-  throw new Error(`decoder compilation failed: ${compiled.stdout}${compiled.stderr}`);
+const output = compile("tests/fixtures/http-body/consumer.bend", "mjs");
 const loaded: unknown = await import(pathToFileURL(output).href);
 if (typeof loaded !== "object" || loaded === null || !("default" in loaded))
   throw new Error("missing Bend module");

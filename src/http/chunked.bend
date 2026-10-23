@@ -145,18 +145,25 @@ def size_digits(xs: List<&2, U32>, +n: U32, seen: Bool) -> Maybe<&2, U32>:
     case +c <> +t:
       branch(Maybe<&2, U32>, Bytes.hex(c),
         u => branch(Maybe<&2, U32>, (n <= 268435455 : U32),
-          u => size_digits(t, (n * 16 + hex_digit(c) : U32), True{}),
+          u => size_digits(t, (16 * n + hex_digit(c) : U32), True{}),
           u => None{}),
         u => size_result(n, seen && ext_valid(c <> t, Semi{})))
+
+# Compare sizes with U32.is_eq rather than literal patterns, so proofs can
+# read a symbolic size through its numeric value.
+def start_size(+budget: U32, body: List<&2, U32>, +n: U32, zero: Bool) -> State:
+  match zero:
+    case True{}:
+      Trailers{body, [], [], 0, False{}}
+    case False{}:
+      Bool.pick(State, (n <= budget : U32), Payload{(budget - n : U32), body, n}, Failed{413})
 
 def start_chunk(+budget: U32, body: List<&2, U32>, size: Maybe<&2, U32>) -> State:
   match size:
     case None{}:
       Failed{400}
-    case Some{0}:
-      Trailers{body, [], [], 0, False{}}
     case Some{+n}:
-      Bool.pick(State, (n <= budget : U32), Payload{(budget - n : U32), body, n}, Failed{413})
+      start_size(budget, body, n, U32.is_eq(n, 0))
 
 # RFC 9110 6.5.1 and RFC 9112 7.1.2: reject fields used before the body
 # for framing, routing, authentication, request/response control or decoding.
@@ -224,14 +231,22 @@ def trailer_octet_inner(body: List<&2, U32>, hs: List<&2, Request.Header>, line:
 def trailer_octet(body: List<&2, U32>, hs: List<&2, Request.Header>, line: List<&2, U32>, +count: U32, cr: Bool, c: U32) -> State:
   branch(State, (count < 8192 : U32), u => trailer_octet_inner(body, hs, line, (count + 1 : U32), cr, c), u => Failed{400})
 
-def data_left(budget: U32, body: List<&2, U32>, +left: U32, c: U32) -> State:
-  match left:
-    case 1:
-      DataCR{budget, c <> body}
-    case 0:
+def data_rest(budget: U32, body: List<&2, U32>, +left: U32, zero: Bool) -> State:
+  match zero:
+    case True{}:
       Failed{400}
-    case _:
-      Payload{budget, c <> body, (left - 1 : U32)}
+    case False{}:
+      Payload{budget, body, (left - 1 : U32)}
+
+def data_next(budget: U32, body: List<&2, U32>, +left: U32, last: Bool) -> State:
+  match last:
+    case True{}:
+      DataCR{budget, body}
+    case False{}:
+      data_rest(budget, body, left, U32.is_eq(left, 0))
+
+def data_left(budget: U32, body: List<&2, U32>, +left: U32, c: U32) -> State:
+  data_next(budget, c <> body, left, U32.is_eq(left, 1))
 
 def data_octet(budget: U32, body: List<&2, U32>, left: U32, +c: U32) -> State:
   branch(State, (c <= 255 : U32), u => data_left(budget, body, left, c), u => Failed{400})

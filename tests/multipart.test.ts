@@ -1,11 +1,7 @@
-import { afterAll, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { randomBytes } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { findBend } from "../packages/bendo/src/bend.ts";
-import { BEND_COMPILE_TIMEOUT, start } from "./harness.ts";
+import { compile, SLOW_TEST_TIMEOUT_MS, start } from "./harness.ts";
 
 type BendList<T> = { $: "Nil" } | { $: "Con"; head: T; tail: BendList<T> };
 function list(values: Uint8Array | readonly number[]): BendList<number> {
@@ -17,30 +13,9 @@ function list(values: Uint8Array | readonly number[]): BendList<number> {
   }
   return result;
 }
-const directory = mkdtempSync(join(tmpdir(), "bendo-multipart-"));
-afterAll(() => rmSync(directory, { recursive: true, force: true }));
-function compile(entry: string, output: string): string {
-  const bend = findBend();
-  if (bend.kind === "missing") throw new Error("bend is not installed");
-  const path = join(directory, output);
-  const run = Bun.spawnSync(
-    [
-      "timeout",
-      "--foreground",
-      BEND_COMPILE_TIMEOUT,
-      bend.path,
-      join(import.meta.dir, entry),
-      "-o",
-      path,
-    ],
-    { stdout: "pipe", stderr: "pipe" },
-  );
-  if (run.exitCode !== 0) throw new Error(`Bend compilation failed:\n${run.stdout}${run.stderr}`);
-  return path;
-}
-const binary = compile("servers/multipart.bend", "server");
+const binary = compile("tests/servers/multipart.bend", "native");
 const module: unknown = await import(
-  pathToFileURL(compile("fixtures/multipart/consumer.bend", "consumer.mjs")).href
+  pathToFileURL(compile("tests/fixtures/multipart/consumer.bend", "mjs")).href
 );
 if (typeof module !== "object" || module === null || !("default" in module)) {
   throw new Error("Missing Bend exports");
@@ -322,27 +297,31 @@ function successfulPart(result: unknown): unknown {
   return xs.head;
 }
 
-test(".mjs 2 MiB file and field, many parts and late failure stay stack-safe", () => {
-  const value = "z".repeat(2 * 1024 * 1024);
-  const result = successfulPart(parse(body(value, 'form-data; name="x"; filename="f"')));
-  if (typeof result !== "object" || result === null || !("bytes" in result))
-    throw new Error("Expected file");
-  let cursor: unknown = result.bytes;
-  let count = 0;
-  while (typeof cursor === "object" && cursor !== null && "head" in cursor && "tail" in cursor) {
-    if (cursor.head !== 122) throw new Error(`Wrong byte at ${count}`);
-    cursor = cursor.tail;
-    count++;
-  }
-  expect(count).toBe(2097152);
-  expect(cursor).toEqual({ $: "Nil" });
-  expect(successfulPart(parse(body(value)))).toEqual(field("x", value));
-  expect(parse(body(value).slice(0, -1))).toEqual(fail("Malformed"));
-  const many = `${Array.from({ length: 128 }, () => '--abc\r\nContent-Disposition: form-data; name="x"\r\n\r\nx\r\n').join("")}--abc--`;
-  expect(parse(many)).toEqual(parts(Array.from({ length: 128 }, () => field("x", "x"))));
-  expect(parse(many, { ...limits, parts: 127 })).toEqual(fail("TooLarge"));
-  console.log(".mjs: 2 MiB file bytes and field, 128 parts, late malformed closure PASS");
-});
+test(
+  ".mjs 2 MiB file and field, many parts and late failure stay stack-safe",
+  () => {
+    const value = "z".repeat(2 * 1024 * 1024);
+    const result = successfulPart(parse(body(value, 'form-data; name="x"; filename="f"')));
+    if (typeof result !== "object" || result === null || !("bytes" in result))
+      throw new Error("Expected file");
+    let cursor: unknown = result.bytes;
+    let count = 0;
+    while (typeof cursor === "object" && cursor !== null && "head" in cursor && "tail" in cursor) {
+      if (cursor.head !== 122) throw new Error(`Wrong byte at ${count}`);
+      cursor = cursor.tail;
+      count++;
+    }
+    expect(count).toBe(2097152);
+    expect(cursor).toEqual({ $: "Nil" });
+    expect(successfulPart(parse(body(value)))).toEqual(field("x", value));
+    expect(parse(body(value).slice(0, -1))).toEqual(fail("Malformed"));
+    const many = `${Array.from({ length: 128 }, () => '--abc\r\nContent-Disposition: form-data; name="x"\r\n\r\nx\r\n').join("")}--abc--`;
+    expect(parse(many)).toEqual(parts(Array.from({ length: 128 }, () => field("x", "x"))));
+    expect(parse(many, { ...limits, parts: 127 })).toEqual(fail("TooLarge"));
+    console.log(".mjs: 2 MiB file bytes and field, 128 parts, late malformed closure PASS");
+  },
+  SLOW_TEST_TIMEOUT_MS,
+);
 
 test("unified dispatcher preserves URL-encoded results and wraps original errors", () => {
   expect(parse("x=%C3%A9&x=2", limits, "application/x-www-form-urlencoded")).toEqual(

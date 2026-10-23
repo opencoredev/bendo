@@ -1,11 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { connect } from "node:net";
-import { findBend } from "../packages/bendo/src/bend.ts";
-import { start, type RunningServer, BEND_COMPILE_TIMEOUT } from "./harness.ts";
+import { start, type RunningServer, compile } from "./harness.ts";
 
 type BendList<T> = { $: "Nil" } | { $: "Con"; head: T; tail: BendList<T> };
 function list<T>(values: readonly T[]): BendList<T> {
@@ -33,25 +29,7 @@ function bytes(value: unknown): Buffer {
   }
   throw new Error("Invalid compiled Bend list");
 }
-const directory = mkdtempSync(join(tmpdir(), "bendo-http-response-"));
-afterAll(() => rmSync(directory, { recursive: true, force: true }));
-const output = join(directory, "response.mjs");
-const bend = findBend();
-if (bend.kind === "missing") throw new Error("bend is not installed");
-const compilation = Bun.spawnSync(
-  [
-    "timeout",
-    "--foreground",
-    BEND_COMPILE_TIMEOUT,
-    bend.path,
-    join(import.meta.dir, "fixtures/http-response/consumer.bend"),
-    "-o",
-    output,
-  ],
-  { stdout: "pipe", stderr: "pipe" },
-);
-if (compilation.exitCode !== 0)
-  throw new Error(`Bend compilation failed:\n${compilation.stdout}${compilation.stderr}`);
+const output = compile("tests/fixtures/http-response/consumer.bend", "mjs");
 const module: unknown = await import(pathToFileURL(output).href);
 if (typeof module !== "object" || module === null || !("default" in module))
   throw new Error("Missing Bend exports");
@@ -341,21 +319,7 @@ describe("compiled buffered response writer", () => {
 
 let server: RunningServer;
 beforeAll(async () => {
-  const binary = join(directory, "server");
-  const native = Bun.spawnSync(
-    [
-      "timeout",
-      "--foreground",
-      BEND_COMPILE_TIMEOUT,
-      bend.path,
-      join(import.meta.dir, "servers/response-server.bend"),
-      "-o",
-      binary,
-    ],
-    { stdout: "pipe", stderr: "pipe" },
-  );
-  if (native.exitCode !== 0)
-    throw new Error(`Native Bend compilation failed:\n${native.stdout}${native.stderr}`);
+  const binary = compile("tests/servers/response-server.bend", "native");
   server = await start(binary);
 });
 afterAll(async () => {

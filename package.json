@@ -8,7 +8,7 @@
   "scripts": {
     "check:bend": "sh scripts/check-bend-version.sh",
     "prove": "bend PROOF.bend --verdict",
-    "test": "timeout --foreground 10m bun test --timeout 30000 tests bench",
+    "test": "timeout 10m sh -c 'bun scripts/compile-fixtures.ts && bun test --parallel=4 --timeout 30000 --timings=.cache/test-timings.json --update-timings tests bench'",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:bench": "bun install --cwd bench/servers --frozen-lockfile && tsc -p bench/tsconfig.json",
     "check": "bun run check:bend && bun run prove && bun run lint && bun run format:check && bun run typecheck && bun run typecheck:bench && bun run test",
