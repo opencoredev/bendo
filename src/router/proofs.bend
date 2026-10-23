@@ -61,6 +61,25 @@ def append_no_slash(a, b, left, right):
       %Equal.sym(Bool, Bool.not(Char.is_eq(h, '/')), True{}, first) : {_ && no_slash(t ++ b) == True{} : Bool}
       append_no_slash(t, b, rest, right)
 
+law take_no_slash:
+  for n: Nat
+  for +s: String
+  for clean: {no_slash(s) == True{} : Bool}
+  {no_slash(String.take(s, n)) == True{} : Bool}
+
+def take_no_slash(n, s, clean):
+  match n s:
+    case 0n SNil{}:
+      {==}
+    case 0n SCon{h, t}:
+      {==}
+    case 1n+p SNil{}:
+      {==}
+    case 1n+p SCon{+h, +t}:
+      +yes = clean
+      %Equal.sym(Bool, Bool.not(Char.is_eq(h, '/')), True{}, and_left(Bool.not(Char.is_eq(h, '/')), no_slash(t), yes)) : {_ && no_slash(String.take(t, p)) == True{} : Bool}
+      take_no_slash(p, t, and_right(Bool.not(Char.is_eq(h, '/')), no_slash(t), yes))
+
 # Percent-encoding a finite octet list cannot introduce path separators.
 law octets_no_slash:
   for +xs: List<&2, Word(8n)>
@@ -235,14 +254,41 @@ def fill_capture(+name: String, +c: C.Constraint, +optional: Bool, +rest: List<&
         {==}
       ))
 
+def fill_interior(+rest: List<&2, P.Segment>, +ps: P.Params,
+    success: &xs: List<&2, String> -> {P.fill_segments(rest, ps) == Some{xs} : Maybe<&2, List<&2, String>>}) ->
+    &xs: List<&2, String> -> {P.fill_segments(P.InteriorWildcard{} <> rest, ps) == Some{xs} : Maybe<&2, List<&2, String>>}:
+  (+xs, filled) = success
+  (xs, filled)
+
+def fill_span(+name: String, +rest: List<&2, P.Segment>, +key: String, +value: String, +tail: P.Params,
+    ok_true: {(String.eq(name, key) && P.value_ok(C.Any{}, value)) && P.span_tail(rest) == True{} : Bool},
+    success: &xs: List<&2, String> -> {P.fill_segments(rest, tail) == Some{xs} : Maybe<&2, List<&2, String>>}) ->
+    &xs: List<&2, String> -> {P.fill_segments(P.Span{name} <> rest, P.Param{key, value} <> tail) == Some{xs} : Maybe<&2, List<&2, String>>}:
+  (+xs, filled) = success
+  (E.encode(value) <> xs, (
+    %Equal.sym(Bool, (String.eq(name, key) && P.value_ok(C.Any{}, value)) && P.span_tail(rest), True{}, ok_true) : {E.choose(Maybe<&2, List<&2, String>>, _, u => Maybe.bind(&2, List<&2, String>, List<&2, String>, P.fill_segments(rest, tail), ys => Some{E.encode(value) <> ys}), u => None{}) == Some{E.encode(value) <> xs} : Maybe<&2, List<&2, String>>}
+    %Equal.sym(Maybe<&2, List<&2, String>>, P.fill_segments(rest, tail), Some{xs}, filled) : {Maybe.bind(&2, List<&2, String>, List<&2, String>, _, ys => Some{E.encode(value) <> ys}) == Some{E.encode(value) <> xs} : Maybe<&2, List<&2, String>>}
+    {==}
+  ))
+
 def fill_segments_success(segs, ps, admitted):
   match segs ps:
     case Nil{} Nil{}:
       (Nil{}, {==})
     case P.Static{+raw} <> +rest +values:
       fill_static(raw, rest, values, fill_segments_success(rest, values, admitted))
-    case P.Capture{name, c, True{}} <> Nil{} Nil{}:
-      (Nil{}, {==})
+    case P.Capture{name, c, True{}} <> +rest Nil{}:
+      (Nil{}, (
+        %Equal.sym(Bool, P.all_optional(rest), True{}, admitted) : {E.choose(Maybe<&2, List<&2, String>>, _, u => Some{Nil{}}, u => None{}) == Some{Nil{}} : Maybe<&2, List<&2, String>>}
+        {==}
+      ))
+    case P.InteriorWildcard{} <> +rest +values:
+      fill_interior(rest, values, fill_segments_success(rest, values, admitted))
+    case P.PrefixWildcard{+prefix} <> Nil{} Nil{}:
+      ([prefix], {==})
+    case P.Span{+name} <> +rest P.Param{+key, +value} <> +tail:
+      +ok = (String.eq(name, key) && P.value_ok(C.Any{}, value)) && P.span_tail(rest)
+      fill_span(name, rest, key, value, tail, and_left(ok, P.admissible_segments(rest, tail), admitted), fill_segments_success(rest, tail, and_right(ok, P.admissible_segments(rest, tail), admitted)))
     case P.Capture{+name, +c, +optional} <> +rest P.Param{+key, +value} <> +tail:
       +ok = String.eq(name, key) && P.value_ok(c, value)
       ok_true = and_left(ok, P.admissible_segments(rest, tail), admitted)
@@ -257,14 +303,18 @@ def fill_segments_success(segs, ps, admitted):
       absurd(&xs: List<&2, String> -> {P.fill_segments(Nil{}, h <> t) == Some{xs} : Maybe<&2, List<&2, String>>}, false_true(admitted))
     case P.Capture{name, c, False{}} <> rest Nil{}:
       absurd(&xs: List<&2, String> -> {P.fill_segments(P.Capture{name, c, False{}} <> rest, Nil{}) == Some{xs} : Maybe<&2, List<&2, String>>}, false_true(admitted))
-    case P.Capture{name, c, True{}} <> h <> t Nil{}:
-      absurd(&xs: List<&2, String> -> {P.fill_segments(P.Capture{name, c, True{}} <> h <> t, Nil{}) == Some{xs} : Maybe<&2, List<&2, String>>}, false_true(admitted))
     case P.Wildcard{name} <> Nil{} Nil{}:
       absurd(&xs: List<&2, String> -> {P.fill_segments([P.Wildcard{name}], Nil{}) == Some{xs} : Maybe<&2, List<&2, String>>}, false_true(admitted))
     case P.Wildcard{name} <> Nil{} h <> j <> t:
       absurd(&xs: List<&2, String> -> {P.fill_segments([P.Wildcard{name}], h <> j <> t) == Some{xs} : Maybe<&2, List<&2, String>>}, false_true(admitted))
     case P.Wildcard{name} <> h <> t values:
       absurd(&xs: List<&2, String> -> {P.fill_segments(P.Wildcard{name} <> h <> t, values) == Some{xs} : Maybe<&2, List<&2, String>>}, false_true(admitted))
+    case P.PrefixWildcard{prefix} <> Nil{} h <> t:
+      absurd(&xs: List<&2, String> -> {P.fill_segments([P.PrefixWildcard{prefix}], h <> t) == Some{xs} : Maybe<&2, List<&2, String>>}, false_true(admitted))
+    case P.PrefixWildcard{prefix} <> h <> t values:
+      absurd(&xs: List<&2, String> -> {P.fill_segments(P.PrefixWildcard{prefix} <> h <> t, values) == Some{xs} : Maybe<&2, List<&2, String>>}, false_true(admitted))
+    case P.Span{name} <> rest Nil{}:
+      absurd(&xs: List<&2, String> -> {P.fill_segments(P.Span{name} <> rest, Nil{}) == Some{xs} : Maybe<&2, List<&2, String>>}, false_true(admitted))
 
 law fill_success:
   for +pattern: P.Pattern
@@ -311,3 +361,128 @@ def encode_no_slash(s, valid):
       first = and_left(E.scalar(n), E.scalars(t), yes)
       rest = and_right(E.scalar(n), E.scalars(t), yes)
       append_no_slash(E.encode_char(n), E.encode(t), clean_encoded_rep(Code.represent(n), Utf8Proof.scalar_is_packed(n, first)), encode_no_slash(t, rest))
+
+# Dynamic-programming rows contain one cell for every path suffix. These
+# structural equations expose that layout without a fuel or termination premise.
+def Rows() -> Data:
+  List<&2, Maybe<&2, P.Params>>
+
+def rows_cons(+segs: List<&2, P.Segment>, +h: String, +t: List<&2, String>) ->
+    {P.match_rows(~String.eq, ~String.starts_with, segs, h <> t) == P.search_segments(segs, h <> t) <> P.match_rows(~String.eq, ~String.starts_with, segs, t) : Rows}:
+  match segs:
+    case Nil{}:
+      {==}
+    case +seg <> +rest:
+      +same = rows_cons(rest, h, t)
+      %Equal.sym(Rows, P.match_rows(~String.eq, ~String.starts_with, rest, h <> t), P.search_segments(rest, h <> t) <> P.match_rows(~String.eq, ~String.starts_with, rest, t), same) : {P.rows_for(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), h <> t, _) == P.row_head(P.rows_for(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), h <> t, _)) <> P.rows_for(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), t, P.match_rows(~String.eq, ~String.starts_with, rest, t)) : Rows}
+      {==}
+
+# The row computed for the next shorter suffix, which interior and wildcard
+# cells extend.
+def below(+seg: P.Segment, +rest: List<&2, P.Segment>, +paths: List<&2, String>) -> Rows:
+  match paths:
+    case Nil{}:
+      Nil{}
+    case h <> +t:
+      P.match_rows(~String.eq, ~String.starts_with, seg <> rest, t)
+
+def rows_head(+seg: P.Segment, +rest: List<&2, P.Segment>, +paths: List<&2, String>) ->
+    {P.search_segments(seg <> rest, paths) == P.row_one(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), paths, P.match_rows(~String.eq, ~String.starts_with, rest, paths), below(seg, rest, paths)) : Maybe<&2, P.Params>}:
+  match paths:
+    case Nil{}:
+      {==}
+    case +h <> +t:
+      %Equal.sym(Rows, P.match_rows(~String.eq, ~String.starts_with, rest, h <> t), P.search_segments(rest, h <> t) <> P.match_rows(~String.eq, ~String.starts_with, rest, t), rows_cons(rest, h, t)) : {P.row_head(P.rows_for(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), h <> t, _)) == P.row_one(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), h <> t, _, P.match_rows(~String.eq, ~String.starts_with, seg <> rest, t)) : Maybe<&2, P.Params>}
+      {==}
+
+def wildcard_value_param(+name: String, d: Maybe<&2, String>) ->
+    {P.wildcard_value(P.wildcard_param(name, d)) == d : Maybe<&2, String>}:
+  match d:
+    case None{}:
+      {==}
+    case Some{v}:
+      {==}
+
+# The cached wildcard row extends the next suffix's decoded value.
+def wildcard_search(+name: String, +ps: List<&2, String>) ->
+    {P.search_segments([P.Wildcard{name}], ps) == P.match_segments([P.Wildcard{name}], ps) : Maybe<&2, P.Params>}:
+  match ps:
+    case Nil{}:
+      {==}
+    case +raw <> +tail:
+      %Equal.sym(Maybe<&2, P.Params>, P.search_segments([P.Wildcard{name}], raw <> tail), P.row_one(~String.eq, ~String.starts_with, P.Wildcard{name}, True{}, raw <> tail, P.match_rows(~String.eq, ~String.starts_with, Nil{}, raw <> tail), below(P.Wildcard{name}, Nil{}, raw <> tail)), rows_head(P.Wildcard{name}, Nil{}, raw <> tail)) : {_ == P.match_segments([P.Wildcard{name}], raw <> tail) : Maybe<&2, P.Params>}
+      %Equal.sym(Maybe<&2, P.Params>, P.search_segments([P.Wildcard{name}], tail), P.match_segments([P.Wildcard{name}], tail), wildcard_search(name, tail)) : {P.wildcard_param(name, P.join_value(E.decode(raw), tail, P.wildcard_value(_))) == P.match_segments([P.Wildcard{name}], raw <> tail) : Maybe<&2, P.Params>}
+      %Equal.sym(Maybe<&2, String>, P.wildcard_value(P.wildcard_param(name, P.decode_segments(tail))), P.decode_segments(tail), wildcard_value_param(name, P.decode_segments(tail))) : {P.wildcard_param(name, P.join_value(E.decode(raw), tail, _)) == P.match_segments([P.Wildcard{name}], raw <> tail) : Maybe<&2, P.Params>}
+      {==}
+
+# The cached-row engine agrees with the original structurally recursive
+# matcher, including on arbitrary hand-built patterns.
+def search_equal(+segs: List<&2, P.Segment>, +paths: List<&2, String>) ->
+    {P.search_segments(segs, paths) == P.match_segments(segs, paths) : Maybe<&2, P.Params>}:
+  match segs paths:
+    case Nil{} Nil{}:
+      {==}
+    case Nil{} h <> t:
+      {==}
+    case P.Static{+raw} <> +rest +h <> +t:
+      %Equal.sym(Maybe<&2, P.Params>, P.search_segments(P.Static{raw} <> rest, h <> t), P.row_one(~String.eq, ~String.starts_with, P.Static{raw}, List.is_empty(&2, P.Segment, rest), h <> t, P.match_rows(~String.eq, ~String.starts_with, rest, h <> t), below(P.Static{raw}, rest, h <> t)), rows_head(P.Static{raw}, rest, h <> t)) : {_ == P.match_segments(P.Static{raw} <> rest, h <> t) : Maybe<&2, P.Params>}
+      %Equal.sym(Rows, P.match_rows(~String.eq, ~String.starts_with, rest, h <> t), P.search_segments(rest, h <> t) <> P.match_rows(~String.eq, ~String.starts_with, rest, t), rows_cons(rest, h, t)) : {P.row_one(~String.eq, ~String.starts_with, P.Static{raw}, List.is_empty(&2, P.Segment, rest), h <> t, _, below(P.Static{raw}, rest, h <> t)) == P.match_segments(P.Static{raw} <> rest, h <> t) : Maybe<&2, P.Params>}
+      Equal.cong(Maybe<&2, P.Params>, Maybe<&2, P.Params>, r => E.choose(Maybe<&2, P.Params>, String.eq(raw, h), u => r, u => None{}), P.search_segments(rest, t), P.match_segments(rest, t), search_equal(rest, t))
+    case P.Static{raw} <> rest Nil{}:
+      {==}
+    case P.Capture{+name, +c, True{}} <> +rest Nil{}:
+      search_equal(rest, Nil{})
+    case P.Capture{name, c, False{}} <> rest Nil{}:
+      {==}
+    case P.Capture{+name, +c, +optional} <> +rest +h <> +t:
+      %Equal.sym(Maybe<&2, P.Params>, P.search_segments(P.Capture{name, c, optional} <> rest, h <> t), P.row_one(~String.eq, ~String.starts_with, P.Capture{name, c, optional}, List.is_empty(&2, P.Segment, rest), h <> t, P.match_rows(~String.eq, ~String.starts_with, rest, h <> t), below(P.Capture{name, c, optional}, rest, h <> t)), rows_head(P.Capture{name, c, optional}, rest, h <> t)) : {_ == P.match_segments(P.Capture{name, c, optional} <> rest, h <> t) : Maybe<&2, P.Params>}
+      %Equal.sym(Rows, P.match_rows(~String.eq, ~String.starts_with, rest, h <> t), P.search_segments(rest, h <> t) <> P.match_rows(~String.eq, ~String.starts_with, rest, t), rows_cons(rest, h, t)) : {P.row_one(~String.eq, ~String.starts_with, P.Capture{name, c, optional}, List.is_empty(&2, P.Segment, rest), h <> t, _, below(P.Capture{name, c, optional}, rest, h <> t)) == P.match_segments(P.Capture{name, c, optional} <> rest, h <> t) : Maybe<&2, P.Params>}
+      Equal.cong(Maybe<&2, P.Params>, Maybe<&2, P.Params>, r => Maybe.bind(&2, String, P.Params, E.decode(h), +value => E.choose(Maybe<&2, P.Params>, P.value_ok(c, value), u => P.put_capture(name, value, r), u => None{})), P.search_segments(rest, t), P.match_segments(rest, t), search_equal(rest, t))
+    case P.Wildcard{+name} <> Nil{} +p:
+      wildcard_search(name, p)
+    case P.Wildcard{name} <> h <> t Nil{}:
+      {==}
+    case P.Wildcard{+name} <> +h <> +t +x <> +y:
+      rows_head(P.Wildcard{name}, h <> t, x <> y)
+    case P.InteriorWildcard{} <> rest p:
+      {==}
+    case P.PrefixWildcard{prefix} <> rest p:
+      {==}
+    case P.Span{+name} <> +rest +p:
+      rows_head(P.Span{name}, rest, p)
+
+def some_bool(-A: Data, value: Maybe<&2, A>) -> Bool:
+  match value:
+    case None{}:
+      False{}
+    case Some{x}:
+      True{}
+
+def none_some(-A: Data, +value: A, e: {None{} == Some{value} : Maybe<&2, A>}) -> Empty:
+  false_true(Equal.cong(Maybe<&2, A>, Bool, x => some_bool(A, x), None{}, Some{value}, e))
+
+def first_head(+hits: Rows, +ps: P.Params,
+    found: {P.row_head(hits) == Some{ps} : Maybe<&2, P.Params>}) ->
+    {P.first_result(hits) == Some{ps} : Maybe<&2, P.Params>}:
+  match hits:
+    case Nil{}:
+      absurd({P.first_result(Nil{}) == Some{ps} : Maybe<&2, P.Params>}, none_some(P.Params, ps, found))
+    case Some{qs} <> tail:
+      found
+    case None{} <> tail:
+      absurd({P.first_result(None{} <> tail) == Some{ps} : Maybe<&2, P.Params>}, none_some(P.Params, ps, found))
+
+def interior_match(+rest: List<&2, P.Segment>, +paths: List<&2, String>, +ps: P.Params,
+    matched: {P.match_segments(rest, paths) == Some{ps} : Maybe<&2, P.Params>}) ->
+    {P.match_segments(P.InteriorWildcard{} <> rest, paths) == Some{ps} : Maybe<&2, P.Params>}:
+  %Equal.sym(Maybe<&2, P.Params>, P.search_segments(P.InteriorWildcard{} <> rest, paths), P.row_one(~String.eq, ~String.starts_with, P.InteriorWildcard{}, List.is_empty(&2, P.Segment, rest), paths, P.match_rows(~String.eq, ~String.starts_with, rest, paths), below(P.InteriorWildcard{}, rest, paths)), rows_head(P.InteriorWildcard{}, rest, paths)) : {_ == Some{ps} : Maybe<&2, P.Params>}
+  %Equal.sym(Maybe<&2, P.Params>, P.search_segments(rest, paths), Some{ps}, Equal.trans(Maybe<&2, P.Params>, P.search_segments(rest, paths), P.match_segments(rest, paths), Some{ps}, search_equal(rest, paths), matched)) : {P.prefer(_, u => P.row_head(below(P.InteriorWildcard{}, rest, paths))) == Some{ps} : Maybe<&2, P.Params>}
+  {==}
+
+def rows_nil(+segs: List<&2, P.Segment>) ->
+    {P.match_rows(~String.eq, ~String.starts_with, segs, Nil{}) == [P.search_segments(segs, Nil{})] : Rows}:
+  match segs:
+    case Nil{}:
+      {==}
+    case seg <> rest:
+      {==}

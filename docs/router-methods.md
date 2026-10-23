@@ -59,10 +59,12 @@ from GET and does not supply HEAD fallback. Duplicate methods in a registration
 are harmless. An empty `on` list
 registers a path that accepts no method.
 
-`all(T, path, tag)` registers these nine standard methods, in this order:
-`GET, HEAD, POST, PUT, DELETE, CONNECT, OPTIONS, TRACE, PATCH`. It does not accept
-extension methods. The current request parser rejects CONNECT targets, so a
-pure router call can select CONNECT even though the current HTTP server cannot
+`all(T, path, tag)` accepts every method, including extension tokens such as
+PURGE. It stores `AllMethods` rather than enumerating a finite list. `on` stores
+`OnlyMethods{methods}`. A matching `all` always resolves directly, so it never
+contributes a partial or invented method list to a 405 response.
+
+The current request parser rejects CONNECT targets, so a pure router call can select CONNECT even though the current HTTP server cannot
 serve it. CONNECT framing remains the response writer's responsibility.
 
 Call `resolve(T, table, path, request_method, opts)` with the `Valid<T>` returned
@@ -73,12 +75,12 @@ one of:
   first registration matching both path and method wins. An earlier path match
   for another method does not shadow it.
 - `NotFound{}`: no registration's pattern matches the path, regardless of its
-  method list.
+  method selector.
 - `MethodNotAllowed{allow}`: at least one pattern matches, but the method is
   unavailable, including HEAD fallback. `allow` is the deduplicated union of
   methods from every matching registration, with HEAD added whenever GET is
-  present. Standards use the order above; extensions follow in case-sensitive
-  lexical order. `allow_text(allow)` joins them with `", "` for an `Allow`
+  present. Standards use `GET, HEAD, POST, PUT, DELETE, CONNECT, OPTIONS, TRACE,
+  PATCH` order; extensions follow in case-sensitive lexical order. `allow_text(allow)` joins them with `", "` for an `Allow`
   header. Empty `on` registrations can produce an empty `Allow` value.
 
 For HEAD, the resolver first searches the entire table for a direct HEAD match.

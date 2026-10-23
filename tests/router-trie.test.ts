@@ -29,7 +29,7 @@ function generatedPattern(next: (limit: number) => number): FilledPattern {
           new TextEncoder().encode(value),
           (n) => `%${n.toString(16).padStart(2, "0")}`,
         ).join("");
-  switch (next(9)) {
+  switch (next(15)) {
     case 0: {
       const source = `${prefix}/${choose(next, ["new", "fixed", "", "a", "%", "%2f", "é"])}`;
       return { source, filled: source };
@@ -75,6 +75,27 @@ function generatedPattern(next: (limit: number) => number): FilledPattern {
       return {
         source: `${prefix}/:a/:b{int}`,
         filled: `${prefix}/${encoded("left/right")}/${encoded("42")}`,
+      };
+    case 9:
+      return { source: "*", filled: `${prefix}/x/y` };
+    case 10:
+      return {
+        source: `${prefix}/assets*`,
+        filled: `${prefix}/assets${choose(next, ["", "-v2", "/a/b"])}`,
+      };
+    case 11:
+      return { source: `${prefix}/*/end/*`, filled: `${prefix}/x/y/end/z` };
+    case 12:
+      return {
+        source: `${prefix}/:a?/:b?`,
+        filled: choose(next, [prefix || "/", `${prefix}/x`, `${prefix}/x/y`]),
+      };
+    case 13:
+      return { source: `${prefix}/name:activate`, filled: `${prefix}/name:activate` };
+    case 14:
+      return {
+        source: `${prefix}/:a{.+}/contents/:b?`,
+        filled: `${prefix}/x/y/contents${choose(next, ["", "/42"])}`,
       };
     default:
       return { source: `${prefix}/:a/end`, filled: `${prefix}/${encoded("x")}/end` };
