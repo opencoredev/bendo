@@ -3,6 +3,7 @@ import Base
 import ./pattern.bend as P
 import ./encoding.bend as E
 import ./constraint.bend as C
+import ./octet-proofs.bend as OctetProof
 
 # A Boolean equality is usable evidence, including in impossible branches.
 def true_type(b: Bool) -> Type:
@@ -32,6 +33,147 @@ def and_right(+a: Bool, +b: Bool, e: {a && b == True{} : Bool}) -> {b == True{} 
       e
     case False{}:
       absurd({b == True{} : Bool}, false_true(e))
+
+# BND-14 lemmas (proof support)
+
+def no_slash(s: String) -> Bool:
+  OctetProof.no_slash(s)
+
+# Concatenation preserves the absence of path separators.
+law append_no_slash:
+  for +a: String
+  for +b: String
+  for left: {no_slash(a) == True{} : Bool}
+  for right: {no_slash(b) == True{} : Bool}
+  {no_slash(a ++ b) == True{} : Bool}
+
+def append_no_slash(a, b, left, right):
+  match a:
+    case SNil{}:
+      right
+    case SCon{+h, +t}:
+      +e = left
+      first = and_left(Bool.not(Char.is_eq(h, '/')), no_slash(t), e)
+      rest = and_right(Bool.not(Char.is_eq(h, '/')), no_slash(t), e)
+      %Equal.sym(Bool, Bool.not(Char.is_eq(h, '/')), True{}, first) : {_ && no_slash(t ++ b) == True{} : Bool}
+      append_no_slash(t, b, rest, right)
+
+# Percent-encoding a finite octet list cannot introduce path separators.
+law octets_no_slash:
+  for +xs: List<&2, Word(8n)>
+  {no_slash(OctetProof.escape_octets(xs)) == True{} : Bool}
+
+def octets_no_slash(xs):
+  match xs:
+    case Nil{}:
+      {==}
+    case +h <> +t:
+      append_no_slash(E.byte(OctetProof.octet(h)), OctetProof.escape_octets(t), OctetProof.byte_no_slash(h), octets_no_slash(t))
+
+def not_true(+b: Bool, e: {Bool.not(b) == True{} : Bool}) -> {b == False{} : Bool}:
+  match b:
+    case False{}:
+      {==}
+    case True{}:
+      absurd({True{} == False{} : Bool}, false_true(e))
+
+# A slash-free prefix followed by a separator is exactly the first split part.
+law split_prefix:
+  for +s: String
+  for +tail: String
+  for clean: {no_slash(s) == True{} : Bool}
+  {P.path_segments(s ++ ("/" ++ tail)) == s <> P.path_segments(tail) : List<&2, String>}
+
+def split_prefix(s, tail, clean):
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{+h, +t}:
+      +e = clean
+      cut = not_true(Char.is_eq(h, '/'), and_left(Bool.not(Char.is_eq(h, '/')), no_slash(t), e))
+      rest = and_right(Bool.not(Char.is_eq(h, '/')), no_slash(t), e)
+      %Equal.sym(Bool, Char.is_eq(h, '/'), False{}, cut) : {String.split.fin(h, P.path_segments(t ++ ("/" ++ tail)), _) == SCon{h, t} <> P.path_segments(tail) : List<&2, String>}
+      %Equal.sym(List<&2, String>, P.path_segments(t ++ ("/" ++ tail)), t <> P.path_segments(tail), split_prefix(t, tail, rest)) : {String.split.push(h, _) == SCon{h, t} <> P.path_segments(tail) : List<&2, String>}
+      {==}
+
+# A single slash-free segment, including the empty segment, is preserved.
+law split_single:
+  for +s: String
+  for clean: {no_slash(s) == True{} : Bool}
+  {P.path_segments(s) == [s] : List<&2, String>}
+
+def split_single(s, clean):
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{+h, +t}:
+      +e = clean
+      cut = not_true(Char.is_eq(h, '/'), and_left(Bool.not(Char.is_eq(h, '/')), no_slash(t), e))
+      rest = and_right(Bool.not(Char.is_eq(h, '/')), no_slash(t), e)
+      %Equal.sym(Bool, Char.is_eq(h, '/'), False{}, cut) : {String.split.fin(h, P.path_segments(t), _) == [SCon{h, t}] : List<&2, String>}
+      %Equal.sym(List<&2, String>, P.path_segments(t), [t], split_single(t, rest)) : {String.split.push(h, _) == [SCon{h, t}] : List<&2, String>}
+      {==}
+
+def clean_segments(xs: List<&2, String>) -> Bool:
+  match xs:
+    case Nil{}:
+      True{}
+    case h <> t:
+      no_slash(h) && clean_segments(t)
+
+def clean_split_push(+h: Char, parts: List<&2, String>,
+    cut: {Char.is_eq(h, '/') == False{} : Bool},
+    clean: {clean_segments(parts) == True{} : Bool}) ->
+    {clean_segments(String.split.push(h, parts)) == True{} : Bool}:
+  match parts:
+    case Nil{}:
+      %Equal.sym(Bool, Char.is_eq(h, '/'), False{}, cut) : {Bool.not(_) && True{} && True{} == True{} : Bool}
+      {==}
+    case +s <> +ss:
+      %Equal.sym(Bool, Char.is_eq(h, '/'), False{}, cut) : {(Bool.not(_) && no_slash(s)) && clean_segments(ss) == True{} : Bool}
+      %Equal.sym(Bool, clean_segments(s <> ss), True{}, clean) : {_ == True{} : Bool}
+      {==}
+
+def clean_split_fin(+h: Char, +parts: List<&2, String>, +cut: Bool,
+    decision: {Char.is_eq(h, '/') == cut : Bool},
+    clean: {clean_segments(parts) == True{} : Bool}) ->
+    {clean_segments(String.split.fin(h, parts, cut)) == True{} : Bool}:
+  match cut:
+    case True{}:
+      clean
+    case False{}:
+      clean_split_push(h, parts, decision, clean)
+
+# Splitting any source establishes the separator invariant needed by split_join.
+law clean_split:
+  for +s: String
+  {clean_segments(P.path_segments(s)) == True{} : Bool}
+
+def clean_split(s):
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{+h, +t}:
+      clean_split_fin(h, P.path_segments(t), Char.is_eq(h, '/'), {==}, clean_split(t))
+
+# Splitting the joined nonempty list recovers empty and nonempty segments alike.
+law split_join:
+  for +tail: List<&2, String>
+  for +head: String
+  for clean: {clean_segments(head <> tail) == True{} : Bool}
+  {P.path_segments(String.join(head <> tail, "/")) == head <> tail : List<&2, String>}
+
+def split_join(tail, head, clean):
+  match tail:
+    case Nil{}:
+      split_single(head, and_left(no_slash(head), True{}, clean))
+    case +h <> +t:
+      +e = clean
+      first = and_left(no_slash(head), clean_segments(h <> t), e)
+      rest = and_right(no_slash(head), clean_segments(h <> t), e)
+      %Equal.sym(List<&2, String>, P.path_segments(head ++ ("/" ++ String.join(h <> t, "/"))), head <> P.path_segments(String.join(h <> t, "/")), split_prefix(head, String.join(h <> t, "/"), first)) : {_ == head <> h <> t : List<&2, String>}
+      %Equal.sym(List<&2, String>, P.path_segments(String.join(h <> t, "/")), h <> t, split_join(t, h, rest)) : {head <> _ == head <> h <> t : List<&2, String>}
+      {==}
 
 # The filler cannot fail on an admissible ordered assignment. No compilation
 # premise or decoder/roundtrip premise is needed for this direction.

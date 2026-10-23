@@ -14,8 +14,12 @@ def Laws.path_of_request_line():
 # BND-14
 # src/router/proofs.bend proves fill_segments_success and fill_success under
 # independent admissibility, with no compilation or roundtrip premise.
-# The matching half still needs strict Unicode codec inversion, split/join
-# preservation for compiled static segments, and ordered segment induction.
+# It also proves split/join preservation for nonempty slash-free segment lists
+# and that splitting a source produces slash-free segments. Its transitive
+# import octet-proofs.bend proves percent inversion for every octet list and
+# separator absence. These helpers are checked by this root verdict gate.
+# Still open: Unicode codec inversion and its connection to octet encoding,
+# propagation of split cleanliness through compilation, and matching induction.
 def pattern_match_remaining(+source: String, +pattern: Pattern.Pattern,
     compiled: {Pattern.compile(source) == Done{pattern} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>},
     +params: Pattern.Params,
