@@ -30,6 +30,11 @@ def copies(k: Nat, +r: P.Pattern) -> List<&2, P.Pattern>:
 def worst(k: Nat, n: Nat) -> P.Pattern:
   P.Repeat{P.seq(copies(k, P.Repeat{P.Class{[P.Range{97, 122}]}, 0n, Some{n}})), 0n, None{}}
 
+# A star over 30 copies of [a-z]{0,2}, then U+0000 U+0001. The literal's two
+# arcs have equal keys, so a table that merged arcs by key alone lost one.
+def collision() -> P.Pattern:
+  P.Cat{P.Repeat{P.seq(copies(30n, P.Repeat{P.Class{[P.Range{97, 122}]}, 0n, Some{2n}})), 0n, None{}}, P.Literal{SCon{Chr{0}, SCon{Chr{1}, ""}}}}
+
 def text(p: P.Pattern) -> S.Schema:
   S.StringSchema{0n, None{}, Some{p}, S.Plain{}}
 
@@ -54,6 +59,7 @@ def pattern_of(name: String) -> P.Pattern:
     case "worst-1x42": worst(42n, 1n)
     case "nested-10x11": P.Repeat{P.Repeat{a(), 0n, Some{10n}}, 0n, Some{11n}}
     case "starred-nested": P.Repeat{P.Repeat{P.Repeat{a(), 0n, Some{10n}}, 0n, Some{11n}}, 0n, None{}}
+    case "collision": collision()
     case "bad-pattern": P.Repeat{P.Class{[P.Range{122, 97}]}, 0n, None{}}
     case "bad-ascii": P.Repeat{P.Class{[P.Range{0, 128}]}, 0n, None{}}
     case "bad-count": P.Repeat{a(), 2n, Some{1n}}
@@ -85,6 +91,7 @@ def schema(name: String) -> S.Schema:
     case "worst-6x16": text(pattern_of("worst-6x16"))
     case "worst-1x42": text(pattern_of("worst-1x42"))
     case "starred-nested": text(pattern_of("starred-nested"))
+    case "collision": text(pattern_of("collision"))
     case "worst-short": S.StringSchema{0n, Some{1n}, Some{pattern_of("worst-6x16")}, S.Plain{}}
     case "bad-literal-pattern": text(pattern_of("bad-literal-pattern"))
     case "bad-nested-count": text(pattern_of("bad-nested-count"))
@@ -120,6 +127,23 @@ def decode(s: S.Schema, v: J.Json) -> Result<&2, &2, S.Errors(), S.Value>: S.dec
 def satisfies(s: S.Schema, v: J.Json) -> Bool: Spec.satisfies(s, v)
 def matches(p: P.Pattern, s: String) -> Bool: A.matches(p, s)
 def derive_matches(p: P.Pattern, s: String) -> Bool: P.matches(p, s)
+def pattern_size(p: P.Pattern) -> Nat: P.size(p)
+
+# Whether the automaton's table passes its check, so `A.matches` scans it
+# rather than falling back to the derivative matcher.
+def table_ok(+p: P.Pattern) -> Bool:
+  +bs = A.table_blocks(p)
+  A.fits4(bs) && A.check(bs, bs) && A.all_found(bs, A.linear(p))
+
+def table_nodes(p: P.Pattern) -> Nat:
+  List.length(&2, A.Node, List.concat(&2, A.Node, A.table_blocks(p)))
+
+# The two arcs of `collision()`'s literal: distinct, with equal keys.
+def distinct_equal_keys(+x: A.Arc, +y: A.Arc) -> Bool:
+  U32.is_eq(A.arc_hash(x), A.arc_hash(y)) && Bool.not(A.same_arc(x, y))
+
+def colliding_keys() -> Bool:
+  distinct_equal_keys(A.Arc{A.AChar{0}, P.Literal{SCon{Chr{1}, ""}}}, A.Arc{A.AChar{1}, P.Literal{""}})
 def pattern_spec(p: P.Pattern, s: String) -> Bool: Spec.matches(p, s)
 def source(p: P.Pattern) -> String: P.source(p)
 def pattern_valid(p: P.Pattern) -> Bool: P.valid(p)

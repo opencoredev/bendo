@@ -67,6 +67,21 @@ def and_assoc(+b: Bool, -h: Bool, -m: Bool) -> {((b && h) && m) == (b && (h && m
     case True{}: {==}
     case False{}: {==}
 
+# What `A.advance` computes in one pass: the union of the follow sets of a
+# live set's nodes.
+
+def gather_block(ns: List<&2, A.Node>, live: List<&2, Bool>, acc: A.W4) -> A.W4:
+  match ns live:
+    case Nil{} _: acc
+    case n <> t Nil{}: acc
+    case A.Node{h, x, f} <> t b <> u: gather_block(t, u, A.pick(b, f, acc))
+
+def gather(bs: List<&2, List<&2, A.Node>>, live: List<&2, List<&2, Bool>>, acc: A.W4) -> A.W4:
+  match bs live:
+    case Nil{} _: acc
+    case b <> t Nil{}: acc
+    case b <> t l <> u: gather(t, u, gather_block(b, l, acc))
+
 # Meaning. A follow set reads c then t; a live set reads a whole word.
 
 def arc_lang(x: A.Arc, +c: U32, +t: String) -> Bool:
@@ -349,23 +364,23 @@ def pick_lang(+all: List<&2, List<&2, A.Node>>, +b: Bool, +f: A.W4, +acc: A.W4, 
     case True{}: flang4_or(all, acc, f, c, t)
     case False{}: or_false(flang4(all, acc, c, t))
 
-def gather_block_lang(+all: List<&2, List<&2, A.Node>>, +ns: List<&2, A.Node>, +live: List<&2, Bool>, +acc: A.W4, +c: U32, +t: String) -> {flang4(all, A.gather_block(ns, live, acc), c, t) == (flang4(all, acc, c, t) || gl_block(all, ns, live, c, t)) : Bool}:
+def gather_block_lang(+all: List<&2, List<&2, A.Node>>, +ns: List<&2, A.Node>, +live: List<&2, Bool>, +acc: A.W4, +c: U32, +t: String) -> {flang4(all, gather_block(ns, live, acc), c, t) == (flang4(all, acc, c, t) || gl_block(all, ns, live, c, t)) : Bool}:
   match ns live:
     case Nil{} _: or_false(flang4(all, acc, c, t))
     case A.Node{h, x, f} <> r Nil{}: or_false(flang4(all, acc, c, t))
     case A.Node{h, x, f} <> r b <> u:
-      %or_assoc(flang4(all, acc, c, t), (b && flang4(all, f, c, t)), gl_block(all, r, u, c, t)) : {flang4(all, A.gather_block(A.Node{h, x, f} <> r, b <> u, acc), c, t) == _ : Bool}
-      %pick_lang(all, b, f, acc, c, t) : {flang4(all, A.gather_block(A.Node{h, x, f} <> r, b <> u, acc), c, t) == (_ || gl_block(all, r, u, c, t)) : Bool}
+      %or_assoc(flang4(all, acc, c, t), (b && flang4(all, f, c, t)), gl_block(all, r, u, c, t)) : {flang4(all, gather_block(A.Node{h, x, f} <> r, b <> u, acc), c, t) == _ : Bool}
+      %pick_lang(all, b, f, acc, c, t) : {flang4(all, gather_block(A.Node{h, x, f} <> r, b <> u, acc), c, t) == (_ || gl_block(all, r, u, c, t)) : Bool}
       gather_block_lang(all, r, u, A.pick(b, f, acc), c, t)
 
-def gather_lang(+all: List<&2, List<&2, A.Node>>, +bs: List<&2, List<&2, A.Node>>, +live: List<&2, List<&2, Bool>>, +acc: A.W4, +c: U32, +t: String) -> {flang4(all, A.gather(bs, live, acc), c, t) == (flang4(all, acc, c, t) || gl(all, bs, live, c, t)) : Bool}:
+def gather_lang(+all: List<&2, List<&2, A.Node>>, +bs: List<&2, List<&2, A.Node>>, +live: List<&2, List<&2, Bool>>, +acc: A.W4, +c: U32, +t: String) -> {flang4(all, gather(bs, live, acc), c, t) == (flang4(all, acc, c, t) || gl(all, bs, live, c, t)) : Bool}:
   match bs live:
     case Nil{} _: or_false(flang4(all, acc, c, t))
     case b <> r Nil{}: or_false(flang4(all, acc, c, t))
     case b <> r l <> u:
-      %or_assoc(flang4(all, acc, c, t), gl_block(all, b, l, c, t), gl(all, r, u, c, t)) : {flang4(all, A.gather(b <> r, l <> u, acc), c, t) == _ : Bool}
-      %gather_block_lang(all, b, l, acc, c, t) : {flang4(all, A.gather(b <> r, l <> u, acc), c, t) == (_ || gl(all, r, u, c, t)) : Bool}
-      gather_lang(all, r, u, A.gather_block(b, l, acc), c, t)
+      %or_assoc(flang4(all, acc, c, t), gl_block(all, b, l, c, t), gl(all, r, u, c, t)) : {flang4(all, gather(b <> r, l <> u, acc), c, t) == _ : Bool}
+      %gather_block_lang(all, b, l, acc, c, t) : {flang4(all, gather(b <> r, l <> u, acc), c, t) == (_ || gl(all, r, u, c, t)) : Bool}
+      gather_lang(all, r, u, gather_block(b, l, acc), c, t)
 
 def gl_good_block(+all: List<&2, List<&2, A.Node>>, +ns: List<&2, A.Node>, +live: List<&2, Bool>, +c: U32, +t: String, g: GoodB(all, ns, c, t)) -> {gl_block(all, ns, live, c, t) == lang_block(ns, live, SCon{Chr{c}, t}) : Bool}:
   match ns live:
@@ -432,16 +447,60 @@ def accept_lang(+bs: List<&2, List<&2, A.Node>>, +live: List<&2, List<&2, Bool>>
       %accept_lang(r, u) : {A.accept(b <> r, l <> u) == (A.accept_block(b, l) || _) : Bool}
       {==}
 
-# The scan keeps the live set's meaning: what it accepts of the rest.
-def run_lang(+s: String, +all: List<&2, List<&2, A.Node>>, +live: List<&2, List<&2, Bool>>, +ef: {A.fits4(all) == True{} : Bool}, +e: {A.check(all, all) == True{} : Bool}) -> {A.run(s, A.attach(all, all), live) == lang(A.attach(all, all), live, s) : Bool}:
+# One pass computes the follow set of the nodes that read a scalar.
+
+def advance_block_eq(+ns: List<&2, A.Node>, +w: U32, +c: U32, +g: A.W4) -> {A.advance_block(ns, w, c, g) == gather_block(ns, A.keep_block(ns, w, c), g) : A.W4}:
+  match ns:
+    case Nil{}: {==}
+    case A.Node{h, A.Arc{a, d}, f} <> t: advance_block_eq(t, (w >> 1n : U32), c, A.pick(A.low(w) && A.hit(a, c), f, g))
+
+def advance_eq(+bs: List<&2, List<&2, A.Node>>, +ws: List<&2, U32>, +c: U32, +g: A.W4) -> {A.advance(bs, ws, c, g) == gather(bs, A.keep(bs, ws, c), g) : A.W4}:
+  match bs ws:
+    case Nil{} _: {==}
+    case b <> t Nil{}: {==}
+    case b <> t w <> u:
+      %advance_block_eq(b, w, c, g) : {A.advance(t, u, c, A.advance_block(b, w, c, g)) == gather(t, A.keep(t, u, c), _) : A.W4}
+      advance_eq(t, u, c, A.advance_block(b, w, c, g))
+
+# An empty follow set means nothing.
+def dead_lang(+bs: List<&2, List<&2, A.Node>>, +x: A.W4, +c: U32, +t: String, +e: {A.w4_dead(x) == True{} : Bool}) -> {flang4(bs, x, c, t) == False{} : Bool}:
+  match x:
+    case A.W4{a, b, g, d}:
+      +abg = PP.and_l((U32.is_eq(a, 0) && U32.is_eq(b, 0)) && U32.is_eq(g, 0), U32.is_eq(d, 0), e)
+      +ab = PP.and_l(U32.is_eq(a, 0) && U32.is_eq(b, 0), U32.is_eq(g, 0), abg)
+      %Equal.sym(U32, a, 0, Laws.u32_eq_sound(a, 0, PP.and_l(U32.is_eq(a, 0), U32.is_eq(b, 0), ab))) : {flang4(bs, A.W4{_, b, g, d}, c, t) == False{} : Bool}
+      %Equal.sym(U32, b, 0, Laws.u32_eq_sound(b, 0, PP.and_r(U32.is_eq(a, 0), U32.is_eq(b, 0), ab))) : {flang4(bs, A.W4{0, _, g, d}, c, t) == False{} : Bool}
+      %Equal.sym(U32, g, 0, Laws.u32_eq_sound(g, 0, PP.and_r(U32.is_eq(a, 0) && U32.is_eq(b, 0), U32.is_eq(g, 0), abg))) : {flang4(bs, A.W4{0, 0, _, d}, c, t) == False{} : Bool}
+      %Equal.sym(U32, d, 0, Laws.u32_eq_sound(d, 0, PP.and_r((U32.is_eq(a, 0) && U32.is_eq(b, 0)) && U32.is_eq(g, 0), U32.is_eq(d, 0), e))) : {flang4(bs, A.W4{0, 0, 0, _}, c, t) == False{} : Bool}
+      flang_zeros(bs, 4n, c, t)
+
+# The live set's meaning after one more scalar is its follow set's meaning.
+def next_lang(+all: List<&2, List<&2, A.Node>>, +live: List<&2, List<&2, Bool>>, +c: U32, +t: String, +ef: {A.fits4(all) == True{} : Bool}, +e: {A.check(all, all) == True{} : Bool}) -> {flang4(A.attach(all, all), gather(A.attach(all, all), live, A.W4{0, 0, 0, 0}), c, t) == lang(A.attach(all, all), live, SCon{Chr{c}, t}) : Bool}:
+  %gl_good(A.attach(all, all), A.attach(all, all), live, c, t, good(all, all, c, t, ef, e)) : {flang4(A.attach(all, all), gather(A.attach(all, all), live, A.W4{0, 0, 0, 0}), c, t) == _ : Bool}
+  %flang_zeros(A.attach(all, all), 4n, c, t) : {flang4(A.attach(all, all), gather(A.attach(all, all), live, A.W4{0, 0, 0, 0}), c, t) == (_ || gl(A.attach(all, all), A.attach(all, all), live, c, t)) : Bool}
+  gather_lang(A.attach(all, all), A.attach(all, all), live, A.W4{0, 0, 0, 0}, c, t)
+
+# The scan keeps the meaning of the nodes that read the last scalar: what
+# they accept of the rest.
+def run_lang(+s: String, +all: List<&2, List<&2, A.Node>>, +ws: List<&2, U32>, +c: U32, dead: Bool, +ef: {A.fits4(all) == True{} : Bool}, +e: {A.check(all, all) == True{} : Bool}) -> {A.w4_dead(A.advance(A.attach(all, all), ws, c, A.W4{0, 0, 0, 0})) == dead : Bool} -> {A.run(s, A.attach(all, all), A.Scan{ws, c, A.advance(A.attach(all, all), ws, c, A.W4{0, 0, 0, 0}), dead}) == lang(A.attach(all, all), A.keep(A.attach(all, all), ws, c), s) : Bool}:
   match s:
-    case SNil{}: accept_lang(A.attach(all, all), live)
-    case SCon{Chr{c}, t}:
-      %gl_good(A.attach(all, all), A.attach(all, all), live, c, t, good(all, all, c, t, ef, e)) : {A.run(SCon{Chr{c}, t}, A.attach(all, all), live) == _ : Bool}
-      %flang_zeros(A.attach(all, all), 4n, c, t) : {A.run(SCon{Chr{c}, t}, A.attach(all, all), live) == (_ || gl(A.attach(all, all), A.attach(all, all), live, c, t)) : Bool}
-      %gather_lang(A.attach(all, all), A.attach(all, all), live, A.W4{0, 0, 0, 0}, c, t) : {A.run(SCon{Chr{c}, t}, A.attach(all, all), live) == _ : Bool}
-      %keep_lang(A.attach(all, all), A.w4_list(A.gather(A.attach(all, all), live, A.W4{0, 0, 0, 0})), c, t) : {A.run(SCon{Chr{c}, t}, A.attach(all, all), live) == _ : Bool}
-      run_lang(t, all, A.step(A.attach(all, all), live, c), ef, e)
+    case SNil{}: ed => accept_lang(A.attach(all, all), A.keep(A.attach(all, all), ws, c))
+    case SCon{Chr{k}, t}:
+      match dead:
+        case True{}: +ed =>
+          %next_lang(all, A.keep(A.attach(all, all), ws, c), k, t, ef, e) : {A.run(SCon{Chr{k}, t}, A.attach(all, all), A.Scan{ws, c, A.advance(A.attach(all, all), ws, c, A.W4{0, 0, 0, 0}), True{}}) == _ : Bool}
+          %advance_eq(A.attach(all, all), ws, c, A.W4{0, 0, 0, 0}) : {A.run(SCon{Chr{k}, t}, A.attach(all, all), A.Scan{ws, c, A.advance(A.attach(all, all), ws, c, A.W4{0, 0, 0, 0}), True{}}) == flang4(A.attach(all, all), _, k, t) : Bool}
+          Equal.sym(Bool, flang4(A.attach(all, all), A.advance(A.attach(all, all), ws, c, A.W4{0, 0, 0, 0}), k, t), False{}, dead_lang(A.attach(all, all), A.advance(A.attach(all, all), ws, c, A.W4{0, 0, 0, 0}), k, t, ed))
+        case False{}: ed =>
+          %next_lang(all, A.keep(A.attach(all, all), ws, c), k, t, ef, e) : {A.run(SCon{Chr{k}, t}, A.attach(all, all), A.Scan{ws, c, A.advance(A.attach(all, all), ws, c, A.W4{0, 0, 0, 0}), False{}}) == _ : Bool}
+          %advance_eq(A.attach(all, all), ws, c, A.W4{0, 0, 0, 0}) : {A.run(SCon{Chr{k}, t}, A.attach(all, all), A.Scan{ws, c, A.advance(A.attach(all, all), ws, c, A.W4{0, 0, 0, 0}), False{}}) == flang4(A.attach(all, all), _, k, t) : Bool}
+          %keep_lang(A.attach(all, all), A.w4_list(A.advance(A.attach(all, all), ws, c, A.W4{0, 0, 0, 0})), k, t) : {A.run(SCon{Chr{k}, t}, A.attach(all, all), A.Scan{ws, c, A.advance(A.attach(all, all), ws, c, A.W4{0, 0, 0, 0}), False{}}) == _ : Bool}
+          run_lang(t, all, A.w4_list(A.advance(A.attach(all, all), ws, c, A.W4{0, 0, 0, 0})), k, A.w4_dead(A.advance(A.attach(all, all), A.w4_list(A.advance(A.attach(all, all), ws, c, A.W4{0, 0, 0, 0})), k, A.W4{0, 0, 0, 0})), ef, e)({==})
+
+# Reading one scalar from a follow set, then the rest.
+def read_lang(+t: String, +all: List<&2, List<&2, A.Node>>, +ws: List<&2, U32>, +c: U32, +ef: {A.fits4(all) == True{} : Bool}, +e: {A.check(all, all) == True{} : Bool}) -> {A.run(t, A.attach(all, all), A.read(A.attach(all, all), ws, c)) == flang(A.attach(all, all), ws, c, t) : Bool}:
+  %keep_lang(A.attach(all, all), ws, c, t) : {A.run(t, A.attach(all, all), A.read(A.attach(all, all), ws, c)) == _ : Bool}
+  run_lang(t, all, ws, c, A.w4_dead(A.advance(A.attach(all, all), ws, c, A.W4{0, 0, 0, 0})), ef, e)({==})
 
 def scan_equiv(ok: Bool, +p: P.Pattern, +all: List<&2, List<&2, A.Node>>, +s: String) -> {((A.fits4(all) && A.check(all, all)) && A.all_found(all, A.linear(p))) == ok : Bool} -> {A.scan(ok, p, A.attach(all, all), A.follow_of(all, A.linear(p)), s) == Spec.matches(p, s) : Bool}:
   match ok s:
@@ -452,8 +511,7 @@ def scan_equiv(ok: Bool, +p: P.Pattern, +all: List<&2, List<&2, A.Node>>, +s: St
       %Equal.sym(Bool, Spec.matches(p, SCon{Chr{c}, t}), L.arcs_lang(A.linear(p), c, t), L.arcs_equiv(p, c, t)) : {A.scan(True{}, p, A.attach(all, all), A.follow_of(all, A.linear(p)), SCon{Chr{c}, t}) == _ : Bool}
       %follow_lang(all, A.linear(p), c, t, PP.and_r(A.fits4(all) && A.check(all, all), A.all_found(all, A.linear(p)), e)) : {A.scan(True{}, p, A.attach(all, all), A.follow_of(all, A.linear(p)), SCon{Chr{c}, t}) == _ : Bool}
       %flang_attach(all, all, A.follow_of(all, A.linear(p)), c, t) : {A.scan(True{}, p, A.attach(all, all), A.follow_of(all, A.linear(p)), SCon{Chr{c}, t}) == _ : Bool}
-      %keep_lang(A.attach(all, all), A.follow_of(all, A.linear(p)), c, t) : {A.scan(True{}, p, A.attach(all, all), A.follow_of(all, A.linear(p)), SCon{Chr{c}, t}) == _ : Bool}
-      run_lang(t, all, A.keep(A.attach(all, all), A.follow_of(all, A.linear(p)), c), PP.and_l(A.fits4(all), A.check(all, all), table), PP.and_r(A.fits4(all), A.check(all, all), table))
+      read_lang(t, all, A.follow_of(all, A.linear(p)), c, PP.and_l(A.fits4(all), A.check(all, all), table), PP.and_r(A.fits4(all), A.check(all, all), table))
 
 # The automaton matcher accepts exactly what the specification accepts.
 def matches_equiv(+p: P.Pattern, +s: String) -> {A.matches(p, s) == Spec.matches(p, s) : Bool}:

@@ -113,15 +113,15 @@ type Node is Data:
 
 # The closure. Unproven: its output is checked before use.
 
-# Keys alone decide what is new. A collision drops an arc; the check then
-# misses it and the derivative matcher runs instead.
-def known(ns: List<&2, Node>, +k: U32, found: Bool) -> Bool:
+# An arc is new unless a node has its key and the same arc, so arcs whose keys
+# collide are both kept.
+def known(ns: List<&2, Node>, +k: U32, +x: Arc, found: Bool) -> Bool:
   match ns:
     case Nil{}: found
     case Node{h, y, f} <> t:
       match found:
         case True{}: True{}
-        case False{}: known(t, k, U32.is_eq(h, k))
+        case False{}: known(t, k, x, same_keyed(U32.is_eq(h, k), y, x))
 
 def admit(seen: Bool, +k: U32, +x: Arc, all: List<&2, Node>, fresh: List<&2, Node>) -> List<&2, Node> & List<&2, Node>:
   match seen:
@@ -129,7 +129,7 @@ def admit(seen: Bool, +k: U32, +x: Arc, all: List<&2, Node>, fresh: List<&2, Nod
     case False{}: (Node{k, x, W4{0, 0, 0, 0}} <> all, Node{k, x, W4{0, 0, 0, 0}} <> fresh)
 
 def admit_one(+k: U32, +x: Arc, +all: List<&2, Node>, fresh: List<&2, Node>) -> List<&2, Node> & List<&2, Node>:
-  admit(known(all, k, False{}), k, x, all, fresh)
+  admit(known(all, k, x, False{}), k, x, all, fresh)
 
 def admit_pair(+k: U32, +x: Arc, acc: List<&2, Node> & List<&2, Node>) -> List<&2, Node> & List<&2, Node>:
   (all, fresh) = acc
@@ -251,7 +251,13 @@ def check(+all: List<&2, List<&2, Node>>, bs: List<&2, List<&2, Node>>) -> Bool:
     case Nil{}: True{}
     case b <> t: check_block(all, b) && check(all, t)
 
-# The scan. `live` holds one Bool per node, in blocks.
+# The scan. After each scalar it holds the words and the scalar just read,
+# the follow set of the nodes that read it, and whether that follow set is
+# empty. Once it is empty no longer text can match, so the scan stops instead
+# of reading the rest. Acceptance is decided once, at the end.
+
+type Scan is Data:
+  Scan{from: List<&2, U32>, last: U32, next: W4, dead: Bool}
 
 def low(+w: U32) -> Bool:
   U32.is_ne((w .&. 1 : U32), 0)
@@ -261,33 +267,17 @@ def pick(b: Bool, f: W4, acc: W4) -> W4:
     case True{}: w4_or(acc, f)
     case False{}: acc
 
-def gather_block(ns: List<&2, Node>, live: List<&2, Bool>, acc: W4) -> W4:
-  match ns live:
-    case Nil{} _: acc
-    case n <> t Nil{}: acc
-    case Node{h, x, f} <> t b <> u: gather_block(t, u, pick(b, f, acc))
-
-# The union of the follow sets of the live nodes.
-def gather(bs: List<&2, List<&2, Node>>, live: List<&2, List<&2, Bool>>, acc: W4) -> W4:
-  match bs live:
-    case Nil{} _: acc
-    case b <> t Nil{}: acc
-    case b <> t l <> u: gather(t, u, gather_block(b, l, acc))
-
 def keep_block(ns: List<&2, Node>, +w: U32, +c: U32) -> List<&2, Bool>:
   match ns:
     case Nil{}: []
     case Node{h, Arc{a, d}, f} <> t: (low(w) && hit(a, c)) <> keep_block(t, (w >> 1n : U32), c)
 
-# The nodes set in `next` whose atom reads c.
-def keep(bs: List<&2, List<&2, Node>>, next: List<&2, U32>, +c: U32) -> List<&2, List<&2, Bool>>:
-  match bs next:
+# The nodes set in `ws` whose atom reads c.
+def keep(bs: List<&2, List<&2, Node>>, ws: List<&2, U32>, +c: U32) -> List<&2, List<&2, Bool>>:
+  match bs ws:
     case Nil{} _: []
     case b <> t Nil{}: []
     case b <> t w <> u: keep_block(b, w, c) <> keep(t, u, c)
-
-def step(+bs: List<&2, List<&2, Node>>, live: List<&2, List<&2, Bool>>, +c: U32) -> List<&2, List<&2, Bool>>:
-  keep(bs, w4_list(gather(bs, live, W4{0, 0, 0, 0})), c)
 
 def accept_block(ns: List<&2, Node>, live: List<&2, Bool>) -> Bool:
   match ns live:
@@ -301,10 +291,34 @@ def accept(bs: List<&2, List<&2, Node>>, live: List<&2, List<&2, Bool>>) -> Bool
     case b <> t Nil{}: False{}
     case b <> t l <> u: accept_block(b, l) || accept(t, u)
 
-def run(s: String, +bs: List<&2, List<&2, Node>>, live: List<&2, List<&2, Bool>>) -> Bool:
-  match s:
-    case SNil{}: accept(bs, live)
-    case SCon{Chr{c}, t}: run(t, bs, step(bs, live, c))
+def advance_block(ns: List<&2, Node>, +w: U32, +c: U32, acc: W4) -> W4:
+  match ns:
+    case Nil{}: acc
+    case Node{h, Arc{a, d}, f} <> t: advance_block(t, (w >> 1n : U32), c, pick(low(w) && hit(a, c), f, acc))
+
+# The union of the follow sets of the nodes set in `ws` whose atom reads c.
+def advance(bs: List<&2, List<&2, Node>>, ws: List<&2, U32>, +c: U32, acc: W4) -> W4:
+  match bs ws:
+    case Nil{} _: acc
+    case b <> t Nil{}: acc
+    case b <> t w <> u: advance(t, u, c, advance_block(b, w, c, acc))
+
+# Whether a follow set is empty.
+def w4_dead(x: W4) -> Bool:
+  match x:
+    case W4{a, b, c, d}: U32.is_eq(a, 0) && U32.is_eq(b, 0) && U32.is_eq(c, 0) && U32.is_eq(d, 0)
+
+def settle(+ws: List<&2, U32>, +c: U32, +g: W4) -> Scan:
+  Scan{ws, c, g, w4_dead(g)}
+
+def read(+bs: List<&2, List<&2, Node>>, +ws: List<&2, U32>, +c: U32) -> Scan:
+  settle(ws, c, advance(bs, ws, c, W4{0, 0, 0, 0}))
+
+def run(s: String, +bs: List<&2, List<&2, Node>>, st: Scan) -> Bool:
+  match s st:
+    case SNil{} Scan{ws, c, g, d}: accept(bs, keep(bs, ws, c))
+    case SCon{Chr{c}, t} Scan{ws, e, g, True{}}: False{}
+    case SCon{Chr{c}, t} Scan{ws, e, g, False{}}: run(t, bs, read(bs, w4_list(g), c))
 
 # The table's nodes, 32 to a block.
 def table_blocks(+p: P.Pattern) -> List<&2, List<&2, Node>>:
@@ -314,7 +328,7 @@ def scan(ok: Bool, +p: P.Pattern, +bs: List<&2, List<&2, Node>>, start: List<&2,
   match ok s:
     case False{} _: P.matches(p, s)
     case True{} SNil{}: P.nullable(p)
-    case True{} SCon{Chr{c}, t}: run(t, bs, keep(bs, start, c))
+    case True{} SCon{Chr{c}, t}: run(t, bs, read(bs, start, c))
 
 # Whole-string match. Callers check `valid` first; invalid counts match nothing.
 def matches(+p: P.Pattern, s: String) -> Bool:

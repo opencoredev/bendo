@@ -497,11 +497,13 @@ test(
   SLOW_TEST_TIMEOUT_MS,
 );
 
+type RangeList =
+  | { $: "Nil" }
+  | { $: "Con"; head: { $: "Range"; lo: number; hi: number }; tail: RangeList };
 type PatternData =
-  | {
-      $: "Class";
-      ranges: { $: "Con"; head: { $: "Range"; lo: number; hi: number }; tail: { $: "Nil" } };
-    }
+  | { $: "Literal"; text: string }
+  | { $: "Class"; ranges: RangeList }
+  | { $: "Cat"; first: PatternData; second: PatternData }
   | {
       $: "Repeat";
       body: PatternData;
@@ -653,6 +655,132 @@ test(
       expect(call("matches", pattern, long + "A")).toBe(false);
       expect(performance.now() - started).toBeLessThan(20000);
     }
+  },
+  SLOW_TEST_TIMEOUT_MS,
+);
+
+test(
+  "arcs whose keys collide stay distinct, so the table is checked and scanned",
+  () => {
+    // The literal U+0000 U+0001 has two arcs with equal keys. Merging them by
+    // key dropped one, failed the check and fell back to the derivative
+    // matcher: 11 s natively to reject 1,000 scalars.
+    expect(call("colliding_keys")).toBe(true);
+    const pattern = call("pattern_of", "collision");
+    expect(call("pattern_valid", pattern)).toBe(true);
+    expect(call("table_ok", pattern)).toBe(true);
+    const tail = "\u0000\u0001";
+    for (const n of [1000, 100000]) {
+      const long = "a".repeat(n);
+      const reject = nativeTimed("collision", text(long));
+      expect(reject.out).toBe("error:Constraint");
+      expect(reject.ms).toBeLessThan(5000);
+      const accept = nativeTimed("collision", text(long + tail));
+      expect(accept.out).toBe(`ok:VString:${text(long + tail)}`);
+      expect(accept.ms).toBeLessThan(5000);
+      const started = performance.now();
+      expect(call("matches", pattern, long)).toBe(false);
+      expect(call("matches", pattern, long + tail)).toBe(true);
+      expect(performance.now() - started).toBeLessThan(5000);
+    }
+    for (const w of ["", tail, "ab" + tail, "a" + tail + "a", "\u0000", "A" + tail]) {
+      expect({ w, got: call("matches", pattern, w) }).toEqual({
+        w,
+        got: call("derive_matches", pattern, w),
+      });
+    }
+  },
+  SLOW_TEST_TIMEOUT_MS,
+);
+
+// Random patterns: small ones of every shape, and wide starred sequences near
+// the size cap like the collision case.
+function patternFuzz(seed: number): () => PatternData {
+  let state = seed;
+  const next = (n: number) => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state % n;
+  };
+  const scalars = ["a", "b", "z", "0", "-", "\u0000", "\u0001", "\u007f", "é", "😀"];
+  const ranges: [number, number][] = [
+    [97, 97],
+    [97, 122],
+    [48, 57],
+    [0, 1],
+    [98, 99],
+    [0, 127],
+  ];
+  const literal = (): PatternData => {
+    let value = "";
+    for (let n = next(4); n > 0; n--) value += scalars[next(scalars.length)] ?? "";
+    return { $: "Literal", text: value };
+  };
+  const pickRange = () => ranges[next(ranges.length)] ?? [97, 97];
+  const rangeList = (n: number): RangeList => {
+    if (n === 0) return { $: "Nil" };
+    const [lo, hi] = pickRange();
+    return { $: "Con", head: { $: "Range", lo, hi }, tail: rangeList(n - 1) };
+  };
+  const leaf = (): PatternData =>
+    next(2) === 0 ? literal() : { $: "Class", ranges: rangeList(1 + next(2)) };
+  const repeat = (body: PatternData): PatternData => {
+    const min = next(3);
+    const max: { $: "Some"; value: number } | { $: "None" } =
+      next(3) === 0 ? { $: "None" } : { $: "Some", value: min + next(5) };
+    return { $: "Repeat", body, min, max };
+  };
+  const small = (depth: number): PatternData => {
+    if (depth === 0) return leaf();
+    switch (next(3)) {
+      case 0:
+        return leaf();
+      case 1:
+        return { $: "Cat", first: small(depth - 1), second: small(depth - 1) };
+      default:
+        return repeat(small(depth - 1));
+    }
+  };
+  const wide = (): PatternData => {
+    // Sized to land at or just under the cap: each part adds n + 2 nodes.
+    const n = 1 + next(6);
+    const count = Math.max(1, Math.floor(124 / (n + 2)) - next(4));
+    const part = upTo({ $: "Class", ranges: rangeList(1) }, n);
+    let body: PatternData = part;
+    for (let i = 1; i < count; i++) body = { $: "Cat", first: part, second: body };
+    return { $: "Cat", first: anyCount(body), second: literal() };
+  };
+  return () => (next(3) === 0 ? wide() : small(1 + next(5)));
+}
+
+test(
+  "every generated in-cap pattern builds a checked table that agrees with the derivative matcher",
+  () => {
+    const gen = patternFuzz(20261023);
+    const words = ["", "a", "b", "ab", "aa", "a-", "\u0000\u0001", "zz0", "😀é", "aaaaaaa"];
+    let valid = 0;
+    let wide = 0;
+    let most = 0;
+    for (let i = 0; i < 1000; i++) {
+      const pattern = gen();
+      if (call("pattern_valid", pattern) !== true) continue;
+      valid++;
+      const size = call("pattern_size", pattern);
+      if (typeof size === "number" && size >= 96) wide++;
+      expect({ pattern, ok: call("table_ok", pattern) }).toEqual({ pattern, ok: true });
+      const nodes = call("table_nodes", pattern);
+      if (typeof nodes === "number") most = Math.max(most, nodes);
+      for (const w of words) {
+        expect({ pattern, w, got: call("matches", pattern, w) }).toEqual({
+          pattern,
+          w,
+          got: call("derive_matches", pattern, w),
+        });
+      }
+    }
+    // The run covers many valid patterns, many near the cap, and wide tables.
+    expect(valid).toBeGreaterThan(900);
+    expect(wide).toBeGreaterThan(250);
+    expect(most).toBeGreaterThan(64);
   },
   SLOW_TEST_TIMEOUT_MS,
 );

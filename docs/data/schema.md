@@ -119,18 +119,25 @@ The decoder matches with `A.matches(p, s)` from
 `src/data/schema-pattern-automaton.bend`. It first compiles the pattern into a
 table of nodes. Each node is one arc: an atom (a literal scalar or a class) and
 the residual pattern left to match after it, as Antimirov partial derivatives
-give them. The scan keeps one bit per live node and, for each scalar, ORs the
-follow sets of the live nodes and keeps the ones whose atom reads the scalar.
-A follow set is four 32-bit words, so the work per scalar is proportional to
-the node count and never to the size of a residual pattern. Every loop over the
-text is a tail call in native code and `.mjs`. There are no alternations,
-captures, backreferences, lookarounds, or negated classes.
+give them. A follow set is four 32-bit words with one bit per node. For each
+scalar, one pass over the nodes ORs the follow sets of the nodes that are set
+in the current follow set and whose atom reads the scalar. The work per scalar
+is proportional to the node count and never to the size of a residual pattern.
+Once the follow set is empty, no longer text can match and the scan stops
+without reading the rest. Whether the text matches is decided once, at the end,
+from the nodes that read the last scalar. Every loop over the text is a tail
+call in native code and `.mjs`. There are no alternations, captures,
+backreferences, lookarounds, or negated classes.
 
 The closure that builds the table is not trusted. Before the table is used, a
 check confirms that it has at most four blocks of 32 nodes and that every arc
 of every residual is one of its nodes. A table that fails the check is never
-used: `P.matches`, the proven derivative matcher, runs instead. No valid
-pattern found so far fails it.
+used: `P.matches`, the proven derivative matcher, runs instead. The closure
+compares arcs by key and then structurally, so two different arcs with equal
+keys both become nodes. No valid pattern is known to fail the check, but that
+is tested, not proven. `tests/schema.test.ts` builds tables for 1,000
+generated patterns, about a third of them near the size cap, and requires
+every one to pass. A failing pattern would still match correctly, only slower.
 
 ### Size cap
 
@@ -168,8 +175,9 @@ Boat sandbox (4 vCPU, one runtime thread), native code scans a mebibyte of
 Over 300 scalars, the derivative matcher took 8 to 13 ms per scalar on the
 starred sequences. `.mjs` is faster than native here: 0.9 to 2.8 seconds per
 mebibyte on the same shapes, measured on ms-a2. Building the table costs up to
-about 40 ms for the widest shapes and well under a millisecond for patterns like
-the slug and the ZIP code, and it is paid on every match.
+about 50 ms natively for the widest shapes and well under a millisecond for
+patterns like the slug and the ZIP code. The decoder builds it on every match,
+so a wide pattern costs that much per field per request even for a short text.
 
 String checks run cheapest first, so a text over `max_len` is rejected before
 the matcher starts. Express plain length limits with `min_len` and `max_len`,
