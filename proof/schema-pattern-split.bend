@@ -124,3 +124,9 @@ def append_any(+ps: List<&2, P.Pattern>, +qs: List<&2, P.Pattern>, +bound: Nat, 
       %or_assoc(Spec.mem(Spec.lang(p, bound), k, w), any_mem(t, bound, k, w), any_mem(qs, bound, k, w)) : {any_mem(List.append(&2, P.Pattern, p <> t, qs), bound, k, w) == _ : Bool}
       %append_any(t, qs, bound, k, w) : {any_mem(List.append(&2, P.Pattern, p <> t, qs), bound, k, w) == (Spec.mem(Spec.lang(p, bound), k, w) || _) : Bool}
       {==}
+
+# Public derivative-set semantics, with the canonical bound for each word.
+def any_matches(ps: List<&2, P.Pattern>, +w: String) -> Bool:
+  match ps:
+    case Nil{}: False{}
+    case p <> t: Spec.matches(p, w) || any_matches(t, w)

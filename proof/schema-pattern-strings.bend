@@ -71,3 +71,10 @@ def take_full(+w: String) -> {String.take(w, Spec.length(w)) == w : String}:
     case SCon{h, t}:
       %take_full(t) : {SCon{h, String.take(t, Spec.length(t))} == SCon{h, _} : String}
       {==}
+
+def length_eq(+w: String) -> {String.length(w) == Spec.length(w) : Nat}:
+  match w:
+    case SNil{}: {==}
+    case SCon{h, t}:
+      %length_eq(t) : {1n+String.length(t) == 1n+_ : Nat}
+      {==}
