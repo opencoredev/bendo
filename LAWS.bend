@@ -4,6 +4,8 @@
 import Base
 
 # BND-31
+import ./proof/cookie-ows-laws.bend as CookieOwsLaws
+import ./proof/cookie-serialization-laws.bend as CookieSerializationLaws
 import ./src/data/cookie.bend as Cookie
 import ./proof/cookie-spec.bend as CookieSpec
 import ./src/app/table.bend as Table

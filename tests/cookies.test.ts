@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { pathToFileURL } from "node:url";
-import { build, compile, start } from "./harness.ts";
+import { build, compile, start, SLOW_TEST_TIMEOUT_MS } from "./harness.ts";
 
 const output = compile("tests/fixtures/cookies/consumer.bend", "mjs");
 const binary = build("tests/servers/cookies.bend");
+const parseBinary = build("tests/fixtures/cookies/parse-native.bend");
 const module: unknown = await import(pathToFileURL(output).href);
 if (typeof module !== "object" || module === null || !("default" in module)) {
   throw new Error("Missing Bend exports");
@@ -93,6 +94,61 @@ describe("Cookie parsing", () => {
       if (valid) expect(parse(`name=${c}`)).toEqual(list([entry("name", c)]));
     }
   });
+});
+
+describe("large Cookie headers on both compiled targets", () => {
+  const cases = [
+    { label: "32,000-character value", pairs: [`a=${"x".repeat(32_000)}`] },
+    { label: "64,000-character value", pairs: [`a=${"x".repeat(64_000)}`] },
+    { label: "64,000-character name", pairs: [`${"a".repeat(64_000)}=x`] },
+    { label: "8,000 ordered pairs", pairs: Array.from({ length: 8_000 }, (_, i) => `a=${i}`) },
+  ];
+  for (const { label, pairs } of cases) {
+    test(
+      `.mjs parses ${label}`,
+      () => {
+        // Walk the list iteratively: deep matcher recursion must not mask parser failures.
+        let result: unknown = parse(pairs.join("; "));
+        for (const pair of pairs) {
+          if (
+            typeof result !== "object" ||
+            result === null ||
+            !("$" in result) ||
+            result.$ !== "Con" ||
+            !("head" in result) ||
+            !("tail" in result)
+          ) {
+            throw new Error("Expected another parsed cookie");
+          }
+          const separator = pair.indexOf("=");
+          expect(result.head).toEqual(entry(pair.slice(0, separator), pair.slice(separator + 1)));
+          result = result.tail;
+        }
+        expect(result).toEqual({ $: "Nil" });
+      },
+      SLOW_TEST_TIMEOUT_MS,
+    );
+
+    test(
+      `native parses ${label}`,
+      async () => {
+        const proc = Bun.spawn([parseBinary, pairs.join("; ")], {
+          stdout: "pipe",
+          stderr: "pipe",
+          timeout: SLOW_TEST_TIMEOUT_MS - 5_000,
+        });
+        const [stdout, stderr, exit] = await Promise.all([
+          new Response(proc.stdout).text(),
+          new Response(proc.stderr).text(),
+          proc.exited,
+        ]);
+        expect(stderr).toBe("");
+        expect(exit).toBe(0);
+        expect(stdout).toBe(`${pairs.join("\n")}\n`);
+      },
+      SLOW_TEST_TIMEOUT_MS,
+    );
+  }
 });
 
 describe("Set-Cookie validation and attributes", () => {

@@ -49,6 +49,11 @@ backslashes or control characters as values.
 The pure functions are `Cookie.parse(header) -> List<&2, Cookie.Entry>` and
 `Cookie.first(pairs, name) -> Maybe<&2, String>`.
 
+The pure parser uses accumulator scans for splitting, validation and collecting
+pairs. Native and `.mjs` regression tests cover 32,000- and 64,000-character
+values, a 64,000-character name and 8,000 ordered pairs. These are parser tests;
+the HTTP server's configured header limit still applies to network requests.
+
 ## Write cookies
 
 `B.set_cookie(c, name, value, options)` returns
@@ -100,6 +105,22 @@ not remove the original browser cookie.
 The generic form is `C.delete_cookie(Vars, c, name, options)`.
 `Cookie.deletion(options)` builds the corresponding pure options value.
 
-Run `bun run prove` and `bun test --timeout 30000 tests/cookies.test.ts` to check
-the universal pair roundtrip, checked default serialization, ordered-list
-roundtrip and native HTTP behavior, including raw `curl -i` Set-Cookie fields.
+Run `bun run prove` and
+`bun test --timeout 120000 tests/cookies.test.ts` to check the laws and both
+compiled targets, including raw `curl -i` Set-Cookie fields.
+
+The original pair, default-serialization and ordered-list laws remain in
+`LAWS.bend`. Its imported cookie law modules also cover ordered headers joined
+with `"; "`, arbitrary SP/HTAB padding before and after each pair, and full
+Set-Cookie serialization. `proof/cookie-ows-spec.bend` represents padding as any
+finite mixture of `Space` and `Tab`, selected separately for every pair and side.
+
+`proof/cookie-serialization-spec.bend` defines admissibility and the exact wire
+format independently of the implementation's validators and serializer.
+Serialization must succeed for every admissible name, value and options tuple,
+with attributes in the table's order, casing and spacing. A successful result
+must satisfy the independent Set-Cookie structure specification, including
+proof that every Path, Domain, Max-Age, Expires and SameSite payload excludes
+semicolons, CR and LF. Expires is copied verbatim after an independent
+fixed-width date and calendar check; weekday/date agreement remains outside
+this contract.

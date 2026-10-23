@@ -41,23 +41,43 @@ def value_valid(s: String) -> Bool:
     case SNil{}: True{}
     case SCon{Chr{c}, t}: octet(c) && value_valid(t)
 
+# Accumulate validity for untrusted, potentially long request values.
+def value_valid_go(s: String, ok: Bool) -> Bool:
+  match s:
+    case SNil{}: ok
+    case SCon{Chr{c}, t}: value_valid_go(t, ok && octet(c))
+
+def value_valid_fast(s: String) -> Bool:
+  value_valid_go(s, True{})
+
+def name_valid_go(s: String, ok: Bool) -> Bool:
+  match s:
+    case SNil{}: ok
+    case SCon{Chr{c}, t}: name_valid_go(t, ok && Bytes.tchar(c))
+
+def name_valid_fast(s: String) -> Bool:
+  match s:
+    case SNil{}: False{}
+    case SCon{Chr{c}, t}: name_valid_go(t, Bytes.tchar(c))
+
 # Unchecked wire pair; callers use serialize to validate external input.
 def serialize_pair(name: String, value: String) -> String:
   name ++ "=" ++ value
 
-def split_push(c: Char, parts: String & Maybe<&2, String>) -> String & Maybe<&2, String>:
-  (head, tail) = parts
-  (SCon{c, head}, tail)
-
-def split_step(h: Char, t: String, rest: String & Maybe<&2, String>, same: Bool) -> String & Maybe<&2, String>:
+# Scan to the first delimiter with a reversed prefix, then restore its order.
+def split_prefix(h: Char, rev: String, same: Bool) -> String:
   match same:
-    case True{}: ("", Some{t})
-    case False{}: split_push(h, rest)
+    case True{}: rev
+    case False{}: SCon{h, rev}
 
-def split(s: String, +sep: Char) -> String & Maybe<&2, String>:
-  match s:
-    case SNil{}: ("", None{})
-    case SCon{+h, +t}: split_step(h, t, split(t, sep), Char.is_eq(h, sep))
+def split_go(s: String, stop: Bool, +sep: Char, rev: String) -> String & Maybe<&2, String>:
+  match s stop:
+    case _ True{}: (String.reverse(rev), Some{s})
+    case SNil{} False{}: (String.reverse(rev), None{})
+    case SCon{+h, t} False{}: split_go(t, Char.is_eq(h, sep), sep, split_prefix(h, rev, Char.is_eq(h, sep)))
+
+def split(s: String, sep: Char) -> String & Maybe<&2, String>:
+  split_go(s, False{}, sep, "")
 
 def trim_start(s: String) -> String:
   match s:
@@ -86,7 +106,7 @@ def accepted(+name: String, +value: String, valid: Bool) -> Maybe<&2, Entry>:
 def pair_value(+name: String, value: Maybe<&2, String>) -> Maybe<&2, Entry>:
   match value:
     case None{}: None{}
-    case Some{+s}: accepted(name, s, name_valid(name) && value_valid(s))
+    case Some{+s}: accepted(name, s, name_valid_fast(name) && value_valid_fast(s))
 
 def pair_parts(parts: String & Maybe<&2, String>) -> Maybe<&2, Entry>:
   (name, value) = parts
@@ -102,13 +122,25 @@ def keep(p: Maybe<&2, Entry>, tail: List<&2, Entry>) -> List<&2, Entry>:
     case None{}: tail
     case Some{pair}: pair <> tail
 
-def parse_parts(parts: List<&2, String>) -> List<&2, Entry>:
+# Fold from right to left so both scans use constant JavaScript call depth.
+def segments_go(s: String, acc: List<&2, String>) -> List<&2, String>:
+  match s:
+    case SNil{}: acc
+    case SCon{+h, t}: segments_go(t, String.split.fin(h, acc, Char.is_eq(h, ';')))
+
+def segments(s: String) -> List<&2, String>:
+  segments_go(String.reverse(s), [""])
+
+def parse_parts_go(parts: List<&2, String>, acc: List<&2, Entry>) -> List<&2, Entry>:
   match parts:
-    case Nil{}: []
-    case s <> t: keep(parse_pair(s), parse_parts(t))
+    case Nil{}: acc
+    case s <> t: parse_parts_go(t, keep(parse_pair(s), acc))
+
+def parse_parts(parts: List<&2, String>) -> List<&2, Entry>:
+  parse_parts_go(List.reverse(&2, String, parts), [])
 
 def parse(s: String) -> List<&2, Entry>:
-  parse_parts(String.split(s, ';'))
+  parse_parts(segments(s))
 
 def first_pick(value: String, rest: Maybe<&2, String>, same: Bool) -> Maybe<&2, String>:
   match same:

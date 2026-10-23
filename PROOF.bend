@@ -2,6 +2,8 @@
 import Base
 
 # BND-31
+import ./proof/cookie-ows.bend as CookieOwsProof
+import ./proof/cookie-serialization.bend as CookieSerializationProof
 import ./proof/cookies.bend as CookieProof
 import ./src/app/table.bend as Table
 import ./proof/middleware-selection-spec.bend as MiddlewareSelectionSpec
