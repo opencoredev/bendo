@@ -298,43 +298,85 @@ def span_result(name: String, raw: String, tail: Maybe<&2, Params>) -> Maybe<&2,
     +value : String <- E.decode(raw)
     E.choose(Maybe<&2, Params>, value_ok(C.Any{}, value), u => put_capture(name, value, tail), u => None{})
 
-# Search budget bounds recursion depth, not the number of alternatives. Every
-# transition consumes one segment or path part, so this budget is sufficient.
-def search(fuel: Nat, +segs: List<&2, Segment>, +paths: List<&2, String>, +taken: List<&2, String>) -> Maybe<&2, Params>:
-  match fuel:
-    case 0n:
+# One result for each suffix of the request path, including the empty suffix.
+# Each pattern segment computes its row from the next segment's row. Glob
+# choices reuse these results instead of recursively rematching a suffix.
+def first_result(hits: List<&2, Maybe<&2, Params>>) -> Maybe<&2, Params>:
+  match hits:
+    case Nil{}:
       None{}
-    case 1n+ +f:
-      match segs paths:
-        case Nil{} Nil{}:
-          Some{Nil{}}
-        case Wildcard{name} <> Nil{} ps:
-          do Maybe<&2, Params>:
-            value : String <- E.decode(String.join(ps, "/"))
-            return [Param{name, value}]
-        case PrefixWildcard{prefix} <> Nil{} raw <> tail:
-          E.choose(Maybe<&2, Params>, String.starts_with(raw, prefix), u => Some{Nil{}}, u => None{})
-        case InteriorWildcard{} <> rest Nil{}:
-          search(f, rest, Nil{}, Nil{})
-        case InteriorWildcard{} <> rest raw <> tail:
-          prefer(search(f, rest, paths, Nil{}), u => search(f, segs, tail, Nil{}))
-        case Span{name} <> rest Nil{}:
-          span_result(name, String.join(taken, "/"), search(f, rest, Nil{}, Nil{}))
-        case Span{name} <> rest raw <> tail:
-          prefer(span_result(name, String.join(taken, "/"), search(f, rest, paths, Nil{})), u => search(f, segs, tail, List.append(&2, String, taken, [raw])))
-        case Capture{name, c, True{}} <> rest Nil{}:
-          search(f, rest, Nil{}, Nil{})
-        case Capture{name, +c, optional} <> rest raw <> tail:
-          do Maybe<&2, Params>:
-            +value : String <- E.decode(raw)
-            E.choose(Maybe<&2, Params>, value_ok(c, value), u => put_capture(name, value, search(f, rest, tail, Nil{})), u => None{})
-        case Static{raw} <> rest h <> tail:
-          E.choose(Maybe<&2, Params>, String.eq(raw, h), u => search(f, rest, tail, Nil{}), u => None{})
-        case _ _:
-          None{}
+    case Some{ps} <> rest:
+      Some{ps}
+    case None{} <> rest:
+      first_result(rest)
 
-def search_segments(+segs: List<&2, Segment>, +paths: List<&2, String>) -> Maybe<&2, Params>:
-  search(1n+Nat.add(List.length(&2, Segment, segs), List.length(&2, String, paths)), segs, paths, Nil{})
+def row_head(hits: List<&2, Maybe<&2, Params>>) -> Maybe<&2, Params>:
+  match hits:
+    case Nil{}:
+      None{}
+    case h <> t:
+      h
+
+def empty_rows(paths: List<&2, String>) -> List<&2, Maybe<&2, Params>>:
+  match paths:
+    case Nil{}:
+      [Some{Nil{}}]
+    case h <> t:
+      None{} <> empty_rows(t)
+
+# The next-row cells are already computed. Try increasing nonempty prefixes;
+# each alternative only decodes its prefix and reads one cell.
+def span_options(paths: List<&2, String>, hits: List<&2, Maybe<&2, Params>>, +name: String, +taken: List<&2, String>) -> Maybe<&2, Params>:
+  match paths hits:
+    case raw <> tail old <> +next:
+      +consumed = List.append(&2, String, taken, [raw])
+      prefer(span_result(name, String.join(consumed, "/"), row_head(next)), u => span_options(tail, next, name, consumed))
+    case _ _:
+      None{}
+
+def row_one(seg: Segment, +last: Bool, +paths: List<&2, String>, +hits: List<&2, Maybe<&2, Params>>) -> Maybe<&2, Params>:
+  match seg paths hits:
+    case Static{raw} h <> tail old <> next:
+      E.choose(Maybe<&2, Params>, String.eq(raw, h), u => row_head(next), u => None{})
+    case Capture{name, c, True{}} Nil{} cells:
+      row_head(cells)
+    case Capture{name, +c, optional} raw <> tail old <> next:
+      do Maybe<&2, Params>:
+        +value : String <- E.decode(raw)
+        E.choose(Maybe<&2, Params>, value_ok(c, value), u => put_capture(name, value, row_head(next)), u => None{})
+    case Wildcard{name} ps cells:
+      E.choose(Maybe<&2, Params>, last, u => (
+        do Maybe<&2, Params>:
+          value : String <- E.decode(String.join(ps, "/"))
+          return [Param{name, value}]
+      ), u => None{})
+    case InteriorWildcard{} ps cells:
+      first_result(cells)
+    case PrefixWildcard{prefix} raw <> tail cells:
+      E.choose(Maybe<&2, Params>, last && String.starts_with(raw, prefix), u => Some{Nil{}}, u => None{})
+    case Span{name} ps cells:
+      span_options(ps, cells, name, Nil{})
+    case _ _ _:
+      None{}
+
+def rows_for(+seg: Segment, +last: Bool, +paths: List<&2, String>, +hits: List<&2, Maybe<&2, Params>>) -> List<&2, Maybe<&2, Params>>:
+  match paths hits:
+    case Nil{} cells:
+      [row_one(seg, last, Nil{}, cells)]
+    case h <> +tail old <> +next:
+      row_one(seg, last, paths, hits) <> rows_for(seg, last, tail, next)
+    case h <> tail Nil{}:
+      Nil{}
+
+def match_rows(segs: List<&2, Segment>, +paths: List<&2, String>) -> List<&2, Maybe<&2, Params>>:
+  match segs:
+    case Nil{}:
+      empty_rows(paths)
+    case seg <> +rest:
+      rows_for(seg, List.is_empty(&2, Segment, rest), paths, match_rows(rest, paths))
+
+def search_segments(segs: List<&2, Segment>, paths: List<&2, String>) -> Maybe<&2, Params>:
+  row_head(match_rows(segs, paths))
 
 def match_segments(segs: List<&2, Segment>, paths: List<&2, String>) -> Maybe<&2, Params>:
   match segs paths:
