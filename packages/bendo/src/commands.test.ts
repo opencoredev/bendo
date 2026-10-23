@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { parseLeanPin } from "./doctor.ts";
 
 const cli = resolve(import.meta.dir, "cli.ts");
 const root = mkdtempSync(join(tmpdir(), "bendo-commands-"));
@@ -86,7 +87,56 @@ test("doctor never installs a missing pinned Lean toolchain", () => {
   expect(result.code).toBe(1);
   expect(existsSync(join(home, "toolchains"))).toBe(false);
   expect(result.out).toContain("lean: missing");
-  expect(result.out).toContain('elan toolchain install "$(cat lean-toolchain)"');
+  const pin = readFileSync(resolve(import.meta.dir, "../../../lean-toolchain"), "utf8").trim();
+  expect(result.out).toContain(`elan toolchain install '${pin}'`);
+});
+
+test("lean-toolchain pins parse the way elan names them", () => {
+  expect(parseLeanPin("leanprover/lean4:v4.34.0")).toEqual({
+    kind: "release",
+    name: "leanprover/lean4:v4.34.0",
+    version: "4.34.0",
+  });
+  expect(parseLeanPin("v4.34.0")).toEqual({
+    kind: "release",
+    name: "leanprover/lean4:v4.34.0",
+    version: "4.34.0",
+  });
+  expect(parseLeanPin("4.35.0-rc1")).toEqual({
+    kind: "release",
+    name: "leanprover/lean4:v4.35.0-rc1",
+    version: "4.35.0-rc1",
+  });
+  expect(parseLeanPin("nightly")).toEqual({ kind: "official", name: "leanprover/lean4:nightly" });
+  expect(parseLeanPin("leanprover/lean4:nightly-2026-10-01")).toEqual({
+    kind: "official",
+    name: "leanprover/lean4:nightly-2026-10-01",
+  });
+  expect(parseLeanPin("local-linked")).toEqual({ kind: "custom", name: "local-linked" });
+  expect(parseLeanPin("a b'c")).toEqual({ kind: "invalid", text: "a b'c" });
+});
+
+test("doctor checks shorthand, channel and linked Lean pins without failing", () => {
+  for (const [text, directory, reported] of [
+    ["v4.99.0", "leanprover--lean4---v4.99.0", "Lean (version 4.99.0, x86_64)"],
+    ["nightly", "leanprover--lean4---nightly", "Lean (version 4.100.0-nightly, x86_64)"],
+    ["local-linked", "local-linked", "Lean (version 4.34.0, x86_64)"],
+  ] as const) {
+    const project = join(root, `pin-${directory}`);
+    mkdirSync(project);
+    writeFileSync(join(project, ".bend-version"), "2.8.9\n");
+    writeFileSync(join(project, "lean-toolchain"), `${text}\n`);
+    fake(project, "bend", "bend 2.8.9");
+    fake(project, "elan", "elan 4.2.4");
+    fake(project, "clang", "clang version 18.1.3");
+    fake(project, "bun", "1.4.4");
+    const home = join(project, ".elan");
+    const bin = join(home, "toolchains", directory, "bin");
+    mkdirSync(bin, { recursive: true });
+    fake(bin, "lean", reported);
+    const result = run(["doctor"], project, { ...hidden, PATH: project, ELAN_HOME: home });
+    expect({ text, code: result.code, out: result.out }).toMatchObject({ text, code: 0 });
+  }
 });
 
 test("doctor selects pinned Lean outside a project without a global default", () => {

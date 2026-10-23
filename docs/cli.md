@@ -46,7 +46,11 @@ Every command supports `--help`.
   It reports the number of routes. Type generation lands in BND-56; this command
   currently writes no type files or placeholders.
 - `bendo doctor` checks Bend, elan, Lean, clang, and Bun, printing versions and
-  paths. Bend must match `.bend-version`; Lean must match `lean-toolchain`.
+  paths. Bend must match `.bend-version`; Lean must match `lean-toolchain`. A
+  versioned pin (`leanprover/lean4:v4.34.0`, `v4.34.0`) is compared with the
+  version Lean reports; a channel (`nightly`) or custom/linked toolchain only has
+  to be installed. Doctor reads the installed toolchain directly, so it never
+  downloads one.
   Pins come from the current directory when present, otherwise the toolkit checkout.
   Lean is selected explicitly from that pin, so no global elan default is needed.
   Lean is selected explicitly from that pin, so no global elan default is needed.

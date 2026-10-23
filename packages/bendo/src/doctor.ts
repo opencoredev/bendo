@@ -16,17 +16,56 @@ function pin(name: string): string {
   ).trim();
 }
 
+/**
+ * A `lean-toolchain` pin as elan reads it. Official names expand to
+ * `leanprover/lean4:<name>`; a release carries the version Lean reports.
+ * Anything else is a custom or linked toolchain, kept as written.
+ */
+type LeanPin =
+  | { kind: "release"; name: string; version: string }
+  | { kind: "official"; name: string }
+  | { kind: "custom"; name: string }
+  | { kind: "invalid"; text: string };
+
+export function parseLeanPin(text: string): LeanPin {
+  const release = /^(?:leanprover\/lean4:)?v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)$/.exec(text);
+  if (release?.[1] !== undefined)
+    return { kind: "release", name: `leanprover/lean4:v${release[1]}`, version: release[1] };
+  const channel = /^(?:leanprover\/lean4:)?((?:stable|beta|nightly)(?:-\d{4}-\d{2}-\d{2})?)$/.exec(
+    text,
+  );
+  if (channel?.[1] !== undefined)
+    return { kind: "official", name: `leanprover/lean4:${channel[1]}` };
+  if (/^[0-9A-Za-z][0-9A-Za-z._+-]*$/.test(text)) return { kind: "custom", name: text };
+  return { kind: "invalid", text };
+}
+
 export function doctor(): number {
   let problems = 0;
-  const leanPin = pin("lean-toolchain");
-  if (!/^leanprover\/lean4:v[0-9A-Za-z.+-]+$/.test(leanPin))
-    throw new Error("Invalid lean-toolchain: expected leanprover/lean4:v<version>");
-  const leanInstall = 'elan toolchain install "$(cat lean-toolchain)"';
+  const leanPin = parseLeanPin(pin("lean-toolchain"));
+  let leanName: string;
+  let leanVersion: string | null;
+  switch (leanPin.kind) {
+    case "release":
+      leanName = leanPin.name;
+      leanVersion = leanPin.version;
+      break;
+    case "official":
+    case "custom":
+      leanName = leanPin.name;
+      leanVersion = null;
+      break;
+    case "invalid":
+      console.log(`lean: unreadable lean-toolchain pin ${JSON.stringify(leanPin.text)}`);
+      return 1;
+  }
+  // The name is validated above, so single quotes make it a literal shell word.
+  const leanInstall = `elan toolchain install '${leanName}'`;
   // Resolve the installed binary directly: an elan proxy can install even for --version.
   const leanPath = resolve(
     process.env.ELAN_HOME ?? resolve(homedir(), ".elan"),
     "toolchains",
-    leanPin.replaceAll("/", "--").replace(":", "---"),
+    leanName.replaceAll("/", "--").replace(":", "---"),
     "bin/lean",
   );
   const bend = findBend();
@@ -52,7 +91,7 @@ export function doctor(): number {
       path: Bun.which(leanPath),
       args: ["--version"],
       pattern: /^Lean \(version (\d+\.\d+\.\d+(?:-[\w.]+)?)/m,
-      expected: leanPin.replace(/^leanprover\/lean4:v/, ""),
+      expected: leanVersion,
       install: `${elanInstall} && ${leanInstall}`,
     },
     {
