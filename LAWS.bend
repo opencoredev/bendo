@@ -2,7 +2,16 @@
 # Agents may add laws. Never delete or weaken one without a written reason
 # in the pull request.
 import Base
+
+# BND-31
+import ./proof/cookie-ows-laws.bend as CookieOwsLaws
+import ./proof/cookie-serialization-laws.bend as CookieSerializationLaws
+import ./src/data/cookie.bend as Cookie
+import ./proof/cookie-spec.bend as CookieSpec
+
+# BND-25
 import ./src/app/errors.bend as Errors
+
 import ./src/app/table.bend as Table
 import ./proof/middleware-selection-spec.bend as MiddlewareSelectionSpec
 import ./src/app/middleware.bend as Middleware
@@ -982,6 +991,28 @@ law methods_router_resolve:
   for +method: Request.Method
   for +opts: Methods.Options
   {Methods.resolve_with(T, kind, Methods.prepare(T, table), path, method, opts) == Methods.resolve(T, table, path, method, opts) : Methods.Resolution<T>}
+
+# BND-31: independently admissible cookie names and raw cookie-octet values.
+
+law cookies_pair_roundtrip:
+  for +name: String
+  for +value: String
+  for name_valid: {Cookie.name_valid(name) == True{} : Bool}
+  for value_valid: {Cookie.value_valid(value) == True{} : Bool}
+  {Cookie.parse(Cookie.serialize_pair(name, value)) == [Cookie.Entry{name, value}] : List<&2, Cookie.Entry>}
+
+law cookies_defaults_checked:
+  for +name: String
+  for +value: String
+  for name_valid: {Cookie.name_valid(name) == True{} : Bool}
+  for value_valid: {Cookie.value_valid(value) == True{} : Bool}
+  {Cookie.serialize(name, value, Cookie.defaults()) == Done{Cookie.serialize_pair(name, value)} : Result<&2, &2, Cookie.Error, String>}
+
+# BND-31: the complete ordered Cookie header, including repeated names.
+law cookies_ordered_list_roundtrip:
+  for +entries: List<&2, Cookie.Entry>
+  for valid: {CookieSpec.entries_valid(entries) == True{} : Bool}
+  {Cookie.parse(String.join(CookieSpec.pairs(entries), ";")) == entries : List<&2, Cookie.Entry>}
 
 # BND-25: a private HTTP failure's message is independent of its internal text.
 law http_error_private_message:

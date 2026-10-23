@@ -10,6 +10,8 @@ import ../data/json.bend as Json
 import ./observability.bend as Obs
 import ./errors.bend as Errors
 
+import ../data/cookie.bend as Cookie
+
 type Ctx<-Vars: Data> is Data:
   Ctx{req: Request.Req, params: Pattern.Params, body: List<&2, U32>, pairs: List<&2, Query.Entry>, code: U32, headers: List<&2, Request.Header>, vars: Maybe<&2, Vars>, observation: Obs.State}
 
@@ -210,3 +212,44 @@ def with_observation(-Vars: Data, c: Ctx<Vars>, o: Obs.State) -> Ctx<Vars>:
 
 def request_id(-Vars: Data, c: Ctx<Vars>) -> Maybe<&2, String>:
   Obs.id(observation(Vars, c))
+
+# Cookie fields are parsed separately, in arrival order, without comma joining.
+def cookie_ascii_go(bytes: List<&2, U32>, acc: String) -> String:
+  match bytes:
+    case Nil{}: String.reverse(acc)
+    case h <> t: cookie_ascii_go(t, SCon{Chr{h}, acc})
+
+def cookie_fields_go(fields: List<&2, List<&2, U32>>, acc: List<&2, Cookie.Entry>) -> List<&2, Cookie.Entry>:
+  match fields:
+    case Nil{}: List.reverse(&2, Cookie.Entry, acc)
+    case bytes <> tail:
+      cookie_fields_go(tail, List.reverse.go(&2, Cookie.Entry, Cookie.parse(cookie_ascii_go(bytes, "")), acc))
+
+def cookie_fields(fields: List<&2, List<&2, U32>>) -> List<&2, Cookie.Entry>:
+  cookie_fields_go(fields, [])
+
+def cookie_headers_go(headers: List<&2, Request.Header>, acc: List<&2, List<&2, U32>>) -> List<&2, List<&2, U32>>:
+  match headers:
+    case Nil{}: List.reverse(&2, List<&2, U32>, acc)
+    case Request.Header{name, value} <> tail:
+      cookie_headers_go(tail, Request.lookup_step(value, acc, String.eq(name, "cookie")))
+
+def cookies(-Vars: Data, c: Ctx<Vars>) -> List<&2, Cookie.Entry>:
+  Ctx{Request.Req{m, p, q, ver, hs}, ps, b, pairs, s, out, v, o} = c
+  cookie_fields(cookie_headers_go(hs, []))
+
+def cookie(-Vars: Data, c: Ctx<Vars>, name: String) -> Maybe<&2, String>:
+  Cookie.first(cookies(Vars, c), name)
+
+def cookie_result(-Vars: Data, c: Ctx<Vars>, result: Result<&2, &2, Cookie.Error, String>) -> Result<&2, &2, Cookie.Error, Ctx<Vars>>:
+  Ctx{r, p, b, q, s, hs, v, o} = c
+  match result:
+    case Fail{error}: Fail{error}
+    case Done{value}:
+      Done{Ctx{r, p, b, q, s, List.append(&2, Request.Header, hs, [Request.Header{"set-cookie", Response.utf8(value)}]), v, o}}
+
+def set_cookie(-Vars: Data, c: Ctx<Vars>, name: String, value: String, options: Cookie.Options) -> Result<&2, &2, Cookie.Error, Ctx<Vars>>:
+  cookie_result(Vars, c, Cookie.serialize(name, value, options))
+
+def delete_cookie(-Vars: Data, c: Ctx<Vars>, name: String, options: Cookie.Options) -> Result<&2, &2, Cookie.Error, Ctx<Vars>>:
+  set_cookie(Vars, c, name, "", Cookie.deletion(options))
