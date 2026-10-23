@@ -1,5 +1,6 @@
 # Request-local framework metadata; separate from application variables.
 import Base
+import ../http/stream_types.bend as StreamTypes
 import ../mw/response_policy.bend as Policy
 import ./store.bend as Store
 import ../http/request.bend as Request
@@ -12,22 +13,22 @@ type Mark is Data:
   Mark{name: String, duration_ms: Nat}
 
 type State is Data:
-  State{id: Maybe<&2, String>, timing: Maybe<&2, Store.Store<List<&2, Mark>>>, finalized: Maybe<&2, Chan(Maybe<&2, String>)>, policies: Maybe<&2, Chan(List<&2, Policy.Policy>)>}
+  State{id: Maybe<&2, String>, timing: Maybe<&2, Store.Store<List<&2, Mark>>>, finalized: Maybe<&2, Chan(Maybe<&2, String>)>, policies: Maybe<&2, Chan(List<&2, Policy.Policy>)>, stream: Maybe<&2, Chan(StreamTypes.Registration)>}
 
 def empty() -> State:
-  State{None{}, None{}, None{}, None{}}
+  State{None{}, None{}, None{}, None{}, None{}}
 
 def id(state: State) -> Maybe<&2, String>:
-  State{id, timing, finalized, policies} = state
+  State{id, timing, finalized, policies, stream} = state
   id
 
 def timing(state: State) -> Maybe<&2, Store.Store<List<&2, Mark>>>:
-  State{id, timing, finalized, policies} = state
+  State{id, timing, finalized, policies, stream} = state
   timing
 
 def with_id(state: State, id: String) -> State:
-  State{old, timing, finalized, policies} = state
-  State{Some{id}, timing, finalized, policies}
+  State{old, timing, finalized, policies, stream} = state
+  State{Some{id}, timing, finalized, policies, stream}
 
 # Final response fields win, including mixed-case names. Only fill missing fields.
 def has_header(hs: List<&2, Request.Header>, +name: String) -> Bool:
@@ -98,7 +99,7 @@ def timed(res: Response.Res, got: Poll<&1, &1, Maybe<&1, Maybe<&2, String>>, Uni
 # The timing owner publishes once after next returns. Consume and close its
 # request-local mailbox after hooks and validation, before observers or transport.
 def finalized_timing(state: State, res: Response.Res) -> IO(Response.Res):
-  State{id, timing, finalized, policies} = state
+  State{id, timing, finalized, policies, stream} = state
   match finalized:
     case None{}: IO.pure(Response.Res, request_id(res, id))
     case Some{+channel}:
@@ -110,8 +111,8 @@ def finalized_timing(state: State, res: Response.Res) -> IO(Response.Res):
 # One request owns this mailbox. Immutable context copies share its policies,
 # so short-circuits and response hooks need not forward a new context.
 def with_policies(state: State, channel: Chan(List<&2, Policy.Policy>)) -> State:
-  State{id, timing, finalized, old} = state
-  State{id, timing, finalized, Some{channel}}
+  State{id, timing, finalized, old, stream} = state
+  State{id, timing, finalized, Some{channel}, stream}
 
 def recorded(+channel: Chan(List<&2, Policy.Policy>), policy: Policy.Policy, got: Maybe<&1, List<&2, Policy.Policy>>) -> IO(Unit):
   match got:
@@ -122,7 +123,7 @@ def recorded(+channel: Chan(List<&2, Policy.Policy>), policy: Policy.Policy, got
         return Unit{}
 
 def retain(state: State, policy: Policy.Policy) -> IO(Unit):
-  State{id, timing, finalized, policies} = state
+  State{id, timing, finalized, policies, stream} = state
   match policies:
     case None{}: IO.pure(Unit, Unit{})
     case Some{+channel}:
@@ -145,7 +146,16 @@ def finalized_policies(policies: Maybe<&2, Chan(List<&2, Policy.Policy>)>, res: 
         return applied(got, res)
 
 def finalize(+state: State, res: Response.Res) -> IO(Response.Res):
-  State{id, timing, finalized, policies} = state
+  State{id, timing, finalized, policies, stream} = state
   do IO<Response.Res>:
     decorated : Response.Res <- finalized_policies(policies, res)
     finalized_timing(state, decorated)
+
+# Transport metadata survives policy and timing updates.
+def stream(state: State) -> Maybe<&2, Chan(StreamTypes.Registration)>:
+  State{id, timing, finalized, policies, stream} = state
+  stream
+
+def with_stream(state: State, stream: Chan(StreamTypes.Registration)) -> State:
+  State{id, timing, finalized, policies, old} = state
+  State{id, timing, finalized, policies, Some{stream}}
