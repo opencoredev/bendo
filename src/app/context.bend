@@ -10,6 +10,7 @@ import ../data/json.bend as Json
 import ./observability.bend as Obs
 
 import ../data/cookie.bend as Cookie
+import ../data/signed-cookie.bend as SignedCookie
 
 type Ctx<-Vars: Data> is Data:
   Ctx{req: Request.Req, params: Pattern.Params, body: List<&2, U32>, pairs: List<&2, Query.Entry>, code: U32, headers: List<&2, Request.Header>, vars: Maybe<&2, Vars>, observation: Obs.State}
@@ -217,3 +218,10 @@ def set_cookie(-Vars: Data, c: Ctx<Vars>, name: String, value: String, options: 
 
 def delete_cookie(-Vars: Data, c: Ctx<Vars>, name: String, options: Cookie.Options) -> Result<&2, &2, Cookie.Error, Ctx<Vars>>:
   set_cookie(Vars, c, name, "", Cookie.deletion(options))
+
+# Signed-cookie setters share the ordinary cookie response/error path.
+def set_signed_cookie(-Vars: Data, c: Ctx<Vars>, name: String, value: String, keys: SignedCookie.Keys, options: Cookie.Options) -> Result<&2, &2, Cookie.Error, Ctx<Vars>>:
+  cookie_result(Vars, c, SignedCookie.serialize(name, value, keys, options))
+
+def signed_cookie(-Vars: Data, c: Ctx<Vars>, name: String, keys: SignedCookie.Keys) -> Maybe<&2, String>:
+  SignedCookie.read(keys, cookie(Vars, c, name))
