@@ -1,0 +1,227 @@
+[
+  {
+    "name": "missing method",
+    "raw": " / HTTP/1.1\r\n\r\n",
+    "error": "InvalidMethod"
+  },
+  {
+    "name": "method parentheses",
+    "raw": "GE(T / HTTP/1.1\r\n\r\n",
+    "error": "InvalidMethod"
+  },
+  {
+    "name": "method at sign",
+    "raw": "G@T / HTTP/1.1\r\n\r\n",
+    "error": "InvalidMethod"
+  },
+  {
+    "name": "method colon",
+    "raw": "GE:T / HTTP/1.1\r\n\r\n",
+    "error": "InvalidMethod"
+  },
+  {
+    "name": "missing version",
+    "raw": "GET /\r\n\r\n",
+    "error": "InvalidRequestLine"
+  },
+  {
+    "name": "extra word",
+    "raw": "GET / HTTP/1.1 extra\r\n\r\n",
+    "error": "InvalidRequestLine"
+  },
+  {
+    "name": "double space",
+    "raw": "GET  / HTTP/1.1\r\n\r\n",
+    "error": "InvalidRequestLine"
+  },
+  {
+    "name": "trailing space",
+    "raw": "GET / HTTP/1.1 \r\n\r\n",
+    "error": "InvalidRequestLine"
+  },
+  {
+    "name": "empty target",
+    "raw": "GET  HTTP/1.1\r\n\r\n",
+    "error": "UnsupportedTarget"
+  },
+  {
+    "name": "HTTP 2",
+    "raw": "GET / HTTP/2.0\r\n\r\n",
+    "error": "InvalidVersion"
+  },
+  {
+    "name": "lowercase HTTP",
+    "raw": "GET / http/1.1\r\n\r\n",
+    "error": "InvalidVersion"
+  },
+  {
+    "name": "HTTP 1.2",
+    "raw": "GET / HTTP/1.2\r\n\r\n",
+    "error": "InvalidVersion"
+  },
+  {
+    "name": "version suffix",
+    "raw": "GET / HTTP/1.1x\r\n\r\n",
+    "error": "InvalidVersion"
+  },
+  {
+    "name": "absolute form",
+    "raw": "GET http://example.test/a HTTP/1.1\r\n\r\n",
+    "error": "UnsupportedTarget"
+  },
+  {
+    "name": "authority form",
+    "raw": "CONNECT example.test:443 HTTP/1.1\r\n\r\n",
+    "error": "UnsupportedTarget"
+  },
+  {
+    "name": "relative target",
+    "raw": "GET relative HTTP/1.1\r\n\r\n",
+    "error": "UnsupportedTarget"
+  },
+  {
+    "name": "wrong asterisk method",
+    "raw": "GET * HTTP/1.1\r\n\r\n",
+    "error": "UnsupportedTarget"
+  },
+  {
+    "name": "fragment",
+    "raw": "GET /a#b HTTP/1.1\r\n\r\n",
+    "error": "InvalidTarget"
+  },
+  {
+    "name": "percent unfinished",
+    "raw": "GET /a% HTTP/1.1\r\n\r\n",
+    "error": "InvalidTarget"
+  },
+  {
+    "name": "percent short",
+    "raw": "GET /a%2 HTTP/1.1\r\n\r\n",
+    "error": "InvalidTarget"
+  },
+  {
+    "name": "percent invalid",
+    "raw": "GET /a%XZ HTTP/1.1\r\n\r\n",
+    "error": "InvalidTarget"
+  },
+  {
+    "name": "backslash",
+    "raw": "GET /a\\b HTTP/1.1\r\n\r\n",
+    "error": "InvalidTarget"
+  },
+  {
+    "name": "query fragment",
+    "raw": "GET /?a#b HTTP/1.1\r\n\r\n",
+    "error": "InvalidTarget"
+  },
+  {
+    "name": "query invalid percent",
+    "raw": "GET /?a=%XX HTTP/1.1\r\n\r\n",
+    "error": "InvalidTarget"
+  },
+  {
+    "name": "request tab",
+    "raw": "GET\t/ HTTP/1.1\r\n\r\n",
+    "error": "InvalidOctet"
+  },
+  {
+    "name": "target nonascii",
+    "raw": "GET /\u00c3\u00a9 HTTP/1.1\r\n\r\n",
+    "error": "InvalidOctet"
+  },
+  {
+    "name": "missing colon",
+    "raw": "GET / HTTP/1.1\r\nBroken\r\n\r\n",
+    "error": "InvalidHeaderName"
+  },
+  {
+    "name": "space before colon",
+    "raw": "GET / HTTP/1.1\r\nHost : x\r\n\r\n",
+    "error": "InvalidHeaderName"
+  },
+  {
+    "name": "tab before colon",
+    "raw": "GET / HTTP/1.1\r\nHost\t: x\r\n\r\n",
+    "error": "InvalidHeaderName"
+  },
+  {
+    "name": "empty name",
+    "raw": "GET / HTTP/1.1\r\n: x\r\n\r\n",
+    "error": "InvalidHeaderName"
+  },
+  {
+    "name": "name parentheses",
+    "raw": "GET / HTTP/1.1\r\nX(Y: x\r\n\r\n",
+    "error": "InvalidHeaderName"
+  },
+  {
+    "name": "name nonascii",
+    "raw": "GET / HTTP/1.1\r\nX\u00ff: x\r\n\r\n",
+    "error": "InvalidHeaderName"
+  },
+  {
+    "name": "obs fold space",
+    "raw": "GET / HTTP/1.1\r\n continuation\r\n\r\n",
+    "error": "ObsFold"
+  },
+  {
+    "name": "obs fold tab",
+    "raw": "GET / HTTP/1.1\r\n\tcontinuation\r\n\r\n",
+    "error": "ObsFold"
+  },
+  {
+    "name": "value NUL",
+    "raw": "GET / HTTP/1.1\r\nX: a\u0000b\r\n\r\n",
+    "error": "InvalidOctet"
+  },
+  {
+    "name": "value DEL",
+    "raw": "GET / HTTP/1.1\r\nX: a\u007fb\r\n\r\n",
+    "error": "InvalidOctet"
+  },
+  {
+    "name": "value vertical tab",
+    "raw": "GET / HTTP/1.1\r\nX: a\u000bb\r\n\r\n",
+    "error": "InvalidOctet"
+  },
+  {
+    "name": "value form feed",
+    "raw": "GET / HTTP/1.1\r\nX: a\fb\r\n\r\n",
+    "error": "InvalidOctet"
+  },
+  {
+    "name": "bare LF header",
+    "raw": "GET / HTTP/1.1\r\nX: a\nb\r\n\r\n",
+    "error": "InvalidLineEnding"
+  },
+  {
+    "name": "bare CR header",
+    "raw": "GET / HTTP/1.1\r\nX: a\rb\r\n\r\n",
+    "error": "InvalidLineEnding"
+  },
+  {
+    "name": "bare LF request",
+    "raw": "GET / HTTP/1.1\n\n",
+    "error": "InvalidLineEnding"
+  },
+  {
+    "name": "bare CR request",
+    "raw": "GET / HTTP/1.1\rX",
+    "error": "InvalidLineEnding"
+  },
+  {
+    "name": "request NUL",
+    "raw": "GET /\u0000 HTTP/1.1\r\n\r\n",
+    "error": "InvalidOctet"
+  },
+  {
+    "name": "non-octet request element",
+    "raw": "\u0100\r\n\r\n",
+    "error": "InvalidOctet"
+  },
+  {
+    "name": "non-octet header element",
+    "raw": "GET / HTTP/1.1\r\nX: \u0100\r\n\r\n",
+    "error": "InvalidOctet"
+  }
+]
