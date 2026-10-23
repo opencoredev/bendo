@@ -3,12 +3,7 @@ import Base
 import ./json.bend as J
 import ./decimal.bend as D
 import ./schema-text.bend as T
-
-type Range is Data:
-  Range{lo: U32, hi: U32}
-
-type Pattern is Data:
-  Class{ranges: List<&2, Range>, min: Nat, max: Maybe<&2, Nat>}
+import ./schema-pattern.bend as P
 
 type Format is Data:
   Plain{}
@@ -17,7 +12,7 @@ type Format is Data:
 
 # Composite variants join this same data type in BND-34.
 type Schema is Data:
-  StringSchema{min_len: Nat, max_len: Maybe<&2, Nat>, pattern: Maybe<&2, Pattern>, format: Format}
+  StringSchema{min_len: Nat, max_len: Maybe<&2, Nat>, pattern: Maybe<&2, P.Pattern>, format: Format}
   NumberSchema{min: Maybe<&2, String>, max: Maybe<&2, String>}
   IntegerSchema{min: Maybe<&2, String>, max: Maybe<&2, String>}
   BooleanSchema{}
@@ -51,37 +46,15 @@ def max_length(limit: Maybe<&2, Nat>, n: Nat) -> Bool:
     case None{}: True{}
     case Some{k}: Nat.is_le(n, k)
 
-def lengths(+min: Nat, +max: Maybe<&2, Nat>, +n: Nat) -> Bool:
-  max_length(max, min) && Nat.is_ge(n, min) && max_length(max, n)
-
-def ranges_valid(rs: List<&2, Range>, ok: Bool) -> Bool:
-  match rs:
-    case Nil{}: ok
-    case Range{+lo, +hi} <> t: ranges_valid(t, ok && (lo <= hi : U32) && (hi <= 127 : U32))
-
-def pattern_valid(p: Pattern) -> Bool:
-  Class{rs, min, max} = p
-  ranges_valid(rs, True{}) && max_length(max, min)
-
-def member(rs: List<&2, Range>, +c: U32, ok: Bool) -> Bool:
-  match rs:
-    case Nil{}: ok
-    case Range{lo, hi} <> t: member(t, c, ok || T.between(c, lo, hi))
-
-def characters(s: String, +rs: List<&2, Range>, ok: Bool) -> Bool:
-  match s:
-    case SNil{}: ok
-    case SCon{Chr{c}, t}: characters(t, rs, ok && member(rs, c, False{}))
-
-def pattern_check(p: Maybe<&2, Pattern>, +s: String) -> Bool:
+def pattern_check(p: Maybe<&2, P.Pattern>, s: String) -> Bool:
   match p:
     case None{}: True{}
-    case Some{Class{rs, min, max}}: lengths(min, max, D.length(s)) && characters(s, rs, True{})
+    case Some{x}: P.matches(x, s)
 
-def optional_pattern_valid(p: Maybe<&2, Pattern>) -> Bool:
+def optional_pattern_valid(p: Maybe<&2, P.Pattern>) -> Bool:
   match p:
     case None{}: True{}
-    case Some{x}: pattern_valid(x)
+    case Some{x}: P.valid(x)
 
 def format_check(f: Format, s: String) -> Bool:
   match f:
@@ -89,8 +62,8 @@ def format_check(f: Format, s: String) -> Bool:
     case Email{}: T.email(s)
     case Url{}: T.url(s)
 
-def string_check(min: Nat, max: Maybe<&2, Nat>, p: Maybe<&2, Pattern>, f: Format, +s: String) -> Bool:
-  J.scalars(s) && lengths(min, max, D.length(s)) && pattern_check(p, s) && format_check(f, s)
+def string_check(min: Nat, max: Maybe<&2, Nat>, p: Maybe<&2, P.Pattern>, f: Format, +s: String) -> Bool:
+  J.scalars(s) && Nat.is_le(min, D.length(s)) && max_length(max, D.length(s)) && pattern_check(p, s) && format_check(f, s)
 
 def bound_valid(b: Maybe<&2, String>) -> Bool:
   match b:
@@ -154,21 +127,6 @@ def valid(s: Schema) -> Bool:
     case BooleanSchema{}: True{}
     case LiteralSchema{v}: scalar(v)
     case EnumSchema{xs}: literals_valid(xs, True{})
-
-# Declarative acceptance relation. Does not call decode or inspect its result.
-# Semantic primitives (decimal ordering, length, membership, formats) are shared.
-def predicate(s: Schema, v: J.Json) -> Bool:
-  match s v:
-    case StringSchema{min, max, p, f} J.JString{x}: string_check(min, max, p, f, x)
-    case NumberSchema{min, max} J.JNumber{x}: number_check(min, max, x)
-    case IntegerSchema{min, max} J.JNumber{+x}: D.is_integer(x) && number_check(min, max, x)
-    case BooleanSchema{} J.JBool{x}: True{}
-    case LiteralSchema{x} +y: scalar(y) && same(x, y)
-    case EnumSchema{xs} +y: scalar(y) && one_of(xs, y, False{})
-    case _ _: False{}
-
-def satisfies(+s: Schema, v: J.Json) -> Bool:
-  valid(s) && predicate(s, v)
 
 def failure(code: Code, message: String) -> Result<&2, &2, Errors(), Value>:
   Fail{[Error{code, message, []}]}

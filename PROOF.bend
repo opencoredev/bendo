@@ -372,7 +372,7 @@ def Laws.chunked_roundtrip(chunks, limit, suffix, valid):
 # BND-33
 
 def Laws.schema_acceptance_iff(schema, value):
-  SchemaProof.acceptance(schema, value, Schema.valid(schema))
+  SchemaProof.acceptance_spec(schema, value)
 
 def Laws.schema_preserves_typed_value(schema, value):
   SchemaProof.preservation(schema, value, Schema.valid(schema))

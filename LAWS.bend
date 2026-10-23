@@ -3,6 +3,7 @@
 # in the pull request.
 import Base
 import ./src/data/schema.bend as Schema
+import ./src/data/schema-spec.bend as SchemaSpec
 import ./src/data/json.bend as Json
 import ./src/http/response.bend as Response
 import ./src/http/write_response.bend as WriteResponse
@@ -847,14 +848,17 @@ law chunked_roundtrip:
   for valid: {Chunked.admissible(chunks, limit) == True{} : Bool}
   {Chunked.decode(Bytes.append(Chunked.encode(chunks), suffix), limit) == Chunked.Decoded{List.concat(&2, U32, chunks), [], suffix} : Chunked.DecodeResult}
 
-# BND-33: scalar decoding agrees with the independent declarative predicate
-# for EVERY schema and Json tree, including malformed schemas/constructed data.
-# Equality proves both soundness (accepted implies satisfies) and completeness.
+# BND-33: scalar decoding agrees with an independent specification for EVERY
+# schema and Json tree, including malformed schemas and constructed data.
+# SchemaSpec restates each rule from docs/data/schema.md (scalar counts, the
+# RFC 8259 number grammar, exact decimal values, patterns as regular languages,
+# email and URL grammars) and calls no decoder helper. Equality proves both
+# soundness (accepted implies satisfies) and completeness.
 
 law schema_acceptance_iff:
   for +schema: Schema.Schema
   for +value: Json.Json
-  {Schema.accepted(Schema.decode(schema, value)) == Schema.satisfies(schema, value) : Bool}
+  {Schema.accepted(Schema.decode(schema, value)) == SchemaSpec.satisfies(schema, value) : Bool}
 
 # Every success has the right typed constructor AND preserves the exact input
 # payload, including decimal spelling. Failures impose no payload obligation.

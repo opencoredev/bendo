@@ -2,6 +2,49 @@ import Base
 import ../../../src/data/schema.bend as S
 import ../../../src/data/json.bend as J
 import ../../../src/data/decimal.bend as D
+import ../../../src/data/schema-pattern.bend as P
+import ../../../src/data/schema-spec.bend as Spec
+
+def lower() -> P.Pattern:
+  P.Class{[P.Range{97, 122}, P.Range{48, 57}]}
+
+def digit() -> P.Pattern:
+  P.Class{[P.Range{48, 57}]}
+
+def a() -> P.Pattern:
+  P.Class{[P.Range{97, 97}]}
+
+def slug() -> P.Pattern:
+  P.seq([P.Repeat{lower(), 1n, None{}}, P.Repeat{P.Cat{P.Literal{"-"}, P.Repeat{lower(), 1n, None{}}}, 0n, None{}}])
+
+def zip() -> P.Pattern:
+  P.seq([P.Repeat{digit(), 5n, Some{5n}}, P.Repeat{P.Cat{P.Literal{"-"}, P.Repeat{digit(), 4n, Some{4n}}}, 0n, Some{1n}}])
+
+def text(p: P.Pattern) -> S.Schema:
+  S.StringSchema{0n, None{}, Some{p}, S.Plain{}}
+
+def pattern_of(name: String) -> P.Pattern:
+  match name:
+    case "pattern": P.Repeat{lower(), 1n, Some{4n}}
+    case "star": P.Repeat{a(), 0n, None{}}
+    case "plus": P.Repeat{a(), 1n, None{}}
+    case "optional": P.Repeat{a(), 0n, Some{1n}}
+    case "pattern-exact": P.Repeat{a(), 2n, Some{2n}}
+    case "no-ranges": P.Repeat{P.Class{[]}, 0n, None{}}
+    case "slug": slug()
+    case "zip": zip()
+    case "nested": P.Repeat{P.seq([P.Literal{"<"}, P.Repeat{P.Cat{P.Literal{"ab"}, P.Repeat{digit(), 0n, Some{2n}}}, 1n, Some{2n}}, P.Literal{">"}]), 0n, None{}}
+    case "empties": P.Repeat{P.Repeat{P.Literal{""}, 0n, None{}}, 2n, Some{3n}}
+    case "nullable-body": P.Repeat{P.Repeat{a(), 0n, Some{1n}}, 3n, None{}}
+    case "bounds": P.Repeat{P.Cat{a(), P.Literal{"b"}}, 2n, Some{3n}}
+    case "astral": P.Repeat{P.Literal{"😀é"}, 1n, Some{2n}}
+    case "punctuation": P.seq([P.Literal{"^$\\.*+?()[]{}|/-"}, P.Repeat{P.Class{[P.Range{0, 31}, P.Range{127, 127}]}, 0n, Some{1n}}])
+    case "bad-pattern": P.Repeat{P.Class{[P.Range{122, 97}]}, 0n, None{}}
+    case "bad-ascii": P.Repeat{P.Class{[P.Range{0, 128}]}, 0n, None{}}
+    case "bad-count": P.Repeat{a(), 2n, Some{1n}}
+    case "bad-literal-pattern": P.Literal{SCon{Chr{55296}, ""}}
+    case "bad-nested-count": P.Cat{P.Literal{"a"}, P.Repeat{a(), 3n, Some{2n}}}
+    case _: P.Literal{""}
 
 def schema(name: String) -> S.Schema:
   match name:
@@ -9,12 +52,23 @@ def schema(name: String) -> S.Schema:
     case "length": S.StringSchema{1n, Some{3n}, None{}, S.Plain{}}
     case "empty": S.StringSchema{0n, Some{0n}, None{}, S.Plain{}}
     case "exact": S.StringSchema{2n, Some{2n}, None{}, S.Plain{}}
-    case "pattern": S.StringSchema{0n, None{}, Some{S.Class{[S.Range{97, 122}, S.Range{48, 57}], 1n, Some{4n}}}, S.Plain{}}
-    case "star": S.StringSchema{0n, None{}, Some{S.Class{[S.Range{97, 97}], 0n, None{}}}, S.Plain{}}
-    case "plus": S.StringSchema{0n, None{}, Some{S.Class{[S.Range{97, 97}], 1n, None{}}}, S.Plain{}}
-    case "optional": S.StringSchema{0n, None{}, Some{S.Class{[S.Range{97, 97}], 0n, Some{1n}}}, S.Plain{}}
-    case "pattern-exact": S.StringSchema{0n, None{}, Some{S.Class{[S.Range{97, 97}], 2n, Some{2n}}}, S.Plain{}}
-    case "no-ranges": S.StringSchema{0n, None{}, Some{S.Class{[], 0n, None{}}}, S.Plain{}}
+    case "pattern": text(pattern_of("pattern"))
+    case "star": text(pattern_of("star"))
+    case "plus": text(pattern_of("plus"))
+    case "optional": text(pattern_of("optional"))
+    case "pattern-exact": text(pattern_of("pattern-exact"))
+    case "no-ranges": text(pattern_of("no-ranges"))
+    case "slug": text(pattern_of("slug"))
+    case "zip": text(pattern_of("zip"))
+    case "nested": text(pattern_of("nested"))
+    case "empties": text(pattern_of("empties"))
+    case "nullable-body": text(pattern_of("nullable-body"))
+    case "bounds": text(pattern_of("bounds"))
+    case "astral": text(pattern_of("astral"))
+    case "slug-short": S.StringSchema{3n, Some{8n}, Some{slug()}, S.Plain{}}
+    case "bad-literal-pattern": text(pattern_of("bad-literal-pattern"))
+    case "bad-nested-count": text(pattern_of("bad-nested-count"))
+    case "punctuation": text(pattern_of("punctuation"))
     case "email": S.StringSchema{0n, None{}, None{}, S.Email{}}
     case "url": S.StringSchema{0n, None{}, None{}, S.Url{}}
     case "number": S.NumberSchema{None{}, None{}}
@@ -35,15 +89,22 @@ def schema(name: String) -> S.Schema:
     case "bad-length": S.StringSchema{2n, Some{1n}, None{}, S.Plain{}}
     case "bad-range": S.NumberSchema{Some{"2"}, Some{"1"}}
     case "bad-bound": S.NumberSchema{Some{"NaN"}, None{}}
-    case "bad-pattern": S.StringSchema{0n, None{}, Some{S.Class{[S.Range{122, 97}], 0n, None{}}}, S.Plain{}}
-    case "bad-ascii": S.StringSchema{0n, None{}, Some{S.Class{[S.Range{0, 128}], 0n, None{}}}, S.Plain{}}
-    case "bad-count": S.StringSchema{0n, None{}, Some{S.Class{[S.Range{97, 97}], 2n, Some{1n}}}, S.Plain{}}
+    case "bad-pattern": text(pattern_of("bad-pattern"))
+    case "bad-ascii": text(pattern_of("bad-ascii"))
+    case "bad-count": text(pattern_of("bad-count"))
     case "bad-literal": S.LiteralSchema{J.JArray{[]}}
     case "bad-enum": S.EnumSchema{[J.JBool{True{}}, J.JNumber{"NaN"}]}
     case _: S.BooleanSchema{}
 
 def decode(s: S.Schema, v: J.Json) -> Result<&2, &2, S.Errors(), S.Value>: S.decode(s, v)
-def satisfies(s: S.Schema, v: J.Json) -> Bool: S.satisfies(s, v)
+def satisfies(s: S.Schema, v: J.Json) -> Bool: Spec.satisfies(s, v)
+def matches(p: P.Pattern, s: String) -> Bool: P.matches(p, s)
+def pattern_spec(p: P.Pattern, s: String) -> Bool: Spec.matches(p, s)
+def source(p: P.Pattern) -> String: P.source(p)
+def pattern_valid(p: P.Pattern) -> Bool: P.valid(p)
+def spec_order(a: String, b: String) -> Cmp: Spec.order(a, b)
+def spec_number(s: String) -> Bool: Spec.number(s)
+def spec_integer(s: String) -> Bool: Spec.integer(s)
 def parse(s: String) -> Result<&2, &2, J.Error, J.Json>: J.parse_string(s)
 def order(a: String, b: String) -> Cmp: D.order(a, b)
 

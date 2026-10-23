@@ -80,6 +80,40 @@ good("pattern-exact", "VString", text("aa"));
 bad("pattern-exact", text("a"), text("aaa"));
 good("no-ranges", "VString", text(""));
 bad("no-ranges", text("a"));
+good("slug", "VString", ...["a", "a-b", "abc-def-g", "0-9", "ab-cd-ef12"].map(text));
+bad("slug", ...["", "-", "-a", "a-", "a--b", "A", "a_b", "a b", "é", "a-b\n"].map(text));
+good("zip", "VString", ...["12345", "12345-6789", "00000-0000"].map(text));
+bad(
+  "zip",
+  ...["", "1234", "123456", "12345-", "12345-678", "12345-67890", "1234a", "12345 6789"].map(text),
+);
+good("nested", "VString", ...["", "<ab>", "<ab1>", "<ab12ab>", "<ab><ab99ab0>"].map(text));
+bad("nested", ...["<>", "<ab123>", "<ababab>", "<ab", "ab>", "<aB>"].map(text));
+good("empties", "VString", text(""));
+bad("empties", text("a"));
+good("nullable-body", "VString", ...["", "a", "aaa", "aaaaaaa"].map(text));
+bad("nullable-body", text("b"));
+good("bounds", "VString", ...["abab", "ababab"].map(text));
+bad("bounds", ...["", "ab", "abababab", "aba", "abba"].map(text));
+good("astral", "VString", ...["😀é", "😀é😀é"].map(text));
+bad("astral", ...["", "😀", "é", "😀é😀é😀é", "é😀"].map(text));
+good("slug-short", "VString", ...["abc", "a-b", "abcd-efg"].map(text));
+bad("slug-short", ...["ab", "abcd-efgh", "a--"].map(text));
+good(
+  "punctuation",
+  "VString",
+  ...["^$\\.*+?()[]{}|/-", "^$\\.*+?()[]{}|/-\u0000", "^$\\.*+?()[]{}|/-\u007f"].map(text),
+);
+bad(
+  "punctuation",
+  ...[
+    "",
+    "^$\\.*+?()[]{}|/",
+    "^$\\.*+?()[]{}|/-a",
+    "^$\\.*+?()[]{}|/-\u0000\u0000",
+    "a$\\.*+?()[]{}|/-",
+  ].map(text),
+);
 good(
   "email",
   "VString",
@@ -214,9 +248,38 @@ for (const schema of [
   "bad-count",
   "bad-literal",
   "bad-enum",
+  "bad-literal-pattern",
+  "bad-nested-count",
 ]) {
   for (const input of ["true", text("a"), "1"])
     cases.push({ schema, input, result: "error:InvalidSchema" });
+}
+
+// The independent specification compares exact naturals and tries every split
+// of a string, so it only runs on small numbers and short pattern inputs.
+const costly = new Set([
+  "range",
+  "equal",
+  "huge",
+  "tiny",
+  "exponent",
+  "numeric-literal",
+  "zero-literal",
+  "bad-bound",
+  "bad-enum",
+]);
+const patterns = new Set([
+  "slug",
+  "zip",
+  "nested",
+  "nullable-body",
+  "bounds",
+  "astral",
+  "slug-short",
+]);
+function specCheap(c: Case): boolean {
+  if (costly.has(c.schema)) return false;
+  return !patterns.has(c.schema) || [...String(JSON.parse(c.input))].length <= 4;
 }
 
 describe("scalar schemas through real native and .mjs consumers", () => {
@@ -227,7 +290,7 @@ describe("scalar schemas through real native and .mjs consumers", () => {
       const tree = value(parsed);
       const schema = call("schema", c.schema);
       expect(call("run", c.schema, parsed)).toBe(c.result);
-      expect(call("satisfies", schema, tree)).toBe(c.result.startsWith("ok:"));
+      if (specCheap(c)) expect(call("satisfies", schema, tree)).toBe(c.result.startsWith("ok:"));
       const decoded = call("decode", schema, tree);
       if (c.result.startsWith("ok:")) {
         const variant = c.result.split(":")[1];
@@ -265,7 +328,8 @@ test("rejects invalid constructed JSON scalars and malformed literal metadata", 
   for (const input of ["", "NaN", "01", "+1", "1.", "1e", " 1"]) {
     const tree = { $: "JNumber", value: input };
     for (const name of ["number", "integer", "numeric-literal", "enum"]) {
-      expect(call("satisfies", call("schema", name), tree)).toBe(false);
+      if (name === "number" || name === "integer")
+        expect(call("satisfies", call("schema", name), tree)).toBe(false);
       expect(call("report", call("decode", call("schema", name), tree))).toBe("error:Constraint");
     }
   }
@@ -315,12 +379,10 @@ test(".mjs scalar checks stay stack safe for long strings, decimals, patterns an
       value: long,
     });
   }
-  expect(call("satisfies", call("schema", "star"), { $: "JString", value: long + "b" })).toBe(
-    false,
-  );
-  for (const name of ["email", "url"]) {
-    expect(call("satisfies", call("schema", name), { $: "JString", value: long })).toBe(false);
-  }
+  const rejected = (name: string, input: string) =>
+    call("report", call("decode", call("schema", name), { $: "JString", value: input }));
+  expect(rejected("star", long + "b")).toBe("error:Constraint");
+  for (const name of ["email", "url"]) expect(rejected(name, long)).toBe("error:Constraint");
   const digits = "9".repeat(100000);
   expect(value(call("decode", call("schema", "integer"), { $: "JNumber", value: digits }))).toEqual(
     { $: "VInteger", value: digits },
@@ -329,35 +391,107 @@ test(".mjs scalar checks stay stack safe for long strings, decimals, patterns an
   expect(call("order", "1e-" + digits, "2e-" + digits)).toEqual({ $: "LT" });
 });
 
-test("structured patterns match their documented ECMAScript translation", () => {
-  const pattern = {
-    $: "Class",
-    ranges: { $: "Con", head: { $: "Range", lo: 97, hi: 122 }, tail: { $: "Nil" } },
-    min: 0,
-    max: { $: "Some", value: 4 },
-  };
-  const schema = {
-    $: "StringSchema",
-    min_len: 0,
-    max_len: { $: "None" },
-    pattern: { $: "Some", value: pattern },
-    format: { $: "Plain" },
-  };
-  const regex = /^[\x61-\x7a]{0,4}(?![\s\S])/;
-  for (const input of [
-    "",
-    "a",
-    "abcd",
-    "abcde",
-    "a\n",
-    "a\r",
-    "a\r\n",
-    "a\u2028",
-    "😀",
-    ...Array.from({ length: 128 }, (_, i) => String.fromCharCode(i)),
-  ]) {
-    expect(call("satisfies", schema, { $: "JString", value: input })).toBe(regex.test(input));
+const patternNames = [
+  "pattern",
+  "star",
+  "plus",
+  "optional",
+  "pattern-exact",
+  "no-ranges",
+  "slug",
+  "zip",
+  "nested",
+  "empties",
+  "nullable-body",
+  "bounds",
+  "astral",
+  "punctuation",
+];
+
+function patternSource(name: string): string {
+  const source = call("source", call("pattern_of", name));
+  if (typeof source !== "string") throw new Error("Expected a source string");
+  return source;
+}
+
+// Every string over the alphabet up to the given length, shortest first.
+function words(alphabet: string[], max: number): string[] {
+  const out = [""];
+  let layer = [""];
+  for (let n = 0; n < max; n++) {
+    layer = layer.flatMap((w) => alphabet.map((c) => w + c));
+    out.push(...layer);
   }
+  return out;
+}
+
+test("rendered ECMAScript sources are exact for slug and ZIP", () => {
+  expect(patternSource("slug")).toBe(
+    "^(?:(?:[\\x61-\\x7a\\x30-\\x39])+(?:\\x2d(?:[\\x61-\\x7a\\x30-\\x39])+)*)(?![\\s\\S])",
+  );
+  expect(patternSource("zip")).toBe(
+    "^(?:(?:[\\x30-\\x39]){5}(?:\\x2d(?:[\\x30-\\x39]){4})?)(?![\\s\\S])",
+  );
+  expect(patternSource("astral")).toBe("^(?:(?:\\ud83d\\ude00\\u00e9){1,2})(?![\\s\\S])");
+  expect(patternSource("no-ranges")).toBe("^(?:(?:[^\\s\\S])*)(?![\\s\\S])");
+});
+
+test("the matcher, the specification and both ECMAScript flag modes agree", () => {
+  const alphabet = ["a", "b", "0", "1", "-", "<", ">", "😀", "é", "\n", "^", "$", "\\", "\u0000"];
+  const exhaustive = words(alphabet, 3);
+  const generated: string[] = [];
+  let seed = 37;
+  const next = () => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    return seed;
+  };
+  for (let i = 0; i < 400; i++) {
+    let w = "";
+    for (let n = next() % 16; n > 0; n--) w += alphabet[next() % alphabet.length];
+    generated.push(w);
+  }
+  for (const name of patternNames) {
+    const pattern = call("pattern_of", name);
+    expect(call("pattern_valid", pattern)).toBe(true);
+    const source = patternSource(name);
+    const plain = new RegExp(source);
+    const unicode = new RegExp(source, "u");
+    const samples = [
+      ...exhaustive,
+      ...generated,
+      "abc-def-g",
+      "12345-6789",
+      "<ab12ab><ab>",
+      "aaaaaaa",
+      "ababab",
+      "😀é😀é",
+      "^$\\.*+?()[]{}|/-\u007f",
+      "a\n",
+      "a\r\n",
+      "a\u2028",
+    ];
+    for (const w of samples) {
+      const got = call("matches", pattern, w);
+      expect({ name, w, got }).toEqual({ name, w, got: plain.test(w) });
+      expect({ name, w, got }).toEqual({ name, w, got: unicode.test(w) });
+      if ([...w].length <= 2)
+        expect({ name, w, spec: call("pattern_spec", pattern, w) }).toEqual({ name, w, spec: got });
+    }
+  }
+});
+
+test("long pattern inputs scan in linear time without stack growth", () => {
+  const slug = call("pattern_of", "slug");
+  const zip = call("pattern_of", "zip");
+  const long = "ab-".repeat(40000) + "z9";
+  const started = performance.now();
+  expect(call("matches", slug, long)).toBe(true);
+  expect(call("matches", slug, long + "-")).toBe(false);
+  expect(call("matches", slug, "a" + "-".repeat(100000))).toBe(false);
+  expect(call("matches", zip, "1".repeat(100000))).toBe(false);
+  expect(performance.now() - started).toBeLessThan(10000);
+  expect(native("slug", text(long))).toBe(`ok:VString:${text(long)}`);
+  expect(native("slug", text(long + "-"))).toBe("error:Constraint");
 });
 
 test("validates every enum member before matching and scans wide enums without recursion growth", () => {
@@ -368,5 +502,7 @@ test("validates every enum member before matching and scans wide enums without r
   const schema = { $: "EnumSchema", values: items };
   const tree = { $: "JNumber", value: "0.0" };
   expect(value(call("decode", schema, tree))).toEqual({ $: "VLiteral", value: tree });
-  expect(call("satisfies", schema, { $: "JNumber", value: "20000" })).toBe(false);
+  expect(call("report", call("decode", schema, { $: "JNumber", value: "20000" }))).toBe(
+    "error:Constraint",
+  );
 });
