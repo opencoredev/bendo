@@ -133,3 +133,6 @@ lemmas cover Unicode and percent-codec inversion, compilation cleanliness,
 split/join preservation, and matching for captures, optional params and wildcards.
 `bun run prove` prints `ALL PROOFS CHECK`; `bun run check` also runs the native
 integration suite, TypeScript checks, lint and formatting checks.
+
+The [spec router](router-spec.md) compiles a table of these patterns and selects
+the first match in registration order.

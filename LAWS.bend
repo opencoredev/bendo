@@ -11,6 +11,9 @@ import ./proof/support.bend as Support
 
 import ./src/router/pattern.bend as Pattern
 
+import ./src/router/spec.bend as Spec
+import ./src/router/spec-proofs.bend as SpecProof
+
 # LAW: a text response is a head with no blank line in it, then a blank
 # line, then the body. So the first blank line in the response is the one
 # that ends the head, and a client that cuts there reads the body back.
@@ -526,3 +529,78 @@ law pattern_fill_match:
   for admitted: {Pattern.admissible(pattern, params) == True{} : Bool}
   exs path: String
   {Pattern.fill(pattern, params) == Some{path} : Maybe<&2, String>} & {Pattern.match_path(pattern, path) == Some{params} : Maybe<&2, Pattern.Params>}
+
+# BND-15: universal reference-router guarantees.
+# A returned hit matches the independently looked-up route, including its tag
+# and ordered params. Every smaller registration index independently misses.
+law router_sound:
+  for -T: Data
+  for +table: Spec.Table(T)
+  for +path: String
+  for +i: Nat
+  for +tag: T
+  for +params: Pattern.Params
+  for returned: {Spec.route(T, table, path) == Some{Spec.Match{i, tag, params}} : Maybe<&2, Spec.Match<T>>}
+  {SpecProof.match_at(T, table, path, i) == Some{SpecProof.At{tag, params}} : Maybe<&2, SpecProof.AtMatch<T>>} & SpecProof.NoEarlier(T, table, path, i)
+
+# Every independently matching entry guarantees a returned hit no later than
+# that entry. This quantifies over every table, path, index, tag and assignment.
+law router_complete:
+  for -T: Data
+  for +table: Spec.Table(T)
+  for +path: String
+  for +i: Nat
+  for +tag: T
+  for +params: Pattern.Params
+  for matched: {SpecProof.match_at(T, table, path, i) == Some{SpecProof.At{tag, params}} : Maybe<&2, SpecProof.AtMatch<T>>}
+  exs hit: Spec.Match<T>
+  {Spec.route(T, table, path) == Some{hit} : Maybe<&2, Spec.Match<T>>} & {Nat.is_le(SpecProof.index(T, hit), i) == True{} : Bool}
+
+# When no smaller index matches, matching at i returns exactly that index,
+# tag and ordered params, even if later routes also match.
+law router_first_match:
+  for -T: Data
+  for +table: Spec.Table(T)
+  for +path: String
+  for +i: Nat
+  for +tag: T
+  for +params: Pattern.Params
+  for matched: {SpecProof.match_at(T, table, path, i) == Some{SpecProof.At{tag, params}} : Maybe<&2, SpecProof.AtMatch<T>>}
+  for earlier: SpecProof.NoEarlier(T, table, path, i)
+  {Spec.route(T, table, path) == Some{Spec.Match{i, tag, params}} : Maybe<&2, Spec.Match<T>>}
+
+# If A and B both match and A precedes B, the winner is no later than A,
+# and strictly before B. Routes preceding A remain eligible to win.
+law router_priority:
+  for -T: Data
+  for +table: Spec.Table(T)
+  for +path: String
+  for +a: Nat
+  for +b: Nat
+  for +tag_a: T
+  for +params_a: Pattern.Params
+  for +tag_b: T
+  for +params_b: Pattern.Params
+  for a_matches: {SpecProof.match_at(T, table, path, a) == Some{SpecProof.At{tag_a, params_a}} : Maybe<&2, SpecProof.AtMatch<T>>}
+  for b_matches: {SpecProof.match_at(T, table, path, b) == Some{SpecProof.At{tag_b, params_b}} : Maybe<&2, SpecProof.AtMatch<T>>}
+  for before: {Nat.is_lt(a, b) == True{} : Bool}
+  exs hit: Spec.Match<T>
+  {Spec.route(T, table, path) == Some{hit} : Maybe<&2, Spec.Match<T>>} & ({Nat.is_le(SpecProof.index(T, hit), a) == True{} : Bool} & {Nat.is_lt(SpecProof.index(T, hit), b) == True{} : Bool})
+
+# Any compiled route at any table index can fill every admissible assignment.
+# The filled path has a router hit at index <= i. If every earlier entry misses
+# that path, the router returns exactly Match{i, tag, params}.
+law router_fill_match:
+  for -T: Data
+  for +table: Spec.Table(T)
+  for +i: Nat
+  for +source: String
+  for +pattern: Pattern.Pattern
+  for +tag: T
+  for entry: {List.get(&2, Spec.Route<T>, table, i) == Some{Spec.Route{pattern, tag}} : Maybe<&2, Spec.Route<T>>}
+  for compiled: {Pattern.compile(source) == Done{pattern} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+  for +params: Pattern.Params
+  for admitted: {Pattern.admissible(pattern, params) == True{} : Bool}
+  exs path: String
+  exs hit: Spec.Match<T>
+  {Pattern.fill(pattern, params) == Some{path} : Maybe<&2, String>} & ({Spec.route(T, table, path) == Some{hit} : Maybe<&2, Spec.Match<T>>} & ({Nat.is_le(SpecProof.index(T, hit), i) == True{} : Bool} & (SpecProof.NoEarlier(T, table, path, i) -> {Spec.route(T, table, path) == Some{Spec.Match{i, tag, params}} : Maybe<&2, Spec.Match<T>>})))

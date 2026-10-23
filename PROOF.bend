@@ -20,6 +20,9 @@ import ./src/router/compile-proofs.bend as CompileProof
 import ./src/router/equality-proofs.bend as EqualityProof
 import ./src/router/match-proofs.bend as MatchProof
 
+import ./src/router/spec.bend as Spec
+import ./src/router/spec-proofs.bend as SpecProof
+
 def Laws.text_body_after_blank(body):
   ("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nConnection: close", ({==}, {==}))
 
@@ -97,3 +100,19 @@ def compiled_roundtrip(+pattern: Pattern.Pattern, +params: Pattern.Params,
 
 def Laws.pattern_fill_match(source, pattern, compiled, params, admitted):
   compiled_roundtrip(pattern, params, CompileProof.compiled_pattern_good(source, pattern, compiled), admitted)
+
+# BND-15: indexed routing proofs are independent of the root pattern law.
+def Laws.router_sound(T, table, path, i, tag, params, returned):
+  SpecProof.sound(T, table, path, i, tag, params, returned)
+
+def Laws.router_complete(T, table, path, i, tag, params, matched):
+  SpecProof.complete(T, table, path, i, tag, params, matched)
+
+def Laws.router_first_match(T, table, path, i, tag, params, matched, earlier):
+  SpecProof.exact(T, table, path, i, tag, params, matched, earlier)
+
+def Laws.router_priority(T, table, path, a, b, tag_a, params_a, tag_b, params_b, a_matches, b_matches, before):
+  SpecProof.priority_witness(T, a, b, Spec.route(T, table, path), before, SpecProof.complete(T, table, path, a, tag_a, params_a, a_matches))
+
+def Laws.router_fill_match(T, table, i, source, pattern, tag, entry, compiled, params, admitted):
+  SpecProof.filled_roundtrip(T, table, i, pattern, tag, params, entry, Laws.pattern_fill_match(source, pattern, compiled, params, admitted))
