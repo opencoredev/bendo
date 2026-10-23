@@ -235,14 +235,38 @@ def fill_capture(+name: String, +c: C.Constraint, +optional: Bool, +rest: List<&
         {==}
       ))
 
+def fill_interior(+rest: List<&2, P.Segment>, +ps: P.Params,
+    success: &xs: List<&2, String> -> {P.fill_segments(rest, ps) == Some{xs} : Maybe<&2, List<&2, String>>}) ->
+    &xs: List<&2, String> -> {P.fill_segments(P.InteriorWildcard{} <> rest, ps) == Some{xs} : Maybe<&2, List<&2, String>>}:
+  (+xs, filled) = success
+  (xs, filled)
+
+def fill_span(+name: String, +rest: List<&2, P.Segment>, +key: String, +value: String, +tail: P.Params,
+    ok_true: {String.eq(name, key) && P.value_ok(C.Any{}, value) == True{} : Bool},
+    success: &xs: List<&2, String> -> {P.fill_segments(rest, tail) == Some{xs} : Maybe<&2, List<&2, String>>}) ->
+    &xs: List<&2, String> -> {P.fill_segments(P.Span{name} <> rest, P.Param{key, value} <> tail) == Some{xs} : Maybe<&2, List<&2, String>>}:
+  (+xs, filled) = success
+  (E.encode(value) <> xs, (
+    %Equal.sym(Bool, String.eq(name, key) && P.value_ok(C.Any{}, value), True{}, ok_true) : {E.choose(Maybe<&2, List<&2, String>>, _, u => Maybe.bind(&2, List<&2, String>, List<&2, String>, P.fill_segments(rest, tail), ys => Some{E.encode(value) <> ys}), u => None{}) == Some{E.encode(value) <> xs} : Maybe<&2, List<&2, String>>}
+    %Equal.sym(Maybe<&2, List<&2, String>>, P.fill_segments(rest, tail), Some{xs}, filled) : {Maybe.bind(&2, List<&2, String>, List<&2, String>, _, ys => Some{E.encode(value) <> ys}) == Some{E.encode(value) <> xs} : Maybe<&2, List<&2, String>>}
+    {==}
+  ))
+
 def fill_segments_success(segs, ps, admitted):
   match segs ps:
     case Nil{} Nil{}:
       (Nil{}, {==})
     case P.Static{+raw} <> +rest +values:
       fill_static(raw, rest, values, fill_segments_success(rest, values, admitted))
-    case P.Capture{name, c, True{}} <> Nil{} Nil{}:
-      (Nil{}, {==})
+    case P.Capture{name, c, True{}} <> +rest Nil{}:
+      fill_segments_success(rest, Nil{}, admitted)
+    case P.InteriorWildcard{} <> +rest +values:
+      fill_interior(rest, values, fill_segments_success(rest, values, admitted))
+    case P.PrefixWildcard{+prefix} <> Nil{} Nil{}:
+      ([prefix], {==})
+    case P.Span{+name} <> +rest P.Param{+key, +value} <> +tail:
+      +ok = String.eq(name, key) && P.value_ok(C.Any{}, value)
+      fill_span(name, rest, key, value, tail, and_left(ok, P.admissible_segments(rest, tail), admitted), fill_segments_success(rest, tail, and_right(ok, P.admissible_segments(rest, tail), admitted)))
     case P.Capture{+name, +c, +optional} <> +rest P.Param{+key, +value} <> +tail:
       +ok = String.eq(name, key) && P.value_ok(c, value)
       ok_true = and_left(ok, P.admissible_segments(rest, tail), admitted)
@@ -257,14 +281,18 @@ def fill_segments_success(segs, ps, admitted):
       absurd(&xs: List<&2, String> -> {P.fill_segments(Nil{}, h <> t) == Some{xs} : Maybe<&2, List<&2, String>>}, false_true(admitted))
     case P.Capture{name, c, False{}} <> rest Nil{}:
       absurd(&xs: List<&2, String> -> {P.fill_segments(P.Capture{name, c, False{}} <> rest, Nil{}) == Some{xs} : Maybe<&2, List<&2, String>>}, false_true(admitted))
-    case P.Capture{name, c, True{}} <> h <> t Nil{}:
-      absurd(&xs: List<&2, String> -> {P.fill_segments(P.Capture{name, c, True{}} <> h <> t, Nil{}) == Some{xs} : Maybe<&2, List<&2, String>>}, false_true(admitted))
     case P.Wildcard{name} <> Nil{} Nil{}:
       absurd(&xs: List<&2, String> -> {P.fill_segments([P.Wildcard{name}], Nil{}) == Some{xs} : Maybe<&2, List<&2, String>>}, false_true(admitted))
     case P.Wildcard{name} <> Nil{} h <> j <> t:
       absurd(&xs: List<&2, String> -> {P.fill_segments([P.Wildcard{name}], h <> j <> t) == Some{xs} : Maybe<&2, List<&2, String>>}, false_true(admitted))
     case P.Wildcard{name} <> h <> t values:
       absurd(&xs: List<&2, String> -> {P.fill_segments(P.Wildcard{name} <> h <> t, values) == Some{xs} : Maybe<&2, List<&2, String>>}, false_true(admitted))
+    case P.PrefixWildcard{prefix} <> Nil{} h <> t:
+      absurd(&xs: List<&2, String> -> {P.fill_segments([P.PrefixWildcard{prefix}], h <> t) == Some{xs} : Maybe<&2, List<&2, String>>}, false_true(admitted))
+    case P.PrefixWildcard{prefix} <> h <> t values:
+      absurd(&xs: List<&2, String> -> {P.fill_segments(P.PrefixWildcard{prefix} <> h <> t, values) == Some{xs} : Maybe<&2, List<&2, String>>}, false_true(admitted))
+    case P.Span{name} <> rest Nil{}:
+      absurd(&xs: List<&2, String> -> {P.fill_segments(P.Span{name} <> rest, Nil{}) == Some{xs} : Maybe<&2, List<&2, String>>}, false_true(admitted))
 
 law fill_success:
   for +pattern: P.Pattern
