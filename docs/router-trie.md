@@ -76,7 +76,9 @@ The proof lives in `src/router/trie-proofs.bend` and
    `match_path(pattern, path)` succeeds, each leading static segment equals
    the corresponding query segment. So filtering only removes routes that
    cannot match, and `first`, `matches` and the method helpers return the same
-   result on the filtered list as on the whole indexed table.
+   result on the filtered list as on the whole indexed table. For methods,
+   `direct_hits` shows that the short-circuiting `first_direct` equals taking
+   the first allowed entry of the full matching list.
 3. The whole indexed table reproduces the spec: `first` over it equals
    `Spec.route` (with an index shift), and `matches` over it equals
    `SpecProof.matching`.
@@ -102,8 +104,10 @@ pair index, original case, and a bounded deletion-reduced table/path case.
 Literal fixtures independently cover registration priority, ancestor keys,
 empty segments, root optionals, decoding, and empty tables.
 
-With the segment trie, the generated run produced `pairs=10000
-disagreements=0` in 31.8 seconds on a loaded ms-a2, excluding compilation. The
+The 10,000 pairs are one seeded sequence checked as four test cases of 2,500,
+each with its own 60-second deadline, so a slow machine cannot fail the whole
+run on one timer. On a Boat `large` sandbox each slice took about 4 seconds
+with `disagreements=0`, excluding compilation. The
 laws above are the guarantee; the differential run guards the native build
 and test transport around them.
 
@@ -167,12 +171,68 @@ sh bench/router/boat.sh
 ```
 
 The script creates a `default` sandbox, installs the pinned Bend release,
-copies the router and benchmark, runs the bounded harness, retrieves results,
-and deletes its sandbox even on failure. It replaces the local results file.
+copies the router, HTTP sources and benchmarks, runs both bounded harnesses,
+retrieves results, and deletes its sandbox even on failure. It replaces both
+local results files.
 For a short development run, use
-`timeout --foreground 90s python3 bench/router/run.py --quick --output /tmp/router-results.json`.
+`timeout --foreground 90s python3 bench/router/run.py --quick --output /tmp/router-results.json`
+(or `bench/router/methods.py` with `/tmp/methods-results.json`).
 
 The trie accelerates selective static prefixes. Routes sharing a static key
 remain in one ordered list, so lookup can still be linear. First-hit spec
 lookups can beat the trie because they avoid prefix traversal. The 500-route target concerns the documented static mixed workload;
 it does not promise a fivefold gain for every route distribution or request.
+
+## Method resolution benchmark
+
+`bench/router/methods.bend` times `Methods.resolve_with` itself, which the
+application router calls for every request. `bench/router/methods.py` uses the
+same calibration, three rotated repeats, 30-second subprocess bound and
+medians as the lookup benchmark, and writes
+[`bench/router/methods-results.json`](../bench/router/methods-results.json).
+Every registration is a GET route on `/shared/:value{int}` except the last,
+which is `/shared/:value`, so every route shares one trie list. The workloads
+send one request repeatedly:
+
+- first: `GET /shared/42` hits registration 1.
+- last: `GET /shared/word` hits only the last registration.
+- miss: `GET /shared/1/2` matches nothing, giving 404.
+- 405: `POST /shared/42` matches every route with the wrong method, so the
+  resolver must collect `Allow: GET, HEAD`.
+- head: `HEAD /shared/42` has no HEAD route and falls back to GET.
+
+Checksums are computed independently: a hit adds its tag (plus 1,000,000 when
+HEAD came from GET), a 405 adds 100,000 plus the length of `Allow`, a 404 adds
+nothing. The harness fails if any Trie median exceeds twice the Spec median
+plus 2 µs.
+
+Before this fix, the Trie path matched every candidate before choosing a
+direct hit. Measured in Boat sandbox `bx_khq4rbsv` (`default`, 4 vCPU, AMD
+Ryzen 9 9950X, Bend 2.0.38, clang 18.1.3) on 2026-10-23, with 90 checked
+samples for each version:
+
+| Routes | Workload | Spec ns/request | Trie before | Trie after | Spec / Trie after |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 5 | first | 9,500 | 49,000 | 10,000 | 0.95x |
+| 5 | last | 91,500 | 90,000 | 92,500 | 0.99x |
+| 5 | miss | 74,500 | 25,500 | 52,000 | 1.43x |
+| 5 | 405 | 141,000 | 50,000 | 96,000 | 1.47x |
+| 5 | head | 57,000 | 47,500 | 58,000 | 0.98x |
+| 50 | first | 9,500 | 485,000 | 10,000 | 0.95x |
+| 50 | last | 905,405 | 945,946 | 909,910 | 1.00x |
+| 50 | miss | 744,000 | 252,252 | 497,500 | 1.50x |
+| 50 | 405 | 1,415,493 | 489,489 | 990,000 | 1.43x |
+| 50 | head | 492,500 | 501,502 | 500,000 | 0.98x |
+| 500 | first | 10,000 | 4,750,000 | 10,500 | 0.95x |
+| 500 | last | 9,380,952 | 9,000,000 | 9,095,238 | 1.03x |
+| 500 | miss | 7,680,000 | 2,506,024 | 5,179,487 | 1.48x |
+| 500 | 405 | 14,846,154 | 4,785,714 | 9,526,316 | 1.56x |
+| 500 | head | 4,815,789 | 4,790,698 | 4,769,231 | 1.01x |
+
+Spec numbers are from the run after the fix; Spec code did not change, and the
+earlier run agreed within 6%. A 500-route first hit was 475 times slower than
+Spec and is now within 5%. Misses and 405s now pay one failed direct walk
+plus one collecting walk, so they cost about twice as much as before. They
+still beat Spec, which walks the table three times (`find`, `path_exists`,
+`matching_methods`). Every pattern here shares one static key, so the trie
+cannot prune. Selective static prefixes prune as in the lookup benchmark.

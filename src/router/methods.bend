@@ -377,7 +377,7 @@ def allow_text(xs: List<&2, R.Method>) -> String:
       R.method_text(h) ++ ", " ++ allow_text(tail)
 
 # BND-17: resolution through the configured router. The trie supplies the
-# ordered path-matching candidates; Allow and HEAD fallback read the same list.
+# ordered path-matching candidates; direct hits stop at the first match.
 
 # A validated table with its trie, built once at startup.
 type Index<-T: Data> is Data:
@@ -398,6 +398,7 @@ def hits(-T: Data, entries: List<&2, Tr.Candidate<Binding<T>>>, +path: String, +
     case Tr.Candidate{index, S.Route{pattern, binding}} <> rest:
       Tr.keep(Binding<T>, index, binding, match_path(pattern, path, opts), hits(T, rest, path, opts))
 
+# The first hit allowing `method`; the proof's reference for first_direct.
 def first_allowed(-T: Data, xs: List<&2, S.Match<Binding<T>>>, +method: R.Method) -> Maybe<&2, S.Match<T>>:
   match xs:
     case Nil{}:
@@ -419,20 +420,33 @@ def hit_methods(-T: Data, xs: List<&2, S.Match<Binding<T>>>) -> List<&2, R.Metho
     case S.Match{index, Binding{methods, tag}, params} <> rest:
       List.append(&2, R.Method, methods, hit_methods(T, rest))
 
-# The same decisions as resolve_direct, read from the matching list.
-def decide(-T: Data, hit: Maybe<&2, S.Match<T>>, +xs: List<&2, S.Match<Binding<T>>>, method: R.Method) -> Resolution<T>:
+# The first candidate allowing `method` whose pattern matches; later
+# candidates are never evaluated, as in find.
+def first_direct(-T: Data, entries: List<&2, Tr.Candidate<Binding<T>>>, +path: String, +method: R.Method, +opts: Options) -> Maybe<&2, S.Match<T>>:
+  match entries:
+    case Nil{}:
+      None{}
+    case Tr.Candidate{index, S.Route{pattern, Binding{methods, tag}}} <> rest:
+      Tr.candidate_hit(T, index, tag, eligible(methods, method, match_path(pattern, path, opts)), u => first_direct(T, rest, path, method, opts))
+
+# Existence and Allow read one matching list, built only after a direct miss.
+def miss_hits(-T: Data, +xs: List<&2, S.Match<Binding<T>>>) -> Resolution<T>:
+  miss(T, any_hit(T, xs), canonical(hit_methods(T, xs)))
+
+# The same decisions as resolve_direct, read from the ordered candidates.
+def decide(-T: Data, hit: Maybe<&2, S.Match<T>>, +entries: List<&2, Tr.Candidate<Binding<T>>>, +path: String, method: R.Method, +opts: Options) -> Resolution<T>:
   match hit:
     case Some{hit}:
       Found{hit, False{}}
     case None{}:
       match method:
         case R.Head{}:
-          fallback(T, first_allowed(T, xs, R.Get{}), u => miss(T, any_hit(T, xs), canonical(hit_methods(T, xs))))
+          fallback(T, first_direct(T, entries, path, R.Get{}, opts), u => miss_hits(T, hits(T, entries, path, opts)))
         case _:
-          miss(T, any_hit(T, xs), canonical(hit_methods(T, xs)))
+          miss_hits(T, hits(T, entries, path, opts))
 
-def resolve_hits(-T: Data, +xs: List<&2, S.Match<Binding<T>>>, +method: R.Method) -> Resolution<T>:
-  decide(T, first_allowed(T, xs, method), xs, method)
+def resolve_entries(-T: Data, +entries: List<&2, Tr.Candidate<Binding<T>>>, +path: String, +method: R.Method, +opts: Options) -> Resolution<T>:
+  decide(T, first_direct(T, entries, path, method, opts), entries, path, method, opts)
 
 # The trie indexes raw static segments, so it prefilters only the default
 # strict, case-sensitive options. Other options scan every registration.
@@ -448,4 +462,4 @@ def resolve_with(-T: Data, kind: Router.RouterKind, index: Index<T>, +path: Stri
     case Router.Spec{} Index{valid, trie}:
       resolve(T, valid, path, method, opts)
     case Router.Trie{} Index{valid, trie}:
-      resolve_hits(T, hits(T, entries(T, valid, trie, path, opts), path, opts), method)
+      resolve_entries(T, entries(T, valid, trie, path, opts), path, method, opts)

@@ -128,9 +128,11 @@ M.resolve_with(Tag, Router.Trie{}, index, path, method, M.defaults())
 [trie](router-trie.md), built once. `index_valid(T, index)` returns the
 `Valid<T>`. `resolve_with(T, kind, index, path, method, opts)` takes a
 `Router.RouterKind`. With `Spec{}` it calls `resolve`. With `Trie{}` it takes the
-trie's ordered candidates for the path, keeps those whose pattern matches, and
-reads the direct match, HEAD fallback, 404 decision and `Allow` set from that
-one list. The trie keys raw static segments, so it prefilters only under the
+trie's ordered candidates for the path and walks them like `find`: it stops at
+the first candidate that allows the method and whose pattern matches. A HEAD
+request that finds no direct match walks them again for GET. Only when both
+miss does it collect the matching registrations once and read the 404 decision
+and `Allow` set from that list. The trie keys raw static segments, so it prefilters only under the
 default strict, case-sensitive options. The other three option combinations
 scan every registration, as `resolve` does.
 

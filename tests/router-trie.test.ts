@@ -205,31 +205,38 @@ test("trie-default and Spec config preserve first registration, tags, and decode
   }
 });
 
-test("10,000 seeded generated table/path pairs have no disagreements", () => {
-  const cases = generatedCases(10000);
-  const start = performance.now();
-  for (let offset = 0; offset < cases.length; offset += 250) {
-    const batch = cases.slice(offset, offset + 250);
-    for (const [index, fields] of run(batch).entries()) {
-      const input = batch[index];
-      if (input && disagrees(fields)) {
-        throw new Error(
-          JSON.stringify(
-            {
-              seed: SEED,
-              pair: offset + index,
-              input,
-              results: fields,
-              minimized: minimize(input),
-            },
-            null,
-            2,
-          ),
-        );
+// One seeded sequence of 10,000 pairs, checked in four slices so each slice
+// gets its own deadline on a slow machine.
+const GENERATED = generatedCases(10000);
+const SLICE = 2500;
+
+for (let first = 0; first < GENERATED.length; first += SLICE) {
+  const last = Math.min(first + SLICE, GENERATED.length);
+  test(`seeded generated pairs ${first}-${last - 1} of 10,000 have no disagreements`, () => {
+    const start = performance.now();
+    for (let offset = first; offset < last; offset += 250) {
+      const batch = GENERATED.slice(offset, Math.min(offset + 250, last));
+      for (const [index, fields] of run(batch).entries()) {
+        const input = batch[index];
+        if (input && disagrees(fields)) {
+          throw new Error(
+            JSON.stringify(
+              {
+                seed: SEED,
+                pair: offset + index,
+                input,
+                results: fields,
+                minimized: minimize(input),
+              },
+              null,
+              2,
+            ),
+          );
+        }
       }
     }
-  }
-  console.log(
-    `seed=0x${SEED.toString(16)} pairs=${cases.length} disagreements=0 elapsed_ms=${Math.round(performance.now() - start)}`,
-  );
-}, 60000);
+    console.log(
+      `seed=0x${SEED.toString(16)} pairs=${first}-${last - 1} disagreements=0 elapsed_ms=${Math.round(performance.now() - start)}`,
+    );
+  }, 60000);
+}

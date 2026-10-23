@@ -125,45 +125,104 @@ def methods_indexed(-T: Data, +table: M.Table(T), +index: Nat, +path: String, +o
     case S.Route{+pattern, M.Binding{+methods, +tag}} <> +rest:
       methods_step(T, pattern, methods, tag, index, path, opts, rest, M.match_path(pattern, path, opts), {==}, methods_indexed(T, rest, 1n+index, path, opts))
 
+# Stopping at the first allowed match agrees with filtering the full list.
+def direct_step(-T: Data, +pattern: P.Pattern, +methods: List<&2, H.Method>, +tag: T, +index: Nat, +path: String, +method: H.Method, +opts: M.Options, +rest: List<&2, Tr.Candidate<M.Binding<T>>>,
+    hit: Maybe<&2, P.Params>, +found: {M.match_path(pattern, path, opts) == hit : Maybe<&2, P.Params>},
+    test: Bool, +decided: {M.contains(methods, method) == test : Bool},
+    inner: {M.first_direct(T, rest, path, method, opts) == M.first_allowed(T, M.hits(T, rest, path, opts), method) : Maybe<&2, S.Match<T>>}) ->
+    {Tr.candidate_hit(T, index, tag, M.eligible(methods, method, M.match_path(pattern, path, opts)), u => M.first_direct(T, rest, path, method, opts)) == M.first_allowed(T, Tr.keep(M.Binding<T>, index, M.Binding{methods, tag}, M.match_path(pattern, path, opts), M.hits(T, rest, path, opts)), method) : Maybe<&2, S.Match<T>>}:
+  match hit test:
+    case Some{+ps} True{}:
+      %Equal.sym(Maybe<&2, P.Params>, M.match_path(pattern, path, opts), Some{ps}, found) : {Tr.candidate_hit(T, index, tag, M.eligible(methods, method, _), u => M.first_direct(T, rest, path, method, opts)) == M.first_allowed(T, Tr.keep(M.Binding<T>, index, M.Binding{methods, tag}, _, M.hits(T, rest, path, opts)), method) : Maybe<&2, S.Match<T>>}
+      %Equal.sym(Bool, M.contains(methods, method), True{}, decided) : {Tr.candidate_hit(T, index, tag, E.choose(Maybe<&2, P.Params>, _, u => Some{ps}, u => None{}), u => M.first_direct(T, rest, path, method, opts)) == E.choose(Maybe<&2, S.Match<T>>, _, u => Some{S.Match{index, tag, ps}}, u => M.first_allowed(T, M.hits(T, rest, path, opts), method)) : Maybe<&2, S.Match<T>>}
+      {==}
+    case Some{+ps} False{}:
+      %Equal.sym(Maybe<&2, P.Params>, M.match_path(pattern, path, opts), Some{ps}, found) : {Tr.candidate_hit(T, index, tag, M.eligible(methods, method, _), u => M.first_direct(T, rest, path, method, opts)) == M.first_allowed(T, Tr.keep(M.Binding<T>, index, M.Binding{methods, tag}, _, M.hits(T, rest, path, opts)), method) : Maybe<&2, S.Match<T>>}
+      %Equal.sym(Bool, M.contains(methods, method), False{}, decided) : {Tr.candidate_hit(T, index, tag, E.choose(Maybe<&2, P.Params>, _, u => Some{ps}, u => None{}), u => M.first_direct(T, rest, path, method, opts)) == E.choose(Maybe<&2, S.Match<T>>, _, u => Some{S.Match{index, tag, ps}}, u => M.first_allowed(T, M.hits(T, rest, path, opts), method)) : Maybe<&2, S.Match<T>>}
+      inner
+    case None{} True{}:
+      %Equal.sym(Maybe<&2, P.Params>, M.match_path(pattern, path, opts), None{}, found) : {Tr.candidate_hit(T, index, tag, M.eligible(methods, method, _), u => M.first_direct(T, rest, path, method, opts)) == M.first_allowed(T, Tr.keep(M.Binding<T>, index, M.Binding{methods, tag}, _, M.hits(T, rest, path, opts)), method) : Maybe<&2, S.Match<T>>}
+      %Equal.sym(Bool, M.contains(methods, method), True{}, decided) : {Tr.candidate_hit(T, index, tag, E.choose(Maybe<&2, P.Params>, _, u => None{}, u => None{}), u => M.first_direct(T, rest, path, method, opts)) == M.first_allowed(T, M.hits(T, rest, path, opts), method) : Maybe<&2, S.Match<T>>}
+      inner
+    case None{} False{}:
+      %Equal.sym(Maybe<&2, P.Params>, M.match_path(pattern, path, opts), None{}, found) : {Tr.candidate_hit(T, index, tag, M.eligible(methods, method, _), u => M.first_direct(T, rest, path, method, opts)) == M.first_allowed(T, Tr.keep(M.Binding<T>, index, M.Binding{methods, tag}, _, M.hits(T, rest, path, opts)), method) : Maybe<&2, S.Match<T>>}
+      %Equal.sym(Bool, M.contains(methods, method), False{}, decided) : {Tr.candidate_hit(T, index, tag, E.choose(Maybe<&2, P.Params>, _, u => None{}, u => None{}), u => M.first_direct(T, rest, path, method, opts)) == M.first_allowed(T, M.hits(T, rest, path, opts), method) : Maybe<&2, S.Match<T>>}
+      inner
+
+def direct_hits(-T: Data, +entries: List<&2, Tr.Candidate<M.Binding<T>>>, +path: String, +method: H.Method, +opts: M.Options) ->
+    {M.first_direct(T, entries, path, method, opts) == M.first_allowed(T, M.hits(T, entries, path, opts), method) : Maybe<&2, S.Match<T>>}:
+  match entries:
+    case Nil{}:
+      {==}
+    case Tr.Candidate{+index, S.Route{+pattern, M.Binding{+methods, +tag}}} <> +rest:
+      direct_step(T, pattern, methods, tag, index, path, method, opts, rest, M.match_path(pattern, path, opts), {==}, M.contains(methods, method), {==}, direct_hits(T, rest, path, method, opts))
+
+# The configured candidates reproduce find, path existence and the Allow list.
+def direct_find(-T: Data, +table: M.Table(T), +ok: {M.TableValid(T, table) == True{} : Bool}, +path: String, +method: H.Method, +opts: M.Options) ->
+    {M.first_direct(T, M.entries(T, M.Valid{table, ok}, Tr.build_trie(M.Binding<T>, table), path, opts), path, method, opts) == M.find(T, table, path, method, opts) : Maybe<&2, S.Match<T>>}:
+  +es = M.entries(T, M.Valid{table, ok}, Tr.build_trie(M.Binding<T>, table), path, opts)
+  +all = M.hits(T, Tr.indexed(M.Binding<T>, table, 0n), path, opts)
+  Equal.trans(Maybe<&2, S.Match<T>>, M.first_direct(T, es, path, method, opts), M.first_allowed(T, M.hits(T, es, path, opts), method), M.find(T, table, path, method, opts),
+    direct_hits(T, es, path, method, opts),
+    Equal.trans(Maybe<&2, S.Match<T>>, M.first_allowed(T, M.hits(T, es, path, opts), method), M.first_allowed(T, all, method), M.find(T, table, path, method, opts),
+      Equal.cong(List<&2, S.Match<M.Binding<T>>>, Maybe<&2, S.Match<T>>, xs => M.first_allowed(T, xs, method), M.hits(T, es, path, opts), all, entries_hits(T, table, ok, path, opts)),
+      allowed_indexed(T, table, 0n, path, method, opts)))
+
+def direct_exists(-T: Data, +table: M.Table(T), +ok: {M.TableValid(T, table) == True{} : Bool}, +path: String, +opts: M.Options) ->
+    {M.any_hit(T, M.hits(T, M.entries(T, M.Valid{table, ok}, Tr.build_trie(M.Binding<T>, table), path, opts), path, opts)) == M.path_exists(T, table, path, opts) : Bool}:
+  +es = M.entries(T, M.Valid{table, ok}, Tr.build_trie(M.Binding<T>, table), path, opts)
+  +all = M.hits(T, Tr.indexed(M.Binding<T>, table, 0n), path, opts)
+  Equal.trans(Bool, M.any_hit(T, M.hits(T, es, path, opts)), M.any_hit(T, all), M.path_exists(T, table, path, opts),
+    Equal.cong(List<&2, S.Match<M.Binding<T>>>, Bool, xs => M.any_hit(T, xs), M.hits(T, es, path, opts), all, entries_hits(T, table, ok, path, opts)),
+    exists_indexed(T, table, 0n, path, opts))
+
+def direct_allow(-T: Data, +table: M.Table(T), +ok: {M.TableValid(T, table) == True{} : Bool}, +path: String, +opts: M.Options) ->
+    {M.hit_methods(T, M.hits(T, M.entries(T, M.Valid{table, ok}, Tr.build_trie(M.Binding<T>, table), path, opts), path, opts)) == M.matching_methods(T, table, path, opts) : List<&2, H.Method>}:
+  +es = M.entries(T, M.Valid{table, ok}, Tr.build_trie(M.Binding<T>, table), path, opts)
+  +all = M.hits(T, Tr.indexed(M.Binding<T>, table, 0n), path, opts)
+  Equal.trans(List<&2, H.Method>, M.hit_methods(T, M.hits(T, es, path, opts)), M.hit_methods(T, all), M.matching_methods(T, table, path, opts),
+    Equal.cong(List<&2, S.Match<M.Binding<T>>>, List<&2, H.Method>, xs => M.hit_methods(T, xs), M.hits(T, es, path, opts), all, entries_hits(T, table, ok, path, opts)),
+    methods_indexed(T, table, 0n, path, opts))
+
 # The 404/405 outcome reads equal existence and Allow inputs.
 def miss_equal(-T: Data, +xs: List<&2, S.Match<M.Binding<T>>>, +table: M.Table(T), +path: String, +opts: M.Options,
     exists: {M.any_hit(T, xs) == M.path_exists(T, table, path, opts) : Bool},
     allow: {M.hit_methods(T, xs) == M.matching_methods(T, table, path, opts) : List<&2, H.Method>}) ->
-    {M.miss(T, M.any_hit(T, xs), M.canonical(M.hit_methods(T, xs))) == M.miss(T, M.path_exists(T, table, path, opts), M.canonical(M.matching_methods(T, table, path, opts))) : M.Resolution<T>}:
+    {M.miss_hits(T, xs) == M.miss(T, M.path_exists(T, table, path, opts), M.canonical(M.matching_methods(T, table, path, opts))) : M.Resolution<T>}:
   %Equal.sym(Bool, M.any_hit(T, xs), M.path_exists(T, table, path, opts), exists) : {M.miss(T, _, M.canonical(M.hit_methods(T, xs))) == M.miss(T, M.path_exists(T, table, path, opts), M.canonical(M.matching_methods(T, table, path, opts))) : M.Resolution<T>}
   %Equal.sym(List<&2, H.Method>, M.hit_methods(T, xs), M.matching_methods(T, table, path, opts), allow) : {M.miss(T, M.path_exists(T, table, path, opts), M.canonical(_)) == M.miss(T, M.path_exists(T, table, path, opts), M.canonical(M.matching_methods(T, table, path, opts))) : M.Resolution<T>}
   {==}
 
-def decide_equal(-T: Data, +hit: Maybe<&2, S.Match<T>>, +xs: List<&2, S.Match<M.Binding<T>>>, +table: M.Table(T), +path: String, +method: H.Method, +opts: M.Options,
-    get: {M.first_allowed(T, xs, H.Get{}) == M.find(T, table, path, H.Get{}, opts) : Maybe<&2, S.Match<T>>},
-    exists: {M.any_hit(T, xs) == M.path_exists(T, table, path, opts) : Bool},
-    allow: {M.hit_methods(T, xs) == M.matching_methods(T, table, path, opts) : List<&2, H.Method>}) ->
-    {M.decide(T, hit, xs, method) == M.resolve_direct(T, hit, table, path, method, opts) : M.Resolution<T>}:
+def decide_equal(-T: Data, +hit: Maybe<&2, S.Match<T>>, +es: List<&2, Tr.Candidate<M.Binding<T>>>, +table: M.Table(T), +path: String, +method: H.Method, +opts: M.Options,
+    get: {M.first_direct(T, es, path, H.Get{}, opts) == M.find(T, table, path, H.Get{}, opts) : Maybe<&2, S.Match<T>>},
+    exists: {M.any_hit(T, M.hits(T, es, path, opts)) == M.path_exists(T, table, path, opts) : Bool},
+    allow: {M.hit_methods(T, M.hits(T, es, path, opts)) == M.matching_methods(T, table, path, opts) : List<&2, H.Method>}) ->
+    {M.decide(T, hit, es, path, method, opts) == M.resolve_direct(T, hit, table, path, method, opts) : M.Resolution<T>}:
   match hit method:
     case Some{h} m:
       {==}
     case None{} H.Head{}:
-      %Equal.sym(Maybe<&2, S.Match<T>>, M.first_allowed(T, xs, H.Get{}), M.find(T, table, path, H.Get{}, opts), get) : {M.fallback(T, _, u => M.miss(T, M.any_hit(T, xs), M.canonical(M.hit_methods(T, xs)))) == M.fallback(T, M.find(T, table, path, H.Get{}, opts), u => M.miss(T, M.path_exists(T, table, path, opts), M.canonical(M.matching_methods(T, table, path, opts)))) : M.Resolution<T>}
-      %Equal.sym(M.Resolution<T>, M.miss(T, M.any_hit(T, xs), M.canonical(M.hit_methods(T, xs))), M.miss(T, M.path_exists(T, table, path, opts), M.canonical(M.matching_methods(T, table, path, opts))), miss_equal(T, xs, table, path, opts, exists, allow)) : {M.fallback(T, M.find(T, table, path, H.Get{}, opts), u => _) == M.fallback(T, M.find(T, table, path, H.Get{}, opts), u => M.miss(T, M.path_exists(T, table, path, opts), M.canonical(M.matching_methods(T, table, path, opts)))) : M.Resolution<T>}
+      %Equal.sym(Maybe<&2, S.Match<T>>, M.first_direct(T, es, path, H.Get{}, opts), M.find(T, table, path, H.Get{}, opts), get) : {M.fallback(T, _, u => M.miss_hits(T, M.hits(T, es, path, opts))) == M.fallback(T, M.find(T, table, path, H.Get{}, opts), u => M.miss(T, M.path_exists(T, table, path, opts), M.canonical(M.matching_methods(T, table, path, opts)))) : M.Resolution<T>}
+      %Equal.sym(M.Resolution<T>, M.miss_hits(T, M.hits(T, es, path, opts)), M.miss(T, M.path_exists(T, table, path, opts), M.canonical(M.matching_methods(T, table, path, opts))), miss_equal(T, M.hits(T, es, path, opts), table, path, opts, exists, allow)) : {M.fallback(T, M.find(T, table, path, H.Get{}, opts), u => _) == M.fallback(T, M.find(T, table, path, H.Get{}, opts), u => M.miss(T, M.path_exists(T, table, path, opts), M.canonical(M.matching_methods(T, table, path, opts)))) : M.Resolution<T>}
       {==}
     case None{} H.Get{}:
-      miss_equal(T, xs, table, path, opts, exists, allow)
+      miss_equal(T, M.hits(T, es, path, opts), table, path, opts, exists, allow)
     case None{} H.Post{}:
-      miss_equal(T, xs, table, path, opts, exists, allow)
+      miss_equal(T, M.hits(T, es, path, opts), table, path, opts, exists, allow)
     case None{} H.Put{}:
-      miss_equal(T, xs, table, path, opts, exists, allow)
+      miss_equal(T, M.hits(T, es, path, opts), table, path, opts, exists, allow)
     case None{} H.Delete{}:
-      miss_equal(T, xs, table, path, opts, exists, allow)
+      miss_equal(T, M.hits(T, es, path, opts), table, path, opts, exists, allow)
     case None{} H.Connect{}:
-      miss_equal(T, xs, table, path, opts, exists, allow)
+      miss_equal(T, M.hits(T, es, path, opts), table, path, opts, exists, allow)
     case None{} H.Options{}:
-      miss_equal(T, xs, table, path, opts, exists, allow)
+      miss_equal(T, M.hits(T, es, path, opts), table, path, opts, exists, allow)
     case None{} H.Trace{}:
-      miss_equal(T, xs, table, path, opts, exists, allow)
+      miss_equal(T, M.hits(T, es, path, opts), table, path, opts, exists, allow)
     case None{} H.Patch{}:
-      miss_equal(T, xs, table, path, opts, exists, allow)
+      miss_equal(T, M.hits(T, es, path, opts), table, path, opts, exists, allow)
     case None{} H.Extension{token}:
-      miss_equal(T, xs, table, path, opts, exists, allow)
+      miss_equal(T, M.hits(T, es, path, opts), table, path, opts, exists, allow)
 
 # Main result: every router kind gives the reference resolution.
 def resolve_equal(-T: Data, +kind: Router.RouterKind, +valid: M.Valid<T>, +path: String, +method: H.Method, +opts: M.Options) ->
@@ -172,7 +231,6 @@ def resolve_equal(-T: Data, +kind: Router.RouterKind, +valid: M.Valid<T>, +path:
     case Router.Spec{} v:
       {==}
     case Router.Trie{} M.Valid{+table, +ok}:
-      +xs = M.hits(T, Tr.indexed(M.Binding<T>, table, 0n), path, opts)
-      %Equal.sym(List<&2, S.Match<M.Binding<T>>>, M.hits(T, M.entries(T, M.Valid{table, ok}, Tr.build_trie(M.Binding<T>, table), path, opts), path, opts), xs, entries_hits(T, table, ok, path, opts)) : {M.resolve_hits(T, _, method) == M.resolve_direct(T, M.find(T, table, path, method, opts), table, path, method, opts) : M.Resolution<T>}
-      %Equal.sym(Maybe<&2, S.Match<T>>, M.first_allowed(T, xs, method), M.find(T, table, path, method, opts), allowed_indexed(T, table, 0n, path, method, opts)) : {M.decide(T, _, xs, method) == M.resolve_direct(T, M.find(T, table, path, method, opts), table, path, method, opts) : M.Resolution<T>}
-      decide_equal(T, M.find(T, table, path, method, opts), xs, table, path, method, opts, allowed_indexed(T, table, 0n, path, H.Get{}, opts), exists_indexed(T, table, 0n, path, opts), methods_indexed(T, table, 0n, path, opts))
+      +es = M.entries(T, M.Valid{table, ok}, Tr.build_trie(M.Binding<T>, table), path, opts)
+      %Equal.sym(Maybe<&2, S.Match<T>>, M.first_direct(T, es, path, method, opts), M.find(T, table, path, method, opts), direct_find(T, table, ok, path, method, opts)) : {M.decide(T, _, es, path, method, opts) == M.resolve_direct(T, M.find(T, table, path, method, opts), table, path, method, opts) : M.Resolution<T>}
+      decide_equal(T, M.find(T, table, path, method, opts), es, table, path, method, opts, direct_find(T, table, ok, path, H.Get{}, opts), direct_exists(T, table, ok, path, opts), direct_allow(T, table, ok, path, opts))
