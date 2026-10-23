@@ -57,6 +57,11 @@ import ./src/router/spec-proofs.bend as SpecProof
 import ./src/router/methods.bend as Methods
 import ./src/router/methods-proofs.bend as MethodProof
 
+import ./src/router/trie.bend as Trie
+import ./src/router/router.bend as Router
+import ./src/router/trie-proofs.bend as TrieProof
+import ./src/router/methods-trie-proofs.bend as MethodTrieProof
+
 import ./proof/crypto-hex.bend as HexProof
 import ./proof/crypto-base64.bend as Base64Proof
 
@@ -402,6 +407,24 @@ def Laws.lifecycle_ordered_selection(Tag, entries, routes, compiled, layers, pat
   %Equal.sym(List<&2, Tag>, Table.stage_ids(Tag, layers, Table.Error{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Error{}), LifecycleSelection.selection(Tag, entries, routes, compiled, layers, Table.Error{}, built)) : {Table.Lifecycle{MiddlewareSelectionSpec.hooks(Tag, entries, Table.Request{}), List.concat(&2, Tag, [MiddlewareSelectionSpec.filter(Tag, entries, path), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Parse{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Transform{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.BeforeHandle{})]), MiddlewareSelectionSpec.hooks(Tag, entries, Table.AfterHandle{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.MapResponse{}), _, Table.stage_ids(Tag, layers, Table.AfterResponse{})} == MiddlewareSelectionSpec.lifecycle(Tag, entries, path) : Table.Lifecycle<Tag>}
   %Equal.sym(List<&2, Tag>, Table.stage_ids(Tag, layers, Table.AfterResponse{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.AfterResponse{}), LifecycleSelection.selection(Tag, entries, routes, compiled, layers, Table.AfterResponse{}, built)) : {Table.Lifecycle{MiddlewareSelectionSpec.hooks(Tag, entries, Table.Request{}), List.concat(&2, Tag, [MiddlewareSelectionSpec.filter(Tag, entries, path), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Parse{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Transform{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.BeforeHandle{})]), MiddlewareSelectionSpec.hooks(Tag, entries, Table.AfterHandle{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.MapResponse{}), MiddlewareSelectionSpec.hooks(Tag, entries, Table.Error{}), _} == MiddlewareSelectionSpec.lifecycle(Tag, entries, path) : Table.Lifecycle<Tag>}
   {==}
+
+# BND-17: trie router equivalence.
+
+def Laws.trie_route_spec(T, table, path):
+  TrieProof.route_equal(T, table, path)
+
+def Laws.trie_matches_spec(T, table, path):
+  TrieProof.matches_equal(T, table, path)
+
+def Laws.router_kind_spec(T, kind, table, path):
+  match kind:
+    case Router.Spec{}:
+      {==}
+    case Router.Trie{}:
+      TrieProof.route_equal(T, table, path)
+
+def Laws.methods_router_resolve(T, kind, table, path, method, opts):
+  MethodTrieProof.resolve_equal(T, kind, table, path, method, opts)
 
 # BND-31: universal cookie roundtrip and checked default serialization.
 
