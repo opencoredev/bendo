@@ -41,7 +41,7 @@ These hold for every ticket. Changing one needs a written reason in `docs/decisi
 4. **One event loop for IO, all cores for compute.** Each connection runs in its own `IO.spawn` computation. Heavy handler work uses Bend's parallel calls, and `!` calls can move it to the GPU.
 5. **Shared state lives in an actor.** Bend has no global mutable state. Counters, caches, sessions, rate limits and in-memory stores run as a spawned computation that owns the state and answers over a `Chan`.
 6. **Bendo may ship its own effects.** Bend effects are a `.c` file plus a `.js` twin. Bendo adds the ones Base lacks (wall clock, peer address, gzip, SQLite) the same way, and each one lists what it does outside the proofs.
-7. **Types flow from Bend to TypeScript.** A compiled app prints a route manifest (`--bendo-routes`) with schemas as JSON Schema. `bendo gen` turns it into TypeScript types for the client. Nobody writes route types twice.
+7. **Types flow from Bend to TypeScript.** A compiled app prints a route manifest (`--bendo-routes`) with schemas as JSON Schema. `bendo gen` turns it into TypeScript types for the client. Nobody writes route types twice. Decided in 0.6 ([0003](decisions/0003-typed-values.md)): an app writes each object schema once as copyable Bend data. Before the app compiles, a generate step evaluates those schemas through the `.mjs` build and emits a named Bend record with its typed decoder, which handlers import. The same pure decoder compiles to native code and to `.mjs`, so the browser runs the server's validation. Generated files are checked for freshness, and `bendo dev` and `bendo build` run the step before compiling.
 8. **Time comes from two clocks.** `IO.now` is a monotonic tick, right for durations and timeouts. Wall-clock time (the `Date` header, JWT expiry, cookie expiry) comes from Bendo's own effect (1.7).
 9. **Timeouts answer, they do not cancel.** `IO.within` does not stop the losing computation, and pure code runs until its next effect. A timeout guarantees the client a response, not that the handler stops.
 10. **Laws are human-owned.** Agents may add laws. They never delete or weaken one without a written reason in the commit and a Linear comment.
@@ -218,7 +218,7 @@ Chunked streaming, SSE and WebSockets.
 
 CLI, codegen, typed client, shared validators, TanStack Query helpers.
 
-- **7.1 Build the bendo CLI dev loop** (BND-54). `bendo new`, `dev` (watch `.bend` files, rebuild, restart, show compiler errors readably), `build` and `start`. Blocked by 1.5.
+- **7.1 Build the bendo CLI dev loop** (BND-54). `bendo new`, `dev` (watch `.bend` files, run the schema generate step from decision 0003, rebuild, restart, show compiler errors readably), `build` and `start`. Blocked by 1.5.
 - **7.1b Add the bendo routes, prove, gen and doctor commands** (BND-55). `bendo routes` (table from the manifest), `prove` (runs the proof check with readable output), `gen` (entry point for 7.2) and `doctor` (checks Bend, Lean, clang and Bun versions). Blocked by 7.1.
 - **7.2 Generate TypeScript route types from the manifest** (BND-56). `bendo gen` runs the app with `--bendo-routes` and writes `.bendo/routes.ts` with params, query, body and response types per route, derived from the JSON Schemas. Blocked by 4.7, 7.1b.
 - **7.3 Build the typed client** (BND-57). `createClient<Routes>(baseUrl)` with Eden Treaty-style calls (`api.todos({ id }).get()`), typed success and error results as a discriminated union, and runtime validation of responses. Blocked by 7.2.
