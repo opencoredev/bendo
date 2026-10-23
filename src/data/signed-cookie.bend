@@ -7,7 +7,8 @@ import ./base64.bend as Base64
 import ../crypto/hmac.bend as Hmac
 import ../crypto/compare.bend as Compare
 
-# A nonempty rotation set. Construct at startup with configure.
+# A nonempty rotation set. Construct it at startup with configure. Bend
+# cannot hide the constructor, so every entry point rechecks the slots.
 type Keys is Data:
   Keys{first: String, rest: List<&2, String>}
 
@@ -32,6 +33,11 @@ def valid_keys_go(xs: List<&2, String>, ok: Bool) -> Bool:
     case Nil{}: ok
     case x <> t: valid_keys_go(t, ok && key_valid(x))
 
+# Every slot holds a usable secret, as configure requires.
+def usable(keys: Keys) -> Bool:
+  match keys:
+    case Keys{first, rest}: valid_keys_go(rest, key_valid(first))
+
 def configured(keys: Keys, ok: Bool) -> Maybe<&2, Keys>:
   match ok:
     case True{}: Some{keys}
@@ -45,8 +51,9 @@ def configure(xs: List<&2, String>) -> Maybe<&2, Keys>:
 def digest(key: String, value: String) -> List<&2, U32>:
   Hmac.sha256(Utf8.encode(key), Utf8.encode(value))
 
-# Pure unchecked signing primitive; callers supply Unicode scalar strings.
-def sign(key: String, +value: String) -> String:
+# Unchecked signing primitive: it trusts the key and expects a Unicode
+# scalar value. Applications use sign or serialize.
+def unchecked_sign(key: String, +value: String) -> String:
   Url.encode(value ++ "." ++ Base64.encode(digest(key, value), False{}, True{}))
 
 # Always check every key, and every digest byte, including after a match.
@@ -65,8 +72,15 @@ def verified(value: String, ok: Bool) -> Maybe<&2, String>:
     case True{}: Some{value}
     case False{}: None{}
 
-def verify_digest(keys: Keys, +value: String, signature: List<&2, U32>) -> Maybe<&2, String>:
-  verified(value, matches(keys, value, signature))
+def verify_usable(keys: Keys, +value: String, signature: List<&2, U32>, ok: Bool) -> Maybe<&2, String>:
+  match ok:
+    case True{}: verified(value, matches(keys, value, signature))
+    case False{}: None{}
+
+# A directly built Keys with an empty or non-scalar slot accepts nothing:
+# anyone can compute the HMAC under an empty key.
+def verify_digest(+keys: Keys, +value: String, signature: List<&2, U32>) -> Maybe<&2, String>:
+  verify_usable(keys, value, signature, usable(keys))
 
 def verify_base64(keys: Keys, value: String, signature: Maybe<&2, List<&2, U32>>) -> Maybe<&2, String>:
   match signature:
@@ -93,11 +107,27 @@ def read(keys: Keys, wire: Maybe<&2, String>) -> Maybe<&2, String>:
     case None{}: None{}
     case Some{value}: verify(keys, value)
 
-def serialize_valid(name: String, value: String, keys: Keys, options: Cookie.Options, valid: Bool) -> Result<&2, &2, Cookie.Error, String>:
-  match keys valid:
-    case _ False{}: Fail{Cookie.InvalidValue{}}
+def signed(keys: Keys, +value: String, ok: Bool) -> Maybe<&2, String>:
+  match keys ok:
+    case _ False{}: None{}
+    case Keys{first, rest} True{}: Some{unchecked_sign(first, value)}
+
+# Sign with the first key. None for unusable keys or a non-scalar value.
+def sign(+keys: Keys, +value: String) -> Maybe<&2, String>:
+  signed(keys, value, usable(keys) && scalar_valid(value))
+
+def serialize_keys(name: String, value: String, keys: Keys, options: Cookie.Options, ok: Bool) -> Result<&2, &2, Cookie.Error, String>:
+  match keys ok:
+    case _ False{}: Fail{Cookie.InvalidSecret{}}
     case Keys{first, rest} True{}:
-      Cookie.serialize(name, sign(first, value), options)
+      Cookie.serialize(name, unchecked_sign(first, value), options)
+
+# The value is checked before the keys, so a non-scalar value is always
+# InvalidValue; unusable keys give InvalidSecret.
+def serialize_valid(name: String, value: String, +keys: Keys, options: Cookie.Options, valid: Bool) -> Result<&2, &2, Cookie.Error, String>:
+  match valid:
+    case False{}: Fail{Cookie.InvalidValue{}}
+    case True{}: serialize_keys(name, value, keys, options, usable(keys))
 
 def serialize(name: String, +value: String, keys: Keys, options: Cookie.Options) -> Result<&2, &2, Cookie.Error, String>:
   serialize_valid(name, value, keys, options, scalar_valid(value))

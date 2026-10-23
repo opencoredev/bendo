@@ -22,6 +22,9 @@ import ./cookie-ows-spec.bend as OwsSpec
 import ./cookie-ows.bend as OwsProof
 import ./cookies.bend as CookieProof
 import ../src/app/context.bend as Context
+import ../src/http/request.bend as Request
+import ../src/router/pattern.bend as Pattern
+import ../src/app/observability.bend as Obs
 
 def distinguish(b: Bool) -> Type:
   match b:
@@ -79,8 +82,19 @@ def matches_acc(+keys: List<&2, String>, +value: String, +signature: List<&2, U3
       %Equal.sym(Bool, Compare.ct_equal(S.digest(key, value), signature), Spec.bytes_equal(S.digest(key, value), signature), CompareProof.equal(S.digest(key, value), signature)) : {S.matches_go(rest, value, signature, found || _) == found || (Spec.bytes_equal(S.digest(key, value), signature) || Spec.authentic(rest, value, signature)) : Bool}
       Equal.trans(Bool, S.matches_go(rest, value, signature, found || Spec.bytes_equal(S.digest(key, value), signature)), (found || Spec.bytes_equal(S.digest(key, value), signature)) || Spec.authentic(rest, value, signature), found || (Spec.bytes_equal(S.digest(key, value), signature) || Spec.authentic(rest, value, signature)), matches_acc(rest, value, signature, found || Spec.bytes_equal(S.digest(key, value), signature)), or_assoc(found, Spec.bytes_equal(S.digest(key, value), signature), Spec.authentic(rest, value, signature)))
 
-def digest_spec(+first: String, +rest: List<&2, String>, +value: String, +signature: List<&2, U32>) -> {S.verify_digest(S.Keys{first, rest}, value, signature) == S.verified(value, Spec.authentic(first <> rest, value, signature)) : Maybe<&2, String>}:
+def matched_spec(+first: String, +rest: List<&2, String>, +value: String, +signature: List<&2, U32>) -> {S.verified(value, S.matches(S.Keys{first, rest}, value, signature)) == S.verified(value, Spec.authentic(first <> rest, value, signature)) : Maybe<&2, String>}:
   Equal.cong(Bool, Maybe<&2, String>, b => S.verified(value, b), S.matches_go(first <> rest, value, signature, False{}), Spec.authentic(first <> rest, value, signature), matches_acc(first <> rest, value, signature, False{}))
+
+def usable_true(+first: String, +rest: List<&2, String>, ok: {Spec.secrets(first <> rest) == True{} : Bool}) -> {S.usable(S.Keys{first, rest}) == True{} : Bool}:
+  Equal.trans(Bool, S.usable(S.Keys{first, rest}), Spec.secrets(first <> rest), True{}, Config.usable(first, rest), ok)
+
+def usable_false(+first: String, +rest: List<&2, String>, bad: {Spec.secrets(first <> rest) == False{} : Bool}) -> {S.usable(S.Keys{first, rest}) == False{} : Bool}:
+  Equal.trans(Bool, S.usable(S.Keys{first, rest}), Spec.secrets(first <> rest), False{}, Config.usable(first, rest), bad)
+
+# Usable keys reduce verify_digest to the HMAC comparison.
+def digest_spec(+first: String, +rest: List<&2, String>, +value: String, +signature: List<&2, U32>, ok_keys: {Spec.secrets(first <> rest) == True{} : Bool}) -> {S.verify_digest(S.Keys{first, rest}, value, signature) == S.verified(value, Spec.authentic(first <> rest, value, signature)) : Maybe<&2, String>}:
+  %Equal.sym(Bool, S.usable(S.Keys{first, rest}), True{}, usable_true(first, rest, ok_keys)) : {S.verify_usable(S.Keys{first, rest}, value, signature, _) == S.verified(value, Spec.authentic(first <> rest, value, signature)) : Maybe<&2, String>}
+  matched_spec(first, rest, value, signature)
 
 def or_true(+b: Bool) -> {b || True{} == True{} : Bool}:
   match b:
@@ -136,11 +150,21 @@ def reject_all(+keys: List<&2, String>, +value: String, +signature: List<&2, U32
       %Equal.sym(Bool, Spec.bytes_equal(S.digest(key, value), signature), False{}, unequal_decide(S.digest(key, value), signature, Spec.bytes_equal(S.digest(key, value), signature), {==}, head)) : {_ || Spec.authentic(rest, value, signature) == False{} : Bool}
       reject_all(rest, value, signature, tail)
 
-def member(+first: String, +rest: List<&2, String>, +key: String, +value: String, contained: Spec.contains(key, first <> rest)) -> {S.verify_digest(S.Keys{first, rest}, value, S.digest(key, value)) == Some{value} : Maybe<&2, String>}:
-  Equal.trans(Maybe<&2, String>, S.verify_digest(S.Keys{first, rest}, value, S.digest(key, value)), S.verified(value, Spec.authentic(first <> rest, value, S.digest(key, value))), Some{value}, digest_spec(first, rest, value, S.digest(key, value)), Equal.cong(Bool, Maybe<&2, String>, b => S.verified(value, b), Spec.authentic(first <> rest, value, S.digest(key, value)), True{}, authentic_member(first <> rest, key, value, contained)))
+def member(+first: String, +rest: List<&2, String>, +key: String, +value: String, contained: Spec.contains(key, first <> rest), ok_keys: {Spec.secrets(first <> rest) == True{} : Bool}) -> {S.verify_digest(S.Keys{first, rest}, value, S.digest(key, value)) == Some{value} : Maybe<&2, String>}:
+  Equal.trans(Maybe<&2, String>, S.verify_digest(S.Keys{first, rest}, value, S.digest(key, value)), S.verified(value, Spec.authentic(first <> rest, value, S.digest(key, value))), Some{value}, digest_spec(first, rest, value, S.digest(key, value), ok_keys), Equal.cong(Bool, Maybe<&2, String>, b => S.verified(value, b), Spec.authentic(first <> rest, value, S.digest(key, value)), True{}, authentic_member(first <> rest, key, value, contained)))
+
+# Rejection holds for every Keys value: unusable keys reject before hashing.
+def reject_when(+first: String, +rest: List<&2, String>, +value: String, +signature: List<&2, U32>, ne: Spec.different(first <> rest, value, signature), b: Bool, e: {S.usable(S.Keys{first, rest}) == b : Bool}) -> {S.verify_digest(S.Keys{first, rest}, value, signature) == None{} : Maybe<&2, String>}:
+  match b:
+    case False{}:
+      %Equal.sym(Bool, S.usable(S.Keys{first, rest}), False{}, e) : {S.verify_usable(S.Keys{first, rest}, value, signature, _) == None{} : Maybe<&2, String>}
+      {==}
+    case True{}:
+      %Equal.sym(Bool, S.usable(S.Keys{first, rest}), True{}, e) : {S.verify_usable(S.Keys{first, rest}, value, signature, _) == None{} : Maybe<&2, String>}
+      Equal.trans(Maybe<&2, String>, S.verified(value, S.matches(S.Keys{first, rest}, value, signature)), S.verified(value, Spec.authentic(first <> rest, value, signature)), None{}, matched_spec(first, rest, value, signature), Equal.cong(Bool, Maybe<&2, String>, x => S.verified(value, x), Spec.authentic(first <> rest, value, signature), False{}, reject_all(first <> rest, value, signature, ne)))
 
 def reject(+first: String, +rest: List<&2, String>, +value: String, +signature: List<&2, U32>, ne: Spec.different(first <> rest, value, signature)) -> {S.verify_digest(S.Keys{first, rest}, value, signature) == None{} : Maybe<&2, String>}:
-  Equal.trans(Maybe<&2, String>, S.verify_digest(S.Keys{first, rest}, value, signature), S.verified(value, Spec.authentic(first <> rest, value, signature)), None{}, digest_spec(first, rest, value, signature), Equal.cong(Bool, Maybe<&2, String>, b => S.verified(value, b), Spec.authentic(first <> rest, value, signature), False{}, reject_all(first <> rest, value, signature, ne)))
+  reject_when(first, rest, value, signature, ne, S.usable(S.Keys{first, rest}), {==})
 
 def percent_roundtrip(+value: String, valid: {Utf8.valid(value) == True{} : Bool}) -> {Url.decode(Url.encode(value)) == Done{value} : Result<&2, &2, Url.Error, String>}:
   Percent.component_roundtrip(value, False{}, Utf8Proof.roundtrip(value, valid))
@@ -149,11 +173,11 @@ def percent_roundtrip(+value: String, valid: {Utf8.valid(value) == True{} : Bool
 def Laws.signed_cookie_compare_structural(xs, ys):
   CompareProof.equal(xs, ys)
 
-def Laws.signed_cookie_digest_first(first, rest, value):
-  member(first, rest, first, value, Inl{{==}})
+def Laws.signed_cookie_digest_first(first, rest, value, ok_keys):
+  member(first, rest, first, value, Inl{{==}}, ok_keys)
 
-def Laws.signed_cookie_digest_member(first, rest, key, value, contained):
-  member(first, rest, key, value, contained)
+def Laws.signed_cookie_digest_member(first, rest, key, value, contained, ok_keys):
+  member(first, rest, key, value, contained, ok_keys)
 
 def Laws.signed_cookie_digest_reject(first, rest, value, signature, ne):
   reject(first, rest, value, signature, ne)
@@ -177,8 +201,8 @@ def wire_digest(+keys: S.Keys, +value: String, +signature: List<&2, U32>, scalar
   %Equal.sym(Maybe<&2, List<&2, U32>>, Base64.decode(Base64.encode(signature, False{}, True{}), False{}, True{}), Some{signature}, Base64Proof.roundtrip(signature, False{}, True{}, octets)) : {S.verify_base64(keys, value, _) == S.verify_digest(keys, value, signature) : Maybe<&2, String>}
   {==}
 
-def wire(+first: String, +rest: List<&2, String>, +key: String, +value: String, contained: Spec.contains(key, first <> rest), valid: {Utf8.valid(value) == True{} : Bool}) -> {S.verify(S.Keys{first, rest}, S.sign(key, value)) == Some{value} : Maybe<&2, String>}:
-  Equal.trans(Maybe<&2, String>, S.verify(S.Keys{first, rest}, S.sign(key, value)), S.verify_digest(S.Keys{first, rest}, value, S.digest(key, value)), Some{value}, wire_digest(S.Keys{first, rest}, value, S.digest(key, value), Wire.payload_valid(value, S.digest(key, value), valid), Wire.payload_split(value, S.digest(key, value)), Wire.hmac_octets(Utf8.encode(key), Utf8.encode(value))), member(first, rest, key, value, contained))
+def wire(+first: String, +rest: List<&2, String>, +key: String, +value: String, contained: Spec.contains(key, first <> rest), ok_keys: {Spec.secrets(first <> rest) == True{} : Bool}, valid: {Utf8.valid(value) == True{} : Bool}) -> {S.verify(S.Keys{first, rest}, S.unchecked_sign(key, value)) == Some{value} : Maybe<&2, String>}:
+  Equal.trans(Maybe<&2, String>, S.verify(S.Keys{first, rest}, S.unchecked_sign(key, value)), S.verify_digest(S.Keys{first, rest}, value, S.digest(key, value)), Some{value}, wire_digest(S.Keys{first, rest}, value, S.digest(key, value), Wire.payload_valid(value, S.digest(key, value), valid), Wire.payload_split(value, S.digest(key, value)), Wire.hmac_octets(Utf8.encode(key), Utf8.encode(value))), member(first, rest, key, value, contained, ok_keys))
 
 def Laws.signed_cookie_configure_spec(xs):
   Config.configure(xs)
@@ -186,18 +210,19 @@ def Laws.signed_cookie_configure_spec(xs):
 def Laws.signed_cookie_configure_nonempty(xs, keys, configured):
   Config.nonempty(xs, keys, configured)
 
-def Laws.signed_cookie_wire_first(first, rest, value, valid):
-  wire(first, rest, first, value, Inl{{==}}, valid)
+def Laws.signed_cookie_wire_first(first, rest, value, ok_keys, valid):
+  wire(first, rest, first, value, Inl{{==}}, ok_keys, valid)
 
-def Laws.signed_cookie_wire_member(first, rest, key, value, contained, valid):
-  wire(first, rest, key, value, contained, valid)
+def Laws.signed_cookie_wire_member(first, rest, key, value, contained, ok_keys, valid):
+  wire(first, rest, key, value, contained, ok_keys, valid)
 
 def scalar_true(+value: String, +valid: {Utf8.valid(value) == True{} : Bool}) -> {S.scalar_valid(value) == True{} : Bool}:
   Equal.trans(Bool, S.scalar_valid(value), Utf8.valid(value), True{}, Config.scalar(value), valid)
 
-def serialize_first(+name: String, +value: String, +first: String, +rest: List<&2, String>, +options: Cookie.Options, +valid: {Utf8.valid(value) == True{} : Bool}) -> {S.serialize(name, value, S.Keys{first, rest}, options) == Cookie.serialize(name, Spec.signed_wire(first, value), options) : Result<&2, &2, Cookie.Error, String>}:
+def serialize_first(+name: String, +value: String, +first: String, +rest: List<&2, String>, +options: Cookie.Options, ok_keys: {Spec.secrets(first <> rest) == True{} : Bool}, +valid: {Utf8.valid(value) == True{} : Bool}) -> {S.serialize(name, value, S.Keys{first, rest}, options) == Cookie.serialize(name, Spec.signed_wire(first, value), options) : Result<&2, &2, Cookie.Error, String>}:
   %Equal.sym(Bool, S.scalar_valid(value), True{}, scalar_true(value, valid)) : {S.serialize_valid(name, value, S.Keys{first, rest}, options, _) == Cookie.serialize(name, Spec.signed_wire(first, value), options) : Result<&2, &2, Cookie.Error, String>}
-  Equal.cong(String, Result<&2, &2, Cookie.Error, String>, w => Cookie.serialize(name, w, options), S.sign(first, value), Spec.signed_wire(first, value), Format.sign_eq(first, value))
+  %Equal.sym(Bool, S.usable(S.Keys{first, rest}), True{}, usable_true(first, rest, ok_keys)) : {S.serialize_keys(name, value, S.Keys{first, rest}, options, _) == Cookie.serialize(name, Spec.signed_wire(first, value), options) : Result<&2, &2, Cookie.Error, String>}
+  Equal.cong(String, Result<&2, &2, Cookie.Error, String>, w => Cookie.serialize(name, w, options), S.unchecked_sign(first, value), Spec.signed_wire(first, value), Format.sign_eq(first, value))
 
 def serialize_invalid(+name: String, +value: String, +first: String, +rest: List<&2, String>, +options: Cookie.Options, +invalid: {Utf8.valid(value) == False{} : Bool}) -> {S.serialize(name, value, S.Keys{first, rest}, options) == Fail{Cookie.InvalidValue{}} : Result<&2, &2, Cookie.Error, String>}:
   %Equal.sym(Bool, S.scalar_valid(value), False{}, Equal.trans(Bool, S.scalar_valid(value), Utf8.valid(value), False{}, Config.scalar(value), invalid)) : {S.serialize_valid(name, value, S.Keys{first, rest}, options, _) == Fail{Cookie.InvalidValue{}} : Result<&2, &2, Cookie.Error, String>}
@@ -214,9 +239,9 @@ def admissible_value(+name: String, +value: String, +options: Cookie.Options, ok
     case Cookie.Options{+p, +d, +a, +e, +secure, +h, +site, +part}:
       admissible_swap(CSpec.name_valid(name), CSpec.optional_valid(~CSpec.path_valid, p) && (CSpec.optional_valid(~CSpec.domain_valid, d) && (CSpec.optional_valid(~CSpec.expires_valid, e) && ((Bool.not(CSpec.unrestricted(site)) || secure) && (Bool.not(part) || secure)))), CSpec.value_valid(value), ok, okv)
 
-def set_cookie_field(+name: String, +value: String, +first: String, +rest: List<&2, String>, +options: Cookie.Options, +valid: {Utf8.valid(value) == True{} : Bool}, ok: {CSpec.admissible(name, "", options) == True{} : Bool}) -> {S.serialize(name, value, S.Keys{first, rest}, options) == Done{CSpec.wire(name, Spec.signed_wire(first, value), options)} : Result<&2, &2, Cookie.Error, String>}:
+def set_cookie_field(+name: String, +value: String, +first: String, +rest: List<&2, String>, +options: Cookie.Options, ok_keys: {Spec.secrets(first <> rest) == True{} : Bool}, +valid: {Utf8.valid(value) == True{} : Bool}, ok: {CSpec.admissible(name, "", options) == True{} : Bool}) -> {S.serialize(name, value, S.Keys{first, rest}, options) == Done{CSpec.wire(name, Spec.signed_wire(first, value), options)} : Result<&2, &2, Cookie.Error, String>}:
   +wire = Spec.signed_wire(first, value)
-  Equal.trans(Result<&2, &2, Cookie.Error, String>, S.serialize(name, value, S.Keys{first, rest}, options), Cookie.serialize(name, wire, options), Done{CSpec.wire(name, wire, options)}, serialize_first(name, value, first, rest, options, valid), CSerProof.successful(name, wire, options, Cookie.validate(name, wire, options), Equal.trans(Bool, CSerProof.status(Cookie.validate(name, wire, options)), CSpec.admissible(name, wire, options), True{}, CSerProof.validation_status(name, wire, options), admissible_value(name, wire, options, ok, Format.wire_valid(first, value)))))
+  Equal.trans(Result<&2, &2, Cookie.Error, String>, S.serialize(name, value, S.Keys{first, rest}, options), Cookie.serialize(name, wire, options), Done{CSpec.wire(name, wire, options)}, serialize_first(name, value, first, rest, options, ok_keys, valid), CSerProof.successful(name, wire, options, Cookie.validate(name, wire, options), Equal.trans(Bool, CSerProof.status(Cookie.validate(name, wire, options)), CSpec.admissible(name, wire, options), True{}, CSerProof.validation_status(name, wire, options), admissible_value(name, wire, options, ok, Format.wire_valid(first, value)))))
 
 def word_cmp_refl(+n: Nat, +w: Word(n)) -> {Word.cmp(n, w, w) == EQ{} : Cmp}:
   match n w:
@@ -276,45 +301,52 @@ def semispace(+entries: List<&2, Cookie.Entry>, valid: {OwsSpec.entries_valid(en
       +ok = CookieProof.head_valid(name, value, OwsSpec.entries_valid(t), valid)
       OwsProof.joined_semispace(t, OwsSpec.Empty{}, name, value, OwsProof.left(Cookie.name_valid(name), Cookie.value_valid(value), OwsProof.left(Cookie.name_valid(name) && Cookie.value_valid(value), OwsSpec.entries_valid(t), ok)), OwsProof.right(Cookie.name_valid(name), Cookie.value_valid(value), OwsProof.left(Cookie.name_valid(name) && Cookie.value_valid(value), OwsSpec.entries_valid(t), ok)), OwsProof.right(Cookie.name_valid(name) && Cookie.value_valid(value), OwsSpec.entries_valid(t), ok))
 
-def request_roundtrip(+name: String, +value: String, +first: String, +rest: List<&2, String>, +key: String, +before: List<&2, Cookie.Entry>, +after: List<&2, Cookie.Entry>, contained: Spec.contains(key, first <> rest), +valid: {Utf8.valid(value) == True{} : Bool}, +named: {CSpec.name_valid(name) == True{} : Bool}, +earlier: {OwsSpec.entries_valid(before) == True{} : Bool}, +later: {OwsSpec.entries_valid(after) == True{} : Bool}, +distinct: {Spec.unnamed(before, name) == True{} : Bool}) -> {S.read(S.Keys{first, rest}, Cookie.first(Cookie.parse(String.join(OwsSpec.pairs(List.append(&2, Cookie.Entry, before, Cookie.Entry{name, Spec.signed_wire(key, value)} <> after)), "; ")), name)) == Some{value} : Maybe<&2, String>}:
+def request_roundtrip(+name: String, +value: String, +first: String, +rest: List<&2, String>, +key: String, +before: List<&2, Cookie.Entry>, +after: List<&2, Cookie.Entry>, contained: Spec.contains(key, first <> rest), ok_keys: {Spec.secrets(first <> rest) == True{} : Bool}, +valid: {Utf8.valid(value) == True{} : Bool}, +named: {CSpec.name_valid(name) == True{} : Bool}, +earlier: {OwsSpec.entries_valid(before) == True{} : Bool}, +later: {OwsSpec.entries_valid(after) == True{} : Bool}, +distinct: {Spec.unnamed(before, name) == True{} : Bool}) -> {S.read(S.Keys{first, rest}, Cookie.first(Cookie.parse(String.join(OwsSpec.pairs(List.append(&2, Cookie.Entry, before, Cookie.Entry{name, Spec.signed_wire(key, value)} <> after)), "; ")), name)) == Some{value} : Maybe<&2, String>}:
   +signed = Spec.signed_wire(key, value)
   +entries = List.append(&2, Cookie.Entry, before, Cookie.Entry{name, signed} <> after)
   +cons_ok = Wire.both(CSpec.name_valid(name) && CSpec.value_valid(signed), OwsSpec.entries_valid(after), Wire.both(CSpec.name_valid(name), CSpec.value_valid(signed), named, Format.wire_valid(key, value)), later)
   %Equal.sym(List<&2, Cookie.Entry>, Cookie.parse(String.join(OwsSpec.pairs(entries), "; ")), entries, semispace(entries, entries_append(before, Cookie.Entry{name, signed} <> after, earlier, cons_ok))) : {S.read(S.Keys{first, rest}, Cookie.first(_, name)) == Some{value} : Maybe<&2, String>}
   %Equal.sym(Maybe<&2, String>, Cookie.first(entries, name), Some{signed}, first_found(before, name, signed, after, distinct)) : {S.read(S.Keys{first, rest}, _) == Some{value} : Maybe<&2, String>}
   %Format.sign_eq(key, value) : {S.verify(S.Keys{first, rest}, _) == Some{value} : Maybe<&2, String>}
-  wire(first, rest, key, value, contained, valid)
+  wire(first, rest, key, value, contained, ok_keys, valid)
 
 def Laws.signed_cookie_sign_spec(key, value):
   Format.sign_eq(key, value)
 
-def Laws.signed_cookie_serialize_first(name, value, first, rest, options, valid):
-  serialize_first(name, value, first, rest, options, valid)
+def Laws.signed_cookie_serialize_first(name, value, first, rest, options, ok_keys, valid):
+  serialize_first(name, value, first, rest, options, ok_keys, valid)
 
 def Laws.signed_cookie_serialize_invalid(name, value, first, rest, options, invalid):
   serialize_invalid(name, value, first, rest, options, invalid)
 
-def Laws.signed_cookie_setter_first(Vars, c, name, value, first, rest, options, valid):
-  Equal.cong(Result<&2, &2, Cookie.Error, String>, Result<&2, &2, Cookie.Error, Context.Ctx<Vars>>, r => Context.cookie_result(Vars, c, r), S.serialize(name, value, S.Keys{first, rest}, options), Cookie.serialize(name, Spec.signed_wire(first, value), options), serialize_first(name, value, first, rest, options, valid))
+def Laws.signed_cookie_setter_first(Vars, c, name, value, first, rest, options, ok_keys, valid):
+  Equal.cong(Result<&2, &2, Cookie.Error, String>, Result<&2, &2, Cookie.Error, Context.Ctx<Vars>>, r => Context.cookie_result(Vars, c, r), S.serialize(name, value, S.Keys{first, rest}, options), Cookie.serialize(name, Spec.signed_wire(first, value), options), serialize_first(name, value, first, rest, options, ok_keys, valid))
 
-def Laws.signed_cookie_set_cookie_field(name, value, first, rest, options, valid, admissible):
-  set_cookie_field(name, value, first, rest, options, valid, admissible)
+def Laws.signed_cookie_set_cookie_field(name, value, first, rest, options, ok_keys, valid, admissible):
+  set_cookie_field(name, value, first, rest, options, ok_keys, valid, admissible)
 
 def Laws.signed_cookie_context_read(Vars, c, name, keys):
   {==}
 
-def Laws.signed_cookie_request_roundtrip(name, value, first, rest, key, before, after, contained, valid, named, earlier, later, distinct):
-  request_roundtrip(name, value, first, rest, key, before, after, contained, valid, named, earlier, later, distinct)
+def Laws.signed_cookie_request_roundtrip(name, value, first, rest, key, before, after, contained, ok_keys, valid, named, earlier, later, distinct):
+  request_roundtrip(name, value, first, rest, key, before, after, contained, ok_keys, valid, named, earlier, later, distinct)
 
 def accept_eq(+value: String, +b: Bool) -> {S.verified(value, b) == Spec.accept(value, b) : Maybe<&2, String>}:
   match b:
     case False{}: {==}
     case True{}: {==}
 
+def gate_eq(+first: String, +rest: List<&2, String>, +value: String, +bytes: List<&2, U32>, +b: Bool) -> {S.verify_usable(S.Keys{first, rest}, value, bytes, b) == Spec.accept(value, b && Spec.authentic(first <> rest, value, bytes)) : Maybe<&2, String>}:
+  match b:
+    case False{}: {==}
+    case True{}:
+      Equal.trans(Maybe<&2, String>, S.verified(value, S.matches(S.Keys{first, rest}, value, bytes)), S.verified(value, Spec.authentic(first <> rest, value, bytes)), Spec.accept(value, Spec.authentic(first <> rest, value, bytes)), matched_spec(first, rest, value, bytes), accept_eq(value, Spec.authentic(first <> rest, value, bytes)))
+
 def by_keys(+keys: S.Keys, +value: String, +bytes: List<&2, U32>) -> {S.verify_digest(keys, value, bytes) == Spec.authenticated_by(keys, value, bytes) : Maybe<&2, String>}:
   match keys:
     case S.Keys{+first, +rest}:
-      Equal.trans(Maybe<&2, String>, S.verify_digest(S.Keys{first, rest}, value, bytes), S.verified(value, Spec.authentic(first <> rest, value, bytes)), Spec.accept(value, Spec.authentic(first <> rest, value, bytes)), digest_spec(first, rest, value, bytes), accept_eq(value, Spec.authentic(first <> rest, value, bytes)))
+      %Equal.sym(Bool, S.usable(S.Keys{first, rest}), Spec.secrets(first <> rest), Config.usable(first, rest)) : {S.verify_usable(S.Keys{first, rest}, value, bytes, _) == Spec.authenticated_by(S.Keys{first, rest}, value, bytes) : Maybe<&2, String>}
+      gate_eq(first, rest, value, bytes, Spec.secrets(first <> rest))
 
 def signature_eq(+keys: S.Keys, +value: String, +signature: Maybe<&2, List<&2, U32>>) -> {S.verify_base64(keys, value, signature) == Spec.authenticated(keys, value, signature) : Maybe<&2, String>}:
   match signature:
@@ -338,3 +370,151 @@ def payload_eq(+keys: S.Keys, +decoded: Result<&2, &2, Url.Error, String>) -> {S
 
 def Laws.signed_cookie_wire_spec(keys, wire):
   payload_eq(keys, Url.decode(wire))
+
+# Keys built without configure: an unusable slot rejects at every entry point.
+def unusable_digest(+first: String, +rest: List<&2, String>, +value: String, +signature: List<&2, U32>, bad: {Spec.secrets(first <> rest) == False{} : Bool}) -> {S.verify_digest(S.Keys{first, rest}, value, signature) == None{} : Maybe<&2, String>}:
+  %Equal.sym(Bool, S.usable(S.Keys{first, rest}), False{}, usable_false(first, rest, bad)) : {S.verify_usable(S.Keys{first, rest}, value, signature, _) == None{} : Maybe<&2, String>}
+  {==}
+
+def spec_unusable_bytes(+first: String, +rest: List<&2, String>, +value: String, +bytes: List<&2, U32>, bad: {Spec.secrets(first <> rest) == False{} : Bool}) -> {Spec.authenticated_by(S.Keys{first, rest}, value, bytes) == None{} : Maybe<&2, String>}:
+  %Equal.sym(Bool, Spec.secrets(first <> rest), False{}, bad) : {Spec.accept(value, _ && Spec.authentic(first <> rest, value, bytes)) == None{} : Maybe<&2, String>}
+  {==}
+
+def spec_unusable_signature(+first: String, +rest: List<&2, String>, +value: String, +signature: Maybe<&2, List<&2, U32>>, bad: {Spec.secrets(first <> rest) == False{} : Bool}) -> {Spec.authenticated(S.Keys{first, rest}, value, signature) == None{} : Maybe<&2, String>}:
+  match signature:
+    case None{}: {==}
+    case Some{+bytes}: spec_unusable_bytes(first, rest, value, bytes, bad)
+
+def spec_unusable_split(+first: String, +rest: List<&2, String>, +m: Maybe<&2, Spec.Parts>, bad: {Spec.secrets(first <> rest) == False{} : Bool}) -> {Spec.verify_split(S.Keys{first, rest}, m) == None{} : Maybe<&2, String>}:
+  match m:
+    case None{}: {==}
+    case Some{Spec.Parts{+v, +s}}: spec_unusable_signature(first, rest, v, Base64.decode(s, False{}, True{}), bad)
+
+def spec_unusable_payload(+first: String, +rest: List<&2, String>, +decoded: Result<&2, &2, Url.Error, String>, bad: {Spec.secrets(first <> rest) == False{} : Bool}) -> {Spec.verify_payload(S.Keys{first, rest}, decoded) == None{} : Maybe<&2, String>}:
+  match decoded:
+    case Fail{e}: {==}
+    case Done{+p}: spec_unusable_split(first, rest, Spec.last_dot(p), bad)
+
+def unusable_verify(+first: String, +rest: List<&2, String>, +wire: String, bad: {Spec.secrets(first <> rest) == False{} : Bool}) -> {S.verify(S.Keys{first, rest}, wire) == None{} : Maybe<&2, String>}:
+  Equal.trans(Maybe<&2, String>, S.verify(S.Keys{first, rest}, wire), Spec.verify_payload(S.Keys{first, rest}, Url.decode(wire)), None{}, payload_eq(S.Keys{first, rest}, Url.decode(wire)), spec_unusable_payload(first, rest, Url.decode(wire), bad))
+
+def unusable_read(+first: String, +rest: List<&2, String>, +wire: Maybe<&2, String>, bad: {Spec.secrets(first <> rest) == False{} : Bool}) -> {S.read(S.Keys{first, rest}, wire) == None{} : Maybe<&2, String>}:
+  match wire:
+    case None{}: {==}
+    case Some{+w}: unusable_verify(first, rest, w, bad)
+
+def unusable_sign(+first: String, +rest: List<&2, String>, +value: String, bad: {Spec.secrets(first <> rest) == False{} : Bool}) -> {S.sign(S.Keys{first, rest}, value) == None{} : Maybe<&2, String>}:
+  %Equal.sym(Bool, S.usable(S.Keys{first, rest}), False{}, usable_false(first, rest, bad)) : {S.signed(S.Keys{first, rest}, value, _ && S.scalar_valid(value)) == None{} : Maybe<&2, String>}
+  {==}
+
+def unusable_serialize(+name: String, +value: String, +first: String, +rest: List<&2, String>, +options: Cookie.Options, bad: {Spec.secrets(first <> rest) == False{} : Bool}, valid: {Utf8.valid(value) == True{} : Bool}) -> {S.serialize(name, value, S.Keys{first, rest}, options) == Fail{Cookie.InvalidSecret{}} : Result<&2, &2, Cookie.Error, String>}:
+  %Equal.sym(Bool, S.scalar_valid(value), True{}, scalar_true(value, valid)) : {S.serialize_valid(name, value, S.Keys{first, rest}, options, _) == Fail{Cookie.InvalidSecret{}} : Result<&2, &2, Cookie.Error, String>}
+  %Equal.sym(Bool, S.usable(S.Keys{first, rest}), False{}, usable_false(first, rest, bad)) : {S.serialize_keys(name, value, S.Keys{first, rest}, options, _) == Fail{Cookie.InvalidSecret{}} : Result<&2, &2, Cookie.Error, String>}
+  {==}
+
+def unusable_setter(-Vars: Data, +c: Context.Ctx<Vars>, +name: String, +value: String, +first: String, +rest: List<&2, String>, +options: Cookie.Options, bad: {Spec.secrets(first <> rest) == False{} : Bool}, valid: {Utf8.valid(value) == True{} : Bool}) -> {Context.set_signed_cookie(Vars, c, name, value, S.Keys{first, rest}, options) == Fail{Cookie.InvalidSecret{}} : Result<&2, &2, Cookie.Error, Context.Ctx<Vars>>}:
+  match c:
+    case Context.Ctx{+r, +p, +b, +q, +s, +hs, +v, +o}:
+      Equal.cong(Result<&2, &2, Cookie.Error, String>, Result<&2, &2, Cookie.Error, Context.Ctx<Vars>>, x => Context.cookie_result(Vars, Context.Ctx{r, p, b, q, s, hs, v, o}, x), S.serialize(name, value, S.Keys{first, rest}, options), Fail{Cookie.InvalidSecret{}}, unusable_serialize(name, value, first, rest, options, bad, valid))
+
+def Laws.signed_cookie_unusable_digest(first, rest, value, signature, bad):
+  unusable_digest(first, rest, value, signature, bad)
+
+def Laws.signed_cookie_unusable_verify(first, rest, wire, bad):
+  unusable_verify(first, rest, wire, bad)
+
+def Laws.signed_cookie_unusable_read(first, rest, wire, bad):
+  unusable_read(first, rest, wire, bad)
+
+def Laws.signed_cookie_unusable_sign(first, rest, value, bad):
+  unusable_sign(first, rest, value, bad)
+
+def Laws.signed_cookie_unusable_serialize(name, value, first, rest, options, bad, valid):
+  unusable_serialize(name, value, first, rest, options, bad, valid)
+
+def Laws.signed_cookie_unusable_setter(Vars, c, name, value, first, rest, options, bad, valid):
+  unusable_setter(Vars, c, name, value, first, rest, options, bad, valid)
+
+def Laws.signed_cookie_unusable_context(Vars, c, name, first, rest, bad):
+  unusable_read(first, rest, Context.cookie(Vars, c, name), bad)
+
+# The checked signer.
+def sign_first(+first: String, +rest: List<&2, String>, +value: String, ok_keys: {Spec.secrets(first <> rest) == True{} : Bool}, valid: {Utf8.valid(value) == True{} : Bool}) -> {S.sign(S.Keys{first, rest}, value) == Some{Spec.signed_wire(first, value)} : Maybe<&2, String>}:
+  %Equal.sym(Bool, S.usable(S.Keys{first, rest}), True{}, usable_true(first, rest, ok_keys)) : {S.signed(S.Keys{first, rest}, value, _ && S.scalar_valid(value)) == Some{Spec.signed_wire(first, value)} : Maybe<&2, String>}
+  %Equal.sym(Bool, S.scalar_valid(value), True{}, scalar_true(value, valid)) : {S.signed(S.Keys{first, rest}, value, True{} && _) == Some{Spec.signed_wire(first, value)} : Maybe<&2, String>}
+  Equal.cong(String, Maybe<&2, String>, w => Some{w}, S.unchecked_sign(first, value), Spec.signed_wire(first, value), Format.sign_eq(first, value))
+
+def and_false(+b: Bool) -> {b && False{} == False{} : Bool}:
+  match b:
+    case False{}: {==}
+    case True{}: {==}
+
+def sign_invalid(+keys: S.Keys, +value: String, invalid: {Utf8.valid(value) == False{} : Bool}) -> {S.sign(keys, value) == None{} : Maybe<&2, String>}:
+  match keys:
+    case S.Keys{+first, +rest}:
+      %Equal.sym(Bool, S.scalar_valid(value), False{}, Equal.trans(Bool, S.scalar_valid(value), Utf8.valid(value), False{}, Config.scalar(value), invalid)) : {S.signed(S.Keys{first, rest}, value, S.usable(S.Keys{first, rest}) && _) == None{} : Maybe<&2, String>}
+      %Equal.sym(Bool, S.usable(S.Keys{first, rest}) && False{}, False{}, and_false(S.usable(S.Keys{first, rest}))) : {S.signed(S.Keys{first, rest}, value, _) == None{} : Maybe<&2, String>}
+      {==}
+
+def setter_invalid(-Vars: Data, +c: Context.Ctx<Vars>, +name: String, +value: String, +keys: S.Keys, +options: Cookie.Options, invalid: {Utf8.valid(value) == False{} : Bool}) -> {Context.set_signed_cookie(Vars, c, name, value, keys, options) == Fail{Cookie.InvalidValue{}} : Result<&2, &2, Cookie.Error, Context.Ctx<Vars>>}:
+  match c:
+    case Context.Ctx{+r, +p, +b, +q, +s, +hs, +v, +o}:
+      match keys:
+        case S.Keys{+first, +rest}:
+          Equal.cong(Result<&2, &2, Cookie.Error, String>, Result<&2, &2, Cookie.Error, Context.Ctx<Vars>>, x => Context.cookie_result(Vars, Context.Ctx{r, p, b, q, s, hs, v, o}, x), S.serialize(name, value, S.Keys{first, rest}, options), Fail{Cookie.InvalidValue{}}, serialize_invalid(name, value, first, rest, options, invalid))
+
+def Laws.signed_cookie_sign_first(first, rest, value, ok_keys, valid):
+  sign_first(first, rest, value, ok_keys, valid)
+
+def Laws.signed_cookie_sign_invalid(keys, value, invalid):
+  sign_invalid(keys, value, invalid)
+
+def Laws.signed_cookie_setter_invalid(Vars, c, name, value, keys, options, invalid):
+  setter_invalid(Vars, c, name, value, keys, options, invalid)
+
+def Laws.signed_cookie_setter_appends(Vars, req, params, body, pairs, code, headers, vars, obs, name, value, first, rest, options, ok_keys, valid, admissible):
+  Equal.cong(Result<&2, &2, Cookie.Error, String>, Result<&2, &2, Cookie.Error, Context.Ctx<Vars>>, x => Context.cookie_result(Vars, Context.Ctx{req, params, body, pairs, code, headers, vars, obs}, x), S.serialize(name, value, S.Keys{first, rest}, options), Done{CSpec.wire(name, Spec.signed_wire(first, value), options)}, set_cookie_field(name, value, first, rest, options, ok_keys, valid, admissible))
+
+# Context.cookies over a request: non-cookie headers are skipped, the one
+# cookie field's octets become its string, and the parse comes back in order.
+def headers_skip(+hs: List<&2, Request.Header>, +rest: List<&2, Request.Header>, +acc: List<&2, List<&2, U32>>, +quiet: {Spec.cookieless(hs) == True{} : Bool}) -> {Context.cookie_headers_go(List.append(&2, Request.Header, hs, rest), acc) == Context.cookie_headers_go(rest, acc) : List<&2, List<&2, U32>>}:
+  match hs:
+    case Nil{}: {==}
+    case Request.Header{+n, +v} <> +t:
+      %Equal.sym(Bool, String.eq(n, "cookie"), False{}, Wire.not_true(String.eq(n, "cookie"), Wire.and_left(Bool.not(String.eq(n, "cookie")), Spec.cookieless(t), quiet))) : {Context.cookie_headers_go(List.append(&2, Request.Header, t, rest), Request.lookup_step(v, acc, _)) == Context.cookie_headers_go(rest, acc) : List<&2, List<&2, U32>>}
+      headers_skip(t, rest, acc, Wire.and_right(Bool.not(String.eq(n, "cookie")), Spec.cookieless(t), quiet))
+
+def headers_end(+hs: List<&2, Request.Header>, +acc: List<&2, List<&2, U32>>, +quiet: {Spec.cookieless(hs) == True{} : Bool}) -> {Context.cookie_headers_go(hs, acc) == List.reverse(&2, List<&2, U32>, acc) : List<&2, List<&2, U32>>}:
+  match hs:
+    case Nil{}: {==}
+    case Request.Header{+n, +v} <> +t:
+      %Equal.sym(Bool, String.eq(n, "cookie"), False{}, Wire.not_true(String.eq(n, "cookie"), Wire.and_left(Bool.not(String.eq(n, "cookie")), Spec.cookieless(t), quiet))) : {Context.cookie_headers_go(t, Request.lookup_step(v, acc, _)) == List.reverse(&2, List<&2, U32>, acc) : List<&2, List<&2, U32>>}
+      headers_end(t, acc, Wire.and_right(Bool.not(String.eq(n, "cookie")), Spec.cookieless(t), quiet))
+
+def ascii_octets(+s: String, +acc: String) -> {Context.cookie_ascii_go(Spec.octets(s), acc) == String.reverse.go(acc, s) : String}:
+  match s:
+    case SNil{}: {==}
+    case SCon{Chr{+c}, +t}: ascii_octets(t, SCon{Chr{c}, acc})
+
+def entries_reverse_go(+xs: List<&2, Cookie.Entry>, +acc: List<&2, Cookie.Entry>, +ys: List<&2, Cookie.Entry>) -> {List.reverse.go(&2, Cookie.Entry, List.reverse.go(&2, Cookie.Entry, xs, acc), ys) == List.reverse.go(&2, Cookie.Entry, acc, List.append(&2, Cookie.Entry, xs, ys)) : List<&2, Cookie.Entry>}:
+  match xs:
+    case Nil{}: {==}
+    case +x <> +t: entries_reverse_go(t, x <> acc, ys)
+
+def entries_append_nil(+xs: List<&2, Cookie.Entry>) -> {List.append(&2, Cookie.Entry, xs, []) == xs : List<&2, Cookie.Entry>}:
+  match xs:
+    case Nil{}: {==}
+    case +x <> +t: Equal.cong(List<&2, Cookie.Entry>, List<&2, Cookie.Entry>, u => x <> u, List.append(&2, Cookie.Entry, t, []), t, entries_append_nil(t))
+
+def entries_reverse_twice(+xs: List<&2, Cookie.Entry>) -> {List.reverse(&2, Cookie.Entry, List.reverse.go(&2, Cookie.Entry, xs, [])) == xs : List<&2, Cookie.Entry>}:
+  Equal.trans(List<&2, Cookie.Entry>, List.reverse.go(&2, Cookie.Entry, List.reverse.go(&2, Cookie.Entry, xs, []), []), List.append(&2, Cookie.Entry, xs, []), xs, entries_reverse_go(xs, [], []), entries_append_nil(xs))
+
+def ctx_cookies(-Vars: Data, +method: Request.Method, +path: String, +query: Maybe<&2, String>, +version: Request.Version, +above: List<&2, Request.Header>, +below: List<&2, Request.Header>, +params: Pattern.Params, +body: List<&2, U32>, +pairs: List<&2, Url.Entry>, +code: U32, +out: List<&2, Request.Header>, +vars: Maybe<&2, Vars>, +obs: Obs.State, +joined: String, +quiet_above: {Spec.cookieless(above) == True{} : Bool}, +quiet_below: {Spec.cookieless(below) == True{} : Bool}) -> {Context.cookies(Vars, Context.Ctx{Request.Req{method, path, query, version, List.append(&2, Request.Header, above, Request.Header{"cookie", Spec.octets(joined)} <> below)}, params, body, pairs, code, out, vars, obs}) == Cookie.parse(joined) : List<&2, Cookie.Entry>}:
+  %Equal.sym(List<&2, List<&2, U32>>, Context.cookie_headers_go(List.append(&2, Request.Header, above, Request.Header{"cookie", Spec.octets(joined)} <> below), []), Context.cookie_headers_go(Request.Header{"cookie", Spec.octets(joined)} <> below, []), headers_skip(above, Request.Header{"cookie", Spec.octets(joined)} <> below, [], quiet_above)) : {Context.cookie_fields(_) == Cookie.parse(joined) : List<&2, Cookie.Entry>}
+  %Equal.sym(List<&2, List<&2, U32>>, Context.cookie_headers_go(below, [Spec.octets(joined)]), List.reverse(&2, List<&2, U32>, [Spec.octets(joined)]), headers_end(below, [Spec.octets(joined)], quiet_below)) : {Context.cookie_fields(_) == Cookie.parse(joined) : List<&2, Cookie.Entry>}
+  %Equal.sym(String, Context.cookie_ascii_go(Spec.octets(joined), ""), joined, ascii_octets(joined, "")) : {List.reverse(&2, Cookie.Entry, List.reverse.go(&2, Cookie.Entry, Cookie.parse(_), [])) == Cookie.parse(joined) : List<&2, Cookie.Entry>}
+  entries_reverse_twice(Cookie.parse(joined))
+
+def Laws.signed_cookie_context_request(Vars, name, value, first, rest, key, before, after, method, path, query, version, above, below, params, body, pairs, code, out, vars, obs, contained, ok_keys, valid, named, earlier, later, distinct, quiet_above, quiet_below):
+  +joined = String.join(OwsSpec.pairs(List.append(&2, Cookie.Entry, before, Cookie.Entry{name, Spec.signed_wire(key, value)} <> after)), "; ")
+  Equal.trans(Maybe<&2, String>, S.read(S.Keys{first, rest}, Cookie.first(Context.cookies(Vars, Context.Ctx{Request.Req{method, path, query, version, List.append(&2, Request.Header, above, Request.Header{"cookie", Spec.octets(joined)} <> below)}, params, body, pairs, code, out, vars, obs}), name)), S.read(S.Keys{first, rest}, Cookie.first(Cookie.parse(joined), name)), Some{value}, Equal.cong(List<&2, Cookie.Entry>, Maybe<&2, String>, xs => S.read(S.Keys{first, rest}, Cookie.first(xs, name)), Context.cookies(Vars, Context.Ctx{Request.Req{method, path, query, version, List.append(&2, Request.Header, above, Request.Header{"cookie", Spec.octets(joined)} <> below)}, params, body, pairs, code, out, vars, obs}), Cookie.parse(joined), ctx_cookies(Vars, method, path, query, version, above, below, params, body, pairs, code, out, vars, obs, joined, quiet_above, quiet_below)), request_roundtrip(name, value, first, rest, key, before, after, contained, ok_keys, valid, named, earlier, later, distinct))

@@ -6,6 +6,7 @@ import ../src/data/signed-cookie.bend as S
 import ../src/data/cookie.bend as Cookie
 import ../src/data/base64.bend as Base64
 import ../src/data/urlencoded.bend as Url
+import ../src/http/request.bend as Request
 
 def bit_equal(a: Bool, b: Bool) -> Bool:
   match a b:
@@ -172,9 +173,10 @@ def accept(value: String, ok: Bool) -> Maybe<&2, String>:
     case True{}: Some{value}
     case False{}: None{}
 
+# Keys whose slots configure would reject authenticate nothing.
 def authenticated_by(keys: S.Keys, +value: String, +bytes: List<&2, U32>) -> Maybe<&2, String>:
   match keys:
-    case S.Keys{first, rest}: accept(value, authentic(first <> rest, value, bytes))
+    case S.Keys{+first, +rest}: accept(value, secrets(first <> rest) && authentic(first <> rest, value, bytes))
 
 def authenticated(keys: S.Keys, +value: String, signature: Maybe<&2, List<&2, U32>>) -> Maybe<&2, String>:
   match signature:
@@ -195,8 +197,26 @@ def verify_payload(keys: S.Keys, decoded: Result<&2, &2, Url.Error, String>) -> 
     case Fail{e}: None{}
     case Done{payload}: verify_split(keys, last_dot(payload))
 
-# Accept exactly when the wire URL-decodes, the payload has a last '.', the
-# suffix strictly decodes as padded standard Base64, and the bytes equal some
-# listed key's HMAC over the prefix. Every other wire string is rejected.
+# Accept exactly when the keys are usable, the wire URL-decodes, the payload
+# has a last '.', the suffix decodes as padded standard Base64, and the bytes
+# equal some listed key's HMAC over the prefix. Every other wire is rejected.
+#
+# Only the last-dot split and the key and HMAC relation are written
+# independently here. URL and Base64 decoding call the same Url.decode and
+# Base64.decode as the implementation, so the wire law rules out composition,
+# split and authentication bugs but not decoder bugs. Independent strict
+# decoder specs are pending (docs/cookies.md).
 def verify(keys: S.Keys, wire: String) -> Maybe<&2, String>:
   verify_payload(keys, Url.decode(wire))
+
+# A request header's octets, one per character. Cookie headers are ASCII.
+def octets(s: String) -> List<&2, U32>:
+  match s:
+    case SNil{}: []
+    case SCon{Chr{c}, t}: c <> octets(t)
+
+# No header in the list is named exactly "cookie" (names arrive lowercased).
+def cookieless(headers: List<&2, Request.Header>) -> Bool:
+  match headers:
+    case Nil{}: True{}
+    case Request.Header{n, v} <> t: Bool.not(String.eq(n, "cookie")) && cookieless(t)

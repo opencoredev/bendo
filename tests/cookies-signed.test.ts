@@ -18,12 +18,17 @@ function exported(name: string): (...args: unknown[]) => unknown {
   if (typeof fn !== "function") throw new Error(`Not callable: ${name}`);
   return (...args) => fn(...args);
 }
+const uncheckedSign = exported("unchecked_sign");
 const sign = exported("sign");
 const verify = exported("verify");
+const read = exported("read");
+const verifyDigest = exported("verify_digest");
+const invalidSign = exported("invalid_sign");
+const surrogateKeys = exported("surrogate_keys");
 const configure = exported("configure");
 const serialize = exported("serialize");
 const invalidValue = exported("invalid_value");
-function list(values: string[]): unknown {
+function list(values: readonly (string | number)[]): unknown {
   return values.reduceRight<unknown>((tail, head) => ({ $: "Con", head, tail }), { $: "Nil" });
 }
 const keys = { $: "Keys", first: "new-secret", rest: list(["old-secret"]) };
@@ -92,6 +97,7 @@ describe("signed cookies on both compiled targets", () => {
       $: "Fail",
       error: { $: "InvalidValue" },
     });
+    expect(invalidSign(keys)).toEqual(none);
     expect(serialize("bad;name", "ok", keys)).toEqual({
       $: "Fail",
       error: { $: "InvalidName" },
@@ -113,14 +119,80 @@ describe("signed cookies on both compiled targets", () => {
     expect(verify(strong.value, forged)).toEqual(none);
   });
 
+  test("rejects directly built keys with an unusable slot at every entry point", () => {
+    // Keys{...} is public, so configure can be bypassed. An empty secret lets
+    // anyone forge, so the whole key set must accept and sign nothing.
+    const value = "role=admin";
+    const forged = honoWire("", value);
+    const genuine = honoWire("strong-current-secret", value);
+    const digest = (key: string) => list([...createHmac("sha256", key).update(value).digest()]);
+    const unusable = [
+      { $: "Keys", first: "", rest: list(["strong-current-secret"]) },
+      { $: "Keys", first: "", rest: list([]) },
+      { $: "Keys", first: "strong-current-secret", rest: list([""]) },
+      { $: "Keys", first: "strong-current-secret", rest: list(["", "previous"]) },
+      { $: "Keys", first: "strong-current-secret", rest: list(["previous", ""]) },
+      surrogateKeys(true),
+      surrogateKeys(false),
+    ];
+    for (const bad of unusable) {
+      for (const wire of [forged, genuine]) {
+        expect(verify(bad, wire)).toEqual(none);
+        expect(read(bad, some(wire))).toEqual(none);
+      }
+      expect(read(bad, none)).toEqual(none);
+      expect(verifyDigest(bad, value, digest(""))).toEqual(none);
+      expect(verifyDigest(bad, value, digest("strong-current-secret"))).toEqual(none);
+      expect(sign(bad, value)).toEqual(none);
+      expect(invalidSign(bad)).toEqual(none);
+      expect(serialize("session", value, bad)).toEqual({
+        $: "Fail",
+        error: { $: "InvalidSecret" },
+      });
+      expect(invalidValue(bad)).toEqual({ $: "Fail", error: { $: "InvalidValue" } });
+    }
+    // The same slots built through configure verify normally.
+    const good = { $: "Keys", first: "strong-current-secret", rest: list(["previous"]) };
+    expect(verify(good, genuine)).toEqual(some(value));
+    expect(verifyDigest(good, value, digest("previous"))).toEqual(some(value));
+    expect(verifyDigest(good, value, digest(""))).toEqual(none);
+  });
+
+  test(
+    "Context helpers reject directly built keys with an empty slot",
+    async () => {
+      await using server = await start(binary);
+      const genuine = uncheckedSign("new-secret", "role=admin");
+      if (typeof genuine !== "string") throw new Error("Invalid signature wire");
+      const forged = honoWire("", "role=admin");
+      for (const slot of [0, 1, 2]) {
+        for (const wire of [forged, genuine]) {
+          const response = await fetch(`${server.url}/bad/${slot}/read`, {
+            headers: { Cookie: `session=${wire}` },
+          });
+          expect(await response.text()).toBe("absent-or-invalid");
+        }
+        const write = await fetch(`${server.url}/bad/${slot}/write`);
+        expect(write.status).toBe(500);
+        expect(await write.text()).toBe("invalid-secret");
+        expect(write.headers.getSetCookie()).toEqual([]);
+      }
+      // The well-configured route still reads the genuine cookie.
+      const good = await fetch(`${server.url}/read`, { headers: { Cookie: `session=${genuine}` } });
+      expect(await good.text()).toBe("role=admin");
+    },
+    SLOW_TEST_TIMEOUT_MS,
+  );
+
   test(
     "roundtrips values, interoperates with Hono's exact algorithm and signs with first key",
     async () => {
       await using server = await start(binary);
       for (const value of values) {
-        const wire = sign("new-secret", value);
+        const wire = uncheckedSign("new-secret", value);
         expect(typeof wire).toBe("string");
         if (typeof wire !== "string") throw new Error("Invalid signature wire");
+        expect(sign(keys, value)).toEqual(some(wire));
         expect(honoVerify("new-secret", wire)).toBe(value);
         expect(verify(keys, honoWire("new-secret", value))).toEqual(some(value));
         expect(verify(keys, wire)).toEqual(some(value));

@@ -59,6 +59,11 @@ def keys_go(+xs: List<&2, String>, +ok: Bool) -> {S.valid_keys_go(xs, ok) == ok 
       %Equal.sym(Bool, S.key_valid(x), Spec.secret(x), key(x)) : {S.valid_keys_go(t, ok && _) == ok && (Spec.secret(x) && Spec.secrets(t)) : Bool}
       Equal.trans(Bool, S.valid_keys_go(t, ok && Spec.secret(x)), (ok && Spec.secret(x)) && Spec.secrets(t), ok && (Spec.secret(x) && Spec.secrets(t)), keys_go(t, ok && Spec.secret(x)), and_assoc(ok, Spec.secret(x), Spec.secrets(t)))
 
+# The use-time check is the same secret predicate configure applies.
+def usable(+first: String, +rest: List<&2, String>) -> {S.usable(S.Keys{first, rest}) == Spec.secrets(first <> rest) : Bool}:
+  %Equal.sym(Bool, S.key_valid(first), Spec.secret(first), key(first)) : {S.valid_keys_go(rest, _) == Spec.secret(first) && Spec.secrets(rest) : Bool}
+  keys_go(rest, Spec.secret(first))
+
 def configured(+keys: S.Keys, +ok: Bool) -> {S.configured(keys, ok) == Spec.keys_when(keys, ok) : Maybe<&2, S.Keys>}:
   match ok:
     case False{}: {==}

@@ -2380,7 +2380,7 @@ def utf8_octets(+s: String) -> {Percent.octets(U.encode(s)) == True{} : Bool}:
 def url_eq(+s: String) -> {F.encode(s) == Spec.percent(U.encode(s)) : String}:
   Equal.trans(String, F.encode_bytes(U.encode(s), False{}), F.encode_bytes_spec(U.encode(s), False{}), Spec.percent(U.encode(s)), Percent.encode_equiv(U.encode(s), False{}), percent_eq(U.encode(s), utf8_octets(s)))
 
-def sign_eq(+key: String, +value: String) -> {S.sign(key, value) == Spec.signed_wire(key, value) : String}:
+def sign_eq(+key: String, +value: String) -> {S.unchecked_sign(key, value) == Spec.signed_wire(key, value) : String}:
   %Equal.sym(String, B.encode(S.digest(key, value), False{}, True{}), Spec.base64(S.digest(key, value)), encode_eq(S.digest(key, value))) : {F.encode(value ++ "." ++ _) == Spec.signed_wire(key, value) : String}
   url_eq(value ++ "." ++ Spec.base64(S.digest(key, value)))
 
