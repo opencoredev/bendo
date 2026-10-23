@@ -1,8 +1,8 @@
 # 0007: Wall time and HTTP Date
 
 BND-10 adds a wall-clock boundary and strict IMF-fixdate formatting and parsing.
-The runtime behavior is implemented, but the universal round-trip law remains
-open. This change must not land until `bun run prove` and `bun run check` pass.
+The runtime is implemented and tested. Its laws are pending in BND-80; see
+"Pending laws" below.
 
 ## Clock contract
 
@@ -33,13 +33,11 @@ strict IMF codec, not a general HTTP-date recipient parser. A future API that
 accepts arbitrary HTTP-date fields must implement all recipient formats
 required by RFC 9110 section 5.6.7.
 
-The full promised law is `http_date_roundtrip` in `LAWS.bend`: for every `Nat`
-second at or below `max_seconds()`, parsing its formatted string returns that
-same second. It has no calendar-witness or round-trip premise. The Gregorian
-inverse, fixed-width decimal and range lemmas needed for its proof are not yet
-implemented. The initial attempt to print the unresolved goal with `?roundtrip`
-caused Bend 2.0.38's `term_higher` normalizer to overflow the JavaScript stack.
-The law remains open rather than being replaced by finite vectors.
+The promised law is `http_date_roundtrip`: for every `Nat` second at or below
+`max_seconds()`, parsing its formatted string returns that same second. It has
+no calendar-witness or round-trip premise. It is not in `LAWS.bend` yet: see
+"Pending laws" below. Until it is proven, the tests check formatting and parsing
+against the host UTC calendar.
 
 ## Response policy
 
