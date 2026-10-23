@@ -59,6 +59,8 @@ import ./src/router/methods-trie-proofs.bend as MethodTrieProof
 
 import ./proof/crypto-hex.bend as HexProof
 import ./proof/crypto-base64.bend as Base64Proof
+import ./proof/crypto-compare.bend as CompareProof
+import ./proof/jwt.bend as JwtProof
 
 # Check the pure crypto implementations with the strict kernel as well.
 import ./src/crypto/sha1.bend as SHA1
@@ -420,3 +422,14 @@ def Laws.router_kind_spec(T, kind, table, path):
 
 def Laws.methods_router_resolve(T, kind, table, path, method, opts):
   MethodTrieProof.resolve_equal(T, kind, table, path, method, opts)
+
+# BND-43: constant-time comparison and the JWT signature layer.
+
+def Laws.ct_equal_spec(xs, ys):
+  CompareProof.ct_equal(xs, ys)
+
+def Laws.jwt_open_seal(secret, header, payload, vh, vp):
+  JwtProof.roundtrip(secret, header, payload, vh, vp)
+
+def Laws.jwt_rejects_bad_signature(secret, a, b, c, fa, fb, fc, differs):
+  JwtProof.rejects(secret, a, b, c, fa, fb, fc, differs)

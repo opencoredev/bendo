@@ -35,6 +35,10 @@ import ./src/router/router.bend as Router
 import ./src/data/hex.bend as Hex
 import ./src/data/base64.bend as Base64
 import ./src/crypto/octets.bend as Octets
+import ./src/crypto/compare.bend as Compare
+import ./src/crypto/hmac.bend as HMAC
+import ./src/crypto/jwt.bend as Jwt
+import ./proof/crypto-compare-spec.bend as CompareSpec
 
 # LAW: a text response is a head with no blank line in it, then a blank
 # line, then the body. So the first blank line in the response is the one
@@ -981,3 +985,38 @@ law methods_router_resolve:
   for +method: Request.Method
   for +opts: Methods.Options
   {Methods.resolve_with(T, kind, Methods.prepare(T, table), path, method, opts) == Methods.resolve(T, table, path, method, opts) : Methods.Resolution<T>}
+
+# BND-43: authentication primitives. These laws state functional results only.
+# Execution time is outside them; see docs/decisions/0012-constant-time-auth.md.
+
+# The accumulating comparison is exactly element-wise equality, for every pair
+# of U32 lists of any lengths. The specification compares in order and stops.
+law ct_equal_spec:
+  for +xs: List<&2, U32>
+  for +ys: List<&2, U32>
+  {Compare.ct_equal(xs, ys) == CompareSpec.equal(xs, ys) : Bool}
+
+# For every secret and every octet header and payload, opening a token sealed
+# with the same secret returns exactly the sealed octets.
+law jwt_open_seal:
+  for +secret: List<&2, U32>
+  for +header: List<&2, U32>
+  for +payload: List<&2, U32>
+  for vh: {Octets.valid(header) == True{} : Bool}
+  for vp: {Octets.valid(payload) == True{} : Bool}
+  {Jwt.open(secret, Jwt.seal(secret, header, payload)) == Done{Jwt.Parts{header, payload}} : Result<&2, &2, Jwt.Error, Jwt.Parts>}
+
+# Every token a.b.c with three dot-free segments whose signature segment c is
+# not the unpadded base64url HMAC-SHA256 of the signing input "a.b" (its UTF-8
+# octets, under the same secret) is rejected with BadSignature. Any other
+# token has fewer or more than three segments.
+law jwt_rejects_bad_signature:
+  for +secret: List<&2, U32>
+  for +a: String
+  for +b: String
+  for +c: String
+  for fa: {Jwt.dotfree(a) == True{} : Bool}
+  for fb: {Jwt.dotfree(b) == True{} : Bool}
+  for fc: {Jwt.dotfree(c) == True{} : Bool}
+  for differs: {c != Base64.encode(HMAC.sha256(secret, Utf8.encode(a ++ ("." ++ b))), True{}, False{}) : String}
+  {Jwt.open(secret, a ++ ("." ++ (b ++ ("." ++ c)))) == Fail{Jwt.BadSignature{}} : Result<&2, &2, Jwt.Error, Jwt.Parts>}
