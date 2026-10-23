@@ -1,4 +1,4 @@
-# 0003: Strict request heads with an incremental byte parser
+# 0004: Strict request heads with an incremental byte parser
 
 BND-7 uses `List<&2, U32>` octets as required by decision 0002. The pure
 `parse` function returns `NeedMore`, `Rejected{ParseError}`, or
