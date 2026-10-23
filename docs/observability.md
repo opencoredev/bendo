@@ -189,3 +189,10 @@ streaming is outside this API. Place it inside middleware that computes validato
 when those validators should describe the formatted body.
 
 Verify with `bun test --timeout 30000 tests/mw-observability.test.ts`.
+
+Lifecycle observers registered through a group, guard or route options follow
+that route's scope, just like the other lifecycle stages. Scoped response hooks
+and observers use the actual routed registration after request-stage rewrites;
+a rewrite during parse, transform or before-handle does not switch them to a
+different route. A request-stage short circuit retains its provisional route's
+scope. See [hook scopes and guards](decisions/0011-hook-scopes.md).
