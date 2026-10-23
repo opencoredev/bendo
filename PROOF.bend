@@ -43,6 +43,15 @@ import ./src/router/spec-proofs.bend as SpecProof
 import ./src/router/methods.bend as Methods
 import ./src/router/methods-proofs.bend as MethodProof
 
+import ./proof/crypto-hex.bend as HexProof
+import ./proof/crypto-base64.bend as Base64Proof
+
+# Check the pure crypto implementations with the strict kernel as well.
+import ./src/crypto/sha1.bend as SHA1
+import ./src/crypto/sha256.bend as SHA256
+import ./src/crypto/hmac.bend as HMAC
+import ./src/crypto/compare.bend as Compare
+
 def Laws.text_body_after_blank(body):
   ("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nConnection: close", ({==}, {==}))
 
@@ -340,3 +349,10 @@ def Laws.methods_build_valid(T, entries, table, built):
   match table:
     case Methods.Valid{rows, ok}:
       ok
+
+
+def Laws.hex_roundtrip(xs, valid):
+  HexProof.roundtrip(xs, valid)
+
+def Laws.base64_roundtrip(xs, url, padded, valid):
+  Base64Proof.roundtrip(xs, url, padded, valid)

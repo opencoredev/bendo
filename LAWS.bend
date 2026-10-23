@@ -24,6 +24,10 @@ import ./src/router/spec-proofs.bend as SpecProof
 import ./src/router/methods.bend as Methods
 import ./src/router/methods-proofs.bend as MethodProof
 
+import ./src/data/hex.bend as Hex
+import ./src/data/base64.bend as Base64
+import ./src/crypto/octets.bend as Octets
+
 # LAW: a text response is a head with no blank line in it, then a blank
 # line, then the body. So the first blank line in the response is the one
 # that ends the head, and a client that cuts there reads the body back.
@@ -810,3 +814,19 @@ law methods_build_valid:
   for +table: Methods.Valid<T>
   for built: {Methods.build_table(T, entries) == Done{table} : Result<&2, &2, Methods.BuildError, Methods.Valid<T>>}
   {MethodProof.TableValid(T, Methods.raw(T, table)) == True{} : Bool}
+
+# BND-42: encoding inversion over every admissible octet list.
+# Octets.valid explicitly requires (x <= 255 : U32) for every element.
+law hex_roundtrip:
+  for +xs: List<&2, U32>
+  for valid: {Octets.valid(xs) == True{} : Bool}
+  {Hex.decode(Hex.encode(xs)) == Some{xs} : Maybe<&2, List<&2, U32>>}
+
+# Quantifying both flags promises all four RFC 4648 modes: standard/URL,
+# each with required padding or without padding. This is not a sample law.
+law base64_roundtrip:
+  for +xs: List<&2, U32>
+  for +url: Bool
+  for +padded: Bool
+  for valid: {Octets.valid(xs) == True{} : Bool}
+  {Base64.decode(Base64.encode(xs, url, padded), url, padded) == Some{xs} : Maybe<&2, List<&2, U32>>}
