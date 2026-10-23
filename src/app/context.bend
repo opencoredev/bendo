@@ -163,10 +163,21 @@ def redirect_status(-Vars: Data, c: Ctx<Vars>, location: String, +code: U32) -> 
 def redirect(-Vars: Data, c: Ctx<Vars>, location: String) -> Response.Res:
   redirect_status(Vars, c, location, 302)
 
-def error_body(-Vars: Data, c: Ctx<Vars>, +code: U32, message: String, json_body: Bool) -> Response.Res:
-  match json_body:
+# The exact text Json.stringify writes for {"error": message, "status": code},
+# with the writer's own escaping. The status digits match the status line.
+def error_json(message: String, code: U32) -> String:
+  "{\"error\":" ++ Json.quote(message, False{}) ++ ",\"status\":" ++ Nat.show(U32.to_nat(code)) ++ "}"
+
+# Like Json.stringify, a message with a non-scalar Char renders the empty 500.
+def error_json_body(-Vars: Data, c: Ctx<Vars>, +code: U32, +message: String, scalars: Bool) -> Response.Res:
+  match scalars:
     case True{}:
-      json(Vars, status(Vars, c, code), Json.JObject{[Json.Field{"error", Json.JString{message}}, Json.Field{"status", Json.JNumber{U32.show(code)}}]})
+      body(Vars, status(Vars, c, code), Response.utf8(error_json(message, code)), Some{"application/json; charset=utf-8"})
+    case False{}: Response.body(500, [], [])
+
+def error_body(-Vars: Data, c: Ctx<Vars>, +code: U32, +message: String, json_body: Bool) -> Response.Res:
+  match json_body:
+    case True{}: error_json_body(Vars, c, code, message, Json.scalars(message))
     case False{}: text(Vars, status(Vars, c, code), message)
 
 def vary_values(values: List<&2, List<&2, U32>>) -> String:

@@ -31,8 +31,41 @@ including for 503. No stack or runtime diagnostic is added. Applications can
 explicitly opt into a public 5xx message with
 `Errors.HttpError{503, "Maintenance", True{}}`; this is a deliberate disclosure.
 An empty exposed message uses the response module's reason phrase (empty for
-unassigned codes). The law `http_error_private_message` proves that rendering
-any unexposed error yields the generic message, regardless of code and text.
+unassigned codes).
+
+## What the laws prove
+
+The laws cover the `Res` that `error` returns, before app hooks run.
+`http_error_private_message` only fixes the public message helper. The laws in
+`proof/error-laws.bend` cover rendering itself:
+
+- `http_error_private_independent` and `http_error_private_wire_independent`:
+  for any context, method and code, two unexposed errors with different
+  messages render the same `Res` and the same written bytes.
+- `http_error_private_rendered`: from a context with no accumulated response
+  headers and any request, an unexposed error renders exactly the response in
+  `proof/error-spec.bend`. That is status `code` for 400–599 and 500 otherwise,
+  `Content-Type` for the negotiated representation, `Vary: Accept`, and a body
+  of exactly `Internal Server Error` or
+  `{"error":"Internal Server Error","status":<status>}`.
+- `http_error_private_accept_samples`: the same response, chosen from the first
+  Accept field for seven sample values (absent, `application/json`, a
+  parameterized JSON range, `q=0`, `q=0` after a quoted comma, `*/*`,
+  `text/plain`). The spec lists the expected representation for each sample.
+- `http_error_exposed_rendered`: an exposed error with a 400–599 code renders
+  its message's UTF-8 bytes, or the JSON writer's escaping of it, with the reason
+  phrase for an empty message. If the response fails `Response.valid`, or a
+  JSON message is not Unicode scalar text, the result is the empty 500.
+  `http_error_tea_only_rendered` pins `http_error(418, "Tea only")` byte for byte.
+- `http_error_invalid_header_fallback`: an invalid accumulated header (a value
+  containing a line feed) turns any error into the empty 500.
+- `http_error_head_no_payload`: a HEAD request's error response is written with
+  no payload.
+
+The laws decide JSON-or-text with `Errors.accepts_json` as a hypothesis, or
+with the listed samples. No law states the full Accept grammar. Integration
+tests cover the rest of that policy, plus responses built on a context that
+already has headers.
 
 Errors become ordinary responses before the existing lifecycle response
 stages. There is no parallel error callback or second dispatcher. `after_handle`

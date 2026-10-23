@@ -23,7 +23,7 @@ test("HttpError and Result failures return the configured 418 without killing th
   const tea = await request("/teapot", "application/json");
   expect(tea.status).toBe(418);
   expect(tea.headers.get("content-type")).toStartWith("application/json");
-  expect(await tea.json()).toEqual({ error: 'tea "only"\n☕', status: 418 });
+  expect(await tea.text()).toBe('{"error":"tea \\"only\\"\\n☕","status":418}');
   const result = await request("/result");
   expect(result.status).toBe(418);
   expect(await result.text()).toBe("result teapot");
@@ -41,7 +41,7 @@ test.each(["text/plain", "application/json"])(
       expect(res.headers.get("x-request-id")).toBeTruthy();
       expect(res.headers.get("server-timing")).toContain("total;dur=");
       if (accept === "application/json")
-        expect(await res.json()).toEqual({ error: "Internal Server Error", status });
+        expect(await res.text()).toBe(`{"error":"Internal Server Error","status":${status}}`);
       else expect(await res.text()).toBe("Internal Server Error");
     }
   },
@@ -62,7 +62,7 @@ test("custom not-found replaces route misses only, with negotiated fallback and 
   expect(await custom.text()).toBe("custom missing");
   const fallback = await request("/missing", "application/json");
   expect(fallback.status).toBe(404);
-  expect(await fallback.json()).toEqual({ error: "Not Found", status: 404 });
+  expect(await fallback.text()).toBe('{"error":"Not Found","status":404}');
   expect(await (await request("/handler404")).text()).toBe("handler missing");
   const method = await request("/teapot", "application/json", "POST");
   expect(method.status).toBe(405);

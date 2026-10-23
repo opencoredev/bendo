@@ -11,6 +11,7 @@ import ./proof/cookie-spec.bend as CookieSpec
 
 # BND-25
 import ./src/app/errors.bend as Errors
+import ./proof/error-laws.bend as ErrorLaws
 
 import ./src/app/table.bend as Table
 import ./proof/middleware-selection-spec.bend as MiddlewareSelectionSpec
@@ -1014,7 +1015,9 @@ law cookies_ordered_list_roundtrip:
   for valid: {CookieSpec.entries_valid(entries) == True{} : Bool}
   {Cookie.parse(String.join(CookieSpec.pairs(entries), ";")) == entries : List<&2, Cookie.Entry>}
 
-# BND-25: a private HTTP failure's message is independent of its internal text.
+# BND-25: a private HTTP failure's public message is independent of its
+# internal text. proof/error-laws.bend states the same for the rendered
+# response and its wire bytes, and pins the exact output.
 law http_error_private_message:
   for code: U32
   for message: String

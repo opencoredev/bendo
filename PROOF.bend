@@ -5,6 +5,10 @@ import Base
 import ./proof/cookie-ows.bend as CookieOwsProof
 import ./proof/cookie-serialization.bend as CookieSerializationProof
 import ./proof/cookies.bend as CookieProof
+
+# BND-25
+import ./proof/errors.bend as ErrorProof
+
 import ./src/app/table.bend as Table
 import ./proof/middleware-selection-spec.bend as MiddlewareSelectionSpec
 import ./proof/lifecycle-selection.bend as LifecycleSelection
