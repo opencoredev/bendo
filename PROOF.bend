@@ -59,6 +59,7 @@ import ./src/router/methods-trie-proofs.bend as MethodTrieProof
 
 import ./proof/crypto-hex.bend as HexProof
 import ./proof/crypto-base64.bend as Base64Proof
+import ./proof/date-laws.bend as DateLaws
 
 # Check the pure crypto implementations with the strict kernel as well.
 import ./src/crypto/sha1.bend as SHA1
@@ -420,3 +421,12 @@ def Laws.router_kind_spec(T, kind, table, path):
 
 def Laws.methods_router_resolve(T, kind, table, path, method, opts):
   MethodTrieProof.resolve_equal(T, kind, table, path, method, opts)
+
+# BND-80: HTTP date round trip and independent IMF-fixdate spec.
+
+def Laws.http_date_roundtrip(second, bound):
+  DateLaws.roundtrip(second, bound)
+
+def Laws.http_date_imf_spec(second, bound):
+  DateLaws.imf_spec(second, bound)
+
