@@ -46,8 +46,8 @@ def params(-Tag: Data, resolution: Methods.Resolution<Tag>) -> Pattern.Params:
 
 # Attach route captures without losing variables or pending response headers.
 def with_params(-Vars: Data, ctx: Context.Ctx<Vars>, ps: Pattern.Params) -> Context.Ctx<Vars>:
-  Context.Ctx{req, old, body, pairs, code, hs, vars} = ctx
-  Context.Ctx{req, ps, body, pairs, code, hs, vars}
+  Context.Ctx{req, old, body, pairs, code, hs, vars, observation} = ctx
+  Context.Ctx{req, ps, body, pairs, code, hs, vars, observation}
 
 def resolved_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +resolution: Methods.Resolution<Tag>, +layers: List<&2, Table.Middleware<Tag>>, ctx: Context.Ctx<Vars>, +env: Env, +slot: Chan(Context.Ctx<Vars>)) -> IO(Response.Res):
   +routed = with_params(Vars, ctx, params(Tag, resolution))

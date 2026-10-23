@@ -46,10 +46,46 @@ Use `B.use_path` to restrict any built-in to matching paths. Register the logger
 first so it observes all inner response transformations. The table still stores
 only `Data`; no handlers or continuations are stored in reusable state.
 
+## Lifecycle hooks
+
+Built-ins use the same dispatcher with `B.use` and lifecycle registrations.
+For hooks, start request IDs and timing in `on_request`, and log the final
+response in `on_after_response`:
+
+```python
+B.on_request(Tag, Builtin{B.request_id()}),
+B.on_request(Tag, Builtin{B.server_timing()}),
+B.map_response(Tag, Builtin{B.pretty_json()}),
+B.map_response(Tag, Builtin{B.powered_by("Bendo")}),
+B.on_after_response(Tag, Builtin{B.logger()}),
+```
+
+These registrations replace the corresponding `B.use` entries in the app above.
+Request IDs and timing collectors survive request rewrites, route capture
+attachment and typed variable setters. Register request ID before other request
+hooks so their handlers can read it. Timing in `on_request` measures its inner
+request/routing/handler chain; it finishes before `after_handle`, `map_response`
+and transport send. Marks added in those later stages are outside that collector.
+
+An `on_after_response` logger sees the final normalized response after the send
+attempt completes, including changes made by response hooks. It logs the latest
+forwarded method/path, including request rewrites. Its duration measures the
+observer's `next` call, which supplies an already-computed response; it is not
+request latency. Use `server_timing` for request duration, or ordinary outer
+logger middleware to measure its inner chain. With `B.handle_with`, observers run
+before returning the normalized response, since there is no transport.
+
+Keep request-ID and timing built-ins in `on_request` or ordinary middleware.
+Registering them in a response stage cannot make their context metadata visible
+to a handler that already ran. `pretty_json` and `powered_by` may use
+`map_response` to change the outgoing response. Their returned response is
+discarded in `on_after_response`, so that stage is suitable only for observers.
+
 ## Logger
 
-`B.logger()` logs to **stderr** once after `next` returns, before the server writes
-the response. The stable format is:
+`B.logger()` logs to **stderr** once after `next` returns. With ordinary
+middleware, this happens before the server writes the response. The stable
+format is:
 
 ```text
 <METHOD> <PATH> <STATUS> <DURATION>ms[ id=<REQUEST_ID>]
@@ -61,10 +97,12 @@ For example, `GET /todos 200 12ms id=client-42`, followed by one newline.
 ID comes from the returned `x-request-id` header, so a logger outside request-ID
 middleware sees generated IDs too. A logger inside request-ID middleware falls
 back to the context ID. Unsafe response IDs are omitted from the log.
-Queries, request headers and bodies are omitted. Paths are logged as received,
-so avoid putting secrets in path segments. Invalid responses are converted to
-500 before logging. Response changes made by outer middleware happen afterward;
-keep the logger outermost to observe the response the client receives. A timeout
+Queries, request headers and bodies are omitted. The logger reads the path from
+its context, so request hooks may have rewritten it. Avoid putting secrets in
+path segments. Invalid responses are converted to
+500 before logging. Response changes made by outer middleware or later response
+hooks happen afterward. Keep an ordinary logger outermost to observe its inner middleware;
+use `on_after_response` to observe the final normalized response. A timeout
 outside the logger may return before its inner computation finishes: timeouts
 answer without cancelling, as described in design decision 9.
 

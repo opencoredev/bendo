@@ -149,3 +149,33 @@ test("entropy and timing collector failures are bounded and fail closed", () => 
       "PASS collector read failure returns empty 500\n",
   );
 });
+
+test("request hooks preserve IDs and timing through method/path rewrites and route captures", async () => {
+  const res = await fetch(url + "/hook-id", {
+    method: "POST",
+    headers: { "x-request-id": "hook-42" },
+  });
+  expect(res.status).toBe(202);
+  expect(await res.text()).toBe("hook-42:42");
+  expect(res.headers.get("x-request-id")).toBe("hook-42");
+  expect(res.headers.get("server-timing")).toMatch(/^total;dur=\d+$/);
+  const deadline = Date.now() + 2000;
+  while (
+    Date.now() < deadline &&
+    !logs.some((line) => /^GET \/hook-target\/42 202 \d+ms id=hook-42$/.test(line))
+  ) {
+    await Bun.sleep(10);
+  }
+  expect(logs.some((line) => /^GET \/hook-target\/42 202 \d+ms id=hook-42$/.test(line))).toBe(true);
+});
+
+test("timing started in on_request retains handler marks after routing and rewriting", async () => {
+  const res = await fetch(url + "/hook-json?pretty", {
+    headers: { "x-request-id": "hook-json" },
+  });
+  expect(await res.text()).toBe(pretty);
+  expect(res.headers.get("x-request-id")).toBe("hook-json");
+  expect(res.headers.get("server-timing")).toMatch(
+    /^total;dur=\d+, mark_db;dur=4, mark_cache_59__32_hit_13__10_;dur=2$/,
+  );
+});
