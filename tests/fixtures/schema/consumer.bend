@@ -161,6 +161,10 @@ def kind(v: S.Value) -> String:
     case S.VInteger{x}: "VInteger"
     case S.VBool{x}: "VBool"
     case S.VLiteral{x}: "VLiteral"
+    case S.VNull{}: "VNull"
+    case S.VArray{x}: "VArray"
+    case S.VObject{x}: "VObject"
+    case S.VUnion{i, x}: "VUnion"
 
 def code(c: S.Code) -> String:
   match c:

@@ -49,11 +49,10 @@ def scalar_preserves(+s: S.Schema, +v: J.Json) -> S.Preserves(S.value_for(s, v),
     case S.BooleanSchema{} J.JString{x}: Unit{}
     case S.BooleanSchema{} J.JArray{xs}: Unit{}
     case S.BooleanSchema{} J.JObject{fs}: Unit{}
-
-def preservation(+s: S.Schema, +v: J.Json, c: Bool) -> S.Preserves(S.value_for(s, v), S.decode_valid(s, v, c)):
-  match c:
-    case True{}: scalar_preserves(s, v)
-    case False{}: Unit{}
+    case S.ArraySchema{a, b, c} y: Unit{}
+    case S.ObjectSchema{a, b} y: Unit{}
+    case S.NullableSchema{a} y: Unit{}
+    case S.UnionSchema{a} y: Unit{}
 
 # BND-33 acceptance against the independent specification.
 
@@ -144,6 +143,13 @@ def literals_go(+xs: List<&2, J.Json>, +ok: Bool) -> {S.literals_valid(xs, ok) =
       %scalar_equiv(h) : {S.literals_valid(h <> t, ok) == ((ok && _) && Spec.literal_values(t)) : Bool}
       literals_go(t, ok && S.scalar(h))
 
+def declared_equiv(+fs: List<&2, S.Field>, +k: String) -> {S.declared(fs, k) == Spec.declares(fs, k) : Bool}:
+  match fs:
+    case Nil{}: {==}
+    case S.Field{key, c, p} <> t:
+      %declared_equiv(t, k) : {S.declared(S.Field{key, c, p} <> t, k) == (String.eq(key, k) || _) : Bool}
+      {==}
+
 def valid_equiv(+s: S.Schema) -> {S.valid(s) == Spec.schema_ok(s) : Bool}:
   match s:
     case S.StringSchema{min, max, p, f}: and_eq(S.max_length(max, min), Spec.at_most(max, min), S.optional_pattern_valid(p), Spec.optional_pattern_ok(p), max_equiv(max, min), optional_pattern_equiv(p))
@@ -152,6 +158,17 @@ def valid_equiv(+s: S.Schema) -> {S.valid(s) == Spec.schema_ok(s) : Bool}:
     case S.BooleanSchema{}: {==}
     case S.LiteralSchema{v}: scalar_equiv(v)
     case S.EnumSchema{xs}: literals_go(xs, True{})
+    case S.ArraySchema{i, min, max}: and_eq(S.max_length(max, min), Spec.at_most(max, min), S.valid(i), Spec.schema_ok(i), max_equiv(max, min), valid_equiv(i))
+    case S.ObjectSchema{Nil{}, u}: {==}
+    case S.ObjectSchema{S.Field{k, c, p} <> t, u}:
+      %TP.scalars_equiv(k) : {S.valid(S.ObjectSchema{S.Field{k, c, p} <> t, u}) == (_ && Bool.not(Spec.declares(t, k)) && Spec.schema_ok(c) && Spec.schema_ok(S.ObjectSchema{t, u})) : Bool}
+      %declared_equiv(t, k) : {S.valid(S.ObjectSchema{S.Field{k, c, p} <> t, u}) == (J.scalars(k) && Bool.not(_) && Spec.schema_ok(c) && Spec.schema_ok(S.ObjectSchema{t, u})) : Bool}
+      %valid_equiv(c) : {S.valid(S.ObjectSchema{S.Field{k, c, p} <> t, u}) == (J.scalars(k) && Bool.not(S.declared(t, k)) && _ && Spec.schema_ok(S.ObjectSchema{t, u})) : Bool}
+      %valid_equiv(S.ObjectSchema{t, u}) : {S.valid(S.ObjectSchema{S.Field{k, c, p} <> t, u}) == (J.scalars(k) && Bool.not(S.declared(t, k)) && S.valid(c) && _) : Bool}
+      {==}
+    case S.NullableSchema{i}: valid_equiv(i)
+    case S.UnionSchema{Nil{}}: {==}
+    case S.UnionSchema{m <> t}: and_eq(S.valid(m), Spec.schema_ok(m), S.valid(S.UnionSchema{t}), Spec.schema_ok(S.UnionSchema{t}), valid_equiv(m), valid_equiv(S.UnionSchema{t}))
 
 def format_after_and(+ok: Bool, +f: S.Format, +x: String) -> {S.format_after(ok, f, x) == (ok && S.format_check(f, x)) : Bool}:
   match ok:
@@ -313,12 +330,7 @@ def accepts_equiv(+s: S.Schema, +v: J.Json, +ok: {S.valid(s) == True{} : Bool}) 
     case S.BooleanSchema{} J.JString{x}: {==}
     case S.BooleanSchema{} J.JArray{xs}: {==}
     case S.BooleanSchema{} J.JObject{fs}: {==}
-
-def spec_go(+s: S.Schema, +v: J.Json, c: Bool) -> {S.valid(s) == c : Bool} -> {S.accepted(S.decode_valid(s, v, c)) == (c && Spec.accepts(s, v)) : Bool}:
-  match c:
-    case False{}: e => {==}
-    case True{}: e => accepts_equiv(s, v, e)
-
-def acceptance_spec(+s: S.Schema, +v: J.Json) -> {S.accepted(S.decode(s, v)) == Spec.satisfies(s, v) : Bool}:
-  %valid_equiv(s) : {S.accepted(S.decode(s, v)) == (_ && Spec.accepts(s, v)) : Bool}
-  spec_go(s, v, S.valid(s))({==})
+    case S.ArraySchema{a, b, c} y: {==}
+    case S.ObjectSchema{a, b} y: {==}
+    case S.NullableSchema{a} y: {==}
+    case S.UnionSchema{a} y: {==}
