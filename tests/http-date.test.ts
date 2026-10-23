@@ -83,6 +83,66 @@ describe("HTTP dates", () => {
     expect(format(253402300800)).toBe("");
   });
 
+  test("malformed numeric fields return None on both targets instead of crashing", () => {
+    const base = "Sun, 06 Nov 1994 08:49:37 GMT";
+    // Day, year, hour, minute and second digit offsets in base.
+    const digits = [5, 6, 12, 13, 14, 15, 17, 18, 20, 21, 23, 24];
+    // Characters above '9' must not grow into huge digit values, and those
+    // below '0' must not wrap. Code points are kept free of control bytes so
+    // they survive as Bend string literals.
+    const bad = ["😀", "\u{10FFFF}", "é", "\u{7F}", "~", "a", ":", ";", "/", " ", "-"];
+    const cases: { text: string; expected: "None" | "Some" }[] = [];
+    for (const at of digits)
+      for (const char of bad)
+        cases.push({ text: base.slice(0, at) + char + base.slice(at + 1), expected: "None" });
+    for (const text of [
+      "Sun, 06 Nov 😀😀😀😀 08:49:37 GMT",
+      "Sun, 😀😀 Nov 1994 😀😀:😀😀:😀😀 GMT",
+      "Sun, 99 Nov 9999 99:99:99 GMT",
+      "Fri, 99 Dec 9999 23:59:59 GMT",
+      "Sat, 01 Jan 9999 99:99:99 GMT",
+      "Sun, 06 Nov 19940 08:49:37 GMT",
+      "Sun, 06 Nov 99999999 08:49:37 GMT",
+      `${base}0`,
+      `${base} GMT`,
+      `0${base}`,
+    ])
+      cases.push({ text, expected: "None" });
+    for (let length = 0; length < base.length; length++)
+      cases.push({ text: base.slice(0, length), expected: "None" });
+    // Valid neighbours keep parsing, so None above is not a blanket failure.
+    for (const text of [base, "Fri, 31 Dec 9999 23:59:59 GMT", "Thu, 01 Jan 1970 00:00:00 GMT"])
+      cases.push({ text, expected: "Some" });
+
+    for (const { text, expected } of cases) {
+      const result: unknown = parse(text);
+      if (typeof result !== "object" || result === null || !("$" in result))
+        throw new Error(`Malformed parse result for ${JSON.stringify(text)}`);
+      expect(result.$, JSON.stringify(text)).toBe(expected);
+    }
+
+    const root = mkdtempSync(join(tmpdir(), "bendo-date-malformed-"));
+    try {
+      writeFileSync(
+        join(root, "date.bend"),
+        readFileSync(join(import.meta.dir, "../src/http/date.bend")),
+      );
+      writeFileSync(
+        join(root, "main.bend"),
+        "import Base\nimport ./date.bend as Date\n\n" +
+          'def show(m: Maybe<&2, Nat>) -> String:\n  match m:\n    case None{}:\n      "None"\n    case Some{x}:\n      "Some"\n\n' +
+          "def main() -> IO(Unit):\n  do IO<Unit>:\n" +
+          cases
+            .map(({ text }) => `    IO.print(show(Date.parse_imf(${JSON.stringify(text)})))\n`)
+            .join(""),
+      );
+      const native = run([compile(join(root, "main.bend"), "native")]).split("\n");
+      expect(native).toEqual(cases.map(({ expected }) => expected));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test("calendar boundaries and sampled seconds match the host UTC calendar", () => {
     // Deterministic samples cover every year, including century leap rules.
     for (let year = 1970; year <= 9999; year++) {

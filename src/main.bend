@@ -2,12 +2,19 @@
 import Base
 import ./mw/builtin.bend as Builtin
 import ./mw/server_timing.bend as Timing
+import ./mw/basic_auth.bend as BasicAuth
+import ./mw/jwt.bend as JwtAuth
+import ./mw/csrf_policy.bend as CsrfPolicy
+import ./crypto/jwt.bend as Jwt
+import ./data/utf8.bend as Utf8
 import ./app/config.bend as Config
 import ./app/table.bend as Table
 import ./app/scopes.bend as Scopes
 import ./app/handle.bend as Handle
 import ./app/context.bend as Context
+import ./app/errors.bend as Errors
 import ./app/store.bend as Store
+import ./app/store_actor.bend as StoreActor
 import ./data/json.bend as Json
 import ./data/cookie.bend as Cookie
 import ./serve.bend as Serve
@@ -15,6 +22,11 @@ import ./http/request.bend as Request
 import ./http/response.bend as Response
 import ./router/methods.bend as Methods
 import ./router/router.bend as Router
+
+def HttpError() -> Data: Errors.HttpError
+def http_error(status: U32, message: String) -> Errors.HttpError: Errors.http_error(status, message)
+def error(c: Handle.Ctx, failure: Errors.HttpError) -> Response.Res: Context.error(Unit, c, failure)
+def result(c: Handle.Ctx, value: Result<&2, &2, Errors.HttpError, Response.Res>) -> Response.Res: Context.result(Unit, c, value)
 
 def Req() -> Data: Request.Req
 def Res() -> Data: Response.Res
@@ -70,6 +82,7 @@ def on_transform(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.Tran
 def before_handle(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.BeforeHandle{}, id}
 def after_handle(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.AfterHandle{}, id}
 def map_response(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.MapResponse{}, id}
+def on_not_found(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.NotFound{}, id}
 def on_error(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.Error{}, id}
 def on_after_response(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.AfterResponse{}, id}
 def routes(-Tag: Data, entries: List<&2, Table.Entry<Tag>>) -> Result<&2, &2, Methods.BuildError, Table.Table<Tag>>: Table.build(Tag, entries)
@@ -102,10 +115,10 @@ def Store(-S: Data) -> Data: Store.Store<S>
 def StoreError() -> Data: Store.Error
 
 def store(-S: Data, initial: S) -> IO(Store.Store<S>):
-  Store.store(S, initial)
+  StoreActor.store(S, initial)
 
 def store_with_timeout(-S: Data, initial: S, timeout_ms: U32) -> IO(Store.Store<S>):
-  Store.store_with_timeout(S, initial, timeout_ms)
+  StoreActor.store_with_timeout(S, initial, timeout_ms)
 
 def store_get(-S: Data, handle: Store.Store<S>) -> IO(Result<&2, &2, Store.Error, S>):
   Store.get(S, handle)
@@ -133,3 +146,25 @@ def cookies(c: Handle.Ctx) -> List<&2, Cookie.Entry>: Context.cookies(Unit, c)
 def cookie(c: Handle.Ctx, name: String) -> Maybe<&2, String>: Context.cookie(Unit, c, name)
 def set_cookie(c: Handle.Ctx, name: String, value: String, options: Cookie.Options) -> Result<&2, &2, Cookie.Error, Handle.Ctx>: Context.set_cookie(Unit, c, name, value, options)
 def delete_cookie(c: Handle.Ctx, name: String, options: Cookie.Options) -> Result<&2, &2, Cookie.Error, Handle.Ctx>: Context.delete_cookie(Unit, c, name, options)
+
+# Authentication and CSRF built-ins. Credentials and secrets live in the
+# reusable route table, like Hono's middleware options.
+def Credential() -> Data: BasicAuth.Credential
+def credential(username: String, password: String) -> BasicAuth.Credential: BasicAuth.Credential{username, password}
+def basic_auth(realm: String, users: List<&2, BasicAuth.Credential>) -> Builtin.Builtin: Builtin.BasicAuth{realm, users}
+def bearer_auth(realm: String, tokens: List<&2, String>) -> Builtin.Builtin: Builtin.BearerAuth{realm, tokens}
+# Trust only the listed origins ("https://app.example"; any path is ignored).
+def csrf(origins: List<&2, String>) -> Builtin.Builtin: Builtin.Csrf{CsrfPolicy.policy(origins, None{})}
+# Also trust scheme://Host, for a deployment that knows the scheme browsers
+# use. Behind a TLS-terminating proxy that keeps Host, pass "https".
+def csrf_host(scheme: String, origins: List<&2, String>) -> Builtin.Builtin: Builtin.Csrf{CsrfPolicy.policy(origins, Some{scheme})}
+
+# HS256 with a UTF-8 secret; leeway is the allowed clock skew in seconds.
+def JwtConfig() -> Data: JwtAuth.Config
+def JwtError() -> Data: Jwt.Error
+def jwt_config(secret: String, leeway: Nat, realm: String) -> JwtAuth.Config: JwtAuth.Config{Utf8.encode(secret), leeway, realm}
+def jwt(config: JwtAuth.Config) -> Builtin.Builtin: Builtin.Jwt{config}
+def jwt_with(-Vars: Data, config: JwtAuth.Config, c: Context.Ctx<Vars>, next: Json.Json -> Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
+  JwtAuth.with_claims(Vars, config, c, next)
+def jwt_sign(secret: String, claims: Json.Json) -> Result<&2, &2, Jwt.Error, String>: Jwt.sign(Utf8.encode(secret), claims)
+def jwt_verify(secret: String, token: String, now: Nat, leeway: Nat) -> Result<&2, &2, Jwt.Error, Json.Json>: Jwt.verify(Utf8.encode(secret), token, now, leeway)

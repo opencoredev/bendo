@@ -8,6 +8,11 @@ import ./proof/cookie-ows-laws.bend as CookieOwsLaws
 import ./proof/cookie-serialization-laws.bend as CookieSerializationLaws
 import ./src/data/cookie.bend as Cookie
 import ./proof/cookie-spec.bend as CookieSpec
+
+# BND-25
+import ./src/app/errors.bend as Errors
+import ./proof/error-laws.bend as ErrorLaws
+
 import ./src/app/table.bend as Table
 import ./src/app/route-slot.bend as RouteSlot
 import ./proof/middleware-selection-spec.bend as MiddlewareSelectionSpec
@@ -36,6 +41,8 @@ import ./src/data/utf8.bend as Utf8
 import ./proof/forms.bend as FormSpec
 
 import ./src/router/pattern.bend as Pattern
+import ./src/router/constraint.bend as Constraint
+import ./proof/router-match-spec.bend as MatchSpec
 
 import ./src/router/spec.bend as Spec
 import ./src/router/spec-proofs.bend as SpecProof
@@ -49,6 +56,16 @@ import ./src/router/router.bend as Router
 import ./src/data/hex.bend as Hex
 import ./src/data/base64.bend as Base64
 import ./src/crypto/octets.bend as Octets
+import ./src/crypto/compare.bend as Compare
+import ./src/crypto/hmac.bend as HMAC
+import ./src/crypto/jwt.bend as Jwt
+import ./proof/crypto-compare-spec.bend as CompareSpec
+import ./proof/jwt-spec.bend as JwtSpec
+import ./src/mw/csrf_policy.bend as CsrfPolicy
+import ./proof/csrf-spec.bend as CsrfSpec
+
+import ./src/http/date.bend as HttpDate
+import ./proof/date-spec.bend as HttpDateSpec
 
 # LAW: a text response is a head with no blank line in it, then a blank
 # line, then the body. So the first blank line in the response is the one
@@ -554,7 +571,8 @@ law method_recover:
 # Every successfully compiled pattern roundtrips every independently admissible
 # ordered assignment. Admissibility checks exactly the capture names in order,
 # nonempty present non-wildcard values, constraints and Unicode scalars; only a
-# final optional capture may be omitted, and a wildcard may hold an empty value.
+# trailing chain of optional captures may be omitted, and a wildcard may hold
+# an empty value.
 # It never invokes fill or match_path. Both filling success and matching success
 # are promised, so a filler that always fails cannot satisfy this law.
 law pattern_fill_match:
@@ -565,6 +583,54 @@ law pattern_fill_match:
   for admitted: {Pattern.admissible(pattern, params) == True{} : Bool}
   exs path: String
   {Pattern.fill(pattern, params) == Some{path} : Maybe<&2, String>} & {Pattern.match_path(pattern, path) == Some{params} : Maybe<&2, Pattern.Params>}
+
+# BND-78
+
+# Matching is exactly the independent raw-path specification in
+# proof/router-match-spec.bend, for every pattern value and every raw path:
+# the same hit or miss, the same ordered captures, and the same precedence
+# (optional captures take present segments, interior wildcards take the fewest
+# segments, spans take the most). The specification calls no Pattern helper.
+law pattern_match_spec:
+  for +pattern: Pattern.Pattern
+  for +path: String
+  {Pattern.match_path(pattern, path) == MatchSpec.match_path(pattern, path) : Maybe<&2, Pattern.Params>}
+
+# Each promised syntax form compiles, to the segments the specification reads.
+law compile_bare_star:
+  {Pattern.compile("*") == Done{Pattern.Pattern{[Pattern.Wildcard{"*"}]}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+law compile_prefix_wildcard:
+  {Pattern.compile("/assets*") == Done{Pattern.Pattern{[Pattern.PrefixWildcard{"assets"}]}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+law compile_interior_wildcards:
+  {Pattern.compile("/a/*/b/*") == Done{Pattern.Pattern{[Pattern.Static{"a"}, Pattern.InteriorWildcard{}, Pattern.Static{"b"}, Pattern.Wildcard{"*"}]}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+law compile_optional_chain:
+  {Pattern.compile("/v1/:version?/:platform?") == Done{Pattern.Pattern{[Pattern.Static{"v1"}, Pattern.Capture{"version", Constraint.Any{}, True{}}, Pattern.Capture{"platform", Constraint.Any{}, True{}}]}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+law compile_static_colon:
+  {Pattern.compile("/v1/name:activate") == Done{Pattern.Pattern{[Pattern.Static{"v1"}, Pattern.Static{"name:activate"}]}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+law compile_anchored_span:
+  {Pattern.compile("/:prefix{.+}/contents/:id?") == Done{Pattern.Pattern{[Pattern.Span{"prefix"}, Pattern.Static{"contents"}, Pattern.Capture{"id", Constraint.Any{}, True{}}]}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+# A span needs a static anchor after it.
+law compile_unanchored_span:
+  {Pattern.compile("/:a{.+}/:b") == Fail{Pattern.PatternError{Pattern.InvalidSpan{}, ":a{.+}/:b"}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+# The specification gives the promised raw-path results for those forms.
+law spec_prefix_wildcard:
+  {MatchSpec.match_path(Pattern.Pattern{[Pattern.PrefixWildcard{"assets"}]}, "/assets-v2") == Some{Nil{}} : Maybe<&2, Pattern.Params>} & {MatchSpec.match_path(Pattern.Pattern{[Pattern.PrefixWildcard{"assets"}]}, "/assets/app.js") == Some{Nil{}} : Maybe<&2, Pattern.Params>}
+
+law spec_interior_wildcards:
+  {MatchSpec.match_path(Pattern.Pattern{[Pattern.Static{"a"}, Pattern.InteriorWildcard{}, Pattern.Static{"b"}, Pattern.Wildcard{"*"}]}, "/a/x/y/b/c/d") == Some{[Pattern.Param{"*", "c/d"}]} : Maybe<&2, Pattern.Params>}
+
+law spec_optional_chain:
+  {MatchSpec.match_path(Pattern.Pattern{[Pattern.Static{"v1"}, Pattern.Capture{"version", Constraint.Any{}, True{}}, Pattern.Capture{"platform", Constraint.Any{}, True{}}]}, "/v1/x") == Some{[Pattern.Param{"version", "x"}]} : Maybe<&2, Pattern.Params>}
+
+law spec_greedy_span:
+  {MatchSpec.match_path(Pattern.Pattern{[Pattern.Span{"prefix"}, Pattern.Static{"contents"}, Pattern.Capture{"id", Constraint.Any{}, True{}}]}, "/foo/bar/contents/123") == Some{[Pattern.Param{"prefix", "foo/bar"}, Pattern.Param{"id", "123"}]} : Maybe<&2, Pattern.Params>} & {MatchSpec.match_path(Pattern.Pattern{[Pattern.Span{"prefix"}, Pattern.Static{"contents"}, Pattern.Capture{"id", Constraint.Any{}, True{}}]}, "/a/contents/contents") == Some{[Pattern.Param{"prefix", "a/contents"}]} : Maybe<&2, Pattern.Params>}
 
 # BND-29: URL-encoded data and ordered repeated-key lookup.
 
@@ -762,7 +828,8 @@ law methods_default_path_identity:
   {Methods.match_path(pattern, path, Methods.defaults()) == Pattern.match_path(pattern, path) : Maybe<&2, Pattern.Params>}
 
 # The default first-match statement uses direct Pattern.match_path and an
-# independent token-membership predicate at each List.get registration.
+# independent selector predicate at each List.get registration: AllMethods
+# accepts every method; OnlyMethods uses literal token membership.
 law methods_default_found_first:
   for -T: Data
   for +table: Methods.Valid<T>
@@ -817,7 +884,9 @@ law methods_not_found_iff_all_paths_miss:
 # iff present in ANY path-matching registration or HEAD supplied by GET.
 # Registrations and the request use canonical Method constructors. Output
 # methods are valid too. Every admissible table, pattern, path, option
-# combination and query-method token is covered.
+# combination and query-method token is covered. ExactAllow additionally
+# requires every AllMethods registration to miss the path, so a matching all
+# cannot produce 405. Finite registrations retain the same exact set guarantee.
 law methods_allow_exact:
   for -T: Data
   for +table: Methods.Valid<T>
@@ -1194,3 +1263,267 @@ law scoped_group_built_selection:
   for +stage: Table.Stage
   for +built: {Table.build(Tag, List.append(&2, Table.Entry<Tag>, Scopes.group(Tag, prefix, hooks, inside), outside)) == Done{Table.Table{routes, compiled, layers, count}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
   {Table.scoped_stage_ids(Tag, layers, route, stage) == ScopedSelectionSpec.stage_ids(Tag, List.append(&2, Table.Entry<Tag>, AssemblySpec.group(Tag, prefix, hooks, inside), outside), route, stage) : List<&2, Tag>}
+
+# BND-25: a private HTTP failure's public message is independent of its
+# internal text. proof/error-laws.bend states the same for the rendered
+# response and its wire bytes, and pins the exact output.
+law http_error_private_message:
+  for code: U32
+  for message: String
+  {Errors.message(Errors.HttpError{code, message, False{}}) == "Internal Server Error" : String}
+
+# BND-80: HTTP dates (docs/decisions/0007-http-date.md).
+#
+# Both laws cover every Unix second from 1970-01-01T00:00:00Z through
+# 9999-12-31T23:59:59Z, that is 0 <= second <= 253402300799. The bound avoids
+# that constant, which Bend's checkers would expand in unary. Let
+# d = second / 86400, the Unix day. Then d - 10957 (0 when negative) counts
+# days since 2000-01-01, and fewer than 20 whole 400-year Gregorian cycles of
+# 146097 days means d < 10957 + 20 * 146097 = 2932897, the day of
+# 10000-01-01. That holds exactly when second < 2932897 * 86400 =
+# 253402300800, so the bound selects the same seconds as
+# second <= 253402300799, no more and no fewer.
+
+# LAW: parsing the formatted IMF-fixdate of any supported second returns it.
+law http_date_roundtrip:
+  for +second: Nat
+  for bound: {Nat.is_lt(Nat.div(Nat.sub(Nat.div(second, 86400n), 10957n), 146097n), 20n) == True{} : Bool}
+  {HttpDate.parse_imf(HttpDate.format_imf(second)) == Some{second} : Maybe<&2, Nat>}
+
+# LAW: the formatted text is exact IMF-fixdate for that second. The spec in
+# proof/date-spec.bend shares no code with the codec: it checks the 29-byte
+# grammar, English day and month names, decimal fields, and that the fields
+# are the Gregorian date (counted day by day from 1970-01-01, century leap
+# rules included), weekday (counted from Thursday) and time of day of second.
+# The round trip alone cannot catch a wrong weekday, because the parser checks
+# the weekday through the formatter.
+law http_date_imf_spec:
+  for +second: Nat
+  for bound: {Nat.is_lt(Nat.div(Nat.sub(Nat.div(second, 86400n), 10957n), 146097n), 20n) == True{} : Bool}
+  {HttpDateSpec.denotes(HttpDate.format_imf(second), second) == True{} : Bool}
+
+# LAW: parsing is strict. Any text parse_imf accepts is exactly the formatted
+# IMF-fixdate of the second it returns, so malformed, obsolete or
+# non-canonical dates are never accepted.
+law http_date_parse_strict:
+  for +text: String
+  for +second: Nat
+  for ok: {HttpDate.parse_imf(text) == Some{second} : Maybe<&2, Nat>}
+  {HttpDate.format_imf(second) == text : String}
+
+# BND-43: authentication primitives. These laws state functional results only.
+# Execution time is outside them; see docs/decisions/0012-constant-time-auth.md.
+
+# The accumulating comparison is exactly element-wise equality, for every pair
+# of U32 lists of any lengths. The specification compares in order and stops.
+law ct_equal_spec:
+  for +xs: List<&2, U32>
+  for +ys: List<&2, U32>
+  {Compare.ct_equal(xs, ys) == CompareSpec.equal(xs, ys) : Bool}
+
+# For every secret and every octet header and payload, opening a token sealed
+# with the same secret returns exactly the sealed octets.
+law jwt_open_seal:
+  for +secret: List<&2, U32>
+  for +header: List<&2, U32>
+  for +payload: List<&2, U32>
+  for vh: {Octets.valid(header) == True{} : Bool}
+  for vp: {Octets.valid(payload) == True{} : Bool}
+  {Jwt.open(secret, Jwt.seal(secret, header, payload)) == Done{Jwt.Parts{header, payload}} : Result<&2, &2, Jwt.Error, Jwt.Parts>}
+
+# Every token a.b.c with three dot-free segments whose signature segment c is
+# not the unpadded base64url HMAC-SHA256 of the signing input "a.b" (its UTF-8
+# octets, under the same secret) is rejected with BadSignature. Any other
+# token has fewer or more than three segments.
+law jwt_rejects_bad_signature:
+  for +secret: List<&2, U32>
+  for +a: String
+  for +b: String
+  for +c: String
+  for fa: {Jwt.dotfree(a) == True{} : Bool}
+  for fb: {Jwt.dotfree(b) == True{} : Bool}
+  for fc: {Jwt.dotfree(c) == True{} : Bool}
+  for differs: {c != Base64.encode(HMAC.sha256(secret, Utf8.encode(a ++ ("." ++ b))), True{}, False{}) : String}
+  {Jwt.open(secret, a ++ ("." ++ (b ++ ("." ++ c)))) == Fail{Jwt.BadSignature{}} : Result<&2, &2, Jwt.Error, Jwt.Parts>}
+
+# Every token whose number of '.' characters (JwtSpec.dots) is not two is
+# Malformed, whatever the secret.
+law jwt_rejects_malformed:
+  for +secret: List<&2, U32>
+  for +token: String
+  for wrong: {JwtSpec.dots(token) != 2n : Nat}
+  {Jwt.open(secret, token) == Fail{Jwt.Malformed{}} : Result<&2, &2, Jwt.Error, Jwt.Parts>}
+
+# A token a.b.c whose c is the correct signature of "a.b", but whose a or b is
+# not strict unpadded base64url (JwtSpec.base64url: alphabet, length and
+# unused bits, stated by character sets), fails with BadEncoding. The
+# signature is checked first: with any other c the error is BadSignature.
+law jwt_rejects_bad_encoding:
+  for +secret: List<&2, U32>
+  for +a: String
+  for +b: String
+  for za: {JwtSpec.dots(a) == 0n : Nat}
+  for zb: {JwtSpec.dots(b) == 0n : Nat}
+  for bad: {JwtSpec.base64url(a) && JwtSpec.base64url(b) == False{} : Bool}
+  {Jwt.open(secret, a ++ ("." ++ (b ++ ("." ++ Base64.encode(HMAC.sha256(secret, Utf8.encode(a ++ ("." ++ b))), True{}, False{}))))) == Fail{Jwt.BadEncoding{}} : Result<&2, &2, Jwt.Error, Jwt.Parts>}
+
+# For every secret, time, leeway, payload segment and signature segment: if
+# the header segment decodes to a JSON object that does not have exactly one
+# member named "alg" holding the string "HS256" (absent, repeated, non-string
+# or another algorithm; JwtSpec.alg_accepted counts members itself), verify
+# fails. Tokens without exactly three segments fail by jwt_rejects_malformed.
+law jwt_verify_rejects_bad_alg:
+  for +secret: List<&2, U32>
+  for +a: String
+  for +b: String
+  for +c: String
+  for +now: Nat
+  for +leeway: Nat
+  for +header: List<&2, U32>
+  for +fields: List<&2, Json.Field>
+  for za: {JwtSpec.dots(a) == 0n : Nat}
+  for zb: {JwtSpec.dots(b) == 0n : Nat}
+  for zc: {JwtSpec.dots(c) == 0n : Nat}
+  for decoded: {Base64.decode(a, True{}, False{}) == Some{header} : Maybe<&2, List<&2, U32>>}
+  for parsed: {Json.parse(header) == Done{Json.JObject{fields}} : Result<&2, &2, Json.Error, Json.Json>}
+  for bad: {JwtSpec.alg_accepted(fields) == False{} : Bool}
+  {JwtSpec.failed(Jwt.verify(secret, a ++ ("." ++ (b ++ ("." ++ c))), now, leeway)) == True{} : Bool}
+
+# With canonical segments, the correct signature and no repeated header
+# member names, such a header fails with exactly BadAlgorithm.
+law jwt_verify_bad_alg_exact:
+  for +secret: List<&2, U32>
+  for +a: String
+  for +b: String
+  for +now: Nat
+  for +leeway: Nat
+  for +header: List<&2, U32>
+  for +payload: List<&2, U32>
+  for +fields: List<&2, Json.Field>
+  for za: {JwtSpec.dots(a) == 0n : Nat}
+  for zb: {JwtSpec.dots(b) == 0n : Nat}
+  for dh: {Base64.decode(a, True{}, False{}) == Some{header} : Maybe<&2, List<&2, U32>>}
+  for dp: {Base64.decode(b, True{}, False{}) == Some{payload} : Maybe<&2, List<&2, U32>>}
+  for parsed: {Json.parse(header) == Done{Json.JObject{fields}} : Result<&2, &2, Json.Error, Json.Json>}
+  for distinct: {JwtSpec.distinct(fields) == True{} : Bool}
+  for bad: {JwtSpec.alg_accepted(fields) == False{} : Bool}
+  {Jwt.verify(secret, a ++ ("." ++ (b ++ ("." ++ Base64.encode(HMAC.sha256(secret, Utf8.encode(a ++ ("." ++ b))), True{}, False{})))), now, leeway) == Fail{Jwt.BadAlgorithm{}} : Result<&2, &2, Jwt.Error, Json.Json>}
+
+# verify runs open first and adds checks after it, so every failure of open
+# (Malformed, BadEncoding, BadSignature) is verify's failure, unchanged.
+law jwt_verify_keeps_open_failure:
+  for +secret: List<&2, U32>
+  for +token: String
+  for +now: Nat
+  for +leeway: Nat
+  for +e: Jwt.Error
+  for failed: {Jwt.open(secret, token) == Fail{e} : Result<&2, &2, Jwt.Error, Jwt.Parts>}
+  {Jwt.verify(secret, token, now, leeway) == Fail{e} : Result<&2, &2, Jwt.Error, Json.Json>}
+
+# For every signature segment, time, leeway and payload segment: if the
+# header segment decodes to octets that are not JSON, or are JSON but not an
+# object, verify fails.
+law jwt_verify_rejects_non_object_header:
+  for +secret: List<&2, U32>
+  for +a: String
+  for +b: String
+  for +c: String
+  for +now: Nat
+  for +leeway: Nat
+  for +header: List<&2, U32>
+  for za: {JwtSpec.dots(a) == 0n : Nat}
+  for zb: {JwtSpec.dots(b) == 0n : Nat}
+  for zc: {JwtSpec.dots(c) == 0n : Nat}
+  for decoded: {Base64.decode(a, True{}, False{}) == Some{header} : Maybe<&2, List<&2, U32>>}
+  for bad: {JwtSpec.json_object(Json.parse(header)) == False{} : Bool}
+  {JwtSpec.failed(Jwt.verify(secret, a ++ ("." ++ (b ++ ("." ++ c))), now, leeway)) == True{} : Bool}
+
+# For every header segment, signature segment, time and leeway: if the
+# payload segment decodes to octets that are not JSON, or are JSON but not an
+# object, verify fails.
+law jwt_verify_rejects_non_object_payload:
+  for +secret: List<&2, U32>
+  for +a: String
+  for +b: String
+  for +c: String
+  for +now: Nat
+  for +leeway: Nat
+  for +payload: List<&2, U32>
+  for za: {JwtSpec.dots(a) == 0n : Nat}
+  for zb: {JwtSpec.dots(b) == 0n : Nat}
+  for zc: {JwtSpec.dots(c) == 0n : Nat}
+  for decoded: {Base64.decode(b, True{}, False{}) == Some{payload} : Maybe<&2, List<&2, U32>>}
+  for bad: {JwtSpec.json_object(Json.parse(payload)) == False{} : Bool}
+  {JwtSpec.failed(Jwt.verify(secret, a ++ ("." ++ (b ++ ("." ++ c))), now, leeway)) == True{} : Bool}
+
+# A header that decodes to a JSON object in which two top-level members share
+# a name (JwtSpec.distinct is False) never verifies, whatever the signature,
+# payload, time and leeway.
+law jwt_verify_rejects_repeated_header_member:
+  for +secret: List<&2, U32>
+  for +a: String
+  for +b: String
+  for +c: String
+  for +now: Nat
+  for +leeway: Nat
+  for +header: List<&2, U32>
+  for +fields: List<&2, Json.Field>
+  for za: {JwtSpec.dots(a) == 0n : Nat}
+  for zb: {JwtSpec.dots(b) == 0n : Nat}
+  for zc: {JwtSpec.dots(c) == 0n : Nat}
+  for decoded: {Base64.decode(a, True{}, False{}) == Some{header} : Maybe<&2, List<&2, U32>>}
+  for parsed: {Json.parse(header) == Done{Json.JObject{fields}} : Result<&2, &2, Json.Error, Json.Json>}
+  for repeated: {JwtSpec.distinct(fields) == False{} : Bool}
+  {JwtSpec.failed(Jwt.verify(secret, a ++ ("." ++ (b ++ ("." ++ c))), now, leeway)) == True{} : Bool}
+
+# A payload that decodes to a JSON object in which two top-level members
+# share a name never verifies, whatever the header, signature, time and leeway.
+law jwt_verify_rejects_repeated_claim:
+  for +secret: List<&2, U32>
+  for +a: String
+  for +b: String
+  for +c: String
+  for +now: Nat
+  for +leeway: Nat
+  for +payload: List<&2, U32>
+  for +fields: List<&2, Json.Field>
+  for za: {JwtSpec.dots(a) == 0n : Nat}
+  for zb: {JwtSpec.dots(b) == 0n : Nat}
+  for zc: {JwtSpec.dots(c) == 0n : Nat}
+  for decoded: {Base64.decode(b, True{}, False{}) == Some{payload} : Maybe<&2, List<&2, U32>>}
+  for parsed: {Json.parse(payload) == Done{Json.JObject{fields}} : Result<&2, &2, Json.Error, Json.Json>}
+  for repeated: {JwtSpec.distinct(fields) == False{} : Bool}
+  {JwtSpec.failed(Jwt.verify(secret, a ++ ("." ++ (b ++ ("." ++ c))), now, leeway)) == True{} : Bool}
+
+# The CSRF decision equals CsrfSpec.allows for every policy (configured
+# origins and optional scheme), method and header combination. The spec
+# inspects only non-GET/HEAD requests with a form-like or absent
+# Content-Type; trusts Sec-Fetch-Site: same-origin, a listed source, or the
+# scheme://Host origin unless Sec-Fetch-Site is cross-site; takes Origin over
+# Referer; and never trusts a missing or unparsable source such as "null".
+law csrf_decision_spec:
+  for +origins: List<&2, String>
+  for +scheme: Maybe<&2, String>
+  for +method: Request.Method
+  for +content_type: Maybe<&2, String>
+  for +site: Maybe<&2, String>
+  for +origin: Maybe<&2, String>
+  for +referer: Maybe<&2, String>
+  for +host: Maybe<&2, String>
+  {CsrfPolicy.decide(CsrfPolicy.Policy{origins, scheme}, method, content_type, site, origin, referer, host) == CsrfSpec.allows(origins, scheme, method, content_type, site, origin, referer, host) : Bool}
+
+# The middleware builds its policy with CsrfPolicy.policy, so the decision is
+# also stated from configuration: configured entries become their URL origins
+# (CsrfSpec.configured drops any that is not an http or https URL) and the
+# scheme is compared in lowercase. The origin parser itself is shared with the
+# specification (src/http/origin.bend).
+law csrf_configured_decision_spec:
+  for +origins: List<&2, String>
+  for +scheme: Maybe<&2, String>
+  for +method: Request.Method
+  for +content_type: Maybe<&2, String>
+  for +site: Maybe<&2, String>
+  for +origin: Maybe<&2, String>
+  for +referer: Maybe<&2, String>
+  for +host: Maybe<&2, String>
+  {CsrfPolicy.decide(CsrfPolicy.policy(origins, scheme), method, content_type, site, origin, referer, host) == CsrfSpec.allows(CsrfSpec.configured(origins), CsrfSpec.configured_scheme(scheme), method, content_type, site, origin, referer, host) : Bool}

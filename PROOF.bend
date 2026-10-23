@@ -5,6 +5,10 @@ import Base
 import ./proof/cookie-ows.bend as CookieOwsProof
 import ./proof/cookie-serialization.bend as CookieSerializationProof
 import ./proof/cookies.bend as CookieProof
+
+# BND-25
+import ./proof/errors.bend as ErrorProof
+
 import ./src/app/table.bend as Table
 import ./proof/middleware-selection-spec.bend as MiddlewareSelectionSpec
 import ./proof/lifecycle-selection.bend as LifecycleSelection
@@ -56,6 +60,7 @@ import ./src/router/pattern.bend as Pattern
 import ./src/router/compile-proofs.bend as CompileProof
 import ./src/router/equality-proofs.bend as EqualityProof
 import ./src/router/match-proofs.bend as MatchProof
+import ./src/router/match-spec-proofs.bend as MatchSpecProof
 
 import ./src/router/spec.bend as Spec
 import ./src/router/spec-proofs.bend as SpecProof
@@ -70,6 +75,12 @@ import ./src/router/methods-trie-proofs.bend as MethodTrieProof
 
 import ./proof/crypto-hex.bend as HexProof
 import ./proof/crypto-base64.bend as Base64Proof
+import ./proof/date-laws.bend as DateLaws
+import ./proof/crypto-compare.bend as CompareProof
+import ./proof/jwt.bend as JwtProof
+import ./proof/jwt-structure.bend as JwtStructureProof
+import ./proof/jwt-encoding.bend as JwtEncodingProof
+import ./proof/csrf.bend as CsrfProof
 
 # Check the pure crypto implementations with the strict kernel as well.
 import ./src/crypto/sha1.bend as SHA1
@@ -154,6 +165,44 @@ def compiled_roundtrip(+pattern: Pattern.Pattern, +params: Pattern.Params,
 
 def Laws.pattern_fill_match(source, pattern, compiled, params, admitted):
   compiled_roundtrip(pattern, params, CompileProof.compiled_pattern_good(source, pattern, compiled), admitted)
+
+# BND-78
+
+def Laws.pattern_match_spec(pattern, path):
+  MatchSpecProof.path_spec(pattern, path)
+
+def Laws.compile_bare_star():
+  {==}
+
+def Laws.compile_prefix_wildcard():
+  {==}
+
+def Laws.compile_interior_wildcards():
+  {==}
+
+def Laws.compile_optional_chain():
+  {==}
+
+def Laws.compile_static_colon():
+  {==}
+
+def Laws.compile_anchored_span():
+  {==}
+
+def Laws.compile_unanchored_span():
+  {==}
+
+def Laws.spec_prefix_wildcard():
+  ({==}, {==})
+
+def Laws.spec_interior_wildcards():
+  {==}
+
+def Laws.spec_optional_chain():
+  {==}
+
+def Laws.spec_greedy_span():
+  ({==}, {==})
 
 # BND-29: URL-encoded data and ordered repeated-key lookup.
 
@@ -489,3 +538,63 @@ def Laws.scoped_guard_built_selection(Tag, options, inside, outside, routes, com
 
 def Laws.scoped_group_built_selection(Tag, prefix, hooks, inside, outside, routes, compiled, layers, count, route, stage, built):
   Assembly.selection(Tag, List.append(&2, Table.Entry<Tag>, Scopes.group(Tag, prefix, hooks, inside), outside), List.append(&2, Table.Entry<Tag>, AssemblySpec.group(Tag, prefix, hooks, inside), outside), routes, compiled, layers, count, route, stage, built, Assembly.context(Tag, [], Scopes.group(Tag, prefix, hooks, inside), AssemblySpec.group(Tag, prefix, hooks, inside), outside, Assembly.group(Tag, prefix, hooks, inside)))
+
+# BND-25
+def Laws.http_error_private_message(code, message): {==}
+
+# BND-80: HTTP date round trip and independent IMF-fixdate spec.
+
+def Laws.http_date_roundtrip(second, bound):
+  DateLaws.roundtrip(second, bound)
+
+def Laws.http_date_imf_spec(second, bound):
+  DateLaws.imf_spec(second, bound)
+
+def Laws.http_date_parse_strict(text, second, ok):
+  DateLaws.strict(text, second, ok)
+
+# BND-43: constant-time comparison and the JWT signature layer.
+
+def Laws.ct_equal_spec(xs, ys):
+  CompareProof.ct_equal(xs, ys)
+
+def Laws.jwt_open_seal(secret, header, payload, vh, vp):
+  JwtProof.roundtrip(secret, header, payload, vh, vp)
+
+def Laws.jwt_rejects_bad_signature(secret, a, b, c, fa, fb, fc, differs):
+  JwtProof.rejects(secret, a, b, c, fa, fb, fc, differs)
+
+def Laws.jwt_rejects_malformed(secret, token, wrong):
+  JwtStructureProof.malformed(secret, token, wrong)
+
+def Laws.jwt_rejects_bad_encoding(secret, a, b, za, zb, bad):
+  JwtEncodingProof.bad_encoding(secret, a, b, za, zb, bad)
+
+def Laws.jwt_verify_rejects_bad_alg(secret, a, b, c, now, leeway, header, fields, za, zb, zc, decoded, parsed, bad):
+  JwtStructureProof.bad_alg(secret, a, b, c, now, leeway, header, fields, za, zb, zc, decoded, parsed, bad)
+
+def Laws.jwt_verify_bad_alg_exact(secret, a, b, now, leeway, header, payload, fields, za, zb, dh, dp, parsed, distinct, bad):
+  JwtStructureProof.exactly_bad_alg(secret, a, b, now, leeway, header, payload, fields, za, zb, dh, dp, parsed, distinct, bad)
+
+def Laws.jwt_verify_keeps_open_failure(secret, token, now, leeway, e, failed):
+  JwtStructureProof.open_failure(secret, token, now, leeway, e, failed)
+
+def Laws.jwt_verify_rejects_non_object_header(secret, a, b, c, now, leeway, header, za, zb, zc, decoded, bad):
+  JwtStructureProof.header_not_object(secret, a, b, c, now, leeway, header, za, zb, zc, decoded, bad)
+
+def Laws.jwt_verify_rejects_non_object_payload(secret, a, b, c, now, leeway, payload, za, zb, zc, decoded, bad):
+  JwtStructureProof.payload_not_object(secret, a, b, c, now, leeway, payload, za, zb, zc, decoded, bad)
+
+def Laws.jwt_verify_rejects_repeated_header_member(secret, a, b, c, now, leeway, header, fields, za, zb, zc, decoded, parsed, repeated):
+  JwtStructureProof.header_repeated(secret, a, b, c, now, leeway, header, fields, za, zb, zc, decoded, parsed, repeated)
+
+def Laws.jwt_verify_rejects_repeated_claim(secret, a, b, c, now, leeway, payload, fields, za, zb, zc, decoded, parsed, repeated):
+  JwtStructureProof.payload_repeated(secret, a, b, c, now, leeway, payload, fields, za, zb, zc, decoded, parsed, repeated)
+
+# BND-43: the CSRF decision against its request-policy specification.
+
+def Laws.csrf_decision_spec(origins, scheme, method, content_type, site, origin, referer, host):
+  CsrfProof.decide(origins, scheme, method, content_type, site, origin, referer, host)
+
+def Laws.csrf_configured_decision_spec(origins, scheme, method, content_type, site, origin, referer, host):
+  CsrfProof.configured(origins, scheme, method, content_type, site, origin, referer, host)

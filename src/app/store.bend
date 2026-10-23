@@ -28,39 +28,6 @@ def reply(-A: Data, chan: Chan(A), value: A) -> IO(Unit):
 def transition(-S: Data, state: S, change: S -> S) -> S:
   change(state)
 
-@unsafe
-def actor(-S: Data, +requests: Chan(Message<S>), +state: S, event: ActorEvent<S>) -> IO(Unit):
-  match event:
-    case Receive{}:
-      do IO<Unit>:
-        got : Maybe<&1, Message<S>> <- Chan.recv(Message<S>, requests)
-        actor(S, requests, state, Received{got})
-    case Received{None{}}:
-      IO.pure(Unit, Unit{})
-    case Received{Some{Get{channel}}}:
-      do IO<Unit>:
-        reply(S, channel, state)
-        actor(S, requests, state, Receive{})
-    case Received{Some{Set{value, channel}}}:
-      do IO<Unit>:
-        reply(Unit, channel, Unit{})
-        actor(S, requests, value, Receive{})
-    case Received{Some{Update{change, channel}}}:
-      actor(S, requests, transition(S, state, change), Publish{channel})
-    case Publish{channel}:
-      do IO<Unit>:
-        reply(S, channel, state)
-        actor(S, requests, state, Receive{})
-
-def store_with_timeout(-S: Data, initial: S, timeout_ms: U32) -> IO(Store<S>):
-  do IO<Store<S>>:
-    +requests : Chan(Message<S>) <- Chan.new(Message<S>, 128)
-    IO.spawn(Unit, actor(S, requests, initial, Receive{}))
-    return Store{requests, timeout_ms}
-
-def store(-S: Data, initial: S) -> IO(Store<S>):
-  store_with_timeout(S, initial, 5000)
-
 def received(-A: Data, got: Poll<&1, &1, Maybe<&1, A>, Unit>) -> Result<&2, &2, Error, A>:
   match got:
     case Ready{Some{value}}: Done{value}
