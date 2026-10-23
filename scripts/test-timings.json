@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "files": {
+    "tests/multipart.test.ts": 90940,
+    "tests/http-body.test.ts": 59598,
+    "tests/http-connection.test.ts": 54611,
+    "tests/json.test.ts": 44463,
+    "tests/router-methods.test.ts": 42719,
+    "tests/handle.test.ts": 35694,
+    "tests/crypto.test.ts": 25417,
+    "tests/router-trie.test.ts": 18576,
+    "tests/hello.test.ts": 12986,
+    "tests/router-spec.test.ts": 11778,
+    "tests/forms.test.ts": 9699,
+    "tests/router-hono-cases.test.ts": 9240,
+    "tests/http-response.test.ts": 4032,
+    "tests/router-patterns.test.ts": 3813,
+    "tests/typed-values-prototype.test.ts": 1483,
+    "tests/http-parse.test.ts": 374,
+    "bench/process.test.ts": 204
+  }
+}

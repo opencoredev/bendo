@@ -3,31 +3,14 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import fixture from "./fixtures/hono-router-cases.json";
-import { findBend } from "../packages/bendo/src/bend.ts";
-import { BEND_COMPILE_TIMEOUT } from "./harness.ts";
+import { compile } from "./harness.ts";
 
 const directory = mkdtempSync(join(tmpdir(), "bendo-hono-cases-"));
 afterAll(() => {
   rmSync(directory, { recursive: true, force: true });
 });
 
-const binary = join(directory, "driver");
-const bend = findBend();
-if (bend.kind === "missing") throw new Error("bend is not installed");
-const compilation = Bun.spawnSync(
-  [
-    "timeout",
-    "--foreground",
-    BEND_COMPILE_TIMEOUT,
-    bend.path,
-    join(import.meta.dir, "router-hono-driver.bend"),
-    "-o",
-    binary,
-  ],
-  { stdout: "pipe", stderr: "pipe" },
-);
-if (compilation.exitCode !== 0)
-  throw new Error(`Bend compilation failed:\n${compilation.stdout}${compilation.stderr}`);
+const binary = compile("tests/router-hono-driver.bend", "native");
 
 const decisions = readFileSync(
   new URL("../docs/decisions/0008-router-differences.md", import.meta.url),

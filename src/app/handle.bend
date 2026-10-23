@@ -1,6 +1,8 @@
 # Network-free entrypoint; only the app dispatcher may perform IO.
 import Base
 import ./table.bend as Table
+import ./context.bend as Context
+import ../data/urlencoded.bend as Query
 import ../router/methods.bend as Methods
 import ../router/spec.bend as Spec
 import ../router/pattern.bend as Pattern
@@ -9,9 +11,7 @@ import ../http/response.bend as Response
 import ../http/write_response.bend as Write
 import ../http/bytes.bend as Bytes
 
-# Minimal context until BND-21 adds the full request/response API.
-type Ctx is Data:
-  Ctx{req: Request.Req, params: Pattern.Params, body: List<&2, U32>}
+def Ctx() -> Data: Context.Ctx<Unit>
 
 # Normalize the returned response just as the wire writer would, retaining the
 # HEAD representation length in headers while returning an empty body.
@@ -27,7 +27,7 @@ def finish_valid(method: Request.Method, res: Response.Res, valid: Bool) -> Resp
 def finish(method: Request.Method, +res: Response.Res) -> Response.Res:
   finish_valid(method, res, Response.valid(res))
 
-def resolved(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Ctx -> Env -> IO(Response.Res), resolution: Methods.Resolution<Tag>, +req: Request.Req, body: List<&2, U32>, env: Env) -> IO(Response.Res):
+def resolved(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Ctx -> Env -> IO(Response.Res), resolution: Methods.Resolution<Tag>, +req: Request.Req, body: List<&2, U32>, pairs: List<&2, Query.Entry>, env: Env) -> IO(Response.Res):
   match resolution req:
     case Methods.NotFound{} Request.Req{method, path, query, version, headers}:
       IO.pure(Response.Res, finish(method, Response.text(404, "Not Found")))
@@ -35,10 +35,17 @@ def resolved(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Ctx -> Env -> IO(Response
       IO.pure(Response.Res, finish(method, Response.body(405, [Request.Header{"allow", Bytes.encode(Methods.allow_text(allow))}], [])))
     case Methods.Found{Spec.Match{index, tag, params}, head_from_get} Request.Req{+method, path, query, version, headers}:
       do IO<Response.Res>:
-        res : Response.Res <- dispatch(tag, Ctx{req, params, body}, env)
+        res : Response.Res <- dispatch(tag, Context.create(req, params, body, pairs), env)
         return finish(method, res)
 
-def handle(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Ctx -> Env -> IO(Response.Res), table: Table.Table<Tag>, env: Env, +req: Request.Req, body: List<&2, U32>) -> IO(Response.Res):
+def parsed(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Ctx -> Env -> IO(Response.Res), table: Table.Table<Tag>, env: Env, +req: Request.Req, body: List<&2, U32>, parsed_query: Result<&2, &2, Query.Error, List<&2, Query.Entry>>) -> IO(Response.Res):
   Table.Table{entries, compiled} = table
   Request.Req{+method, +path, query, version, headers} = req
-  resolved(~Tag, ~Env, ~dispatch, Methods.resolve(Tag, compiled, path, method, Methods.defaults()), req, body, env)
+  match parsed_query:
+    case Fail{error}: IO.pure(Response.Res, finish(method, Response.text(400, "Bad Request")))
+    case Done{pairs}:
+      resolved(~Tag, ~Env, ~dispatch, Methods.resolve(Tag, compiled, path, method, Methods.defaults()), req, body, pairs, env)
+
+def handle(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Ctx -> Env -> IO(Response.Res), table: Table.Table<Tag>, env: Env, +req: Request.Req, body: List<&2, U32>) -> IO(Response.Res):
+  Request.Req{method, path, query, version, headers} = req
+  parsed(~Tag, ~Env, ~dispatch, table, env, req, body, Context.query_pairs(query))

@@ -1,11 +1,10 @@
-import { BEND_COMPILE_TIMEOUT } from "./harness.ts";
+import { BEND_COMPILE_TIMEOUT, compile } from "./harness.ts";
 import { afterAll, describe, expect, test } from "bun:test";
 import { createHash, createHmac } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { findBend } from "../packages/bendo/src/bend.ts";
 import hashes from "./fixtures/crypto/hash-vectors.json";
 import macs from "./fixtures/crypto/hmac-vectors.json";
 
@@ -21,8 +20,6 @@ function list(bytes: Uint8Array): List {
 }
 const dir = mkdtempSync(join(tmpdir(), "bendo-crypto-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
-const bend = findBend();
-if (bend.kind === "missing") throw new Error("bend is not installed");
 function command(args: string[], env = process.env): string {
   const result = Bun.spawnSync(["timeout", "--foreground", BEND_COMPILE_TIMEOUT, ...args], {
     env,
@@ -33,10 +30,8 @@ function command(args: string[], env = process.env): string {
   return result.stdout.toString();
 }
 const entry = join(import.meta.dir, "fixtures/crypto");
-const modulePath = join(dir, "crypto.mjs");
-const nativePath = join(dir, "crypto-native");
-command([bend.path, join(entry, "consumer.bend"), "-o", modulePath]);
-command([bend.path, join(entry, "native.bend"), "-o", nativePath]);
+const modulePath = compile("tests/fixtures/crypto/consumer.bend", "mjs");
+const nativePath = compile("tests/fixtures/crypto/native.bend", "native");
 const loaded: unknown = await import(pathToFileURL(modulePath).href);
 if (typeof loaded !== "object" || loaded === null || !("default" in loaded)) {
   throw new Error("Missing Bend module");

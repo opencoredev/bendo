@@ -3,6 +3,8 @@ import Base
 import ./app/config.bend as Config
 import ./app/table.bend as Table
 import ./app/handle.bend as Handle
+import ./app/context.bend as Context
+import ./data/json.bend as Json
 import ./serve.bend as Serve
 import ./http/request.bend as Request
 import ./http/response.bend as Response
@@ -12,6 +14,7 @@ import ./router/router.bend as Router
 def Req() -> Data: Request.Req
 def Res() -> Data: Response.Res
 def Ctx() -> Data: Handle.Ctx
+def Context(-Vars: Data) -> Data: Context.Ctx<Vars>
 def ServerConfig() -> Data: Config.Config
 def RouterKind() -> Data: Router.RouterKind
 def Routes(-Tag: Data) -> Data: Table.Table<Tag>
@@ -19,9 +22,26 @@ def Routes(-Tag: Data) -> Data: Table.Table<Tag>
 def config() -> Config.Config: Config.defaults()
 def spec() -> Router.RouterKind: Router.Spec{}
 def trie() -> Router.RouterKind: Router.Trie{}
-def text(status: U32, value: String) -> Response.Res: Response.text(status, value)
-def body(status: U32, headers: List<&2, Request.Header>, bytes: List<&2, U32>) -> Response.Res: Response.body(status, headers, bytes)
 def not_modified(headers: List<&2, Request.Header>, representation: Maybe<&2, List<&2, U32>>) -> Response.Res: Response.not_modified(headers, representation)
+
+def param(c: Handle.Ctx, name: String) -> Maybe<&2, String>: Context.param(Unit, c, name)
+def query(c: Handle.Ctx, name: String) -> Maybe<&2, String>: Context.query(Unit, c, name)
+def queries(c: Handle.Ctx, name: String) -> List<&2, String>: Context.queries(Unit, c, name)
+def request_header(c: Handle.Ctx, name: String) -> Maybe<&2, String>: Context.request_header(Unit, c, name)
+def header_bytes(c: Handle.Ctx, name: String) -> List<&2, List<&2, U32>>: Context.header_bytes(Unit, c, name)
+def method(c: Handle.Ctx) -> Request.Method: Context.method(Unit, c)
+def path(c: Handle.Ctx) -> String: Context.path(Unit, c)
+def url(c: Handle.Ctx) -> String: Context.url(Unit, c)
+def raw_body(c: Handle.Ctx) -> List<&2, U32>: Context.raw_body(Unit, c)
+def text(c: Handle.Ctx, value: String) -> Response.Res: Context.text(Unit, c, value)
+def html(c: Handle.Ctx, value: String) -> Response.Res: Context.html(Unit, c, value)
+def json(c: Handle.Ctx, value: Json.Json) -> Response.Res: Context.json(Unit, c, value)
+def body(c: Handle.Ctx, bytes: List<&2, U32>, content_type: Maybe<&2, String>) -> Response.Res: Context.body(Unit, c, bytes, content_type)
+def status(c: Handle.Ctx, code: U32) -> Handle.Ctx: Context.status(Unit, c, code)
+def header(c: Handle.Ctx, name: String, value: String) -> Handle.Ctx: Context.header(Unit, c, name, value)
+def redirect(c: Handle.Ctx, location: String) -> Response.Res: Context.redirect(Unit, c, location)
+def redirect_status(c: Handle.Ctx, location: String, code: U32) -> Response.Res: Context.redirect_status(Unit, c, location, code)
+def not_found(c: Handle.Ctx) -> Response.Res: Context.not_found(Unit, c)
 
 def get(-Tag: Data, path: String, tag: Tag) -> Methods.Registration(Tag): Methods.get(Tag, path, tag)
 def head(-Tag: Data, path: String, tag: Tag) -> Methods.Registration(Tag): Methods.head(Tag, path, tag)

@@ -1,6 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
-import { dirname } from "node:path";
-import { rmSync } from "node:fs";
+import { describe, expect, test } from "bun:test";
 import rawFixtures from "./fixtures/router-patterns.json";
 import { build } from "./harness.ts";
 
@@ -72,7 +70,6 @@ function decodeLines(lines: string[]): string[] {
 
 describe("native Bend route patterns", () => {
   const binary = build("tests/router-pattern-driver.bend");
-  afterAll(() => rmSync(dirname(binary), { recursive: true, force: true }));
 
   function run(pattern: string, args: string[]): string[] {
     const result = Bun.spawnSync([binary, pattern, ...args, "+RTS", "--threads", "1"], {
