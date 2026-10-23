@@ -122,3 +122,13 @@ tests exercise selection and execution against compiled native servers.
 bun run prove
 bun test --timeout 30000 tests/middleware.test.ts
 ```
+
+## Lifecycle placements
+
+[Lifecycle hooks](decisions/0010-hooks.md) register stage-tagged middleware ids
+with the same dispatcher. Their order is request, parse, transform,
+before-handle, handler, after-handle, map-response, conditional error, then
+after-response. Only request hooks run before routing; ordinary middleware
+still receives route params and now selects paths after request-hook rewrites.
+Response hooks run even when pre-stage middleware short-circuits. See the
+decision for callback forms, error semantics and the transport boundary.
