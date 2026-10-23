@@ -455,12 +455,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:MissingSlash",
-        "method": "error:0:MissingSlash"
+        "path": "0:0|%2A=%62%2F%62%61%72",
+        "method": "0:0|%2A=%62%2F%62%61%72;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["bare-wildcard"]
+      "differences": ["first-match", "wildcard-capture"]
     },
     {
       "id": "hono-016",
@@ -565,12 +563,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:MissingSlash",
-        "method": "error:0:MissingSlash"
+        "path": "0:0|%2A=%78",
+        "method": "0:0|%2A=%78;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["bare-wildcard"]
+      "differences": ["first-match", "wildcard-capture"]
     },
     {
       "id": "hono-018",
@@ -605,12 +601,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:1:MissingSlash",
-        "method": "error:1:MissingSlash"
+        "path": "0:0",
+        "method": "0:0;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["bare-wildcard"]
+      "differences": ["first-match"]
     },
     {
       "id": "hono-019",
@@ -1059,12 +1053,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:UnknownConstraint",
-        "method": "error:0:UnknownConstraint"
+        "path": "0:0|%70%72%65%66%69%78=%66%6F%6F%2F%62%61%72|%69%64=%31%32%33",
+        "method": "0:0|%70%72%65%66%69%78=%66%6F%6F%2F%62%61%72|%69%64=%31%32%33;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["capture-before-suffix"]
+      "differences": []
     },
     {
       "id": "hono-032",
@@ -1090,12 +1082,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:UnknownConstraint",
-        "method": "error:0:UnknownConstraint"
+        "path": "0:0|%70%72%65%66%69%78=%66%6F%6F%2F%62%61%72",
+        "method": "0:0|%70%72%65%66%69%78=%66%6F%6F%2F%62%61%72;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["capture-before-suffix"]
+      "differences": []
     },
     {
       "id": "hono-033",
@@ -1134,12 +1124,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:UnknownConstraint",
-        "method": "error:0:UnknownConstraint"
+        "path": "1:1|%66%69%72%73%74=%70%61%72%74%31|%75%75%69%64=%6C%61%74%65%73%74",
+        "method": "1:1|%66%69%72%73%74=%70%61%72%74%31|%75%75%69%64=%6C%61%74%65%73%74;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["capture-before-suffix"]
+      "differences": []
     },
     {
       "id": "hono-034",
@@ -1178,12 +1166,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:UnknownConstraint",
-        "method": "error:0:UnknownConstraint"
+        "path": "2:2|%66%69%72%73%74=%70%61%72%74%31|%64%69%67%65%73%74=%6C%61%74%65%73%74",
+        "method": "2:2|%66%69%72%73%74=%70%61%72%74%31|%64%69%67%65%73%74=%6C%61%74%65%73%74;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["capture-before-suffix"]
+      "differences": []
     },
     {
       "id": "hono-035",
@@ -1209,12 +1195,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:UnknownConstraint",
-        "method": "error:0:UnknownConstraint"
+        "path": "0:0|%64%69%72%73=%61%2F%62%2F%63%2F%64",
+        "method": "0:0|%64%69%72%73=%61%2F%62%2F%63%2F%64;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["capture-before-suffix"]
+      "differences": []
     },
     {
       "id": "hono-036",
@@ -1240,12 +1224,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:UnknownConstraint",
-        "method": "error:0:UnknownConstraint"
+        "path": "0:0|%64%69%72%73=%66%6F%6F%2F%62%61%72%2F%62%61%7A",
+        "method": "0:0|%64%69%72%73=%66%6F%6F%2F%62%61%72%2F%62%61%7A;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["capture-before-suffix"]
+      "differences": []
     },
     {
       "id": "hono-037",
@@ -1271,12 +1253,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:UnknownConstraint",
-        "method": "error:0:UnknownConstraint"
+        "path": "0:0|%64%69%72%73=%66%6F%6F%2F%62%61%72",
+        "method": "0:0|%64%69%72%73=%66%6F%6F%2F%62%61%72;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["capture-before-suffix"]
+      "differences": []
     },
     {
       "id": "hono-038",
@@ -1425,12 +1405,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:2:MissingSlash",
-        "method": "error:2:MissingSlash"
+        "path": "0:0|%2A=%74%65%73%74",
+        "method": "0:0|%2A=%74%65%73%74;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["bare-wildcard"]
+      "differences": ["first-match", "wildcard-capture"]
     },
     {
       "id": "hono-042",
@@ -1483,12 +1461,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:2:MissingSlash",
-        "method": "error:2:MissingSlash"
+        "path": "0:0|%2A=",
+        "method": "0:0|%2A=;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["bare-wildcard"]
+      "differences": ["first-match", "wildcard-capture"]
     },
     {
       "id": "hono-043",
@@ -1533,12 +1509,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:2:MissingSlash",
-        "method": "error:2:MissingSlash"
+        "path": "2:2|%2A=",
+        "method": "2:2|%2A=;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["bare-wildcard"]
+      "differences": ["first-match", "wildcard-capture"]
     },
     {
       "id": "hono-044",
@@ -1591,12 +1565,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:2:MissingSlash",
-        "method": "error:2:MissingSlash"
+        "path": "0:0|%2A=%74%65%73%74",
+        "method": "0:0|%2A=%74%65%73%74;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["bare-wildcard"]
+      "differences": ["first-match", "wildcard-capture"]
     },
     {
       "id": "hono-045",
@@ -1649,12 +1621,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:2:MissingSlash",
-        "method": "error:2:MissingSlash"
+        "path": "0:0|%2A=",
+        "method": "0:0|%2A=;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["bare-wildcard"]
+      "differences": ["first-match", "wildcard-capture"]
     },
     {
       "id": "hono-046",
@@ -1699,12 +1669,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:2:MissingSlash",
-        "method": "error:2:MissingSlash"
+        "path": "2:2|%2A=",
+        "method": "2:2|%2A=;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["bare-wildcard"]
+      "differences": ["first-match", "wildcard-capture"]
     },
     {
       "id": "hono-047",
@@ -1769,12 +1737,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:1:OptionalNotLast",
-        "method": "error:1:OptionalNotLast"
+        "path": "1:1",
+        "method": "1:1;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["terminal-optionals"]
+      "differences": []
     },
     {
       "id": "hono-049",
@@ -1805,12 +1771,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:1:OptionalNotLast",
-        "method": "error:1:OptionalNotLast"
+        "path": "1:1|%76%65%72%73%69%6F%6E=%31%32%33",
+        "method": "1:1|%76%65%72%73%69%6F%6E=%31%32%33;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["terminal-optionals"]
+      "differences": []
     },
     {
       "id": "hono-050",
@@ -1844,12 +1808,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:1:OptionalNotLast",
-        "method": "error:1:OptionalNotLast"
+        "path": "1:1|%76%65%72%73%69%6F%6E=%31%32%33|%70%6C%61%74%66%6F%72%6D=%61%62%63",
+        "method": "1:1|%76%65%72%73%69%6F%6E=%31%32%33|%70%6C%61%74%66%6F%72%6D=%61%62%63;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["terminal-optionals"]
+      "differences": []
     },
     {
       "id": "hono-051",
@@ -1880,12 +1842,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:1:OptionalNotLast",
-        "method": "error:1:OptionalNotLast"
+        "path": "0:0",
+        "method": "0:0;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["terminal-optionals"]
+      "differences": []
     },
     {
       "id": "hono-052",
@@ -1916,12 +1876,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:1:OptionalNotLast",
-        "method": "error:1:OptionalNotLast"
+        "path": "0:0|%74%79%70%65=%64%6F%67",
+        "method": "0:0|%74%79%70%65=%64%6F%67;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["terminal-optionals"]
+      "differences": []
     },
     {
       "id": "hono-053",
@@ -1942,12 +1900,10 @@
       "hono": [],
       "honoError": "",
       "expected": {
-        "path": "error:0:WildcardNotLast",
-        "method": "error:0:WildcardNotLast"
+        "path": "none",
+        "method": "none"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["terminal-wildcards"]
+      "differences": []
     },
     {
       "id": "hono-054",
@@ -1973,12 +1929,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:WildcardNotLast",
-        "method": "error:0:WildcardNotLast"
+        "path": "0:0|%2A=%63",
+        "method": "0:0|%2A=%63;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["terminal-wildcards"]
+      "differences": ["wildcard-capture"]
     },
     {
       "id": "hono-055",
@@ -2004,12 +1958,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:WildcardNotLast",
-        "method": "error:0:WildcardNotLast"
+        "path": "0:0|%2A=",
+        "method": "0:0|%2A=;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["terminal-wildcards"]
+      "differences": ["wildcard-capture"]
     },
     {
       "id": "hono-056",
@@ -2131,12 +2083,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:InvalidStatic",
-        "method": "error:0:InvalidStatic"
+        "path": "0:0",
+        "method": "1:1;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["suffix-wildcards"]
+      "differences": ["first-match"]
     },
     {
       "id": "hono-060",
@@ -2176,12 +2126,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:InvalidStatic",
-        "method": "error:0:InvalidStatic"
+        "path": "0:0",
+        "method": "1:1;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["suffix-wildcards"]
+      "differences": ["first-match"]
     },
     {
       "id": "hono-061",
@@ -2202,12 +2150,10 @@
       "hono": [],
       "honoError": "",
       "expected": {
-        "path": "error:0:InvalidStatic",
-        "method": "error:0:InvalidStatic"
+        "path": "none",
+        "method": "none"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["suffix-wildcards"]
+      "differences": []
     },
     {
       "id": "hono-062",
@@ -2233,12 +2179,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:InvalidStatic",
-        "method": "error:0:InvalidStatic"
+        "path": "0:0",
+        "method": "0:0;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["suffix-wildcards"]
+      "differences": []
     },
     {
       "id": "hono-063",
@@ -2264,12 +2208,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:InvalidStatic",
-        "method": "error:0:InvalidStatic"
+        "path": "0:0",
+        "method": "0:0;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["suffix-wildcards"]
+      "differences": []
     },
     {
       "id": "hono-064",
@@ -2295,12 +2237,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:InvalidStatic",
-        "method": "error:0:InvalidStatic"
+        "path": "0:0",
+        "method": "0:0;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["suffix-wildcards"]
+      "differences": []
     },
     {
       "id": "hono-065",
@@ -2358,12 +2298,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:2:MissingSlash",
-        "method": "error:2:MissingSlash"
+        "path": "1:1|%2A=%78",
+        "method": "1:1|%2A=%78;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["bare-wildcard"]
+      "differences": ["first-match", "wildcard-capture"]
     },
     {
       "id": "hono-066",
@@ -2417,12 +2355,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:2:MissingSlash",
-        "method": "error:2:MissingSlash"
+        "path": "0:0",
+        "method": "0:0;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["bare-wildcard"]
+      "differences": ["first-match"]
     },
     {
       "id": "hono-067",
@@ -2457,12 +2393,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:1:MissingSlash",
-        "method": "error:1:MissingSlash"
+        "path": "0:0",
+        "method": "0:0;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["bare-wildcard"]
+      "differences": ["first-match"]
     },
     {
       "id": "hono-068",
@@ -2716,12 +2650,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:MissingSlash",
-        "method": "error:0:MissingSlash"
+        "path": "0:0|%2A=%65%6E%74%72%79",
+        "method": "0:0|%2A=%65%6E%74%72%79;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["bare-wildcard"]
+      "differences": ["wildcard-capture"]
     },
     {
       "id": "hono-075",
@@ -2785,12 +2717,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:MissingSlash",
-        "method": "error:0:MissingSlash"
+        "path": "0:0|%2A=%65%6E%74%72%79",
+        "method": "0:0|%2A=%65%6E%74%72%79;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["bare-wildcard"]
+      "differences": ["first-match", "wildcard-capture"]
     },
     {
       "id": "hono-076",
@@ -2857,12 +2787,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:MissingSlash",
-        "method": "error:0:MissingSlash"
+        "path": "0:0|%2A=%65%6E%74%72%79%2F%31%32%33%2F%63%6F%6D%6D%65%6E%74%2F%34%35%36",
+        "method": "0:0|%2A=%65%6E%74%72%79%2F%31%32%33%2F%63%6F%6D%6D%65%6E%74%2F%34%35%36;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["bare-wildcard"]
+      "differences": ["first-match", "wildcard-capture"]
     },
     {
       "id": "hono-077",
@@ -2926,12 +2854,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:MissingSlash",
-        "method": "error:0:MissingSlash"
+        "path": "0:0|%2A=%65%6E%74%72%79%2F%31%32%33",
+        "method": "0:0|%2A=%65%6E%74%72%79%2F%31%32%33;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["bare-wildcard"]
+      "differences": ["first-match", "wildcard-capture"]
     },
     {
       "id": "hono-078",
@@ -2991,12 +2917,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:MissingSlash",
-        "method": "error:0:MissingSlash"
+        "path": "0:0|%2A=",
+        "method": "0:0|%2A=;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["bare-wildcard"]
+      "differences": ["first-match", "wildcard-capture"]
     },
     {
       "id": "hono-079",
@@ -3034,12 +2958,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:1:MissingSlash",
-        "method": "error:1:MissingSlash"
+        "path": "0:0|%74%79%70%65=%70%6F%73%74%73|%61%63%74%69%6F%6E=%31%32%33",
+        "method": "0:0|%74%79%70%65=%70%6F%73%74%73|%61%63%74%69%6F%6E=%31%32%33;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["bare-wildcard"]
+      "differences": ["first-match"]
     },
     {
       "id": "hono-080",
@@ -3077,12 +2999,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:MissingSlash",
-        "method": "error:0:MissingSlash"
+        "path": "0:0|%2A=%70%6F%73%74%73%2F%31%32%33",
+        "method": "0:0|%2A=%70%6F%73%74%73%2F%31%32%33;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["bare-wildcard"]
+      "differences": ["first-match", "wildcard-capture"]
     },
     {
       "id": "hono-081",
@@ -3364,12 +3284,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:WildcardNotLast",
-        "method": "error:0:WildcardNotLast"
+        "path": "0:0",
+        "method": "0:0;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["terminal-wildcards"]
+      "differences": []
     },
     {
       "id": "hono-089",
@@ -3477,12 +3395,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:WildcardNotLast",
-        "method": "error:0:WildcardNotLast"
+        "path": "0:0",
+        "method": "0:0;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["terminal-wildcards"]
+      "differences": []
     },
     {
       "id": "hono-093",
@@ -3809,12 +3725,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:WildcardNotLast",
-        "method": "error:0:WildcardNotLast"
+        "path": "0:0|%64%69%72=%66%6F%6F",
+        "method": "0:0|%64%69%72=%66%6F%6F;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["terminal-wildcards"]
+      "differences": []
     },
     {
       "id": "hono-103",
@@ -4199,12 +4113,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:MissingSlash",
-        "method": "error:0:MissingSlash"
+        "path": "0:0|%2A=%65%6E%74%72%79%2F%31%32%33%2F%73%68%6F%77",
+        "method": "0:0|%2A=%65%6E%74%72%79%2F%31%32%33%2F%73%68%6F%77;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["bare-wildcard"]
+      "differences": ["first-match", "wildcard-capture"]
     },
     {
       "id": "hono-113",
@@ -4346,12 +4258,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:1:InvalidStatic",
-        "method": "error:1:InvalidStatic"
+        "path": "0:0",
+        "method": "0:0;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["static-punctuation"]
+      "differences": []
     },
     {
       "id": "hono-118",
@@ -4382,12 +4292,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:1:InvalidStatic",
-        "method": "error:1:InvalidStatic"
+        "path": "1:1",
+        "method": "1:1;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["static-punctuation"]
+      "differences": []
     },
     {
       "id": "hono-119",
@@ -4418,12 +4326,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:InvalidStatic",
-        "method": "error:0:InvalidStatic"
+        "path": "1:1",
+        "method": "1:1;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["static-punctuation"]
+      "differences": []
     },
     {
       "id": "hono-120",
@@ -4454,12 +4360,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:InvalidStatic",
-        "method": "error:0:InvalidStatic"
+        "path": "0:0",
+        "method": "0:0;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["static-punctuation"]
+      "differences": []
     },
     {
       "id": "hono-121",
@@ -4490,12 +4394,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:WildcardNotLast",
-        "method": "error:0:WildcardNotLast"
+        "path": "1:1|%69%64=%31%32%33",
+        "method": "1:1|%69%64=%31%32%33;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["terminal-wildcards"]
+      "differences": []
     },
     {
       "id": "hono-122",
@@ -4914,12 +4816,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:1:InvalidStatic",
-        "method": "error:1:InvalidStatic"
+        "path": "0:0|%2A=",
+        "method": "0:0|%2A=;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["suffix-wildcards"]
+      "differences": ["registration-priority", "wildcard-capture"]
     },
     {
       "id": "hono-135",
@@ -4950,12 +4850,10 @@
       ],
       "honoError": "",
       "expected": {
-        "path": "error:0:InvalidStatic",
-        "method": "error:0:InvalidStatic"
+        "path": "0:0",
+        "method": "0:0;head_from_get=false"
       },
-      "differences": [],
-      "gap": "BND-78",
-      "gapKinds": ["suffix-wildcards"]
+      "differences": []
     },
     {
       "id": "hono-136",
