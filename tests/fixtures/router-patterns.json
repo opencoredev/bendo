@@ -1,0 +1,991 @@
+[
+  {
+    "kind": "match",
+    "pattern": "/",
+    "path": "/",
+    "params": []
+  },
+  {
+    "kind": "match",
+    "pattern": "/posts",
+    "path": "/posts",
+    "params": []
+  },
+  {
+    "kind": "match",
+    "pattern": "/a/b",
+    "path": "/a/b",
+    "params": []
+  },
+  {
+    "kind": "match",
+    "pattern": "/a/",
+    "path": "/a/",
+    "params": []
+  },
+  {
+    "kind": "match",
+    "pattern": "/a//b",
+    "path": "/a//b",
+    "params": []
+  },
+  {
+    "kind": "match",
+    "pattern": "/A",
+    "path": "/A",
+    "params": []
+  },
+  {
+    "kind": "match",
+    "pattern": "/caf%C3%A9",
+    "path": "/caf%C3%A9",
+    "params": []
+  },
+  {
+    "kind": "match",
+    "pattern": "/é",
+    "path": "/é",
+    "params": []
+  },
+  {
+    "kind": "miss",
+    "pattern": "/",
+    "path": ""
+  },
+  {
+    "kind": "miss",
+    "pattern": "/",
+    "path": "//"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/a",
+    "path": "/A"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/a",
+    "path": "/a/"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/a/",
+    "path": "/a"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/a//b",
+    "path": "/a/b"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/é",
+    "path": "/%C3%A9"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/posts",
+    "path": "/posts/1"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/a",
+    "path": "a"
+  },
+  {
+    "kind": "match",
+    "pattern": "/p/:x",
+    "path": "/p/42",
+    "params": [["x", "42"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/p/:x",
+    "path": "/p/%34%32",
+    "params": [["x", "42"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/p/:x",
+    "path": "/p/a+b",
+    "params": [["x", "a+b"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/p/:x",
+    "path": "/p/a%20b",
+    "params": [["x", "a b"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/p/:x",
+    "path": "/p/a%2Fb",
+    "params": [["x", "a/b"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/p/:x",
+    "path": "/p/%252F",
+    "params": [["x", "%2F"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/p/:x",
+    "path": "/p/%00",
+    "params": [["x", "\u0000"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/p/:x",
+    "path": "/p/caf%C3%A9",
+    "params": [["x", "café"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/p/:x",
+    "path": "/p/café",
+    "params": [["x", "café"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/p/:x",
+    "path": "/p/%F0%9F%98%80",
+    "params": [["x", "😀"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/p/:x",
+    "path": "/p/%E4%B8%AD",
+    "params": [["x", "中"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/p/:x",
+    "path": "/p/%7e",
+    "params": [["x", "~"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/p/:x",
+    "path": "/p/%25",
+    "params": [["x", "%"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/p/:x",
+    "path": "/p/%3F%23",
+    "params": [["x", "?#"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/p/:x",
+    "path": "/p/%F4%8F%BF%BF",
+    "params": [["x", "􏿿"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/:a/:b",
+    "path": "/one/two",
+    "params": [
+      ["a", "one"],
+      ["b", "two"]
+    ]
+  },
+  {
+    "kind": "match",
+    "pattern": "/:x?",
+    "path": "/",
+    "params": []
+  },
+  {
+    "kind": "match",
+    "pattern": "/a/:x?",
+    "path": "/a",
+    "params": []
+  },
+  {
+    "kind": "match",
+    "pattern": "/a/:x?",
+    "path": "/a/1",
+    "params": [["x", "1"]]
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x",
+    "path": "/"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/a/:x",
+    "path": "/a/"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/a/:x?",
+    "path": "/a/"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/a/:x?",
+    "path": "/a/1/2"
+  },
+  {
+    "kind": "match",
+    "pattern": "/a/*",
+    "path": "/a",
+    "params": [["*", ""]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/a/*",
+    "path": "/a/",
+    "params": [["*", ""]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/a/*",
+    "path": "/a/b/c",
+    "params": [["*", "b/c"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/a/*",
+    "path": "/a//b/",
+    "params": [["*", "/b/"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/a/*",
+    "path": "/a/%2F",
+    "params": [["*", "/"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/a/*rest",
+    "path": "/a",
+    "params": [["rest", ""]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/a/*rest",
+    "path": "/a/",
+    "params": [["rest", ""]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/a/*rest",
+    "path": "/a/b/c",
+    "params": [["rest", "b/c"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/a/*rest",
+    "path": "/a//b/",
+    "params": [["rest", "/b/"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/a/*rest",
+    "path": "/a/%2F",
+    "params": [["rest", "/"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/*rest",
+    "path": "/",
+    "params": [["rest", ""]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/*",
+    "path": "/a",
+    "params": [["*", "a"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/:x{int}",
+    "path": "/0",
+    "params": [["x", "0"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/:x{int}",
+    "path": "/-1",
+    "params": [["x", "-1"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/:x{int}",
+    "path": "/001",
+    "params": [["x", "001"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/:x{int}",
+    "path": "/-000",
+    "params": [["x", "-000"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/:x{int}",
+    "path": "/123456789012345678901234567890",
+    "params": [["x", "123456789012345678901234567890"]]
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x{int}",
+    "path": "/+1"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x{int}",
+    "path": "/1.2"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x{int}",
+    "path": "/-"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x{int}",
+    "path": "/x"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x{int}",
+    "path": "/%2B1"
+  },
+  {
+    "kind": "match",
+    "pattern": "/:x{slug}",
+    "path": "/abc",
+    "params": [["x", "abc"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/:x{slug}",
+    "path": "/a-b2",
+    "params": [["x", "a-b2"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/:x{slug}",
+    "path": "/-",
+    "params": [["x", "-"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/:x{slug}",
+    "path": "/012",
+    "params": [["x", "012"]]
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x{slug}",
+    "path": "/ABC"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x{slug}",
+    "path": "/a_b"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x{slug}",
+    "path": "/a%2Fb"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x{slug}",
+    "path": "/café"
+  },
+  {
+    "kind": "match",
+    "pattern": "/:x{uuid}",
+    "path": "/550e8400-e29b-41d4-a716-446655440000",
+    "params": [["x", "550e8400-e29b-41d4-a716-446655440000"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/:x{uuid}",
+    "path": "/550E8400-E29B-41D4-A716-446655440000",
+    "params": [["x", "550E8400-E29B-41D4-A716-446655440000"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/:x{uuid}",
+    "path": "/00000000-0000-0000-0000-000000000000",
+    "params": [["x", "00000000-0000-0000-0000-000000000000"]]
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x{uuid}",
+    "path": "/550e8400-e29b-41d4-a716-44665544000"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x{uuid}",
+    "path": "/550e8400-e29b-41d4-a716-4466554400000"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x{uuid}",
+    "path": "/550e8400e29b41d4a716446655440000"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x{uuid}",
+    "path": "/gg0e8400-e29b-41d4-a716-4466gg440000"
+  },
+  {
+    "kind": "match",
+    "pattern": "/:x{[a-z0-9-]+}",
+    "path": "/a-2",
+    "params": [["x", "a-2"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/:x{[0-9]{4}}",
+    "path": "/2026",
+    "params": [["x", "2026"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/:x{[abc]+}",
+    "path": "/caba",
+    "params": [["x", "caba"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/:x{[-a]+}",
+    "path": "/-a",
+    "params": [["x", "-a"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/:x{int}?",
+    "path": "/-1",
+    "params": [["x", "-1"]]
+  },
+  {
+    "kind": "match",
+    "pattern": "/:x{int}?",
+    "path": "/",
+    "params": []
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x{[a-z0-9-]+}",
+    "path": "/A"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x{[0-9]{4}}",
+    "path": "/202"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x{[0-9]{4}}",
+    "path": "/20260"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x{[abc]+}",
+    "path": "/d"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x{int}?",
+    "path": "/no"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x",
+    "path": "/%"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x",
+    "path": "/%2"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x",
+    "path": "/%GG"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x",
+    "path": "/%C0%AF"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x",
+    "path": "/%C1%BF"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x",
+    "path": "/%80"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x",
+    "path": "/%E2%82"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x",
+    "path": "/%ED%A0%80"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x",
+    "path": "/%F4%90%80%80"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x",
+    "path": "/%F5%80%80%80"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x",
+    "path": "/%FF"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x",
+    "path": "/%E0%80%80"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x",
+    "path": "/%F0%80%80%80"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/:x",
+    "path": "/%E2x%82%AC"
+  },
+  {
+    "kind": "miss",
+    "pattern": "/*rest",
+    "path": "/%ED%B0%80"
+  },
+  {
+    "kind": "error",
+    "pattern": "",
+    "path": "/",
+    "error": "MissingSlash"
+  },
+  {
+    "kind": "error",
+    "pattern": "posts",
+    "path": "/",
+    "error": "MissingSlash"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:",
+    "path": "/",
+    "error": "EmptyName"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:?",
+    "path": "/",
+    "error": "EmptyName"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:{int}",
+    "path": "/",
+    "error": "EmptyName"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:1x",
+    "path": "/",
+    "error": "InvalidName"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:a-b",
+    "path": "/",
+    "error": "InvalidName"
+  },
+  {
+    "kind": "error",
+    "pattern": "/*bad-name",
+    "path": "/",
+    "error": "InvalidName"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:x/:x",
+    "path": "/",
+    "error": "DuplicateName"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:x/*x",
+    "path": "/",
+    "error": "DuplicateName"
+  },
+  {
+    "kind": "error",
+    "pattern": "/*/a",
+    "path": "/",
+    "error": "WildcardNotLast"
+  },
+  {
+    "kind": "error",
+    "pattern": "/*x/a",
+    "path": "/",
+    "error": "WildcardNotLast"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:x?/a",
+    "path": "/",
+    "error": "OptionalNotLast"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:x{int}?/a",
+    "path": "/",
+    "error": "OptionalNotLast"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:x{int",
+    "path": "/",
+    "error": "UnbalancedBraces"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:x{",
+    "path": "/",
+    "error": "UnbalancedBraces"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:x{float}",
+    "path": "/",
+    "error": "UnknownConstraint"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:x{}",
+    "path": "/",
+    "error": "UnknownConstraint"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:x{[z-a]+}",
+    "path": "/",
+    "error": "InvalidClass"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:x{[]+}",
+    "path": "/",
+    "error": "InvalidClass"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:x{[^a]+}",
+    "path": "/",
+    "error": "InvalidClass"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:x{[a]}",
+    "path": "/",
+    "error": "InvalidClass"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:x{[a]*}",
+    "path": "/",
+    "error": "InvalidClass"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:x{[a]{0}}",
+    "path": "/",
+    "error": "InvalidClass"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:x{[a]{-1}}",
+    "path": "/",
+    "error": "InvalidClass"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:x{[a\\d]+}",
+    "path": "/",
+    "error": "InvalidClass"
+  },
+  {
+    "kind": "error",
+    "pattern": "/a:b",
+    "path": "/",
+    "error": "InvalidStatic"
+  },
+  {
+    "kind": "error",
+    "pattern": "/a*",
+    "path": "/",
+    "error": "InvalidStatic"
+  },
+  {
+    "kind": "error",
+    "pattern": "/a?",
+    "path": "/",
+    "error": "InvalidStatic"
+  },
+  {
+    "kind": "error",
+    "pattern": "/a#b",
+    "path": "/",
+    "error": "InvalidStatic"
+  },
+  {
+    "kind": "error",
+    "pattern": "/a}",
+    "path": "/",
+    "error": "InvalidStatic"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/",
+    "params": [],
+    "filled": "/"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/a/",
+    "params": [],
+    "filled": "/a/"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/:x",
+    "params": [["x", "a/b"]],
+    "filled": "/%61%2F%62"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/:x",
+    "params": [["x", "café"]],
+    "filled": "/%63%61%66%C3%A9"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/:x",
+    "params": [["x", "😀"]],
+    "filled": "/%F0%9F%98%80"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/:x",
+    "params": [["x", "%2F"]],
+    "filled": "/%25%32%46"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/:x",
+    "params": [["x", "+"]],
+    "filled": "/%2B"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/:x?",
+    "params": [],
+    "filled": "/"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/a/:x?",
+    "params": [],
+    "filled": "/a"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/a/:x?",
+    "params": [["x", "1"]],
+    "filled": "/a/%31"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/a/*rest",
+    "params": [["rest", "a/b"]],
+    "filled": "/a/%61%2F%62"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/a/*",
+    "params": [["*", ""]],
+    "filled": "/a/"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/:x{int}",
+    "params": [["x", "-01"]],
+    "filled": "/%2D%30%31"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/:a/:b",
+    "params": [
+      ["a", "A"],
+      ["b", "B"]
+    ],
+    "filled": "/%41/%42"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/:x{[0-9]{4}}",
+    "params": [["x", "2026"]],
+    "filled": "/%32%30%32%36"
+  },
+  {
+    "kind": "inadmissible",
+    "pattern": "/:x",
+    "params": []
+  },
+  {
+    "kind": "inadmissible",
+    "pattern": "/:x",
+    "params": [["x", ""]]
+  },
+  {
+    "kind": "inadmissible",
+    "pattern": "/:x",
+    "params": [["wrong", "a"]]
+  },
+  {
+    "kind": "inadmissible",
+    "pattern": "/:a/:b",
+    "params": [
+      ["b", "b"],
+      ["a", "a"]
+    ]
+  },
+  {
+    "kind": "inadmissible",
+    "pattern": "/:x",
+    "params": [
+      ["x", "a"],
+      ["extra", "b"]
+    ]
+  },
+  {
+    "kind": "inadmissible",
+    "pattern": "/:x{int}",
+    "params": [["x", "no"]]
+  },
+  {
+    "kind": "inadmissible",
+    "pattern": "/:x?",
+    "params": [["x", ""]]
+  },
+  {
+    "kind": "inadmissible",
+    "pattern": "/a/*rest",
+    "params": []
+  },
+  {
+    "kind": "fill",
+    "pattern": "//:x?",
+    "params": [],
+    "filled": "/"
+  },
+  {
+    "kind": "match",
+    "pattern": "//:x?",
+    "path": "/",
+    "params": []
+  },
+  {
+    "kind": "miss",
+    "pattern": "//:x?",
+    "path": "//"
+  },
+  {
+    "kind": "fill",
+    "pattern": "///:x?",
+    "params": [],
+    "filled": "//"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:x{[a-b-c]+}",
+    "path": "/",
+    "error": "InvalidClass"
+  },
+  {
+    "kind": "error",
+    "pattern": "/:x{[a]{4294967297}}",
+    "path": "/",
+    "error": "InvalidClass"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/:x",
+    "params": [["x", ""]],
+    "filled": "/%7F"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/:x",
+    "params": [["x", ""]],
+    "filled": "/%C2%80"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/:x",
+    "params": [["x", "߿"]],
+    "filled": "/%DF%BF"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/:x",
+    "params": [["x", "ࠀ"]],
+    "filled": "/%E0%A0%80"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/:x",
+    "params": [["x", "퟿"]],
+    "filled": "/%ED%9F%BF"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/:x",
+    "params": [["x", ""]],
+    "filled": "/%EE%80%80"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/:x",
+    "params": [["x", "￿"]],
+    "filled": "/%EF%BF%BF"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/:x",
+    "params": [["x", "𐀀"]],
+    "filled": "/%F0%90%80%80"
+  },
+  {
+    "kind": "fill",
+    "pattern": "/:x",
+    "params": [["x", "􏿿"]],
+    "filled": "/%F4%8F%BF%BF"
+  }
+]
