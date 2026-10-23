@@ -6,7 +6,9 @@ on:
 permissions:
   contents: read
 jobs:
-  check:
+  # Proofs, lint and typechecks. `bun run check` runs these plus the tests;
+  # CI splits them so the test job gets its full budget.
+  static:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
@@ -16,8 +18,6 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.4.4"
-      - name: Install native build tools
-        run: sudo apt-get update && sudo apt-get install -y build-essential clang
       - name: Cache Bend and Lean
         id: toolchains
         uses: actions/cache@v4
@@ -46,20 +46,70 @@ jobs:
           elan toolchain install "$(cat lean-toolchain)"
       - name: Install dependencies
         run: bun install --frozen-lockfile
+      - name: Proofs, lint and typechecks
+        run: timeout --foreground 12m bun run check:static
+
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      BEND_NO_TELEMETRY: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.4"
+      - name: Install native build tools
+        run: sudo apt-get update && sudo apt-get install -y build-essential clang
+      - name: Cache Bend and Lean
+        id: toolchains
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bend
+            ~/.elan
+          key: ${{ runner.os }}-${{ runner.arch }}-bend-lean-v1-${{ hashFiles('.bend-version', 'lean-toolchain') }}
+      - name: Set toolchain PATH
+        run: |
+          echo "$HOME/.bend/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Install pinned Bend
+        if: steps.toolchains.outputs.cache-hit != 'true'
+        run: |
+          version="$(cat .bend-version)"
+          curl -fsSL "https://github.com/bendlang/bend/releases/download/v${version}/bend-${version}-linux-x64.tar.gz" -o /tmp/bendo-bend.tar.gz
+          mkdir -p "$HOME/.bend"
+          tar -xzf /tmp/bendo-bend.tar.gz -C "$HOME/.bend" --strip-components=1
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Check the Bend pin
+        run: bun run check:bend
       - name: Fingerprint the native toolchain
         id: toolchain
         run: echo "id=$(printf '%s %s' "${ImageVersion:-unknown}" "$(clang --version | head -1)" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
-      - name: Cache compiled fixtures
-        uses: actions/cache@v4
+      # Restore and save separately so a run that times out still keeps the
+      # fixtures it compiled; the retry then starts warm.
+      - name: Restore compiled fixtures
+        id: fixtures
+        uses: actions/cache/restore@v4
         with:
           path: |
             .cache/bend
             .cache/test-timings.json
           key: ${{ runner.os }}-${{ runner.arch }}-fixtures-v1-${{ steps.toolchain.outputs.id }}-${{ hashFiles('**/*.bend', '**/*.c', '**/*.js', 'tests/**/*.ts', 'prototypes/**/*.json', '.bend-version') }}
           restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-fixtures-v1-${{ steps.toolchain.outputs.id }}-
             ${{ runner.os }}-${{ runner.arch }}-fixtures-v1-
-      - name: Quality gate
-        run: timeout --foreground 12m bun run check
+      - name: Tests
+        run: bun run test:ci
+      - name: Save compiled fixtures
+        if: always() && steps.fixtures.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .cache/bend
+            .cache/test-timings.json
+          key: ${{ steps.fixtures.outputs.cache-primary-key }}
       - name: Per-file test timings
         if: always()
         run: |

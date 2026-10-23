@@ -65,7 +65,7 @@ def entries(-Tag: Data, xs: List<&2, Methods.Registration(Tag)>, table: Methods.
     case _ _: []
 
 def json(-Tag: Data, table: Table.Table<Tag>) -> String:
-  Table.Table{xs, compiled, middleware} = table
+  Table.Table{xs, compiled, middleware, count} = table
   "{\"bendo\":1,\"routes\":[" ++ String.join(entries(Tag, xs, Methods.raw(Tag, Methods.index_valid(Tag, compiled))), ",") ++ "]}"
 
 # IO.args is affine and includes argv[0]; callers skip that first item.

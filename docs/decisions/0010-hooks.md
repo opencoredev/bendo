@@ -107,9 +107,9 @@ it runs observers before returning that normalized response to the caller. The
 network shell uses the internal deferred entrypoint instead, so it never runs
 an observer before sending.
 
-Hooks are global in this issue. Groups, route scopes and `guard` belong to
-M3.3b; plugins belong to M3.5. They can lower into the same stage-tagged
-registrations without changing the dispatcher contract.
+This decision defines global hooks. [Decision 0011](0011-hook-scopes.md) adds
+group, route and guard scopes through route-attached data using the same
+dispatcher contract. Plugins belong to M3.5.
 
 ## Verification
 
