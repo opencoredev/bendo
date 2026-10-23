@@ -497,3 +497,6 @@ def Laws.http_date_roundtrip(second, bound):
 def Laws.http_date_imf_spec(second, bound):
   DateLaws.imf_spec(second, bound)
 
+def Laws.http_date_parse_strict(text, second, ok):
+  DateLaws.strict(text, second, ok)
+

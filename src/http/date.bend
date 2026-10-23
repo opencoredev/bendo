@@ -279,10 +279,23 @@ def format_imf(+s: Nat) -> String:
 # Reading. Fields are decoded without validation; parse_imf accepts a value
 # only when formatting it reproduces the input exactly.
 
+def digit_cap(n: Nat, small: Bool) -> Nat:
+  match small:
+    case True{}:
+      n
+    case False{}:
+      10n
+
+# A character above '9' reads as 10 and one below '0' as 0; the canonical
+# check rejects both. Capping keeps every intermediate below 2^48, so
+# malformed text cannot overflow a native Nat before that check runs.
+def digit_bounded(+n: Nat) -> Nat:
+  digit_cap(n, Nat.is_lt(n, 10n))
+
 def digit_value(c: Char) -> Nat:
   match c:
     case Chr{x}:
-      Nat.sub(U32.to_nat(x), 48n)
+      digit_bounded(Nat.sub(U32.to_nat(x), 48n))
 
 def read2(a: Char, b: Char) -> Nat:
   Nat.add(Nat.mul(digit_value(a), 10n), digit_value(b))

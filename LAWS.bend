@@ -1208,3 +1208,12 @@ law http_date_imf_spec:
   for bound: {Nat.is_lt(Nat.div(Nat.sub(Nat.div(second, 86400n), 10957n), 146097n), 20n) == True{} : Bool}
   {HttpDateSpec.denotes(HttpDate.format_imf(second), second) == True{} : Bool}
 
+# LAW: parsing is strict. Any text parse_imf accepts is exactly the formatted
+# IMF-fixdate of the second it returns, so malformed, obsolete or
+# non-canonical dates are never accepted.
+law http_date_parse_strict:
+  for +text: String
+  for +second: Nat
+  for ok: {HttpDate.parse_imf(text) == Some{second} : Maybe<&2, Nat>}
+  {HttpDate.format_imf(second) == text : String}
+

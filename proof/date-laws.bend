@@ -203,3 +203,47 @@ def roundtrip(s, bound):
   +e5 = Equal.cong(Bool, Maybe<&2, Nat>, b => D.parsed(s, b), String.eq(D.render_date(Nat.mod(Nat.add(Nat.div(s, 86400n), 4n), 7n), S.civil(Nat.div(s, 86400n)), Nat.mod(s, 86400n)), D.render_date(Nat.mod(Nat.add(Nat.div(s, 86400n), 4n), 7n), S.civil(Nat.div(s, 86400n)), Nat.mod(s, 86400n))), True{}, Eq.string_eq_refl(D.render_date(Nat.mod(Nat.add(Nat.div(s, 86400n), 4n), 7n), S.civil(Nat.div(s, 86400n)), Nat.mod(s, 86400n))))
   Equal.trans(Maybe<&2, Nat>, D.parse_imf(D.format_imf(s)), D.parse_imf(D.render_date(Nat.mod(Nat.add(Nat.div(s, 86400n), 4n), 7n), S.civil(Nat.div(s, 86400n)), Nat.mod(s, 86400n))), Some{s}, e1, Equal.trans(Maybe<&2, Nat>, D.parse_imf(D.render_date(Nat.mod(Nat.add(Nat.div(s, 86400n), 4n), 7n), S.civil(Nat.div(s, 86400n)), Nat.mod(s, 86400n))), D.canonical(Some{s}, D.render_date(Nat.mod(Nat.add(Nat.div(s, 86400n), 4n), 7n), S.civil(Nat.div(s, 86400n)), Nat.mod(s, 86400n))), Some{s}, e2, Equal.trans(Maybe<&2, Nat>, D.canonical(Some{s}, D.render_date(Nat.mod(Nat.add(Nat.div(s, 86400n), 4n), 7n), S.civil(Nat.div(s, 86400n)), Nat.mod(s, 86400n))), D.parsed(s, String.eq(D.format_imf(s), D.render_date(Nat.mod(Nat.add(Nat.div(s, 86400n), 4n), 7n), S.civil(Nat.div(s, 86400n)), Nat.mod(s, 86400n)))), Some{s}, {==}, Equal.trans(Maybe<&2, Nat>, D.parsed(s, String.eq(D.format_imf(s), D.render_date(Nat.mod(Nat.add(Nat.div(s, 86400n), 4n), 7n), S.civil(Nat.div(s, 86400n)), Nat.mod(s, 86400n)))), D.parsed(s, String.eq(D.render_date(Nat.mod(Nat.add(Nat.div(s, 86400n), 4n), 7n), S.civil(Nat.div(s, 86400n)), Nat.mod(s, 86400n)), D.render_date(Nat.mod(Nat.add(Nat.div(s, 86400n), 4n), 7n), S.civil(Nat.div(s, 86400n)), Nat.mod(s, 86400n)))), Some{s}, e4, Equal.trans(Maybe<&2, Nat>, D.parsed(s, String.eq(D.render_date(Nat.mod(Nat.add(Nat.div(s, 86400n), 4n), 7n), S.civil(Nat.div(s, 86400n)), Nat.mod(s, 86400n)), D.render_date(Nat.mod(Nat.add(Nat.div(s, 86400n), 4n), 7n), S.civil(Nat.div(s, 86400n)), Nat.mod(s, 86400n)))), D.parsed(s, True{}), Some{s}, e5, {==})))))
 
+
+# Parsing is strict: a parsed second formats back to exactly the input text.
+
+def some_type(m: Maybe<&2, Nat>) -> Type:
+  match m:
+    case None{}:
+      Empty
+    case Some{x}:
+      Unit
+
+def none_some(+s: Nat, e: {None{} == Some{s} : Maybe<&2, Nat>}) -> Empty:
+  %Equal.sym(Maybe<&2, Nat>, None{}, Some{s}, e) : some_type(_)
+  Unit{}
+
+def some_value(m: Maybe<&2, Nat>, d: Nat) -> Nat:
+  match m:
+    case None{}:
+      d
+    case Some{x}:
+      x
+
+def strict_parsed(+text: String, +s: Nat, +t: Nat, b: Bool, eb: {String.eq(D.format_imf(t), text) == b : Bool}, ok: {D.parsed(t, b) == Some{s} : Maybe<&2, Nat>}) -> {D.format_imf(s) == text : String}:
+  match b:
+    case True{}:
+      %Equal.cong(Maybe<&2, Nat>, Nat, m => some_value(m, t), Some{t}, Some{s}, ok) : {D.format_imf(_) == text : String}
+      Eq.string_eq_sound(D.format_imf(t), text, eb)
+    case False{}:
+      A.absurd({D.format_imf(s) == text : String}, none_some(s, ok))
+
+def strict_found(+text: String, +s: Nat, found: Maybe<&2, Nat>, ok: {D.canonical(found, text) == Some{s} : Maybe<&2, Nat>}) -> {D.format_imf(s) == text : String}:
+  match found:
+    case None{}:
+      A.absurd({D.format_imf(s) == text : String}, none_some(s, ok))
+    case Some{+t}:
+      strict_parsed(text, s, t, String.eq(D.format_imf(t), text), {==}, ok)
+
+law strict:
+  for +text: String
+  for +s: Nat
+  for ok: {D.parse_imf(text) == Some{s} : Maybe<&2, Nat>}
+  {D.format_imf(s) == text : String}
+
+def strict(text, s, ok):
+  strict_found(text, s, D.read_imf(text), ok)
