@@ -6,6 +6,13 @@ import ../src/http/bytes.bend as B
 import ./equality.bend as E
 import ./crypto-support.bend as S
 import ./cookie-spec.bend as Spec
+import ./cookie-serialization-spec.bend as Independent
+import ./cookie-serialization.bend as SerializationProof
+
+def head_valid(+name: String, +value: String, +tail: Bool, ok: {Independent.name_valid(name) && Independent.value_valid(value) && tail == True{} : Bool}) -> {C.name_valid(name) && C.value_valid(value) && tail == True{} : Bool}:
+  %Equal.sym(Bool, C.name_valid(name), Independent.name_valid(name), SerializationProof.name_equiv(name)) : {_ && C.value_valid(value) && tail == True{} : Bool}
+  %Equal.sym(Bool, C.value_valid(value), Independent.value_valid(value), SerializationProof.value_equiv(value)) : {Independent.name_valid(name) && _ && tail == True{} : Bool}
+  ok
 
 def and_true(a: Bool, b: Bool, x: {a == True{} : Bool}, y: {b == True{} : Bool}) -> {a && b == True{} : Bool}:
   %Equal.sym(Bool, a, True{}, x) : {_ && b == True{} : Bool}
@@ -448,6 +455,7 @@ def joined_roundtrip(+xs: List<&2, C.Entry>, +name: String, +value: String, +nv:
   match xs:
     case Nil{}: roundtrip(name, value, nv, vv)
     case C.Entry{+k, +v} <> +t:
+      +ok = head_valid(k, v, Spec.entries_valid(t), ok)
       %Equal.sym(List<&2, C.Entry>, C.parse(C.serialize_pair(name, value) ++ ";" ++ String.join.go(Spec.pairs(t), C.serialize_pair(k, v), ";")), C.Entry{name, value} <> C.parse(String.join.go(Spec.pairs(t), C.serialize_pair(k, v), ";")), parse_cons(name, value, String.join.go(Spec.pairs(t), C.serialize_pair(k, v), ";"), nv, vv)) : {_ == C.Entry{name, value} <> C.Entry{k, v} <> t : List<&2, C.Entry>}
       Equal.cong(List<&2, C.Entry>, List<&2, C.Entry>, rest => C.Entry{name, value} <> rest, C.parse(String.join.go(Spec.pairs(t), C.serialize_pair(k, v), ";")), C.Entry{k, v} <> t, joined_roundtrip(t, k, v, Laws.and_left(C.name_valid(k), C.value_valid(v), Laws.and_left(C.name_valid(k) && C.value_valid(v), Spec.entries_valid(t), ok)), Laws.and_right(C.name_valid(k), C.value_valid(v), Laws.and_left(C.name_valid(k) && C.value_valid(v), Spec.entries_valid(t), ok)), Laws.and_right(C.name_valid(k) && C.value_valid(v), Spec.entries_valid(t), ok)))
 
@@ -455,4 +463,5 @@ def list_roundtrip(+xs: List<&2, C.Entry>, +ok: {Spec.entries_valid(xs) == True{
   match xs:
     case Nil{}: {==}
     case C.Entry{+name, +value} <> +t:
+      +ok = head_valid(name, value, Spec.entries_valid(t), ok)
       joined_roundtrip(t, name, value, Laws.and_left(C.name_valid(name), C.value_valid(value), Laws.and_left(C.name_valid(name) && C.value_valid(value), Spec.entries_valid(t), ok)), Laws.and_right(C.name_valid(name), C.value_valid(value), Laws.and_left(C.name_valid(name) && C.value_valid(value), Spec.entries_valid(t), ok)), Laws.and_right(C.name_valid(name) && C.value_valid(value), Spec.entries_valid(t), ok))

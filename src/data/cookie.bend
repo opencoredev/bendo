@@ -142,15 +142,21 @@ def parse_parts(parts: List<&2, String>) -> List<&2, Entry>:
 def parse(s: String) -> List<&2, Entry>:
   parse_parts(segments(s))
 
-def first_pick(value: String, rest: Maybe<&2, String>, same: Bool) -> Maybe<&2, String>:
+def accepted_value(value: String, same: Bool) -> Maybe<&2, String>:
   match same:
     case True{}: Some{value}
-    case False{}: rest
+    case False{}: None{}
 
-def first(pairs: List<&2, Entry>, +name: String) -> Maybe<&2, String>:
-  match pairs:
-    case Nil{}: None{}
-    case Entry{k, v} <> t: first_pick(v, first(t, name), String.eq(k, name))
+# The pending result is inspected before the next pair; a match stops the scan.
+def first_go(pairs: List<&2, Entry>, found: Maybe<&2, String>, +name: String) -> Maybe<&2, String>:
+  match pairs found:
+    case _ Some{value}: Some{value}
+    case Nil{} None{}: None{}
+    case Entry{k, v} <> t None{}:
+      first_go(t, accepted_value(v, String.eq(k, name)), name)
+
+def first(pairs: List<&2, Entry>, name: String) -> Maybe<&2, String>:
+  first_go(pairs, None{}, name)
 
 # Attribute-value excludes delimiters, controls, DEL and non-ASCII.
 def attribute(s: String) -> Bool:

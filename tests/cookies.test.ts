@@ -21,6 +21,7 @@ function exported(name: string): (...args: unknown[]) => unknown {
 const parse = exported("parse");
 const serialize = exported("serialize");
 const first = exported("first");
+const cookiesHeader = exported("cookies_header");
 const expiresValid = exported("expires_valid");
 const deletion = exported("deletion");
 const defaults = exported("defaults");
@@ -145,6 +146,77 @@ describe("large Cookie headers on both compiled targets", () => {
         expect(stderr).toBe("");
         expect(exit).toBe(0);
         expect(stdout).toBe(`${pairs.join("\n")}\n`);
+      },
+      SLOW_TEST_TIMEOUT_MS,
+    );
+  }
+});
+
+describe("large cookie lookup on both compiled targets", () => {
+  const filler = "a=;".repeat(21_000);
+  const cases = [
+    { label: "absent", header: filler, expected: none, native: "absent" },
+    {
+      label: "first",
+      header: `session=first;${filler}session=last`,
+      expected: some("first"),
+      native: "first",
+    },
+    { label: "last", header: `${filler}session=last`, expected: some("last"), native: "last" },
+  ];
+  for (const { label, header, expected, native } of cases) {
+    test(
+      `.mjs lookup ${label} in Bun and Node, including context cookies`,
+      async () => {
+        expect(first(parse(header), "session")).toEqual(expected);
+        expect(first(cookiesHeader(header), "session")).toEqual(expected);
+        // Node's smaller stack reproduces the original failure, unlike Bun's.
+        const proc = Bun.spawn(
+          [
+            "node",
+            "--input-type=module",
+            "-e",
+            `import { strict as assert } from "node:assert";
+         const {default: c} = await import(process.argv[1]);
+         const header = process.argv[2];
+         const expected = JSON.parse(process.argv[3]);
+         assert.deepEqual(c.first(c.parse(header), "session"), expected);
+         assert.deepEqual(c.first(c.cookies_header(header), "session"), expected);
+         const headers = Array.from({length: 21000}, () => ({$: "Header", name: "cookie", value: {$: "Con", head: 97, tail: {$: "Con", head: 61, tail: {$: "Nil"}}}}));
+         headers.push({$: "Header", name: "cookie", value: {$: "Con", head: 122, tail: {$: "Con", head: 61, tail: {$: "Nil"}}}});
+         const list = headers.reduceRight((tail, head) => ({$: "Con", head, tail}), {$: "Nil"});
+         assert.deepEqual(c.first(c.cookies_headers(list), "z"), {$: "Some", value: ""});`,
+            pathToFileURL(output).href,
+            header,
+            JSON.stringify(expected),
+          ],
+          { stdout: "pipe", stderr: "pipe", timeout: SLOW_TEST_TIMEOUT_MS - 5_000 },
+        );
+        const [stderr, exit] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+        expect(stderr).toBe("");
+        expect(exit).toBe(0);
+      },
+      SLOW_TEST_TIMEOUT_MS,
+    );
+
+    test(
+      `native lookup ${label}, including context cookies`,
+      async () => {
+        for (const extra of [[], ["context"]]) {
+          const proc = Bun.spawn([parseBinary, header, "session", ...extra], {
+            stdout: "pipe",
+            stderr: "pipe",
+            timeout: SLOW_TEST_TIMEOUT_MS - 5_000,
+          });
+          const [stdout, stderr, exit] = await Promise.all([
+            new Response(proc.stdout).text(),
+            new Response(proc.stderr).text(),
+            proc.exited,
+          ]);
+          expect(stderr).toBe("");
+          expect(exit).toBe(0);
+          expect(stdout).toBe(`${native}\n`);
+        }
       },
       SLOW_TEST_TIMEOUT_MS,
     );

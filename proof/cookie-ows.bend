@@ -117,6 +117,7 @@ def joined_padded(+xs: List<&2, Spec.PaddedEntry>, +before: Spec.Padding, +name:
     case Nil{}:
       parse_single(Spec.pair(Spec.PaddedEntry{before, name, value, after}), C.Entry{name, value}, free_pair(before, name, value, after, nv, vv), padded_parse_pair(before, name, value, after, nv, vv))
     case Spec.PaddedEntry{+pre, +k, +v, +post} <> +t:
+      +ok = P.head_valid(k, v, Spec.padded_valid(t), ok)
       %Equal.sym(List<&2, C.Entry>, C.parse(Spec.pair(Spec.PaddedEntry{before, name, value, after}) ++ ";" ++ String.join.go(Spec.padded_pairs(t), Spec.pair(Spec.PaddedEntry{pre, k, v, post}), ";")), C.Entry{name, value} <> C.parse(String.join.go(Spec.padded_pairs(t), Spec.pair(Spec.PaddedEntry{pre, k, v, post}), ";")), parse_cons(Spec.pair(Spec.PaddedEntry{before, name, value, after}), String.join.go(Spec.padded_pairs(t), Spec.pair(Spec.PaddedEntry{pre, k, v, post}), ";"), C.Entry{name, value}, free_pair(before, name, value, after, nv, vv), padded_parse_pair(before, name, value, after, nv, vv))) : {_ == C.Entry{name, value} <> C.Entry{k, v} <> Spec.unpad(t) : List<&2, C.Entry>}
       Equal.cong(List<&2, C.Entry>, List<&2, C.Entry>, rest => C.Entry{name, value} <> rest, C.parse(String.join.go(Spec.padded_pairs(t), Spec.pair(Spec.PaddedEntry{pre, k, v, post}), ";")), C.Entry{k, v} <> Spec.unpad(t), joined_padded(t, pre, k, v, post, left(C.name_valid(k), C.value_valid(v), left(C.name_valid(k) && C.value_valid(v), Spec.padded_valid(t), ok)), right(C.name_valid(k), C.value_valid(v), left(C.name_valid(k) && C.value_valid(v), Spec.padded_valid(t), ok)), right(C.name_valid(k) && C.value_valid(v), Spec.padded_valid(t), ok)))
 
@@ -124,7 +125,7 @@ def Laws.cookies_per_pair_ows_roundtrip(entries, valid):
   match entries:
     case Nil{}: {==}
     case Spec.PaddedEntry{+before, +name, +value, +after} <> +t:
-      +ok = valid
+      +ok = P.head_valid(name, value, Spec.padded_valid(t), valid)
       joined_padded(t, before, name, value, after, left(C.name_valid(name), C.value_valid(value), left(C.name_valid(name) && C.value_valid(value), Spec.padded_valid(t), ok)), right(C.name_valid(name), C.value_valid(value), left(C.name_valid(name) && C.value_valid(value), Spec.padded_valid(t), ok)), right(C.name_valid(name) && C.value_valid(value), Spec.padded_valid(t), ok))
 
 def plain_parse_pair(+before: Spec.Padding, +name: String, +value: String, +nv: {C.name_valid(name) == True{} : Bool}, +vv: {C.value_valid(value) == True{} : Bool}) -> {C.parse_pair(Spec.prefix(before, C.serialize_pair(name, value))) == Some{C.Entry{name, value}} : Maybe<&2, C.Entry>}:
@@ -141,6 +142,7 @@ def joined_semispace(+xs: List<&2, C.Entry>, +before: Spec.Padding, +name: Strin
     case Nil{}:
       parse_single(Spec.prefix(before, C.serialize_pair(name, value)), C.Entry{name, value}, free_prefix(before, C.serialize_pair(name, value), free_clean(C.serialize_pair(name, value), P.pair_clean(name, value, nv, vv))), plain_parse_pair(before, name, value, nv, vv))
     case C.Entry{+k, +v} <> +t:
+      +ok = P.head_valid(k, v, Spec.entries_valid(t), ok)
       %Equal.sym(List<&2, C.Entry>, C.parse(Spec.prefix(before, C.serialize_pair(name, value)) ++ ";" ++ " " ++ String.join.go(Spec.pairs(t), C.serialize_pair(k, v), "; ")), C.Entry{name, value} <> C.parse(" " ++ String.join.go(Spec.pairs(t), C.serialize_pair(k, v), "; ")), parse_cons(Spec.prefix(before, C.serialize_pair(name, value)), " " ++ String.join.go(Spec.pairs(t), C.serialize_pair(k, v), "; "), C.Entry{name, value}, free_prefix(before, C.serialize_pair(name, value), free_clean(C.serialize_pair(name, value), P.pair_clean(name, value, nv, vv))), plain_parse_pair(before, name, value, nv, vv))) : {_ == C.Entry{name, value} <> C.Entry{k, v} <> t : List<&2, C.Entry>}
       %space_join(Spec.pairs(t), C.serialize_pair(k, v), "; ") : {C.Entry{name, value} <> C.parse(_) == C.Entry{name, value} <> C.Entry{k, v} <> t : List<&2, C.Entry>}
       Equal.cong(List<&2, C.Entry>, List<&2, C.Entry>, rest => C.Entry{name, value} <> rest, C.parse(String.join.go(Spec.pairs(t), " " ++ C.serialize_pair(k, v), "; ")), C.Entry{k, v} <> t, joined_semispace(t, Spec.Space{Spec.Empty{}}, k, v, left(C.name_valid(k), C.value_valid(v), left(C.name_valid(k) && C.value_valid(v), Spec.entries_valid(t), ok)), right(C.name_valid(k), C.value_valid(v), left(C.name_valid(k) && C.value_valid(v), Spec.entries_valid(t), ok)), right(C.name_valid(k) && C.value_valid(v), Spec.entries_valid(t), ok)))
@@ -149,5 +151,5 @@ def Laws.cookies_semispace_ordered_list_roundtrip(entries, valid):
   match entries:
     case Nil{}: {==}
     case C.Entry{+name, +value} <> +t:
-      +ok = valid
+      +ok = P.head_valid(name, value, Spec.entries_valid(t), valid)
       joined_semispace(t, Spec.Empty{}, name, value, left(C.name_valid(name), C.value_valid(value), left(C.name_valid(name) && C.value_valid(value), Spec.entries_valid(t), ok)), right(C.name_valid(name), C.value_valid(value), left(C.name_valid(name) && C.value_valid(value), Spec.entries_valid(t), ok)), right(C.name_valid(name) && C.value_valid(value), Spec.entries_valid(t), ok))

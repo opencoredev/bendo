@@ -164,13 +164,29 @@ def not_found(-Vars: Data, c: Ctx<Vars>) -> Response.Res:
   text(Vars, status(Vars, c, 404), "Not Found")
 
 # Cookie fields are parsed separately, in arrival order, without comma joining.
-def cookie_fields(fields: List<&2, List<&2, U32>>) -> List<&2, Cookie.Entry>:
+def cookie_ascii_go(bytes: List<&2, U32>, acc: String) -> String:
+  match bytes:
+    case Nil{}: String.reverse(acc)
+    case h <> t: cookie_ascii_go(t, SCon{Chr{h}, acc})
+
+def cookie_fields_go(fields: List<&2, List<&2, U32>>, acc: List<&2, Cookie.Entry>) -> List<&2, Cookie.Entry>:
   match fields:
-    case Nil{}: []
-    case bytes <> tail: List.append(&2, Cookie.Entry, Cookie.parse(Bytes.ascii(bytes)), cookie_fields(tail))
+    case Nil{}: List.reverse(&2, Cookie.Entry, acc)
+    case bytes <> tail:
+      cookie_fields_go(tail, List.reverse.go(&2, Cookie.Entry, Cookie.parse(cookie_ascii_go(bytes, "")), acc))
+
+def cookie_fields(fields: List<&2, List<&2, U32>>) -> List<&2, Cookie.Entry>:
+  cookie_fields_go(fields, [])
+
+def cookie_headers_go(headers: List<&2, Request.Header>, acc: List<&2, List<&2, U32>>) -> List<&2, List<&2, U32>>:
+  match headers:
+    case Nil{}: List.reverse(&2, List<&2, U32>, acc)
+    case Request.Header{name, value} <> tail:
+      cookie_headers_go(tail, Request.lookup_step(value, acc, String.eq(name, "cookie")))
 
 def cookies(-Vars: Data, c: Ctx<Vars>) -> List<&2, Cookie.Entry>:
-  cookie_fields(header_bytes(Vars, c, "cookie"))
+  Ctx{Request.Req{m, p, q, ver, hs}, ps, b, pairs, s, out, v} = c
+  cookie_fields(cookie_headers_go(hs, []))
 
 def cookie(-Vars: Data, c: Ctx<Vars>, name: String) -> Maybe<&2, String>:
   Cookie.first(cookies(Vars, c), name)
