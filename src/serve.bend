@@ -14,6 +14,45 @@ def sent(m: Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>) -> IO
   (s, r) = m
   Socket.close(s)
 
+# Base TCP has no write-side shutdown. Keep the affine socket in this
+# computation: IO.within would leave its losing receive alive after timeout.
+type DrainEvent is Type:
+  Drain{socket: Socket}
+  Timed{socket: Socket, remaining: Nat}
+  Polled{read: Socket & Poll<&1, &1, Result<&1, &1, U32 & String, Maybe<&1, List<&2, U32>>>, Unit>}
+
+@unsafe
+def drain(event: DrainEvent, +left: U32, +deadline: Nat) -> IO(Unit):
+  match event:
+    case Drain{s}:
+      match left:
+        case 0:
+          Socket.close(s)
+        case _:
+          do IO<Unit>:
+            now : Nat <- IO.now()
+            drain(Timed{s, Nat.sub(deadline, now)}, left, deadline)
+    case Timed{s, 0n}:
+      Socket.close(s)
+    case Timed{s, 1n+remaining}:
+      do IO<Unit>:
+        read : Socket & Poll<&1, &1, Result<&1, &1, U32 & String, Maybe<&1, List<&2, U32>>>, Unit> <- TCP.try_recv_bytes(s, U32.min(left, 4096), U32.from_nat(1n+remaining))
+        drain(Polled{read}, left, deadline)
+    case Polled{(s, Ready{Done{Some{xs}}})}:
+      drain(Drain{s}, U32.sub(left, U32.from_nat(List.length(&2, U32, xs))), deadline)
+    case Polled{(s, _)}:
+      Socket.close(s)
+
+def rejected(m: Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>) -> IO(Unit):
+  (s, result) = m
+  match result:
+    case Done{u}:
+      do IO<Unit>:
+        now : Nat <- IO.now()
+        drain(Drain{s}, 4194304, Nat.add(now, 1000n))
+    case Fail{e}:
+      Socket.close(s)
+
 def status_text(status: U32) -> String:
   match status:
     case 413:
@@ -26,7 +65,7 @@ def status_text(status: U32) -> String:
 def reject(s: Socket, status: U32) -> IO(Unit):
   do IO<Unit>:
     out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- TCP.send(s, "HTTP/1.1 " ++ status_text(status) ++ "\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
-    sent(out)
+    rejected(out)
 
 def continue_result(m: Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>) -> IO(Socket):
   (s, r) = m

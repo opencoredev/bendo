@@ -128,6 +128,34 @@ describe("request body framing over real TCP", () => {
   ];
   for (const [name, raw, code] of cases)
     test(name, async () => status(await exchange([raw]), code));
+  const queuedRejections: readonly [string, string, number][] = [
+    ["413 with 32 KiB queued", head("Content-Length: 1048577\r\n") + "x".repeat(32768), 413],
+    ["413 with 2 MiB queued", head("Content-Length: 2097152\r\n") + "x".repeat(2097152), 413],
+    [
+      "TE plus CL with queued body",
+      head("Transfer-Encoding: chunked\r\nContent-Length: 32768\r\n") + "x".repeat(32768),
+      400,
+    ],
+    [
+      "chunked oversize mid-stream with queued body",
+      head("Transfer-Encoding: chunked\r\n") +
+        "80000\r\n" +
+        "x".repeat(524288) +
+        "\r\n80001\r\n" +
+        "x".repeat(32768),
+      413,
+    ],
+  ];
+  for (const [name, raw, code] of queuedRejections) {
+    test(`queued rejection: ${name}`, async () => {
+      // One write puts payload behind the rejected head/chunk size. Keep the
+      // write side open: the server must bound teardown without client EOF.
+      const response = await exchange([raw]);
+      status(response, code);
+      expect(response.toString("latin1")).toContain("Content-Length: 0\r\n");
+      expect(body(response)).toHaveLength(0);
+    });
+  }
   test("CL preserves all 256 octets", async () => {
     const bytes = Buffer.from(Array.from({ length: 256 }, (_, n) => n));
     const response = await exchange([head("Content-Length: 256\r\n"), bytes]);
