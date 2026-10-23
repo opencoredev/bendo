@@ -82,7 +82,9 @@ explicit global hooks. These are structural scopes over the assembled route
 list. Elysia's plugin lifecycle propagation modes `local`, `scoped` and `global`
 are not exposed as a mode switch here: plugins and named-plugin deduplication
 belong to BND-26. A plugin can return these registration lists without storing
-functions in the table or introducing another callback contract.
+functions in the table or introducing another callback contract. The
+[plugin guide](../guides/plugins.md) shows how those modes map onto where a
+plugin is used.
 
 `GuardOptions<Tag>` contains `hooks: List<&2, HookSpec<Tag>>` and
 `schemas: SchemaSlot`. The only current schema constructor is `NoSchemas{}`;

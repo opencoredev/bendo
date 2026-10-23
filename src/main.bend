@@ -14,6 +14,7 @@ import ./app/config.bend as Config
 import ./app/table.bend as Table
 import ./app/scopes.bend as Scopes
 import ./app/compose.bend as Compose
+import ./app/plugin.bend as Plugin
 import ./app/manifest.bend as Manifest
 import ./app/handle.bend as Handle
 import ./app/context.bend as Context
@@ -106,6 +107,22 @@ def base_path(-Tag: Data, prefix: String, entries: List<&2, Table.Entry<Tag>>) -
 def show_routes(-Tag: Data, table: Table.Table<Tag>) -> IO(Unit): IO.print(Manifest.table_text(Tag, table))
 def route_hooks(-Tag: Data, registration: Methods.Registration(Tag), hooks: List<&2, Table.HookSpec<Tag>>) -> Table.Entry<Tag>:
   Scopes.local(Tag, registration, hooks)
+
+# BND-26 plugins: functions from a Builder to a Builder. See docs/guides/plugins.md.
+def Builder(-Tag: Data) -> Data: Plugin.Builder<Tag>
+def PluginId() -> Data: Plugin.Identity
+def app(-Tag: Data) -> Plugin.Builder<Tag>: Plugin.Builder{[], []}
+def app_from(-Tag: Data, entries: List<&2, Table.Entry<Tag>>) -> Plugin.Builder<Tag>: Plugin.Builder{[], entries}
+def register(-Tag: Data, app: Plugin.Builder<Tag>, entries: List<&2, Table.Entry<Tag>>) -> Plugin.Builder<Tag>: Plugin.register(Tag, app, entries)
+def use_plugin(-Tag: Data, app: Plugin.Builder<Tag>, plugin: Plugin.Builder<Tag> -> Plugin.Builder<Tag>) -> Plugin.Builder<Tag>: Plugin.use(Tag, app, plugin)
+def plugin_id(name: String) -> Plugin.Identity: Plugin.Identity{name, ""}
+def plugin_seed(name: String, seed: String) -> Plugin.Identity: Plugin.Identity{name, seed}
+def named(-Tag: Data, id: Plugin.Identity, app: Plugin.Builder<Tag>, body: Plugin.Builder<Tag> -> Plugin.Builder<Tag>) -> Plugin.Builder<Tag>: Plugin.named(Tag, id, app, body)
+def use_route(-Tag: Data, app: Plugin.Builder<Tag>, prefix: String, body: Plugin.Builder<Tag> -> Plugin.Builder<Tag>) -> Plugin.Builder<Tag>: Plugin.mount(Tag, app, prefix, body)
+def use_group(-Tag: Data, app: Plugin.Builder<Tag>, prefix: String, hooks: List<&2, Table.HookSpec<Tag>>, body: Plugin.Builder<Tag> -> Plugin.Builder<Tag>) -> Plugin.Builder<Tag>: Plugin.group(Tag, app, prefix, hooks, body)
+def use_guard(-Tag: Data, app: Plugin.Builder<Tag>, options: Table.GuardOptions<Tag>, body: Plugin.Builder<Tag> -> Plugin.Builder<Tag>) -> Plugin.Builder<Tag>: Plugin.guard(Tag, app, options, body)
+def app_entries(-Tag: Data, app: Plugin.Builder<Tag>) -> List<&2, Table.Entry<Tag>>: Plugin.entries(Tag, app)
+def app_routes(-Tag: Data, app: Plugin.Builder<Tag>) -> Result<&2, &2, Methods.BuildError, Table.Table<Tag>>: Table.build(Tag, Plugin.entries(Tag, app))
 
 def handle(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Handle.Ctx -> Env -> IO(Response.Res), table: Table.Table<Tag>, env: Env, req: Request.Req, body: List<&2, U32>) -> IO(Response.Res):
   Handle.handle(~Tag, ~Env, ~dispatch, table, env, req, body)

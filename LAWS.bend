@@ -6,6 +6,7 @@ import ./src/app/manifest.bend as Manifest
 import ./proof/manifest-spec.bend as ManifestSpec
 import ./proof/manifest-built-spec.bend as ManifestBuiltSpec
 import ./proof/compose-laws.bend as ComposeLaws
+import ./proof/plugin-laws.bend as PluginLaws
 
 # BND-32
 import ./proof/signed-cookie-laws.bend as SignedCookieLaws

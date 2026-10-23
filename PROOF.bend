@@ -3,6 +3,7 @@ import Base
 import ./proof/manifest.bend as ManifestProof
 import ./proof/manifest-built.bend as ManifestBuiltProof
 import ./proof/compose.bend as ComposeProof
+import ./proof/plugin.bend as PluginProof
 
 # BND-32
 import ./proof/signed-cookie.bend as SignedCookieProof
