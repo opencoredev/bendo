@@ -62,8 +62,9 @@ registers a path that accepts no method.
 `all(T, path, tag)` accepts every method, including extension tokens such as
 PURGE. It stores `AllMethods` rather than enumerating a finite list. `on` stores
 `OnlyMethods{methods}`. A matching `all` always resolves directly, so it never
-contributes a partial or invented method list to a 405 response. The current request parser rejects CONNECT targets, so a
-pure router call can select CONNECT even though the current HTTP server cannot
+contributes a partial or invented method list to a 405 response.
+
+The current request parser rejects CONNECT targets, so a pure router call can select CONNECT even though the current HTTP server cannot
 serve it. CONNECT framing remains the response writer's responsibility.
 
 Call `resolve(T, table, path, request_method, opts)` with the `Valid<T>` returned

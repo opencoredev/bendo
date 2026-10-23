@@ -85,7 +85,8 @@ including `/`, across raw path segments. For example,
 `/:prefix{.+}/contents/:id?` matches `/foo/bar/contents/123` with
 `prefix="foo/bar"` and `id="123"`. Matching chooses the shortest nonempty
 span that lets the remaining pattern match. Captures still decode exactly once.
-Other JavaScript regex syntax remains unsupported.
+An optional `{.+}?` span is not supported. Other JavaScript regex syntax remains
+unsupported.
 
 A constraint failure returns `None`, exactly like a static mismatch. It does
 not return a pattern error. Registration-order route selection belongs to BND-15.
@@ -109,7 +110,10 @@ order. An omitted optional capture has no record. `fill(pattern, params)`
 returns `Some(path)` for an admissible assignment and `None` otherwise. It
 requires exactly those names in order, no extras, scalar-only values, nonempty
 present ordinary captures, and satisfied constraints. Wildcard values may be
-empty. Every captured scalar is UTF-8 encoded and every byte is percent-encoded,
+empty. Interior unnamed wildcards fill with zero segments. Prefix wildcards fill
+with their literal prefix. A `{.+}` span fills as one percent-encoded segment,
+so slashes inside its value cannot change the suffix boundary. Every captured
+scalar is UTF-8 encoded and every byte is percent-encoded,
 including ASCII letters and slash. Static text remains raw. Thus filling `:id`
 with `a/b` produces `/%61%2F%62`.
 
