@@ -4,6 +4,7 @@ import ./app/config.bend as Config
 import ./app/table.bend as Table
 import ./app/handle.bend as Handle
 import ./app/context.bend as Context
+import ./app/store.bend as Store
 import ./data/json.bend as Json
 import ./serve.bend as Serve
 import ./http/request.bend as Request
@@ -59,3 +60,22 @@ def handle(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Handle.Ctx -> Env -> IO(Res
 
 def serve(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Handle.Ctx -> Env -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config) -> IO(Unit):
   Serve.run(~Tag, ~Env, ~dispatch, table, env, config)
+
+# Store operations use a prefix because B.get registers routes.
+def Store(-S: Data) -> Data: Store.Store<S>
+def StoreError() -> Data: Store.Error
+
+def store(-S: Data, initial: S) -> IO(Store.Store<S>):
+  Store.store(S, initial)
+
+def store_with_timeout(-S: Data, initial: S, timeout_ms: U32) -> IO(Store.Store<S>):
+  Store.store_with_timeout(S, initial, timeout_ms)
+
+def store_get(-S: Data, handle: Store.Store<S>) -> IO(Result<&2, &2, Store.Error, S>):
+  Store.get(S, handle)
+
+def store_set(-S: Data, handle: Store.Store<S>, value: S) -> IO(Result<&2, &2, Store.Error, Unit>):
+  Store.set(S, handle, value)
+
+def store_update(-S: Data, handle: Store.Store<S>, change: S -> S) -> IO(Result<&2, &2, Store.Error, S>):
+  Store.update(S, handle, change)
