@@ -637,3 +637,5 @@ def Laws.stream_rfc_last_chunk(limit, suffix):
 def Laws.conditional_if_none_match_spec(field, tag): LimitsProof.matches(field, tag)
 def Laws.conditional_304_spec(res): LimitsProof.response(res)
 def Laws.body_limit_spec(length, limit): LimitsProof.within(length, limit)
+
+def Laws.etag_middleware_spec(method, field, res): LimitsProof.etag(method, field, res)

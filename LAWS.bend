@@ -2,6 +2,7 @@
 # Agents may add laws. Never delete or weaken one without a written reason
 # in the pull request.
 import Base
+import ./src/mw/etag.bend as ETag
 import ./src/http/conditional.bend as Conditional
 import ./src/mw/body_limit.bend as BodyLimit
 import ./proof/limits-spec.bend as LimitsSpec
@@ -1623,3 +1624,12 @@ law body_limit_spec:
   for +length: Nat
   for +limit: Nat
   {BodyLimit.accepts(length, limit) == LimitsSpec.within(length, limit) : Bool}
+
+# The actual middleware decision preserves every ineligible response exactly.
+# Eligible buffered 200 GET/HEAD responses carry the body validator, and become
+# exactly Conditional.not_modified iff the independent field spec matches it.
+law etag_middleware_spec:
+  for +method: Request.Method
+  for +field: Maybe<&2, String>
+  for +res: Response.Res
+  {ETag.decide(method, field, res) == LimitsSpec.etag(method, field, res) : Response.Res}

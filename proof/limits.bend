@@ -1,4 +1,6 @@
 import Base
+import ../src/mw/etag.bend as ETag
+import ../src/mw/common.bend as Common
 import ../src/http/conditional-lex.bend as Lex
 import ../src/http/conditional.bend as P
 import ../src/http/request.bend as Request
@@ -149,3 +151,34 @@ def matches(+field: Maybe<&2, String>, +tag: String) -> {P.matches(field, tag) =
     case Some{+s}:
       %entity(tag) : {P.evaluate(s, P.entity(tag), String.eq(P.trim(s), "*")) == Spec.evaluate(s, _, String.eq(Spec.trim(s), "*")) : Bool}
       evaluate(s, P.entity(tag), String.eq(P.trim(s), "*"))
+
+def etag_result(+res: Response.Res, +hit: Bool) -> {ETag.conditional(res, hit) == Spec.etag_result(res, hit) : Response.Res}:
+  match hit:
+    case True{}: {==}
+    case False{}: {==}
+
+def etag_apply(+field: Maybe<&2, String>, +res: Response.Res, +eligible: Bool) -> {ETag.apply(field, res, eligible) == Spec.etag_eligible(field, res, eligible) : Response.Res}:
+  match res eligible:
+    case res False{}: {==}
+    case Response.Res{status, hs, +body, rep} True{}:
+      +tag = P.strong(body)
+      %matches(field, tag) : {ETag.conditional(Common.header(Response.Res{status, hs, body, rep}, "etag", tag), P.matches(field, tag)) == Spec.etag_result(Common.header(Response.Res{status, hs, body, rep}, "etag", tag), _) : Response.Res}
+      etag_result(Common.header(Response.Res{status, hs, body, rep}, "etag", tag), P.matches(field, tag))
+
+def etag_method(+m: Request.Method) -> {ETag.method(m) == Spec.retrieval(m) : Bool}:
+  match m:
+    case Request.Get{}: {==}
+    case Request.Head{}: {==}
+    case Request.Post{}: {==}
+    case Request.Put{}: {==}
+    case Request.Delete{}: {==}
+    case Request.Patch{}: {==}
+    case Request.Options{}: {==}
+    case Request.Connect{}: {==}
+    case Request.Trace{}: {==}
+    case Request.Extension{x}: {==}
+
+def etag(+m: Request.Method, +field: Maybe<&2, String>, +res: Response.Res) -> {ETag.decide(m, field, res) == Spec.etag(m, field, res) : Response.Res}:
+  Response.Res{+status, +hs, body, rep} = res
+  %etag_method(m) : {ETag.apply(field, res, ETag.method(m) && U32.is_eq(status, 200) && List.is_empty(&2, List<&2, U32>, Request.lookup(hs, "x-bendo-stream-internal"))) == Spec.etag_eligible(field, res, _ && U32.is_eq(status, 200) && List.is_empty(&2, List<&2, U32>, Request.lookup(hs, "x-bendo-stream-internal"))) : Response.Res}
+  etag_apply(field, res, ETag.method(m) && U32.is_eq(status, 200) && List.is_empty(&2, List<&2, U32>, Request.lookup(hs, "x-bendo-stream-internal")))

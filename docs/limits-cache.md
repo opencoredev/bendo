@@ -72,15 +72,20 @@ never promised. Keep pure handlers and store updates bounded.
 digest as unpadded base64url and quotes it as a strong entity-tag. It replaces
 an existing validator. Only status 200 GET/HEAD responses qualify. HEAD hashes
 the same full representation as GET, before the writer removes its payload.
-Other methods and statuses pass through unchanged.
+Other methods and statuses pass through unchanged. Responses marked as streams
+also pass through unchanged, before hashing or conditional evaluation. Their
+producer owns the body; the empty buffered placeholder is not a representation.
 
 Prefer `map_response` after all body transformations, including pretty JSON.
 With ordinary onion middleware, put ETag outside body-transforming middleware.
 Later changes to the body would invalidate the validator. Do not install ETag
 before a later error recovery that replaces a 200 body without removing its
-validator. Current `Res` values are buffered; streaming has no representation in
-this API yet. A future streaming variant must bypass hashing rather than
-buffering the stream to compute a validator.
+validator. See [streaming](streaming.md) for producer and HEAD behavior.
+
+Hashing is synchronous work proportional to body size on every qualifying
+request, including HEAD and conditional hits that return 304. The built-in does
+not cache digests. For large static content, prefer a precomputed weak validator
+from representation metadata and use `Conditional.matches` directly.
 
 `If-None-Match` uses weak comparison under RFC 9110 section 13.1.2: `W/` is
 case-sensitive and ignored for comparison; opaque tag contents are compared
@@ -99,7 +104,9 @@ emits no Content-Length for this 304, including HEAD.
 
 ### Reuse from static files
 
-`src/http/conditional.bend` is pure and independent of middleware/context:
+`src/http/conditional.bend` (`Conditional`) is the canonical If-None-Match module.
+It is pure and independent of middleware/context; BND-45 will adopt it for static
+files:
 
 - `strong(body) -> String`: the quoted SHA-256 validator.
 - `matches(Maybe<String>, tag) -> Bool`: field grammar and weak comparison.
@@ -128,12 +135,23 @@ one through `map_response` after ETag if the same policy should cover both 200
 and 304 responses. Avoid public caching for personalized content.
 
 Run `bun test --timeout 30000 tests/mw-limits.test.ts`. It exercises native HTTP,
-raw streamed framing, late store mutation, relative pure-work timings and the
-pure parser's grammar cases. `conditional_if_none_match_spec`,
-`conditional_304_spec` and `body_limit_spec` in `LAWS.bend` quantify over all
-fields/tags, responses and natural lengths respectively. The reference evaluator
+raw streamed framing, GET/HEAD streaming exclusions, late store mutation,
+elapsed-versus-measured pure-work timings and the pure parser's grammar cases. `conditional_if_none_match_spec`,
+`conditional_304_spec`, `etag_middleware_spec` and `body_limit_spec` in
+`LAWS.bend` cover arbitrary fields/tags, responses, request methods and natural
+lengths. The reference evaluator
 in `proof/limits-spec.bend` builds tags and list elements from their suffixes,
 while the implementation scans forward into accumulators. It then checks list
 grammar and existence of a weak match in separate traversals; the implementation
 combines them. The proof shares the
 RFC octet class and OWS primitive, not the conditional decision.
+
+`etag_middleware_spec` checks the actual pure middleware decision against the
+independent evaluator: ineligible responses remain exactly unchanged; eligible
+buffered responses receive the body ETag and become `Conditional.not_modified`
+exactly when `LimitsSpec.matches` succeeds. The decision spec shares the hash, header replacement and separately specified
+304 constructor, but calls neither the middleware decision nor its field
+evaluator.
+Early framing rejection is integration-tested with incomplete Content-Length
+and chunked requests that must receive 413 without sending the remaining body.
+There is no reachable-state accumulator-budget law in this middleware change.

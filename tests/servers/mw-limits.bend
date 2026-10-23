@@ -1,4 +1,5 @@
 import Base
+import ../../src/http/stream_types.bend as StreamTypes
 import ../../src/crypto/sha256.bend as Sha
 import ../../src/data/hex.bend as Hex
 import ../../src/main.bend as B
@@ -11,6 +12,7 @@ import ../../src/router/methods.bend as Methods
 
 type Tag is Data:
   Hello{}
+  Stream{}
   Echo{}
   Slow{}
   Late{}
@@ -42,8 +44,18 @@ def burn(n: Nat, value: List<&2, U32>) -> List<&2, U32>:
     case 0n: value
     case 1n+p: burn(p, Sha.hash(value))
 
+def stream_step(state: Nat) -> IO(StreamTypes.Step<Nat>):
+  match state:
+    case 0n: IO.pure(StreamTypes.Step<Nat>, StreamTypes.End{0n})
+    case 1n+n: IO.pure(StreamTypes.Step<Nat>, StreamTypes.Chunk{R.utf8("hello stream\n"), n})
+
+def stream_cleanup(state: Nat) -> IO(Unit):
+  IO.pure(Unit, Unit{})
+
 def handle(tag: Tag, +c: B.Ctx, env: Env) -> IO(B.Res):
   match tag env:
+    case Stream{} _:
+      B.stream(~Unit, ~Nat, ~stream_step, ~stream_cleanup, c, 3n, B.stream_config())
     case Slow{} Env{counter, work}:
       do IO<B.Res>:
         IO.sleep(100)
@@ -110,6 +122,7 @@ def main() -> IO(Unit):
     B.map_response(Tag, Builtin{B.etag()}),
     B.map_response(Tag, Builtin{B.cache_control(B.cache_public(60, True{}))}),
     B.get(Tag, "/", Hello{}),
+    B.get(Tag, "/stream", Stream{}),
     B.get(Tag, "/slow", Slow{}),
     B.get(Tag, "/late", Late{}),
     B.get(Tag, "/count", Count{}),

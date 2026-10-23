@@ -1,6 +1,8 @@
 # RFC 9110 section 13.1.2 reference evaluator. No call to the production
 # parser or conditional decision; only octet classes and OWS trimming shared.
 import Base
+import ../src/http/conditional.bend as Conditional
+import ../src/mw/common.bend as Common
 import ../src/http/conditional-lex.bend as Lex
 import ../src/http/bytes.bend as Bytes
 import ../src/http/request.bend as Request
@@ -141,3 +143,28 @@ def within(length: Nat, limit: Nat) -> Bool:
     case 0n _: True{}
     case 1n+l 0n: False{}
     case 1n+l 1n+n: within(l, n)
+
+# Middleware decision specification. Hashing, header replacement and the
+# separately specified 304 constructor are shared primitives; eligibility and
+# If-None-Match evaluation do not call middleware.
+def retrieval(m: Request.Method) -> Bool:
+  match m:
+    case Request.Get{}: True{}
+    case Request.Head{}: True{}
+    case _: False{}
+
+def etag_result(res: Response.Res, hit: Bool) -> Response.Res:
+  match hit:
+    case True{}: Conditional.not_modified(res)
+    case False{}: res
+
+def etag_eligible(field: Maybe<&2, String>, res: Response.Res, eligible: Bool) -> Response.Res:
+  match res eligible:
+    case res False{}: res
+    case Response.Res{status, hs, +body, rep} True{}:
+      +tag = Conditional.strong(body)
+      etag_result(Common.header(Response.Res{status, hs, body, rep}, "etag", tag), matches(field, tag))
+
+def etag(m: Request.Method, field: Maybe<&2, String>, +res: Response.Res) -> Response.Res:
+  Response.Res{status, hs, body, rep} = res
+  etag_eligible(field, res, retrieval(m) && U32.is_eq(status, 200) && List.is_empty(&2, List<&2, U32>, Request.lookup(hs, "x-bendo-stream-internal")))

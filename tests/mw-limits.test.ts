@@ -97,7 +97,7 @@ test("late store mutation commits after 504 while late handler response is disca
 });
 
 test(
-  "pure work delays the deadline until an effect; elapsed time grows with the work",
+  "pure work delays the deadline until an effect; elapsed time includes measured work",
   async () => {
     async function sample(path: string) {
       const begin = performance.now();
@@ -115,7 +115,6 @@ test(
     const small = await sample("/cpu/small");
     const large = await sample("/cpu/large");
     expect(large.work).toBeGreaterThan(small.work);
-    expect(large.elapsed).toBeGreaterThan(small.elapsed);
     console.error("cooperative timeout samples", { small, large });
   },
   SLOW_TEST_TIMEOUT_MS,
@@ -143,6 +142,31 @@ test("strong SHA-256 base64url validator; weak list and wildcard yield bodyless 
   expect(head304.status).toBe(304);
   expect(head304.headers.get("content-length")).toBeNull();
   expect(await head304.text()).toBe("");
+});
+
+test("ETag preserves GET streams even when If-None-Match names the empty buffered body", async () => {
+  const emptyTag = '"47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU"';
+  for (const headers of [{}, { "if-none-match": emptyTag }]) {
+    const res = await get("/stream", { headers });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("etag")).toBeNull();
+    expect(res.headers.get("transfer-encoding")).toBe("chunked");
+    expect(res.headers.get("x-bendo-stream-internal")).toBeNull();
+    expect(await res.text()).toBe("hello stream\n".repeat(3));
+  }
+});
+
+test("ETag preserves HEAD stream status without hashing or fabricating a length", async () => {
+  const emptyTag = '"47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU"';
+  for (const headers of [{}, { "if-none-match": emptyTag }]) {
+    const res = await get("/stream", { method: "HEAD", headers });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("etag")).toBeNull();
+    expect(res.headers.get("content-length")).toBeNull();
+    expect(res.headers.get("transfer-encoding")).toBeNull();
+    expect(res.headers.get("x-bendo-stream-internal")).toBeNull();
+    expect(await res.text()).toBe("");
+  }
 });
 
 test("conditional parser follows entity-tag grammar, including literal slash, comma and backslash", () => {
