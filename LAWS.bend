@@ -32,6 +32,8 @@ import ./src/data/utf8.bend as Utf8
 import ./proof/forms.bend as FormSpec
 
 import ./src/router/pattern.bend as Pattern
+import ./src/router/constraint.bend as Constraint
+import ./proof/router-match-spec.bend as MatchSpec
 
 import ./src/router/spec.bend as Spec
 import ./src/router/spec-proofs.bend as SpecProof
@@ -562,6 +564,54 @@ law pattern_fill_match:
   for admitted: {Pattern.admissible(pattern, params) == True{} : Bool}
   exs path: String
   {Pattern.fill(pattern, params) == Some{path} : Maybe<&2, String>} & {Pattern.match_path(pattern, path) == Some{params} : Maybe<&2, Pattern.Params>}
+
+# BND-78
+
+# Matching is exactly the independent raw-path specification in
+# proof/router-match-spec.bend, for every pattern value and every raw path:
+# the same hit or miss, the same ordered captures, and the same precedence
+# (optional captures take present segments, interior wildcards take the fewest
+# segments, spans take the most). The specification calls no Pattern helper.
+law pattern_match_spec:
+  for +pattern: Pattern.Pattern
+  for +path: String
+  {Pattern.match_path(pattern, path) == MatchSpec.match_path(pattern, path) : Maybe<&2, Pattern.Params>}
+
+# Each promised syntax form compiles, to the segments the specification reads.
+law compile_bare_star:
+  {Pattern.compile("*") == Done{Pattern.Pattern{[Pattern.Wildcard{"*"}]}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+law compile_prefix_wildcard:
+  {Pattern.compile("/assets*") == Done{Pattern.Pattern{[Pattern.PrefixWildcard{"assets"}]}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+law compile_interior_wildcards:
+  {Pattern.compile("/a/*/b/*") == Done{Pattern.Pattern{[Pattern.Static{"a"}, Pattern.InteriorWildcard{}, Pattern.Static{"b"}, Pattern.Wildcard{"*"}]}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+law compile_optional_chain:
+  {Pattern.compile("/v1/:version?/:platform?") == Done{Pattern.Pattern{[Pattern.Static{"v1"}, Pattern.Capture{"version", Constraint.Any{}, True{}}, Pattern.Capture{"platform", Constraint.Any{}, True{}}]}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+law compile_static_colon:
+  {Pattern.compile("/v1/name:activate") == Done{Pattern.Pattern{[Pattern.Static{"v1"}, Pattern.Static{"name:activate"}]}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+law compile_anchored_span:
+  {Pattern.compile("/:prefix{.+}/contents/:id?") == Done{Pattern.Pattern{[Pattern.Span{"prefix"}, Pattern.Static{"contents"}, Pattern.Capture{"id", Constraint.Any{}, True{}}]}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+# A span needs a static anchor after it.
+law compile_unanchored_span:
+  {Pattern.compile("/:a{.+}/:b") == Fail{Pattern.PatternError{Pattern.InvalidSpan{}, ":a{.+}/:b"}} : Result<&2, &2, Pattern.PatternError, Pattern.Pattern>}
+
+# The specification gives the promised raw-path results for those forms.
+law spec_prefix_wildcard:
+  {MatchSpec.match_path(Pattern.Pattern{[Pattern.PrefixWildcard{"assets"}]}, "/assets-v2") == Some{Nil{}} : Maybe<&2, Pattern.Params>} & {MatchSpec.match_path(Pattern.Pattern{[Pattern.PrefixWildcard{"assets"}]}, "/assets/app.js") == Some{Nil{}} : Maybe<&2, Pattern.Params>}
+
+law spec_interior_wildcards:
+  {MatchSpec.match_path(Pattern.Pattern{[Pattern.Static{"a"}, Pattern.InteriorWildcard{}, Pattern.Static{"b"}, Pattern.Wildcard{"*"}]}, "/a/x/y/b/c/d") == Some{[Pattern.Param{"*", "c/d"}]} : Maybe<&2, Pattern.Params>}
+
+law spec_optional_chain:
+  {MatchSpec.match_path(Pattern.Pattern{[Pattern.Static{"v1"}, Pattern.Capture{"version", Constraint.Any{}, True{}}, Pattern.Capture{"platform", Constraint.Any{}, True{}}]}, "/v1/x") == Some{[Pattern.Param{"version", "x"}]} : Maybe<&2, Pattern.Params>}
+
+law spec_greedy_span:
+  {MatchSpec.match_path(Pattern.Pattern{[Pattern.Span{"prefix"}, Pattern.Static{"contents"}, Pattern.Capture{"id", Constraint.Any{}, True{}}]}, "/foo/bar/contents/123") == Some{[Pattern.Param{"prefix", "foo/bar"}, Pattern.Param{"id", "123"}]} : Maybe<&2, Pattern.Params>} & {MatchSpec.match_path(Pattern.Pattern{[Pattern.Span{"prefix"}, Pattern.Static{"contents"}, Pattern.Capture{"id", Constraint.Any{}, True{}}]}, "/a/contents/contents") == Some{[Pattern.Param{"prefix", "a/contents"}]} : Maybe<&2, Pattern.Params>}
 
 # BND-29: URL-encoded data and ordered repeated-key lookup.
 

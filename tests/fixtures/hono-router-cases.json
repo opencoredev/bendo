@@ -6053,6 +6053,35 @@
         "method": "2:2|%2A=%62%61%72;head_from_get=false"
       },
       "differences": ["wildcard-capture"]
+    },
+    {
+      "id": "hono-181",
+      "source": "src/router/common.case.test.ts",
+      "test": "TrieRouter > Common > Capture multiple directories and optional > GET /a/contents/contents",
+      "origin": "greedy span regression queried against Hono TrieRouter 4.13.13",
+      "routes": [
+        {
+          "method": "GET",
+          "pattern": "/:prefix{.+}/contents/:id?",
+          "handler": "contents"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/a/contents/contents"
+      },
+      "hono": [
+        {
+          "handler": "contents",
+          "params": [["prefix", "a/contents"]]
+        }
+      ],
+      "honoError": "",
+      "expected": {
+        "path": "0:0|%70%72%65%66%69%78=%61%2F%63%6F%6E%74%65%6E%74%73",
+        "method": "0:0|%70%72%65%66%69%78=%61%2F%63%6F%6E%74%65%6E%74%73;head_from_get=false"
+      },
+      "differences": []
     }
   ]
 }

@@ -521,13 +521,20 @@ def match_segments(segs: List<&2, Segment>, paths: List<&2, String>) -> Maybe<&2
     case _ _:
       None{}
 
-def match_path(pattern: Pattern, path: String) -> Maybe<&2, Params>:
-  match pattern path:
-    case Pattern{Capture{name, c, True{}} <> +rest} "/":
+# `t` is the path after its leading slash. The root path "/" also matches a
+# pattern made only of optional captures, with no params.
+def match_root(pattern: Pattern, t: String) -> Maybe<&2, Params>:
+  match pattern t:
+    case Pattern{Capture{name, c, True{}} <> +rest} SNil{}:
       E.choose(Maybe<&2, Params>, all_optional(rest), u => Some{Nil{}}, u => match_segments(Capture{name, c, True{}} <> rest, [""]))
-    case Pattern{segs} SCon{'/', t}:
-      match_segments(segs, path_segments(t))
-    case _ _:
+    case Pattern{segs} s:
+      match_segments(segs, path_segments(s))
+
+def match_path(pattern: Pattern, path: String) -> Maybe<&2, Params>:
+  match path:
+    case SCon{'/', t}:
+      match_root(pattern, t)
+    case _:
       None{}
 
 # Method-layer case options change only static comparisons. Captures retain

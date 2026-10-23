@@ -87,6 +87,26 @@ describe("native Bend route patterns", () => {
     expect(fixtures.filter((fixture) => "path" in fixture).length).toBeGreaterThanOrEqual(60);
   });
 
+  // Each pattern has an adversarial 4096-segment path: repeated anchors for
+  // spans, repeated statics for interior wildcards, and a final invalid escape
+  // so every alternative fails. Quadratic matching took seconds here.
+  const LONG = 4096;
+  const repeated = (segment: string) => `/${Array.from({ length: LONG }, () => segment).join("/")}`;
+  for (const [pattern, path] of [
+    ["/:prefix{.+}/contents/:id?", `${repeated("contents")}/%GG`],
+    ["/:prefix{.+}/contents/:id?", `/a${repeated("contents")}`],
+    ["/a/*/b/*", `/a${repeated("b")}/%GG`],
+    ["/*/b/*/b/:x", `${repeated("b")}/%GG`],
+  ] as const) {
+    test(`linear matching: ${pattern} over ${LONG} segments`, () => {
+      const start = performance.now();
+      const lines = run(pattern, ["match", path]);
+      const elapsed = performance.now() - start;
+      expect(lines[0]).toBe(path.endsWith("%GG") ? "none" : "match");
+      expect(elapsed).toBeLessThan(1000);
+    });
+  }
+
   for (const [index, fixture] of fixtures.entries()) {
     test(`${index}: ${fixture.kind} ${fixture.pattern}`, () => {
       switch (fixture.kind) {
