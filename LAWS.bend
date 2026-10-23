@@ -16,6 +16,10 @@ import ./proof/error-laws.bend as ErrorLaws
 import ./src/app/table.bend as Table
 import ./proof/middleware-selection-spec.bend as MiddlewareSelectionSpec
 import ./src/app/middleware.bend as Middleware
+
+import ./src/data/schema.bend as Schema
+import ./src/data/schema-spec.bend as SchemaSpec
+import ./src/data/json.bend as Json
 import ./src/http/response.bend as Response
 import ./src/http/write_response.bend as WriteResponse
 import ./proof/response-spec.bend as ResponseSpec
@@ -1014,6 +1018,25 @@ law cookies_ordered_list_roundtrip:
   for +entries: List<&2, Cookie.Entry>
   for valid: {CookieSpec.entries_valid(entries) == True{} : Bool}
   {Cookie.parse(String.join(CookieSpec.pairs(entries), ";")) == entries : List<&2, Cookie.Entry>}
+
+# BND-33: scalar decoding agrees with an independent specification for EVERY
+# schema and Json tree, including malformed schemas and constructed data.
+# SchemaSpec restates each rule from docs/data/schema.md (scalar counts, the
+# RFC 8259 number grammar, exact decimal values, patterns as regular languages
+# with a size cap, email and URL grammars) and calls no decoder helper.
+# Equality proves both soundness (accepted implies satisfies) and completeness.
+
+law schema_acceptance_iff:
+  for +schema: Schema.Schema
+  for +value: Json.Json
+  {Schema.accepted(Schema.decode(schema, value)) == SchemaSpec.satisfies(schema, value) : Bool}
+
+# Every success has the right typed constructor AND preserves the exact input
+# payload, including decimal spelling. Failures impose no payload obligation.
+law schema_preserves_typed_value:
+  for +schema: Schema.Schema
+  for +value: Json.Json
+  Schema.Preserves(Schema.value_for(schema, value), Schema.decode(schema, value))
 
 # BND-25: a private HTTP failure's public message is independent of its
 # internal text. proof/error-laws.bend states the same for the rendered

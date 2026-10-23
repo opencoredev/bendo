@@ -13,6 +13,9 @@ import ./src/app/table.bend as Table
 import ./proof/middleware-selection-spec.bend as MiddlewareSelectionSpec
 import ./proof/lifecycle-selection.bend as LifecycleSelection
 import ./proof/middleware-selection.bend as MiddlewareSelection
+
+import ./proof/schema.bend as SchemaProof
+import ./src/data/schema.bend as Schema
 import ./src/http/response.bend as Response
 import ./src/http/write_response.bend as WriteResponse
 
@@ -441,6 +444,14 @@ def Laws.cookies_defaults_checked(name, value, name_valid, value_valid):
 # BND-31
 def Laws.cookies_ordered_list_roundtrip(entries, valid):
   CookieProof.list_roundtrip(entries, valid)
+
+# BND-33
+
+def Laws.schema_acceptance_iff(schema, value):
+  SchemaProof.acceptance_spec(schema, value)
+
+def Laws.schema_preserves_typed_value(schema, value):
+  SchemaProof.preservation(schema, value, Schema.valid(schema))
 
 # BND-25
 def Laws.http_error_private_message(code, message): {==}
