@@ -317,7 +317,8 @@ def maybe_meta(m: Maybe<&2, Meta>) -> Result<&2, &2, Error, Meta>:
       Done{m}
 
 # Headers are octets checked before strict UTF-8 decoding. CRLF only,
-# no folded lines, controls, or whitespace before the header colon.
+# unfold CRLF followed by SP/HTAB without removing the whitespace.
+# The limit counts wire bytes, including every folded CRLF.
 type Head is Data:
   Head{meta: Meta, bytes: List<&2, U32>}
 
@@ -346,13 +347,25 @@ def headers_go(xs: List<&2, U32>, +left: U32, line: List<&2, U32>, state: Result
   match xs left line state:
     case _ _ _ Fail{e}:
       Fail{e}
+    case 13 <> 10 <> t 0 _ _:
+      Fail{TooLarge{}}
+    case 13 <> 10 <> t 1 _ _:
+      Fail{TooLarge{}}
     case 13 <> 10 <> t left Nil{} Done{meta}:
       header_end(meta, t, (left >= 2 : U32))
+    case 13 <> 10 <> 32 <> t left line Done{meta}:
+      headers_go(32 <> t, U32.sub(left, 2), line, Done{meta})
+    case 13 <> 10 <> 9 <> t left line Done{meta}:
+      headers_go(9 <> t, U32.sub(left, 2), line, Done{meta})
     case 13 <> 10 <> t left line Done{meta}:
       headers_go(t, U32.sub(left, 2), [], header_line(line, meta, (left >= 2 : U32)))
     case _ 0 _ _:
       Fail{TooLarge{}}
     case Nil{} _ _ _:
+      Fail{Malformed{}}
+    case 32 <> t left Nil{} Done{meta}:
+      Fail{Malformed{}}
+    case 9 <> t left Nil{} Done{meta}:
       Fail{Malformed{}}
     case +c <> t left line Done{meta}:
       headers_go(t, U32.sub(left, 1), c <> line, header_byte(meta, Bytes.value_octet(c)))

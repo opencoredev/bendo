@@ -97,7 +97,10 @@ Content-Type headers are rejected. Unknown syntactically valid headers and
 disposition parameters are ignored. Content-Type must have a token type and
 subtype and well-formed parameters. Absent field Content-Type means
 `text/plain`; absent file Content-Type becomes `application/octet-stream`.
-An explicit file Content-Type is preserved as supplied after trimming OWS.
+An explicit file Content-Type is preserved after unfolding and trimming OWS.
+Part headers may continue on lines beginning with SP or HTAB. Unfolding removes
+only the CRLF and preserves the continuation whitespace (RFC 5322 section 2.2.3).
+The part-header limit counts the original wire bytes, including folded CRLFs.
 
 RFC 7578 section 4.2 prohibits the RFC 5987 `filename*` parameter in multipart
 forms. Bendo rejects it, including when a plain filename is also present.
@@ -113,7 +116,7 @@ decoding occurs, and nested multipart is not recursively expanded.
 ## Malformed input and runtime behavior
 
 Missing or invalid boundaries, absent final delimiters, bare LF header lines,
-folded headers, controls, invalid UTF-8 headers or fields, missing names,
+leading continuation lines, controls, invalid UTF-8 headers or fields, missing names,
 ambiguous metadata and non-octet list elements return `Fail{Malformed{}}`.
 Invalid binary UTF-8 inside a file is accepted unchanged.
 

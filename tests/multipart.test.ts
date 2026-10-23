@@ -141,6 +141,60 @@ test("HTTP maps parser file/total limits to 413 and malformed bodies to 400", as
   }
 });
 
+test("folded MIME headers preserve SP and HTAB in disposition and content type", async () => {
+  await using server = await start(binary);
+  for (const wsp of [" ", "\t"]) {
+    const value = body(
+      "x",
+      `form-data;\r\n${wsp}name="x";\r\n${wsp}filename="f"`,
+      `Content-Type: text/plain;\r\n${wsp}charset=UTF-8\r\n`,
+    );
+    expect(parse(value)).toEqual(parts([file("x", "f", [120], `text/plain;${wsp}charset=UTF-8`)]));
+    const response = await fetch(server.url, {
+      method: "POST",
+      headers: { "content-type": "multipart/form-data; boundary=abc" },
+      body: value,
+    });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe(
+      `file\tx\tf\t${encodeURIComponent(`text/plain;${wsp}charset=UTF-8`)}\t1\t${sha256(new Uint8Array([120]))}\n`,
+    );
+    expect(parse(body("x", `form-data; name="a\r\n${wsp}b"`))).toEqual(
+      parts([field(`a${wsp}b`, "x")]),
+    );
+  }
+});
+
+test("folded header limit counts original wire CRLF bytes and returns HTTP 413", async () => {
+  const header = `Content-Disposition: form-data; name="x"\r\nX-Pad: ${"a".repeat(8100)}\r\n ${"b".repeat(38)}\r\n\r\n`;
+  const value = `--abc\r\n${header}x\r\n--abc--`;
+  expect(parse(value, { ...limits, header_size: header.length })).toEqual(parts([field("x", "x")]));
+  expect(parse(value, { ...limits, header_size: header.length - 1 })).toEqual(fail("TooLarge"));
+  // Removing the fold CRLF alone makes this fit the native fixture's 8192-byte limit.
+  expect(header.length).toBe(8194);
+  await using server = await start(binary);
+  const response = await fetch(server.url, {
+    method: "POST",
+    headers: { "content-type": "multipart/form-data; boundary=abc" },
+    body: value,
+  });
+  expect(response.status).toBe(413);
+});
+
+test("leading MIME continuation lines remain malformed with HTTP 400", async () => {
+  await using server = await start(binary);
+  for (const wsp of [" ", "\t"]) {
+    const value = body("x").replace("--abc\r\n", `--abc\r\n${wsp}orphan\r\n`);
+    expect(parse(value)).toEqual(fail("Malformed"));
+    const response = await fetch(server.url, {
+      method: "POST",
+      headers: { "content-type": "multipart/form-data; boundary=abc" },
+      body: value,
+    });
+    expect(response.status).toBe(400);
+  }
+});
+
 test("ordered fields/files, empty values, empty filename, strict UTF-8 and default media", () => {
   expect(parse(body(""))).toEqual(parts([field("x", "")]));
   expect(parse(body("", 'form-data; name="x"; filename=""'))).toEqual(parts([file("x", "", [])]));
