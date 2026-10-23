@@ -29,10 +29,12 @@ def result(result: M.Resolution<Tag>) -> String:
 def show(table: M.Table(Tag), path: String, method: R.Method) -> IO(Unit):
   IO.print(result(M.resolve(Tag, table, path, method, M.defaults())))
 
-def built(r: Result<&2, &2, S.BuildError, M.Table(Tag)>) -> IO(Unit):
+def built(r: Result<&2, &2, M.BuildError, M.Table(Tag)>) -> IO(Unit):
   match r:
-    case Fail{S.BuildError{i, source, error}}:
+    case Fail{M.InvalidPattern{i, source, error}}:
       IO.print(Nat.show(i) ++ ":" ++ source ++ ":" ++ P.error_message(error))
+    case Fail{M.InvalidMethod{i, source, token}}:
+      IO.print(Nat.show(i) ++ ":" ++ source ++ ":InvalidMethod:" ++ token)
     case Done{+table}:
       do IO<Unit>:
         show(table, "/all", R.Connect{})
@@ -42,6 +44,22 @@ def built(r: Result<&2, &2, S.BuildError, M.Table(Tag)>) -> IO(Unit):
         show(table, "/head-only", R.Get{})
         show(table, "/all", R.Head{})
         show(table, "/all", R.Extension{"PROPFIND"})
+
+def constructed(result: Result<&2, &2, M.BuildError, M.Table(Tag)>) -> IO(Unit):
+  match result:
+    case Fail{M.InvalidMethod{i, source, token}}:
+      IO.print(Nat.show(i) ++ ":" ++ source ++ ":InvalidMethod:" ++ token)
+    case Fail{M.InvalidPattern{i, source, error}}:
+      IO.print(Nat.show(i) ++ ":" ++ source ++ ":" ++ P.error_message(error))
+    case Done{+table}:
+      do IO<Unit>:
+        show(table, "/a", R.Get{})
+        show(table, "/a", R.Head{})
+        show(table, "/a", R.Post{})
+        show(table, "/a", R.Extension{"get"})
+
+def construction(entries: List<&2, M.Registration(Tag)>) -> IO(Unit):
+  constructed(M.build_table(Tag, entries))
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -54,3 +72,10 @@ def main() -> IO(Unit):
       M.head(Tag, "/head-only", First{})
     ]))
     built(M.build_table(Tag, [M.get(Tag, "/ok", First{}), M.post(Tag, "bad", Later{}), M.get(Tag, "/later", Later{})]))
+    construction([M.get(Tag, "/a", First{})])
+    construction([M.on(Tag, [R.Extension{"GET"}], "/a", First{})])
+    construction([M.on(Tag, [R.Extension{"get"}], "/a", First{})])
+    construction([M.get(Tag, "/ok", First{}), M.on(Tag, [R.Extension{""}], "/a", Later{}), M.get(Tag, "/later", Later{})])
+    construction([M.get(Tag, "/ok", First{}), M.on(Tag, [R.Extension{"BAD TOKEN"}], "/a", Later{})])
+    construction([M.on(Tag, [R.Extension{"GET"}, R.Get{}, R.Extension{"get"}, R.Extension{"get"}], "/a", First{})])
+    construction([M.on(Tag, [R.Extension{"BAD TOKEN"}], "/a", First{}), M.get(Tag, "bad", Later{})])

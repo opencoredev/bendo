@@ -56,8 +56,49 @@ def head(-T: Data, path: String, tag: T) -> Registration(T):
 def all(-T: Data, path: String, tag: T) -> Registration(T):
   on(T, standard_methods(), path, tag)
 
-def build_table(-T: Data, entries: List<&2, Registration(T)>) -> Result<&2, &2, S.BuildError, Table(T)>:
-  S.build_table(Binding<T>, entries)
+type BuildError is Data:
+  InvalidPattern{index: Nat, source: String, error: P.PatternError}
+  InvalidMethod{index: Nat, source: String, token: String}
+
+# HTTP method tokens are case-sensitive. Only exact standard names normalize.
+def normalize_methods(xs: List<&2, R.Method>) -> List<&2, R.Method>:
+  match xs:
+    case Nil{}: Nil{}
+    case h <> tail:
+      R.method(R.method_text(h)) <> normalize_methods(tail)
+
+def invalid_method(xs: List<&2, R.Method>) -> Maybe<&2, String>:
+  match xs:
+    case Nil{}: None{}
+    case +h <> tail:
+      E.choose(Maybe<&2, String>, R.method_valid(h), u => invalid_method(tail), u => Some{R.method_text(h)})
+
+def prepend_built(-T: Data, pattern: P.Pattern, binding: Binding<T>, result: Result<&2, &2, BuildError, Table(T)>) -> Result<&2, &2, BuildError, Table(T)>:
+  match result:
+    case Fail{error}: Fail{error}
+    case Done{tail}: Done{S.Route{pattern, binding} <> tail}
+
+def build_pattern(-T: Data, index: Nat, source: String, binding: Binding<T>, compiled: Result<&2, &2, P.PatternError, P.Pattern>, rest: Unit -> Result<&2, &2, BuildError, Table(T)>) -> Result<&2, &2, BuildError, Table(T)>:
+  match compiled:
+    case Fail{error}: Fail{InvalidPattern{index, source, error}}
+    case Done{pattern}: prepend_built(T, pattern, binding, rest(Unit{}))
+
+def build_methods(-T: Data, index: Nat, +source: String, methods: List<&2, R.Method>, tag: T, invalid: Maybe<&2, String>, rest: Unit -> Result<&2, &2, BuildError, Table(T)>) -> Result<&2, &2, BuildError, Table(T)>:
+  match invalid:
+    case Some{token}: Fail{InvalidMethod{index, source, token}}
+    case None{}: build_pattern(T, index, source, Binding{methods, tag}, P.compile(source), rest)
+
+# Fail atomically at the first invalid registration; method errors precede
+# pattern errors within the same registration.
+def build_go(-T: Data, entries: List<&2, Registration(T)>, +index: Nat) -> Result<&2, &2, BuildError, Table(T)>:
+  match entries:
+    case Nil{}: Done{Nil{}}
+    case S.Registration{+source, Binding{methods, tag}} <> rest:
+      +normalized = normalize_methods(methods)
+      build_methods(T, index, source, normalized, tag, invalid_method(normalized), u => build_go(T, rest, 1n+index))
+
+def build_table(-T: Data, entries: List<&2, Registration(T)>) -> Result<&2, &2, BuildError, Table(T)>:
+  build_go(T, entries, 0n)
 
 # Strip terminal empty segments, retaining one segment for the root.
 def trim_segments(xs: List<&2, String>) -> List<&2, String>:

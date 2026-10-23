@@ -149,7 +149,7 @@ describe("method-aware router", () => {
   });
 });
 
-test("pure resolution preserves indices and HEAD provenance; all includes CONNECT", () => {
+test("public construction normalizes standards, rejects invalid tokens atomically and preserves extension case", () => {
   const binary = build("tests/router-methods-driver.bend");
   const result = Bun.spawnSync(["timeout", "--foreground", "10s", binary], {
     stdout: "pipe",
@@ -165,5 +165,24 @@ test("pure resolution preserves indices and HEAD provenance; all includes CONNEC
     "first:0:direct",
     `405:${standardAllow}`,
     "1:bad:MissingSlash: bad",
+    "first:0:direct",
+    "first:0:fallback",
+    "405:GET, HEAD",
+    "405:GET, HEAD",
+    "first:0:direct",
+    "first:0:fallback",
+    "405:GET, HEAD",
+    "405:GET, HEAD",
+    "405:get",
+    "405:get",
+    "405:get",
+    "first:0:direct",
+    "1:/a:InvalidMethod:",
+    "1:/a:InvalidMethod:BAD TOKEN",
+    "first:0:direct",
+    "first:0:fallback",
+    "405:GET, HEAD, get",
+    "first:0:direct",
+    "0:/a:InvalidMethod:BAD TOKEN",
   ]);
 }, 30000);

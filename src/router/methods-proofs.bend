@@ -887,6 +887,77 @@ def TableValid(-T: Data, table: M.Table(T)) -> Bool:
     case R.Route{pattern, M.Binding{methods, tag}} <> tail:
       Set.list_valid(methods) && TableValid(T, tail)
 
+# A successful public build has no invalid methods, including raw on entries.
+def BuildValid(-T: Data, result: Result<&2, &2, M.BuildError, M.Table(T)>) -> Bool:
+  match result:
+    case Fail{error}: True{}
+    case Done{table}: TableValid(T, table)
+
+def InvalidChecked(+methods: List<&2, H.Method>, invalid: Maybe<&2, String>) -> Type:
+  match invalid:
+    case Some{token}: Unit
+    case None{}: {Set.list_valid(methods) == True{} : Bool}
+
+def invalid_checked_cons(+h: H.Method, +tail: List<&2, H.Method>, +invalid: Maybe<&2, String>,
+    valid: {H.method_valid(h) == True{} : Bool}, rest: InvalidChecked(tail, invalid)) -> InvalidChecked(h <> tail, invalid):
+  match invalid:
+    case Some{token}: Unit{}
+    case None{}:
+      %Equal.sym(Bool, H.method_valid(h), True{}, valid) : {_ && Set.list_valid(tail) == True{} : Bool}
+      rest
+
+def invalid_checked_step(+h: H.Method, +tail: List<&2, H.Method>, test: Bool,
+    decision: {H.method_valid(h) == test : Bool},
+    rest: InvalidChecked(tail, M.invalid_method(tail))) ->
+    InvalidChecked(h <> tail, E.choose(Maybe<&2, String>, test, u => M.invalid_method(tail), u => Some{H.method_text(h)})):
+  match test:
+    case False{}: Unit{}
+    case True{}:
+      invalid_checked_cons(h, tail, M.invalid_method(tail), decision, rest)
+
+def invalid_checked(+methods: List<&2, H.Method>) -> InvalidChecked(methods, M.invalid_method(methods)):
+  match methods:
+    case Nil{}: {==}
+    case +h <> +tail:
+      invalid_checked_step(h, tail, H.method_valid(h), {==}, invalid_checked(tail))
+
+def prepend_valid(-T: Data, +pattern: P.Pattern, +methods: List<&2, H.Method>, +tag: T,
+    +result: Result<&2, &2, M.BuildError, M.Table(T)>,
+    valid: {Set.list_valid(methods) == True{} : Bool},
+    rest: {BuildValid(T, result) == True{} : Bool}) ->
+    {BuildValid(T, M.prepend_built(T, pattern, M.Binding{methods, tag}, result)) == True{} : Bool}:
+  match result:
+    case Fail{error}: {==}
+    case Done{table}:
+      %Equal.sym(Bool, Set.list_valid(methods), True{}, valid) : {_ && TableValid(T, table) == True{} : Bool}
+      rest
+
+def build_pattern_valid(-T: Data, +index: Nat, +source: String, +methods: List<&2, H.Method>, +tag: T,
+    +compiled: Result<&2, &2, P.PatternError, P.Pattern>,
+    rest: Unit -> Result<&2, &2, M.BuildError, M.Table(T)>,
+    valid: {Set.list_valid(methods) == True{} : Bool},
+    good: {BuildValid(T, rest(Unit{})) == True{} : Bool}) ->
+    {BuildValid(T, M.build_pattern(T, index, source, M.Binding{methods, tag}, compiled, rest)) == True{} : Bool}:
+  match compiled:
+    case Fail{error}: {==}
+    case Done{pattern}: prepend_valid(T, pattern, methods, tag, rest(Unit{}), valid, good)
+
+def build_methods_valid(-T: Data, +index: Nat, +source: String, +methods: List<&2, H.Method>, +tag: T,
+    +invalid: Maybe<&2, String>, rest: Unit -> Result<&2, &2, M.BuildError, M.Table(T)>,
+    checked: InvalidChecked(methods, invalid), good: {BuildValid(T, rest(Unit{})) == True{} : Bool}) ->
+    {BuildValid(T, M.build_methods(T, index, source, methods, tag, invalid, rest)) == True{} : Bool}:
+  match invalid:
+    case Some{token}: {==}
+    case None{}: build_pattern_valid(T, index, source, methods, tag, P.compile(source), rest, checked, good)
+
+def build_go_valid(-T: Data, +entries: List<&2, M.Registration(T)>, +index: Nat) ->
+    {BuildValid(T, M.build_go(T, entries, index)) == True{} : Bool}:
+  match entries:
+    case Nil{}: {==}
+    case R.Registration{+source, M.Binding{methods, +tag}} <> +tail:
+      +normalized = M.normalize_methods(methods)
+      build_methods_valid(T, index, source, normalized, tag, M.invalid_method(normalized), u => M.build_go(T, tail, 1n+index), invalid_checked(normalized), build_go_valid(T, tail, 1n+index))
+
 def collection_valid_step(+methods: List<&2, H.Method>, +rest: List<&2, H.Method>, test: Bool,
     mv: {Set.list_valid(methods) == True{} : Bool}, rv: {Set.list_valid(rest) == True{} : Bool}) ->
     {Set.list_valid(E.choose(List<&2, H.Method>, test, u => List.append(&2, H.Method, methods, rest), u => rest)) == True{} : Bool}:

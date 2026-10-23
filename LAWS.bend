@@ -803,3 +803,11 @@ law methods_allow_exact:
   for valid: {Request.method_valid(method) == True{} : Bool}
   for returned: {Methods.resolve(T, table, path, method, opts) == Methods.MethodNotAllowed{allow} : Methods.Resolution<T>}
   MethodProof.ExactAllow(T, table, path, method, opts, allow)
+
+# Every successful public construction satisfies the 405 law's table hypothesis.
+law methods_build_valid:
+  for -T: Data
+  for +entries: List<&2, Methods.Registration(T)>
+  for +table: Methods.Table(T)
+  for built: {Methods.build_table(T, entries) == Done{table} : Result<&2, &2, Methods.BuildError, Methods.Table(T)>}
+  {MethodProof.TableValid(T, table) == True{} : Bool}

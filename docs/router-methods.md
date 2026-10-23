@@ -15,7 +15,7 @@ type Tag is Data:
   Read{}
   Create{}
 
-def routes() -> Result<&2, &2, S.BuildError, M.Table(Tag)>:
+def routes() -> Result<&2, &2, M.BuildError, M.Table(Tag)>:
   M.build_table(Tag, [
     M.get(Tag, "/items/:id", Read{}),
     M.on(Tag, [R.Post{}, R.Put{}], "/items/:id", Create{})
@@ -24,17 +24,22 @@ def routes() -> Result<&2, &2, S.BuildError, M.Table(Tag)>:
 
 The complete native consumer is [the method test server](../tests/servers/router-methods.bend).
 `build_table` compiles each pattern through the [spec router](router-spec.md).
-It fails atomically at the first invalid pattern, preserving its registration
-index and source in `Spec.BuildError`.
+It fails atomically at the first invalid registration, preserving its index and
+source. `Methods.InvalidPattern{index, source, error}` wraps a pattern error;
+`Methods.InvalidMethod{index, source, token}` identifies an invalid method token.
+Methods are checked before the pattern within each registration.
 
 ## Registration and resolution
 
 `get`, `post`, `put`, `patch`, `delete`, `options`, and `head` each take
 `(T, path, tag)`. `on(T, methods, path, tag)` accepts a list of `Request.Method`.
-Use canonical constructors for standard methods and `Extension{token}` for
-case-sensitive extension methods such as `PROPFIND`. Methods supplied by an app
-must satisfy `Request.method_valid`; the HTTP parser already enforces this for
-requests. Duplicate methods in a registration are harmless. An empty `on` list
+Use standard constructors or `Extension{token}`. Construction normalizes exact
+standard tokens: `Extension{"GET"}` behaves exactly like `Get{}`, including HEAD
+fallback and Allow ordering. Empty tokens and tokens containing spaces, control
+characters, non-ASCII characters, or HTTP separators are build errors.
+Methods are case-sensitive under RFC 9110: `Extension{"get"}` remains distinct
+from GET and does not supply HEAD fallback. Duplicate methods in a registration
+are harmless. An empty `on` list
 registers a path that accepts no method.
 
 `all(T, path, tag)` registers these nine standard methods, in this order:
@@ -96,4 +101,6 @@ remain raw rather than percent-decoded, following the
 `bun test tests/router-methods.test.ts` compiles a native Bend server and checks
 method dispatch, exact Allow values, raw HEAD bytes, 404/405, extension methods,
 and all four option combinations. `bun run prove` checks the BND-18 laws;
+`methods_build_valid` proves that every successful public build satisfies the
+`TableValid` hypothesis used by `methods_allow_exact`.
 `bun run check` runs the full repository gate.

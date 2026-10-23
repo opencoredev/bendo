@@ -323,3 +323,7 @@ def Laws.methods_not_found_iff_all_paths_miss(T, table, path, method, opts):
 
 def Laws.methods_allow_exact(T, table, path, method, opts, allow, table_valid, valid, returned):
   MethodProof.exact_allow(T, table, path, method, opts, allow, table_valid, valid, returned)
+
+def Laws.methods_build_valid(T, entries, table, built):
+  %built : {MethodProof.BuildValid(T, _) == True{} : Bool}
+  MethodProof.build_go_valid(T, entries, 0n)

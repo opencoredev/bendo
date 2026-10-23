@@ -140,7 +140,7 @@ def port_or(r: Result<&1, &1, U32 & String, String>, fallback: U32) -> U32:
     case Fail{e}:
       fallback
 
-def start(table_result: Result<&2, &2, S.BuildError, M.Table(Tag)>) -> IO(Unit):
+def start(table_result: Result<&2, &2, M.BuildError, M.Table(Tag)>) -> IO(Unit):
   match table_result:
     case Fail{e}:
       IO.die(Unit, 1, "invalid routes")
