@@ -13,6 +13,8 @@ type Error is Data:
   InvalidExpires{}
   SameSiteRequiresSecure{}
   PartitionedRequiresSecure{}
+  # BND-32: signed-cookie keys with an empty or non-scalar slot.
+  InvalidSecret{}
 
 type SameSite is Data:
   Strict{}

@@ -11,6 +11,7 @@ def print_error(error: C.Error) -> IO(Unit):
     case C.InvalidExpires{}: IO.print("InvalidExpires")
     case C.SameSiteRequiresSecure{}: IO.print("SameSiteRequiresSecure")
     case C.PartitionedRequiresSecure{}: IO.print("PartitionedRequiresSecure")
+    case C.InvalidSecret{}: IO.print("InvalidSecret")
 
 def print_result(result: Result<&2, &2, C.Error, String>) -> IO(Unit):
   match result:

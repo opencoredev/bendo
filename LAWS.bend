@@ -8,6 +8,9 @@ import ./proof/manifest-built-spec.bend as ManifestBuiltSpec
 import ./proof/compose-laws.bend as ComposeLaws
 import ./proof/plugin-laws.bend as PluginLaws
 
+# BND-32
+import ./proof/signed-cookie-laws.bend as SignedCookieLaws
+
 # BND-31
 import ./proof/cookie-ows-laws.bend as CookieOwsLaws
 import ./proof/cookie-serialization-laws.bend as CookieSerializationLaws
@@ -35,6 +38,8 @@ import ./proof/response-spec.bend as ResponseSpec
 import ./proof/response-framing-spec.bend as ResponseFramingSpec
 
 import ./src/http/chunked.bend as Chunked
+import ./src/http/stream_framing.bend as StreamFraming
+import ./proof/stream-rfc-spec.bend as StreamRfc
 import ./src/http.bend as Http
 import ./src/http/bytes.bend as Bytes
 import ./src/http/request.bend as Request
@@ -1559,3 +1564,39 @@ law manifest_built_routes:
   for +table: Table.Table<Tag>
   for built: {Table.build(Tag, entries) == Done{table} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
   {Manifest.rows(Tag, table) == ManifestBuiltSpec.enumerate(Tag, entries) : List<&2, Manifest.Row>}
+
+
+# BND-48: incremental writes use the existing proven chunked framing, over
+# every admissible partition (including empty chunks), with suffix preservation.
+law stream_roundtrip:
+  for +chunks: List<&2, List<&2, U32>>
+  for +limit: U32
+  for +suffix: List<&2, U32>
+  for valid: {Chunked.admissible(chunks, limit) == True{} : Bool}
+  {Chunked.decode(Bytes.append(StreamFraming.wire(chunks), suffix), limit) == Chunked.Decoded{List.concat(&2, U32, chunks), [], suffix} : Chunked.DecodeResult}
+
+law stream_empty_chunk:
+  {StreamFraming.chunk([]) == [] : List<&2, U32>}
+
+# The actual single-chunk writes compose to the canonical sequence above.
+law stream_chunk_tail:
+  for +bytes: List<&2, U32>
+  for +tail: List<&2, U32>
+  {Bytes.append(StreamFraming.chunk(bytes), tail) == Chunked.encode_chunk(bytes, tail) : List<&2, U32>}
+
+# BND-48: successful finite body-bearing streams satisfy the independent
+# RFC 9112 section 7.1 grammar (lowercase hex, no extensions or trailers).
+# The U32 limit bounds the total payload here, not the runtime chunk maximum.
+law stream_rfc_roundtrip:
+  for +chunks: List<&2, List<&2, U32>>
+  for +limit: U32
+  for +suffix: List<&2, U32>
+  for valid: {Chunked.admissible(chunks, limit) == True{} : Bool}
+  {StreamRfc.parse(Bytes.append(StreamFraming.wire(chunks), suffix), limit) == StreamRfc.Decoded{List.concat(&2, U32, chunks), suffix} : StreamRfc.DecodeResult}
+
+# The first last-chunk ends parsing. Even a suffix that looks like more data
+# chunks remains untouched, rather than being accepted as part of this body.
+law stream_rfc_last_chunk:
+  for +limit: U32
+  for +suffix: List<&2, U32>
+  {StreamRfc.parse(48 <> 13 <> 10 <> 13 <> 10 <> suffix, limit) == StreamRfc.Decoded{[], suffix} : StreamRfc.DecodeResult}

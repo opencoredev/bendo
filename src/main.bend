@@ -1,5 +1,8 @@
 # Public Bendo entrypoint. Route tags and startup environments are app-owned Data.
 import Base
+import ./stream.bend as Stream
+import ./http/stream_types.bend as StreamTypes
+import ./app/observability.bend as Observation
 import ./mw/builtin.bend as Builtin
 import ./mw/server_timing.bend as Timing
 import ./mw/basic_auth.bend as BasicAuth
@@ -20,6 +23,7 @@ import ./app/store.bend as Store
 import ./app/store_actor.bend as StoreActor
 import ./data/json.bend as Json
 import ./data/cookie.bend as Cookie
+import ./data/signed-cookie.bend as SignedCookie
 import ./serve.bend as Serve
 import ./http/request.bend as Request
 import ./http/response.bend as Response
@@ -170,6 +174,12 @@ def cookie(c: Handle.Ctx, name: String) -> Maybe<&2, String>: Context.cookie(Uni
 def set_cookie(c: Handle.Ctx, name: String, value: String, options: Cookie.Options) -> Result<&2, &2, Cookie.Error, Handle.Ctx>: Context.set_cookie(Unit, c, name, value, options)
 def delete_cookie(c: Handle.Ctx, name: String, options: Cookie.Options) -> Result<&2, &2, Cookie.Error, Handle.Ctx>: Context.delete_cookie(Unit, c, name, options)
 
+def set_signed_cookie(c: Handle.Ctx, name: String, value: String, keys: SignedCookie.Keys, options: Cookie.Options) -> Result<&2, &2, Cookie.Error, Handle.Ctx>:
+  Context.set_signed_cookie(Unit, c, name, value, keys, options)
+
+def signed_cookie(c: Handle.Ctx, name: String, keys: SignedCookie.Keys) -> Maybe<&2, String>:
+  Context.signed_cookie(Unit, c, name, keys)
+
 # Authentication and CSRF built-ins. Credentials and secrets live in the
 # reusable route table, like Hono's middleware options.
 def Credential() -> Data: BasicAuth.Credential
@@ -191,3 +201,10 @@ def jwt_with(-Vars: Data, config: JwtAuth.Config, c: Context.Ctx<Vars>, next: Js
   JwtAuth.with_claims(Vars, config, c, next)
 def jwt_sign(secret: String, claims: Json.Json) -> Result<&2, &2, Jwt.Error, String>: Jwt.sign(Utf8.encode(secret), claims)
 def jwt_verify(secret: String, token: String, now: Nat, leeway: Nat) -> Result<&2, &2, Jwt.Error, Json.Json>: Jwt.verify(Utf8.encode(secret), token, now, leeway)
+
+# Pull-based binary streaming through the ordinary routing/middleware lifecycle.
+def StreamConfig() -> Data: StreamTypes.Config
+def StreamStep(-State: Type) -> Type: StreamTypes.Step<State>
+def stream_config() -> StreamTypes.Config: Stream.defaults()
+def stream(~Vars: Data, ~State: Type, ~step: State -> IO(StreamTypes.Step<State>), ~cleanup: State -> IO(Unit), +c: Context.Ctx<Vars>, state: State, config: StreamTypes.Config) -> IO(Response.Res):
+  Stream.register(Observation.stream(Context.observation(Vars, c)), Context.body(Vars, c, [], None{}), Stream.plan(~State, ~step, ~cleanup, state, config))
