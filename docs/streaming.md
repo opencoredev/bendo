@@ -105,10 +105,23 @@ attempt, after producer cleanup; it runs once for the selected response.
 ## Verify
 
 Run `bun test tests/stream.test.ts --timeout 30000` for small socket tests.
-The universal `stream_roundtrip`, `stream_chunk_tail` and `stream_empty_chunk`
-laws connect the incremental writer to the independently checked chunk decoder,
-including empty chunks and an untouched pipelined suffix. Existing laws are
-unchanged.
+The universal `stream_rfc_roundtrip` law checks successful finite body-bearing
+streams against a separate RFC 9112 section 7.1 parser in
+[`proof/stream-rfc-spec.bend`](../proof/stream-rfc-spec.bend). That module imports
+only Base and calls no Bendo encoder or decoder helpers. It checks lowercase
+hexadecimal sizes, CRLF after each size and payload, a zero last-chunk, and an
+empty trailer section. For every admissible octet partition, including empty
+producer chunks, it returns exactly the concatenated payload and untouched
+suffix. `stream_rfc_last_chunk` also proves that the first zero last-chunk ends
+parsing: subsequent bytes cannot become more chunks in the same body.
+
+The proof's configured U32 limit bounds the **total** payload, at most
+4,294,967,295 bytes. The runtime's default 65,536-byte limit applies to **each
+producer chunk**; it does not cap the total response. The runtime can send longer
+or infinite streams, but those are outside this finite round-trip law. Bodyless
+responses and aborted streams are also outside it and have socket tests instead.
+The existing `stream_roundtrip`, `stream_chunk_tail` and `stream_empty_chunk`
+laws remain unchanged.
 
 Run the memory test only on an isolated Boat VM with the pinned toolchain:
 

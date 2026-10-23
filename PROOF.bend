@@ -24,6 +24,7 @@ import ./src/http/write_response.bend as WriteResponse
 
 import ./src/http/chunked.bend as Chunked
 import ./proof/stream.bend as StreamProof
+import ./proof/stream-rfc.bend as StreamRfcProof
 import ./src/http/stream_framing.bend as StreamFraming
 import ./src/http.bend as Http
 import ./src/http/bytes.bend as Bytes
@@ -610,3 +611,9 @@ def Laws.stream_empty_chunk():
 
 def Laws.stream_chunk_tail(bytes, tail):
   StreamProof.chunk_tail(bytes, tail)
+
+def Laws.stream_rfc_roundtrip(chunks, limit, suffix, valid):
+  StreamRfcProof.wire_roundtrip(chunks, limit, suffix, valid)
+
+def Laws.stream_rfc_last_chunk(limit, suffix):
+  StreamRfcProof.last_chunk(limit, suffix)

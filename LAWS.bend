@@ -31,6 +31,7 @@ import ./proof/response-framing-spec.bend as ResponseFramingSpec
 
 import ./src/http/chunked.bend as Chunked
 import ./src/http/stream_framing.bend as StreamFraming
+import ./proof/stream-rfc-spec.bend as StreamRfc
 import ./src/http.bend as Http
 import ./src/http/bytes.bend as Bytes
 import ./src/http/request.bend as Request
@@ -1547,3 +1548,20 @@ law stream_chunk_tail:
   for +bytes: List<&2, U32>
   for +tail: List<&2, U32>
   {Bytes.append(StreamFraming.chunk(bytes), tail) == Chunked.encode_chunk(bytes, tail) : List<&2, U32>}
+
+# BND-48: successful finite body-bearing streams satisfy the independent
+# RFC 9112 section 7.1 grammar (lowercase hex, no extensions or trailers).
+# The U32 limit bounds the total payload here, not the runtime chunk maximum.
+law stream_rfc_roundtrip:
+  for +chunks: List<&2, List<&2, U32>>
+  for +limit: U32
+  for +suffix: List<&2, U32>
+  for valid: {Chunked.admissible(chunks, limit) == True{} : Bool}
+  {StreamRfc.parse(Bytes.append(StreamFraming.wire(chunks), suffix), limit) == StreamRfc.Decoded{List.concat(&2, U32, chunks), suffix} : StreamRfc.DecodeResult}
+
+# The first last-chunk ends parsing. Even a suffix that looks like more data
+# chunks remains untouched, rather than being accepted as part of this body.
+law stream_rfc_last_chunk:
+  for +limit: U32
+  for +suffix: List<&2, U32>
+  {StreamRfc.parse(48 <> 13 <> 10 <> 13 <> 10 <> suffix, limit) == StreamRfc.Decoded{[], suffix} : StreamRfc.DecodeResult}
