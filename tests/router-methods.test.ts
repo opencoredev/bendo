@@ -153,8 +153,8 @@ describe("method-aware router", () => {
   });
 });
 
+const binary = build("tests/router-methods-driver.bend");
 test("public construction normalizes standards, rejects invalid tokens atomically and preserves extension case", () => {
-  const binary = build("tests/router-methods-driver.bend");
   const result = Bun.spawnSync(["timeout", "--foreground", "10s", binary], {
     stdout: "pipe",
     stderr: "pipe",

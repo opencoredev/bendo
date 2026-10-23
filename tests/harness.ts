@@ -17,10 +17,13 @@ export function build(entry: string): string {
   const bend = findBend();
   if (bend.kind === "missing") throw new Error("bend is not installed");
   const out = join(mkdtempSync(join(tmpdir(), "bendo-test-")), "server");
-  const run = Bun.spawnSync([bend.path, join(ROOT, entry), "-o", out], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+  const run = Bun.spawnSync(
+    ["timeout", "--foreground", BEND_COMPILE_TIMEOUT, bend.path, join(ROOT, entry), "-o", out],
+    {
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
   if (run.exitCode !== 0) throw new Error(`bend build failed:\n${run.stdout}${run.stderr}`);
   return out;
 }
