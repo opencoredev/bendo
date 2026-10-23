@@ -61,6 +61,25 @@ def append_no_slash(a, b, left, right):
       %Equal.sym(Bool, Bool.not(Char.is_eq(h, '/')), True{}, first) : {_ && no_slash(t ++ b) == True{} : Bool}
       append_no_slash(t, b, rest, right)
 
+law take_no_slash:
+  for n: Nat
+  for +s: String
+  for clean: {no_slash(s) == True{} : Bool}
+  {no_slash(String.take(s, n)) == True{} : Bool}
+
+def take_no_slash(n, s, clean):
+  match n s:
+    case 0n SNil{}:
+      {==}
+    case 0n SCon{h, t}:
+      {==}
+    case 1n+p SNil{}:
+      {==}
+    case 1n+p SCon{+h, +t}:
+      +yes = clean
+      %Equal.sym(Bool, Bool.not(Char.is_eq(h, '/')), True{}, and_left(Bool.not(Char.is_eq(h, '/')), no_slash(t), yes)) : {_ && no_slash(String.take(t, p)) == True{} : Bool}
+      take_no_slash(p, t, and_right(Bool.not(Char.is_eq(h, '/')), no_slash(t), yes))
+
 # Percent-encoding a finite octet list cannot introduce path separators.
 law octets_no_slash:
   for +xs: List<&2, Word(8n)>
@@ -339,3 +358,61 @@ def encode_no_slash(s, valid):
       first = and_left(E.scalar(n), E.scalars(t), yes)
       rest = and_right(E.scalar(n), E.scalars(t), yes)
       append_no_slash(E.encode_char(n), E.encode(t), clean_encoded_rep(Code.represent(n), Utf8Proof.scalar_is_packed(n, first)), encode_no_slash(t, rest))
+
+# Dynamic-programming rows contain one cell for every path suffix. These
+# structural equations expose that layout without a fuel or termination premise.
+def Rows() -> Data:
+  List<&2, Maybe<&2, P.Params>>
+
+def rows_cons(+segs: List<&2, P.Segment>, +h: String, +t: List<&2, String>) ->
+    {P.match_rows(~String.eq, ~String.starts_with, segs, h <> t) == P.search_segments(segs, h <> t) <> P.match_rows(~String.eq, ~String.starts_with, segs, t) : Rows}:
+  match segs:
+    case Nil{}:
+      {==}
+    case +seg <> +rest:
+      +same = rows_cons(rest, h, t)
+      %Equal.sym(Rows, P.match_rows(~String.eq, ~String.starts_with, rest, h <> t), P.search_segments(rest, h <> t) <> P.match_rows(~String.eq, ~String.starts_with, rest, t), same) : {P.rows_for(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), h <> t, _) == P.row_head(P.rows_for(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), h <> t, _)) <> P.rows_for(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), t, P.match_rows(~String.eq, ~String.starts_with, rest, t)) : Rows}
+      {==}
+
+def rows_head(+seg: P.Segment, +rest: List<&2, P.Segment>, +paths: List<&2, String>) ->
+    {P.search_segments(seg <> rest, paths) == P.row_one(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), paths, P.match_rows(~String.eq, ~String.starts_with, rest, paths)) : Maybe<&2, P.Params>}:
+  match paths:
+    case Nil{}:
+      {==}
+    case +h <> +t:
+      %Equal.sym(Rows, P.match_rows(~String.eq, ~String.starts_with, rest, h <> t), P.search_segments(rest, h <> t) <> P.match_rows(~String.eq, ~String.starts_with, rest, t), rows_cons(rest, h, t)) : {P.row_head(P.rows_for(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), h <> t, _)) == P.row_one(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), h <> t, _) : Maybe<&2, P.Params>}
+      {==}
+
+# The cached-row engine agrees with the original structurally recursive
+# matcher, including on arbitrary hand-built patterns.
+def search_equal(+segs: List<&2, P.Segment>, +paths: List<&2, String>) ->
+    {P.search_segments(segs, paths) == P.match_segments(segs, paths) : Maybe<&2, P.Params>}:
+  match segs paths:
+    case Nil{} Nil{}:
+      {==}
+    case Nil{} h <> t:
+      {==}
+    case P.Static{+raw} <> +rest +h <> +t:
+      %Equal.sym(Maybe<&2, P.Params>, P.search_segments(P.Static{raw} <> rest, h <> t), P.row_one(~String.eq, ~String.starts_with, P.Static{raw}, List.is_empty(&2, P.Segment, rest), h <> t, P.match_rows(~String.eq, ~String.starts_with, rest, h <> t)), rows_head(P.Static{raw}, rest, h <> t)) : {_ == P.match_segments(P.Static{raw} <> rest, h <> t) : Maybe<&2, P.Params>}
+      %Equal.sym(Rows, P.match_rows(~String.eq, ~String.starts_with, rest, h <> t), P.search_segments(rest, h <> t) <> P.match_rows(~String.eq, ~String.starts_with, rest, t), rows_cons(rest, h, t)) : {P.row_one(~String.eq, ~String.starts_with, P.Static{raw}, List.is_empty(&2, P.Segment, rest), h <> t, _) == P.match_segments(P.Static{raw} <> rest, h <> t) : Maybe<&2, P.Params>}
+      Equal.cong(Maybe<&2, P.Params>, Maybe<&2, P.Params>, r => E.choose(Maybe<&2, P.Params>, String.eq(raw, h), u => r, u => None{}), P.search_segments(rest, t), P.match_segments(rest, t), search_equal(rest, t))
+    case P.Static{raw} <> rest Nil{}:
+      {==}
+    case P.Capture{+name, +c, True{}} <> +rest Nil{}:
+      search_equal(rest, Nil{})
+    case P.Capture{name, c, False{}} <> rest Nil{}:
+      {==}
+    case P.Capture{+name, +c, +optional} <> +rest +h <> +t:
+      %Equal.sym(Maybe<&2, P.Params>, P.search_segments(P.Capture{name, c, optional} <> rest, h <> t), P.row_one(~String.eq, ~String.starts_with, P.Capture{name, c, optional}, List.is_empty(&2, P.Segment, rest), h <> t, P.match_rows(~String.eq, ~String.starts_with, rest, h <> t)), rows_head(P.Capture{name, c, optional}, rest, h <> t)) : {_ == P.match_segments(P.Capture{name, c, optional} <> rest, h <> t) : Maybe<&2, P.Params>}
+      %Equal.sym(Rows, P.match_rows(~String.eq, ~String.starts_with, rest, h <> t), P.search_segments(rest, h <> t) <> P.match_rows(~String.eq, ~String.starts_with, rest, t), rows_cons(rest, h, t)) : {P.row_one(~String.eq, ~String.starts_with, P.Capture{name, c, optional}, List.is_empty(&2, P.Segment, rest), h <> t, _) == P.match_segments(P.Capture{name, c, optional} <> rest, h <> t) : Maybe<&2, P.Params>}
+      Equal.cong(Maybe<&2, P.Params>, Maybe<&2, P.Params>, r => Maybe.bind(&2, String, P.Params, E.decode(h), +value => E.choose(Maybe<&2, P.Params>, P.value_ok(c, value), u => P.put_capture(name, value, r), u => None{})), P.search_segments(rest, t), P.match_segments(rest, t), search_equal(rest, t))
+    case P.Wildcard{+name} <> Nil{} +p:
+      rows_head(P.Wildcard{name}, Nil{}, p)
+    case P.Wildcard{+name} <> +h <> +t +p:
+      rows_head(P.Wildcard{name}, h <> t, p)
+    case P.InteriorWildcard{} <> rest p:
+      {==}
+    case P.PrefixWildcard{prefix} <> rest p:
+      {==}
+    case P.Span{name} <> rest p:
+      {==}
