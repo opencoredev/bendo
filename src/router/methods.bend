@@ -163,14 +163,17 @@ def rank(m: R.Method) -> U32:
 def before(+a: R.Method, +b: R.Method) -> Bool:
   (rank(a) < rank(b) : U32) || (U32.is_eq(rank(a), rank(b)) && String.is_lt(R.method_text(a), R.method_text(b)))
 
-def insert(+m: R.Method, xs: List<&2, R.Method>) -> List<&2, R.Method>:
+# Keep set membership separate from position insertion. The guard makes
+# duplicate exclusion independent of the ordering invariant.
+def insert_new(+m: R.Method, xs: List<&2, R.Method>) -> List<&2, R.Method>:
   match xs:
     case Nil{}:
       [m]
     case +h <> +tail:
-      E.choose(List<&2, R.Method>, String.eq(R.method_text(m), R.method_text(h)), u => h <> tail, u => (
-        E.choose(List<&2, R.Method>, before(m, h), u => m <> h <> tail, u => h <> insert(m, tail))
-      ))
+      E.choose(List<&2, R.Method>, before(m, h), u => m <> h <> tail, u => h <> insert_new(m, tail))
+
+def insert(+m: R.Method, +xs: List<&2, R.Method>) -> List<&2, R.Method>:
+  E.choose(List<&2, R.Method>, contains(xs, m), u => xs, u => insert_new(m, xs))
 
 def canonical(xs: List<&2, R.Method>) -> List<&2, R.Method>:
   match xs:
