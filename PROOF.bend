@@ -5,6 +5,10 @@ import Base
 import ./proof/cookie-ows.bend as CookieOwsProof
 import ./proof/cookie-serialization.bend as CookieSerializationProof
 import ./proof/cookies.bend as CookieProof
+
+# BND-25
+import ./proof/errors.bend as ErrorProof
+
 import ./src/app/table.bend as Table
 import ./proof/middleware-selection-spec.bend as MiddlewareSelectionSpec
 import ./proof/lifecycle-selection.bend as LifecycleSelection
@@ -72,6 +76,7 @@ import ./src/router/methods-trie-proofs.bend as MethodTrieProof
 
 import ./proof/crypto-hex.bend as HexProof
 import ./proof/crypto-base64.bend as Base64Proof
+import ./proof/date-laws.bend as DateLaws
 import ./proof/crypto-compare.bend as CompareProof
 import ./proof/jwt.bend as JwtProof
 import ./proof/jwt-structure.bend as JwtStructureProof
@@ -531,6 +536,20 @@ def Laws.scoped_guard_built_selection(Tag, options, inside, outside, routes, com
 
 def Laws.scoped_group_built_selection(Tag, prefix, hooks, inside, outside, routes, compiled, layers, count, route, stage, built):
   Assembly.selection(Tag, List.append(&2, Table.Entry<Tag>, Scopes.group(Tag, prefix, hooks, inside), outside), List.append(&2, Table.Entry<Tag>, AssemblySpec.group(Tag, prefix, hooks, inside), outside), routes, compiled, layers, count, route, stage, built, Assembly.context(Tag, [], Scopes.group(Tag, prefix, hooks, inside), AssemblySpec.group(Tag, prefix, hooks, inside), outside, Assembly.group(Tag, prefix, hooks, inside)))
+
+# BND-25
+def Laws.http_error_private_message(code, message): {==}
+
+# BND-80: HTTP date round trip and independent IMF-fixdate spec.
+
+def Laws.http_date_roundtrip(second, bound):
+  DateLaws.roundtrip(second, bound)
+
+def Laws.http_date_imf_spec(second, bound):
+  DateLaws.imf_spec(second, bound)
+
+def Laws.http_date_parse_strict(text, second, ok):
+  DateLaws.strict(text, second, ok)
 
 # BND-43: constant-time comparison and the JWT signature layer.
 
