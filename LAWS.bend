@@ -2,6 +2,8 @@
 # Agents may add laws. Never delete or weaken one without a written reason
 # in the pull request.
 import Base
+import ./src/http/response.bend as Response
+import ./src/http/write_response.bend as WriteResponse
 import ./src/http.bend as Http
 import ./src/http/bytes.bend as Bytes
 import ./src/http/request.bend as Request
@@ -507,3 +509,48 @@ law method_recover:
   for +m: Request.Method
   for +ok: {Request.method_valid(m) == True{} : Bool}
   {Request.method(Request.method_text(m)) == m : Request.Method}
+
+# BND-9: buffered response framing, over every admissible response.
+
+# The first blank line ends the head, and all bytes after it are exactly the
+# supplied body. Its Content-Length field spells the decimal OCTET count.
+# This quantifies over all octet bodies, including every multibyte UTF-8 body.
+# HEAD and successful CONNECT are excluded because neither sends HTTP content.
+# 205 and 304, like 1xx/204, do not allow content (RFC 9110).
+law response_body_after_first_blank:
+  for +method: Request.Method
+  for +status: U32
+  for +headers: List<&2, Request.Header>
+  for +body: List<&2, U32>
+  for +representation: Maybe<&2, List<&2, U32>>
+  for +valid: {Response.valid(Response.Res{status, headers, body, representation}) == True{} : Bool}
+  for +allowed: {WriteResponse.allows_body(status) == True{} : Bool}
+  for +not_head: {WriteResponse.is_head(method) == False{} : Bool}
+  for +not_tunnel: {WriteResponse.tunnel(method, status) == False{} : Bool}
+  exs head: List<&2, U32>
+  {String.contains(Bytes.ascii(head), "\r\n\r\n") == False{} : Bool} &
+  {WriteResponse.write(method, Response.Res{status, headers, body, representation}) == Bytes.append(head, 13 <> 10 <> 13 <> 10 <> body) : List<&2, U32>} &
+  {String.contains(Bytes.ascii(Bytes.append(head, [13, 10])), "\r\ncontent-length: " ++ Nat.show(List.length(&2, U32, body)) ++ "\r\n") == True{} : Bool}
+
+# For EVERY 1xx/204 response and EVERY method: no body after its first blank
+# line, and no Content-Length field. Application framing fields cannot win.
+law response_forbidden_has_no_body_or_length:
+  for +method: Request.Method
+  for +status: U32
+  for +headers: List<&2, Request.Header>
+  for +body: List<&2, U32>
+  for +representation: Maybe<&2, List<&2, U32>>
+  for +valid: {Response.valid(Response.Res{status, headers, body, representation}) == True{} : Bool}
+  for +forbidden: {WriteResponse.forbidden(status) == True{} : Bool}
+  exs head: List<&2, U32>
+  {String.contains(Bytes.ascii(head), "\r\n\r\n") == False{} : Bool} &
+  {WriteResponse.write(method, Response.Res{status, headers, body, representation}) == Bytes.append(head, [13, 10, 13, 10]) : List<&2, U32>} &
+  {String.contains(Bytes.ascii(head), "\r\ncontent-length:") == False{} : Bool}
+
+# HEAD has exactly the GET head (including representation length) and no body,
+# for every valid response, including statuses which already forbid a body.
+law response_head_matches_get:
+  for +res: Response.Res
+  for +valid: {Response.valid(res) == True{} : Bool}
+  {WriteResponse.head(Request.Head{}, res) == WriteResponse.head(Request.Get{}, res) : List<&2, U32>} &
+  {WriteResponse.write(Request.Head{}, res) == WriteResponse.head(Request.Get{}, res) : List<&2, U32>}
