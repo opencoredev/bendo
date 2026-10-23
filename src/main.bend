@@ -34,6 +34,7 @@ def header_bytes(c: Handle.Ctx, name: String) -> List<&2, List<&2, U32>>: Contex
 def method(c: Handle.Ctx) -> Request.Method: Context.method(Unit, c)
 def path(c: Handle.Ctx) -> String: Context.path(Unit, c)
 def url(c: Handle.Ctx) -> String: Context.url(Unit, c)
+def rewrite(c: Handle.Ctx, method: Request.Method, path: String) -> Handle.Ctx: Context.rewrite(Unit, c, method, path)
 def raw_body(c: Handle.Ctx) -> List<&2, U32>: Context.raw_body(Unit, c)
 def text(c: Handle.Ctx, value: String) -> Response.Res: Context.text(Unit, c, value)
 def html(c: Handle.Ctx, value: String) -> Response.Res: Context.html(Unit, c, value)
@@ -58,6 +59,14 @@ def on(-Tag: Data, methods: List<&2, Request.Method>, path: String, tag: Tag) ->
 def route(-Tag: Data, entry: Methods.Registration(Tag)) -> Table.Entry<Tag>: Table.Route{entry}
 def use(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Use{None{}, id}
 def use_path(-Tag: Data, pattern: String, id: Tag) -> Table.Entry<Tag>: Table.Use{Some{pattern}, id}
+def on_request(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.Request{}, id}
+def on_parse(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.Parse{}, id}
+def on_transform(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.Transform{}, id}
+def before_handle(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.BeforeHandle{}, id}
+def after_handle(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.AfterHandle{}, id}
+def map_response(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.MapResponse{}, id}
+def on_error(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.Error{}, id}
+def on_after_response(-Tag: Data, id: Tag) -> Table.Entry<Tag>: Table.Hook{Table.AfterResponse{}, id}
 def routes(-Tag: Data, entries: List<&2, Table.Entry<Tag>>) -> Result<&2, &2, Methods.BuildError, Table.Table<Tag>>: Table.build(Tag, entries)
 
 def handle(~Tag: Data, ~Env: Data, ~dispatch: Tag -> Handle.Ctx -> Env -> IO(Response.Res), table: Table.Table<Tag>, env: Env, req: Request.Req, body: List<&2, U32>) -> IO(Response.Res):
