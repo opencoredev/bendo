@@ -6,6 +6,7 @@ import ./constraint.bend as C
 import ./octet-proofs.bend as OctetProof
 import ./codec-bits.bend as CodecBits
 import ./utf8-proofs.bend as Utf8Proof
+import ./utf8-code.bend as Code
 
 # A Boolean equality is usable evidence, including in impossible branches.
 def true_type(b: Bool) -> Type:
@@ -285,3 +286,28 @@ def fill_success(pattern, ps, admitted):
   match pattern:
     case P.Pattern{+segs}:
       fill_path(segs, ps, fill_segments_success(segs, ps, admitted))
+
+def clean_encoded_rep(+r: Code.Representation,
+    packed: {Code.is_packed(r) == True{} : Bool}) ->
+    {no_slash(E.encode_rep(r)) == True{} : Bool}:
+  match r:
+    case Code.Packed{+code}:
+      %Equal.sym(String, E.encode_octets(Code.octets(code)), OctetProof.escape_octets(OctetProof.reverse_octets(Code.octets(code))), OctetProof.structural_escape(Code.octets(code))) : {no_slash(_) == True{} : Bool}
+      octets_no_slash(OctetProof.reverse_octets(Code.octets(code)))
+    case Code.Outside{raw}:
+      absurd({no_slash(E.encode_rep(Code.Outside{raw})) == True{} : Bool}, false_true(packed))
+
+law encode_no_slash:
+  for +s: String
+  for valid: {E.scalars(s) == True{} : Bool}
+  {no_slash(E.encode(s)) == True{} : Bool}
+
+def encode_no_slash(s, valid):
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{Chr{+n}, +t}:
+      +yes = valid
+      first = and_left(E.scalar(n), E.scalars(t), yes)
+      rest = and_right(E.scalar(n), E.scalars(t), yes)
+      append_no_slash(E.encode_char(n), E.encode(t), clean_encoded_rep(Code.represent(n), Utf8Proof.scalar_is_packed(n, first)), encode_no_slash(t, rest))

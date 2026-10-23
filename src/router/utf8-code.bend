@@ -49,72 +49,10 @@ def bytes_of(xs: List<&2, Word(8n)>) -> List<&2, U32>:
 def bytes(code: Code) -> List<&2, U32>:
   bytes_of(octets(code))
 
-def read_two(hi: Word(5n), bs: List<&2, U32>) -> Maybe<&2, Read>:
-  match bs:
-    case U32{WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{b4, WCon{b5, WCon{False{}, WCon{True{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WNil{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} <> tail:
-      Some{Read{Two{WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{b4, WCon{b5, hi}}}}}}}, tail}}
-    case _:
-      None{}
-
-def read_three(hi: Word(4n), bs: List<&2, U32>) -> Maybe<&2, Read>:
-  match bs:
-    case U32{WCon{b6, WCon{b7, WCon{b8, WCon{b9, WCon{b10, WCon{b11, WCon{False{}, WCon{True{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WNil{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} <> U32{WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{b4, WCon{b5, WCon{False{}, WCon{True{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WNil{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} <> tail:
-      Some{Read{Three{WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{b4, WCon{b5, WCon{b6, WCon{b7, WCon{b8, WCon{b9, WCon{b10, WCon{b11, hi}}}}}}}}}}}}}, tail}}
-    case _:
-      None{}
-
-def read_four(hi: Word(3n), bs: List<&2, U32>) -> Maybe<&2, Read>:
-  match bs:
-    case U32{WCon{b12, WCon{b13, WCon{b14, WCon{b15, WCon{b16, WCon{b17, WCon{False{}, WCon{True{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WNil{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} <> U32{WCon{b6, WCon{b7, WCon{b8, WCon{b9, WCon{b10, WCon{b11, WCon{False{}, WCon{True{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WNil{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} <> U32{WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{b4, WCon{b5, WCon{False{}, WCon{True{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WNil{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} <> tail:
-      Some{Read{Four{WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{b4, WCon{b5, WCon{b6, WCon{b7, WCon{b8, WCon{b9, WCon{b10, WCon{b11, WCon{b12, WCon{b13, WCon{b14, WCon{b15, WCon{b16, WCon{b17, hi}}}}}}}}}}}}}}}}}}}, tail}}
-    case _:
-      None{}
-
 def flip(n: U32) -> Word(32n):
   match n:
     case U32{WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{b4, WCon{b5, WCon{b6, WCon{b7, WCon{b8, WCon{b9, WCon{b10, WCon{b11, WCon{b12, WCon{b13, WCon{b14, WCon{b15, WCon{b16, WCon{b17, WCon{b18, WCon{b19, WCon{b20, WCon{b21, WCon{b22, WCon{b23, WCon{b24, WCon{b25, WCon{b26, WCon{b27, WCon{b28, WCon{b29, WCon{b30, WCon{b31, WNil{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}:
       WCon{b31, WCon{b30, WCon{b29, WCon{b28, WCon{b27, WCon{b26, WCon{b25, WCon{b24, WCon{b23, WCon{b22, WCon{b21, WCon{b20, WCon{b19, WCon{b18, WCon{b17, WCon{b16, WCon{b15, WCon{b14, WCon{b13, WCon{b12, WCon{b11, WCon{b10, WCon{b9, WCon{b8, WCon{b7, WCon{b6, WCon{b5, WCon{b4, WCon{b3, WCon{b2, WCon{b1, WCon{b0, WNil{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}
-
-def read_head_bits(h: Word(32n), tail: List<&2, U32>) -> Maybe<&2, Read>:
-  match h:
-    case WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{b6, WCon{b5, WCon{b4, WCon{b3, WCon{b2, WCon{b1, WCon{b0, WNil{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}:
-      Some{Read{One{WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{b4, WCon{b5, WCon{b6, WNil{}}}}}}}}}, tail}}
-    case WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{True{}, WCon{True{}, WCon{False{}, WCon{b4, WCon{b3, WCon{b2, WCon{b1, WCon{b0, WNil{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}:
-      read_two(WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{b4, WNil{}}}}}}, tail)
-    case WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{True{}, WCon{True{}, WCon{True{}, WCon{False{}, WCon{b3, WCon{b2, WCon{b1, WCon{b0, WNil{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}:
-      read_three(WCon{b0, WCon{b1, WCon{b2, WCon{b3, WNil{}}}}}, tail)
-    case WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{False{}, WCon{True{}, WCon{True{}, WCon{True{}, WCon{True{}, WCon{False{}, WCon{b2, WCon{b1, WCon{b0, WNil{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}:
-      read_four(WCon{b0, WCon{b1, WCon{b2, WNil{}}}}, tail)
-    case _:
-      None{}
-
-def read_head(h: U32, tail: List<&2, U32>) -> Maybe<&2, Read>:
-  read_head_bits(flip(h), tail)
-
-def read(bs: List<&2, U32>) -> Maybe<&2, Read>:
-  match bs:
-    case Nil{}:
-      None{}
-    case h <> t:
-      read_head(h, t)
-
-# Prefix stripping and payload reconstruction work for every bit assignment,
-# independently of whether the resulting form is canonical or a valid scalar.
-law read_bytes_suffix:
-  for +code: Code
-  for +tail: List<&2, U32>
-  {read(List.append(&2, U32, bytes(code), tail)) == Some{Read{code, tail}} : Maybe<&2, Read>}
-
-def read_bytes_suffix(code, tail):
-  match code:
-    case One{WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{b4, WCon{b5, WCon{b6, WNil{}}}}}}}}}:
-      {==}
-    case Two{WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{b4, WCon{b5, WCon{b6, WCon{b7, WCon{b8, WCon{b9, WCon{b10, WNil{}}}}}}}}}}}}}:
-      {==}
-    case Three{WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{b4, WCon{b5, WCon{b6, WCon{b7, WCon{b8, WCon{b9, WCon{b10, WCon{b11, WCon{b12, WCon{b13, WCon{b14, WCon{b15, WNil{}}}}}}}}}}}}}}}}}}:
-      {==}
-    case Four{WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{b4, WCon{b5, WCon{b6, WCon{b7, WCon{b8, WCon{b9, WCon{b10, WCon{b11, WCon{b12, WCon{b13, WCon{b14, WCon{b15, WCon{b16, WCon{b17, WCon{b18, WCon{b19, WCon{b20, WNil{}}}}}}}}}}}}}}}}}}}}}}}:
-      {==}
 
 # A total representation keeps out-of-range input explicit.
 type Representation is Data:
@@ -485,3 +423,42 @@ def decode_code_suffix(code, tail):
       {==}
     case Four{WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{b4, WCon{b5, WCon{b6, WCon{b7, WCon{b8, WCon{b9, WCon{b10, WCon{b11, WCon{b12, WCon{b13, WCon{b14, WCon{b15, WCon{b16, WCon{b17, WCon{b18, WCon{b19, WCon{b20, WNil{}}}}}}}}}}}}}}}}}}}}}}}:
       {==}
+
+# The prefix API shares the same state machine as full-string decoding.
+def finish_read(+action: Step, tail: List<&2, U32>, remaining: Unit -> Maybe<&2, Read>) -> Maybe<&2, Read>:
+  match action:
+    case Next{state}:
+      remaining(Unit{})
+    case EmitCode{code}:
+      Some{Read{code, tail}}
+
+def scan(bs: List<&2, U32>, state: State) -> Maybe<&2, Read>:
+  match bs:
+    case Nil{}:
+      None{}
+    case h <> +t:
+      do Maybe<&2, Read>:
+        +action : Step <- step(state, h)
+        finish_read(action, t, u => scan(t, next_state(action)))
+
+def read(bs: List<&2, U32>) -> Maybe<&2, Read>:
+  scan(bs, Start{})
+
+# Prefix stripping and payload reconstruction work for every bit assignment,
+# independently of whether the resulting form is canonical or a valid scalar.
+law read_bytes_suffix:
+  for +code: Code
+  for +tail: List<&2, U32>
+  {read(List.append(&2, U32, bytes(code), tail)) == Some{Read{code, tail}} : Maybe<&2, Read>}
+
+def read_bytes_suffix(code, tail):
+  match code:
+    case One{WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{b4, WCon{b5, WCon{b6, WNil{}}}}}}}}}:
+      {==}
+    case Two{WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{b4, WCon{b5, WCon{b6, WCon{b7, WCon{b8, WCon{b9, WCon{b10, WNil{}}}}}}}}}}}}}:
+      {==}
+    case Three{WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{b4, WCon{b5, WCon{b6, WCon{b7, WCon{b8, WCon{b9, WCon{b10, WCon{b11, WCon{b12, WCon{b13, WCon{b14, WCon{b15, WNil{}}}}}}}}}}}}}}}}}}:
+      {==}
+    case Four{WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{b4, WCon{b5, WCon{b6, WCon{b7, WCon{b8, WCon{b9, WCon{b10, WCon{b11, WCon{b12, WCon{b13, WCon{b14, WCon{b15, WCon{b16, WCon{b17, WCon{b18, WCon{b19, WCon{b20, WNil{}}}}}}}}}}}}}}}}}}}}}}}:
+      {==}
+
