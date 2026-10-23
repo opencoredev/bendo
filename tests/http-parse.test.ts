@@ -1,3 +1,4 @@
+import { BEND_COMPILE_TIMEOUT } from "./harness.ts";
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -60,7 +61,7 @@ const compilation = Bun.spawnSync(
   [
     "timeout",
     "--foreground",
-    "30s",
+    BEND_COMPILE_TIMEOUT,
     bend.path,
     join(import.meta.dir, "fixtures/http-parse/consumer.bend"),
     "-o",

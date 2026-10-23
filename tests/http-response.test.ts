@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { connect } from "node:net";
 import { findBend } from "../packages/bendo/src/bend.ts";
-import { start, type RunningServer } from "./harness.ts";
+import { start, type RunningServer, BEND_COMPILE_TIMEOUT } from "./harness.ts";
 
 type BendList<T> = { $: "Nil" } | { $: "Con"; head: T; tail: BendList<T> };
 function list<T>(values: readonly T[]): BendList<T> {
@@ -42,7 +42,7 @@ const compilation = Bun.spawnSync(
   [
     "timeout",
     "--foreground",
-    "30s",
+    BEND_COMPILE_TIMEOUT,
     bend.path,
     join(import.meta.dir, "fixtures/http-response/consumer.bend"),
     "-o",
@@ -346,7 +346,7 @@ beforeAll(async () => {
     [
       "timeout",
       "--foreground",
-      "30s",
+      BEND_COMPILE_TIMEOUT,
       bend.path,
       join(import.meta.dir, "servers/response-server.bend"),
       "-o",

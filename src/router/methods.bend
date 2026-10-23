@@ -3,6 +3,7 @@ import Base
 import ./spec.bend as S
 import ./pattern.bend as P
 import ./encoding.bend as E
+import ./proofs.bend as Core
 import ../http/request.bend as R
 import ../http/bytes.bend as B
 
@@ -11,6 +12,26 @@ type Binding<-T: Data> is Data:
 
 def Table(-T: Data) -> Data:
   S.Table(Binding<T>)
+
+def list_valid(xs: List<&2, R.Method>) -> Bool:
+  match xs:
+    case Nil{}: True{}
+    case h <> tail: R.method_valid(h) && list_valid(tail)
+
+def TableValid(-T: Data, table: Table(T)) -> Bool:
+  match table:
+    case Nil{}: True{}
+    case S.Route{pattern, Binding{methods, tag}} <> tail:
+      list_valid(methods) && TableValid(T, tail)
+
+# Public resolution requires evidence for the exact stored table. Constructors
+# remain exported, but invalid method tokens cannot inhabit this type.
+type Valid<-T: Data> is Data:
+  Valid{table: Table(T), ok: {TableValid(T, table) == True{} : Bool}}
+
+def raw(-T: Data, valid: Valid<T>) -> Table(T):
+  Valid{table, ok} = valid
+  table
 
 def Registration(-T: Data) -> Data:
   S.Registration<Binding<T>>
@@ -73,6 +94,34 @@ def invalid_method(xs: List<&2, R.Method>) -> Maybe<&2, String>:
     case +h <> tail:
       E.choose(Maybe<&2, String>, R.method_valid(h), u => invalid_method(tail), u => Some{R.method_text(h)})
 
+def InvalidChecked(+methods: List<&2, R.Method>, invalid: Maybe<&2, String>) -> Type:
+  match invalid:
+    case Some{token}: Unit
+    case None{}: {list_valid(methods) == True{} : Bool}
+
+def invalid_checked_cons(+h: R.Method, +tail: List<&2, R.Method>, +invalid: Maybe<&2, String>,
+    valid: {R.method_valid(h) == True{} : Bool}, rest: InvalidChecked(tail, invalid)) -> InvalidChecked(h <> tail, invalid):
+  match invalid:
+    case Some{token}: Unit{}
+    case None{}:
+      %Equal.sym(Bool, R.method_valid(h), True{}, valid) : {_ && list_valid(tail) == True{} : Bool}
+      rest
+
+def invalid_checked_step(+h: R.Method, +tail: List<&2, R.Method>, test: Bool,
+    decision: {R.method_valid(h) == test : Bool},
+    rest: InvalidChecked(tail, invalid_method(tail))) ->
+    InvalidChecked(h <> tail, E.choose(Maybe<&2, String>, test, u => invalid_method(tail), u => Some{R.method_text(h)})):
+  match test:
+    case False{}: Unit{}
+    case True{}:
+      invalid_checked_cons(h, tail, invalid_method(tail), decision, rest)
+
+def invalid_checked(+methods: List<&2, R.Method>) -> InvalidChecked(methods, invalid_method(methods)):
+  match methods:
+    case Nil{}: {==}
+    case +h <> +tail:
+      invalid_checked_step(h, tail, R.method_valid(h), {==}, invalid_checked(tail))
+
 def prepend_built(-T: Data, pattern: P.Pattern, binding: Binding<T>, result: Result<&2, &2, BuildError, Table(T)>) -> Result<&2, &2, BuildError, Table(T)>:
   match result:
     case Fail{error}: Fail{error}
@@ -83,7 +132,8 @@ def build_pattern(-T: Data, index: Nat, source: String, binding: Binding<T>, com
     case Fail{error}: Fail{InvalidPattern{index, source, error}}
     case Done{pattern}: prepend_built(T, pattern, binding, rest(Unit{}))
 
-def build_methods(-T: Data, index: Nat, +source: String, methods: List<&2, R.Method>, tag: T, invalid: Maybe<&2, String>, rest: Unit -> Result<&2, &2, BuildError, Table(T)>) -> Result<&2, &2, BuildError, Table(T)>:
+# A caller-supplied None must carry evidence that every method is valid.
+def build_methods(-T: Data, index: Nat, +source: String, methods: List<&2, R.Method>, tag: T, invalid: Maybe<&2, String>, -checked: InvalidChecked(methods, invalid), rest: Unit -> Result<&2, &2, BuildError, Table(T)>) -> Result<&2, &2, BuildError, Table(T)>:
   match invalid:
     case Some{token}: Fail{InvalidMethod{index, source, token}}
     case None{}: build_pattern(T, index, source, Binding{methods, tag}, P.compile(source), rest)
@@ -95,10 +145,58 @@ def build_go(-T: Data, entries: List<&2, Registration(T)>, +index: Nat) -> Resul
     case Nil{}: Done{Nil{}}
     case S.Registration{+source, Binding{methods, tag}} <> rest:
       +normalized = normalize_methods(methods)
-      build_methods(T, index, source, normalized, tag, invalid_method(normalized), u => build_go(T, rest, 1n+index))
+      build_methods(T, index, source, normalized, tag, invalid_method(normalized), invalid_checked(normalized), u => build_go(T, rest, 1n+index))
 
-def build_table(-T: Data, entries: List<&2, Registration(T)>) -> Result<&2, &2, BuildError, Table(T)>:
-  build_go(T, entries, 0n)
+# A successful public build has no invalid methods, including raw on entries.
+def BuildValid(-T: Data, result: Result<&2, &2, BuildError, Table(T)>) -> Bool:
+  match result:
+    case Fail{error}: True{}
+    case Done{table}: TableValid(T, table)
+
+def prepend_valid(-T: Data, +pattern: P.Pattern, +methods: List<&2, R.Method>, +tag: T,
+    +result: Result<&2, &2, BuildError, Table(T)>,
+    valid: {list_valid(methods) == True{} : Bool},
+    rest: {BuildValid(T, result) == True{} : Bool}) ->
+    {BuildValid(T, prepend_built(T, pattern, Binding{methods, tag}, result)) == True{} : Bool}:
+  match result:
+    case Fail{error}: {==}
+    case Done{table}:
+      %Equal.sym(Bool, list_valid(methods), True{}, valid) : {_ && TableValid(T, table) == True{} : Bool}
+      rest
+
+def build_pattern_valid(-T: Data, +index: Nat, +source: String, +methods: List<&2, R.Method>, +tag: T,
+    +compiled: Result<&2, &2, P.PatternError, P.Pattern>,
+    rest: Unit -> Result<&2, &2, BuildError, Table(T)>,
+    valid: {list_valid(methods) == True{} : Bool},
+    good: {BuildValid(T, rest(Unit{})) == True{} : Bool}) ->
+    {BuildValid(T, build_pattern(T, index, source, Binding{methods, tag}, compiled, rest)) == True{} : Bool}:
+  match compiled:
+    case Fail{error}: {==}
+    case Done{pattern}: prepend_valid(T, pattern, methods, tag, rest(Unit{}), valid, good)
+
+def build_methods_valid(-T: Data, +index: Nat, +source: String, +methods: List<&2, R.Method>, +tag: T,
+    +invalid: Maybe<&2, String>, rest: Unit -> Result<&2, &2, BuildError, Table(T)>,
+    checked: InvalidChecked(methods, invalid), good: {BuildValid(T, rest(Unit{})) == True{} : Bool}) ->
+    {BuildValid(T, build_methods(T, index, source, methods, tag, invalid, checked, rest)) == True{} : Bool}:
+  match invalid:
+    case Some{token}: {==}
+    case None{}: build_pattern_valid(T, index, source, methods, tag, P.compile(source), rest, checked, good)
+
+def build_go_valid(-T: Data, +entries: List<&2, Registration(T)>, +index: Nat) ->
+    {BuildValid(T, build_go(T, entries, index)) == True{} : Bool}:
+  match entries:
+    case Nil{}: {==}
+    case S.Registration{+source, Binding{methods, +tag}} <> +tail:
+      +normalized = normalize_methods(methods)
+      build_methods_valid(T, index, source, normalized, tag, invalid_method(normalized), u => build_go(T, tail, 1n+index), invalid_checked(normalized), build_go_valid(T, tail, 1n+index))
+
+def certify(-T: Data, result: Result<&2, &2, BuildError, Table(T)>, good: {BuildValid(T, result) == True{} : Bool}) -> Result<&2, &2, BuildError, Valid<T>>:
+  match result:
+    case Fail{error}: Fail{error}
+    case Done{table}: Done{Valid{table, good}}
+
+def build_table(-T: Data, +entries: List<&2, Registration(T)>) -> Result<&2, &2, BuildError, Valid<T>>:
+  certify(T, build_go(T, entries, 0n), build_go_valid(T, entries, 0n))
 
 # Strip terminal empty segments, retaining one segment for the root.
 def trim_segments(xs: List<&2, String>) -> List<&2, String>:
@@ -263,7 +361,8 @@ def resolve_direct(-T: Data, hit: Maybe<&2, S.Match<T>>, +table: Table(T), +path
         case _:
           miss(T, path_exists(T, table, path, opts), canonical(matching_methods(T, table, path, opts)))
 
-def resolve(-T: Data, +table: Table(T), +path: String, +method: R.Method, +opts: Options) -> Resolution<T>:
+def resolve(-T: Data, valid: Valid<T>, +path: String, +method: R.Method, +opts: Options) -> Resolution<T>:
+  Valid{+table, ok} = valid
   resolve_direct(T, find(T, table, path, method, opts), table, path, method, opts)
 
 def allow_text(xs: List<&2, R.Method>) -> String:

@@ -26,10 +26,10 @@ def result(result: M.Resolution<Tag>) -> String:
     case M.NotFound{}:
       "404"
 
-def show(table: M.Table(Tag), path: String, method: R.Method) -> IO(Unit):
+def show(table: M.Valid<Tag>, path: String, method: R.Method) -> IO(Unit):
   IO.print(result(M.resolve(Tag, table, path, method, M.defaults())))
 
-def built(r: Result<&2, &2, M.BuildError, M.Table(Tag)>) -> IO(Unit):
+def built(r: Result<&2, &2, M.BuildError, M.Valid<Tag>>) -> IO(Unit):
   match r:
     case Fail{M.InvalidPattern{i, source, error}}:
       IO.print(Nat.show(i) ++ ":" ++ source ++ ":" ++ P.error_message(error))
@@ -45,7 +45,7 @@ def built(r: Result<&2, &2, M.BuildError, M.Table(Tag)>) -> IO(Unit):
         show(table, "/all", R.Head{})
         show(table, "/all", R.Extension{"PROPFIND"})
 
-def constructed(result: Result<&2, &2, M.BuildError, M.Table(Tag)>) -> IO(Unit):
+def constructed(result: Result<&2, &2, M.BuildError, M.Valid<Tag>>) -> IO(Unit):
   match result:
     case Fail{M.InvalidMethod{i, source, token}}:
       IO.print(Nat.show(i) ++ ":" ++ source ++ ":InvalidMethod:" ++ token)
@@ -72,6 +72,7 @@ def main() -> IO(Unit):
       M.head(Tag, "/head-only", First{})
     ]))
     built(M.build_table(Tag, [M.get(Tag, "/ok", First{}), M.post(Tag, "bad", Later{}), M.get(Tag, "/later", Later{})]))
+    show(M.Valid{[S.Route{P.Pattern{[P.Static{"a"}]}, M.Binding{[R.Get{}], First{}}}], {==}}, "/a", R.Post{})
     construction([M.get(Tag, "/a", First{})])
     construction([M.on(Tag, [R.Extension{"GET"}], "/a", First{})])
     construction([M.on(Tag, [R.Extension{"get"}], "/a", First{})])

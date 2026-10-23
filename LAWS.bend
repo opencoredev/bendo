@@ -24,6 +24,10 @@ import ./src/router/spec-proofs.bend as SpecProof
 import ./src/router/methods.bend as Methods
 import ./src/router/methods-proofs.bend as MethodProof
 
+import ./src/data/hex.bend as Hex
+import ./src/data/base64.bend as Base64
+import ./src/crypto/octets.bend as Octets
+
 # LAW: a text response is a head with no blank line in it, then a blank
 # line, then the body. So the first blank line in the response is the one
 # that ends the head, and a client that cuts there reads the body back.
@@ -719,7 +723,7 @@ law response_utf8_encode:
 # Indexed eligibility reads List.get and adapts only the requested path options.
 law methods_found_first:
   for -T: Data
-  for +table: Methods.Table(T)
+  for +table: Methods.Valid<T>
   for +path: String
   for +method: Request.Method
   for +opts: Methods.Options
@@ -727,7 +731,7 @@ law methods_found_first:
   for +tag: T
   for +params: Pattern.Params
   for returned: {Methods.resolve(T, table, path, method, opts) == Methods.Found{Spec.Match{i, tag, params}, False{}} : Methods.Resolution<T>}
-  MethodProof.First(T, table, path, method, opts, i, tag, params)
+  MethodProof.First(T, Methods.raw(T, table), path, method, opts, i, tag, params)
 
 # Default options are exactly the original matcher, for every pattern and path.
 law methods_default_path_identity:
@@ -739,33 +743,33 @@ law methods_default_path_identity:
 # independent token-membership predicate at each List.get registration.
 law methods_default_found_first:
   for -T: Data
-  for +table: Methods.Table(T)
+  for +table: Methods.Valid<T>
   for +path: String
   for +method: Request.Method
   for +i: Nat
   for +tag: T
   for +params: Pattern.Params
   for returned: {Methods.resolve(T, table, path, method, Methods.defaults()) == Methods.Found{Spec.Match{i, tag, params}, False{}} : Methods.Resolution<T>}
-  MethodProof.DefaultFirst(T, table, path, method, i, tag, params)
+  MethodProof.DefaultFirst(T, Methods.raw(T, table), path, method, i, tag, params)
 
 # Any explicit HEAD match anywhere in the table defeats every GET fallback.
 # The returned explicit HEAD is itself the first matching HEAD registration.
 law methods_explicit_head_priority:
   for -T: Data
-  for +table: Methods.Table(T)
+  for +table: Methods.Valid<T>
   for +path: String
   for +opts: Methods.Options
   for +i: Nat
   for +tag: T
   for +params: Pattern.Params
-  for matched: {MethodProof.match_at(T, table, path, Request.Head{}, opts, i) == Some{MethodProof.At{tag, params}} : Maybe<&2, MethodProof.AtMatch<T>>}
-  MethodProof.HeadPriority(T, table, path, opts)
+  for matched: {MethodProof.match_at(T, Methods.raw(T, table), path, Request.Head{}, opts, i) == Some{MethodProof.At{tag, params}} : Maybe<&2, MethodProof.AtMatch<T>>}
+  MethodProof.HeadPriority(T, Methods.raw(T, table), path, opts)
 
 # A fallback Found requires HEAD, a miss at every HEAD registration index,
 # and exactly the first GET path+method registration, including its params.
 law methods_head_fallback_first_get:
   for -T: Data
-  for +table: Methods.Table(T)
+  for +table: Methods.Valid<T>
   for +path: String
   for +method: Request.Method
   for +opts: Methods.Options
@@ -773,18 +777,18 @@ law methods_head_fallback_first_get:
   for +tag: T
   for +params: Pattern.Params
   for returned: {Methods.resolve(T, table, path, method, opts) == Methods.Found{Spec.Match{i, tag, params}, True{}} : Methods.Resolution<T>}
-  {method == Request.Head{} : Request.Method} & (MethodProof.Misses(T, table, path, Request.Head{}, opts) & MethodProof.First(T, table, path, Request.Get{}, opts, i, tag, params))
+  {method == Request.Head{} : Request.Method} & (MethodProof.Misses(T, Methods.raw(T, table), path, Request.Head{}, opts) & MethodProof.First(T, Methods.raw(T, table), path, Request.Get{}, opts, i, tag, params))
 
 # NotFound iff every registered pattern misses the path. NoPaths checks every
 # entry, including registrations whose method list is empty.
 law methods_not_found_iff_all_paths_miss:
   for -T: Data
-  for +table: Methods.Table(T)
+  for +table: Methods.Valid<T>
   for +path: String
   for +method: Request.Method
   for +opts: Methods.Options
-  ({Methods.resolve(T, table, path, method, opts) == Methods.NotFound{} : Methods.Resolution<T>} -> MethodProof.NoPaths(T, table, path, opts)) &
-    (MethodProof.NoPaths(T, table, path, opts) -> {Methods.resolve(T, table, path, method, opts) == Methods.NotFound{} : Methods.Resolution<T>})
+  ({Methods.resolve(T, table, path, method, opts) == Methods.NotFound{} : Methods.Resolution<T>} -> MethodProof.NoPaths(T, Methods.raw(T, table), path, opts)) &
+    (MethodProof.NoPaths(T, Methods.raw(T, table), path, opts) -> {Methods.resolve(T, table, path, method, opts) == Methods.NotFound{} : Methods.Resolution<T>})
 
 # ExactAllow independently requires strict canonical rank/token adjacency,
 # no repeated method token, absence of the requested method, and membership
@@ -794,20 +798,35 @@ law methods_not_found_iff_all_paths_miss:
 # combination and query-method token is covered.
 law methods_allow_exact:
   for -T: Data
-  for +table: Methods.Table(T)
+  for +table: Methods.Valid<T>
   for +path: String
   for +method: Request.Method
   for +opts: Methods.Options
   for +allow: List<&2, Request.Method>
-  for table_valid: {MethodProof.TableValid(T, table) == True{} : Bool}
   for valid: {Request.method_valid(method) == True{} : Bool}
   for returned: {Methods.resolve(T, table, path, method, opts) == Methods.MethodNotAllowed{allow} : Methods.Resolution<T>}
-  MethodProof.ExactAllow(T, table, path, method, opts, allow)
+  MethodProof.ExactAllow(T, Methods.raw(T, table), path, method, opts, allow)
 
-# Every successful public construction satisfies the 405 law's table hypothesis.
+# Every successful public construction carries valid method-token evidence.
 law methods_build_valid:
   for -T: Data
   for +entries: List<&2, Methods.Registration(T)>
-  for +table: Methods.Table(T)
-  for built: {Methods.build_table(T, entries) == Done{table} : Result<&2, &2, Methods.BuildError, Methods.Table(T)>}
-  {MethodProof.TableValid(T, table) == True{} : Bool}
+  for +table: Methods.Valid<T>
+  for built: {Methods.build_table(T, entries) == Done{table} : Result<&2, &2, Methods.BuildError, Methods.Valid<T>>}
+  {MethodProof.TableValid(T, Methods.raw(T, table)) == True{} : Bool}
+
+# BND-42: encoding inversion over every admissible octet list.
+# Octets.valid explicitly requires (x <= 255 : U32) for every element.
+law hex_roundtrip:
+  for +xs: List<&2, U32>
+  for valid: {Octets.valid(xs) == True{} : Bool}
+  {Hex.decode(Hex.encode(xs)) == Some{xs} : Maybe<&2, List<&2, U32>>}
+
+# Quantifying both flags promises all four RFC 4648 modes: standard/URL,
+# each with required padding or without padding. This is not a sample law.
+law base64_roundtrip:
+  for +xs: List<&2, U32>
+  for +url: Bool
+  for +padded: Bool
+  for valid: {Octets.valid(xs) == True{} : Bool}
+  {Base64.decode(Base64.encode(xs, url, padded), url, padded) == Some{xs} : Maybe<&2, List<&2, U32>>}
