@@ -66,8 +66,8 @@ def resolved_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context
 # Route the context on_request produced, through the configured router. Every
 # kind returns Methods.resolve's result (law methods_router_resolve).
 def route_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), kind: Router.RouterKind, table: Table.Table<Tag>, +ctx: Context.Ctx<Vars>, env: Env, slot: Chan(Context.Ctx<Vars>), route_slot: Chan(Maybe<&2, Nat>)) -> IO(Response.Res):
-  Table.Table{entries, compiled, layers} = table
-  resolved_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, Methods.resolve_with(Tag, kind, compiled, Context.path(Vars, ctx), Context.method(Vars, ctx), Methods.defaults()), layers, ctx, env, slot, route_slot, List.length(&2, Methods.Registration(Tag), entries))
+  Table.Table{entries, compiled, layers, count} = table
+  resolved_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, Methods.resolve_with(Tag, kind, compiled, Context.path(Vars, ctx), Context.method(Vars, ctx), Methods.defaults()), layers, ctx, env, slot, route_slot, count)
 
 def recover(~Vars: Data, ~Tag: Data, ~Env: Data, ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), ids: List<&2, Tag>, ctx: Context.Ctx<Vars>, env: Env, res: Response.Res, failed: Bool) -> IO(Response.Res):
   match failed:
@@ -85,13 +85,13 @@ def error_response(res: Response.Res) -> Bool:
 
 # Transport owns the deferred action. This internal entrypoint never runs it.
 def parsed_pending(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +kind: Router.RouterKind, +table: Table.Table<Tag>, +env: Env, +req: Request.Req, body: List<&2, U32>, parsed_query: Result<&2, &2, Query.Error, List<&2, Query.Entry>>) -> IO(Response.Res & IO(Unit)):
-  Table.Table{+entries, +compiled, +layers} = table
+  Table.Table{entries, +compiled, +layers, +count} = table
   Request.Req{+method, path, query, version, headers} = req
   match parsed_query:
     case Fail{error}: IO.pure(Response.Res & IO(Unit), (finish(method, Response.text(400, "Bad Request")), IO.pure(Unit, Unit{})))
     case Done{pairs}:
       +ctx = Context.variables(Vars, Context.create(req, [], body, pairs))
-      +initial = RouteSlot.identity(Tag, List.length(&2, Methods.Registration(Tag), entries), Methods.resolve_with(Tag, kind, compiled, path, method, Methods.defaults()))
+      +initial = RouteSlot.identity(Tag, count, Methods.resolve_with(Tag, kind, compiled, path, method, Methods.defaults()))
       request_ids = Table.scoped_stage_ids(Tag, layers, initial, Table.Request{})
       do IO<Response.Res & IO(Unit)>:
         +route_slot : Chan(Maybe<&2, Nat>) <- Chan.new(Maybe<&2, Nat>, 1)

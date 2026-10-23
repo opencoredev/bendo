@@ -935,8 +935,9 @@ law lifecycle_stage_selection:
   for +routes: List<&2, Methods.Registration(Tag)>
   for +compiled: Methods.Index<Tag>
   for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
   for +stage: Table.Stage
-  for built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  for built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers, count}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
   {Table.stage_ids(Tag, layers, stage) == MiddlewareSelectionSpec.hooks(Tag, entries, stage) : List<&2, Tag>}
 
 # The exact plan consumed by Handle: request, ordinary/parse/transform/before,
@@ -951,8 +952,9 @@ law lifecycle_ordered_selection:
   for +routes: List<&2, Methods.Registration(Tag)>
   for +compiled: Methods.Index<Tag>
   for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
   for +path: String
-  for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers, count}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
   {Table.lifecycle(Tag, layers, path) == MiddlewareSelectionSpec.lifecycle(Tag, entries, path) : Table.Lifecycle<Tag>}
 
 # BND-17: the trie router equals the reference router.
@@ -1047,9 +1049,10 @@ law scoped_stage_selection:
   for +routes: List<&2, Methods.Registration(Tag)>
   for +compiled: Methods.Index<Tag>
   for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
   for +route: Maybe<&2, Nat>
   for +stage: Table.Stage
-  for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers, count}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
   {Table.scoped_stage_ids(Tag, layers, route, stage) == ScopedSelectionSpec.stage_ids(Tag, entries, route, stage) : List<&2, Tag>}
 
 law scoped_lifecycle_selection:
@@ -1058,9 +1061,10 @@ law scoped_lifecycle_selection:
   for +routes: List<&2, Methods.Registration(Tag)>
   for +compiled: Methods.Index<Tag>
   for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
   for +path: String
   for +route: Maybe<&2, Nat>
-  for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers, count}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
   {Table.scoped_lifecycle(Tag, layers, path, route) == ScopedSelectionSpec.lifecycle(Tag, entries, path, route) : Table.Lifecycle<Tag>}
 
 # Even a matching path grants no scoped hook without route membership.
@@ -1070,9 +1074,10 @@ law scoped_nonmember_global_only:
   for +routes: List<&2, Methods.Registration(Tag)>
   for +compiled: Methods.Index<Tag>
   for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
   for +route: Maybe<&2, Nat>
   for +stage: Table.Stage
-  for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers, count}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
   for no: {ScopedSelectionSpec.member(Tag, entries, route) == False{} : Bool}
   {Table.scoped_stage_ids(Tag, layers, route, stage) == Table.stage_ids(Tag, layers, stage) : List<&2, Tag>}
 
@@ -1082,8 +1087,9 @@ law scoped_miss_global_only:
   for +routes: List<&2, Methods.Registration(Tag)>
   for +compiled: Methods.Index<Tag>
   for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
   for +stage: Table.Stage
-  for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers, count}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
   {Table.scoped_stage_ids(Tag, layers, None{}, stage) == Table.stage_ids(Tag, layers, stage) : List<&2, Tag>}
 
 # The real runtime boundary: every path, method, router kind and option set.
@@ -1095,13 +1101,14 @@ law scoped_resolved_stage_selection:
   for +routes: List<&2, Methods.Registration(Tag)>
   for +compiled: Methods.Index<Tag>
   for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
   for +kind: Router.RouterKind
   for +path: String
   for +method: Request.Method
   for +opts: Methods.Options
   for +stage: Table.Stage
-  for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
-  {Table.scoped_stage_ids(Tag, layers, RouteSlot.identity(Tag, List.length(&2, Methods.Registration(Tag), routes), Methods.resolve_with(Tag, kind, compiled, path, method, opts)), stage) == ScopedSelectionSpec.stage_ids(Tag, entries, ScopedSelectionSpec.resolved_route(Tag, entries, Methods.resolve_with(Tag, kind, compiled, path, method, opts)), stage) : List<&2, Tag>}
+  for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers, count}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  {Table.scoped_stage_ids(Tag, layers, RouteSlot.identity(Tag, count, Methods.resolve_with(Tag, kind, compiled, path, method, opts)), stage) == ScopedSelectionSpec.stage_ids(Tag, entries, ScopedSelectionSpec.resolved_route(Tag, entries, Methods.resolve_with(Tag, kind, compiled, path, method, opts)), stage) : List<&2, Tag>}
 
 # BND-24: assembly from raw public declarations. Equality includes scope
 # provenance, route paths/tags/order, every duplicate and every placement.
@@ -1147,9 +1154,10 @@ law scoped_guard_built_selection:
   for +routes: List<&2, Methods.Registration(Tag)>
   for +compiled: Methods.Index<Tag>
   for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
   for +route: Maybe<&2, Nat>
   for +stage: Table.Stage
-  for +built: {Table.build(Tag, List.append(&2, Table.Entry<Tag>, Scopes.guard(Tag, options, inside), outside)) == Done{Table.Table{routes, compiled, layers}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  for +built: {Table.build(Tag, List.append(&2, Table.Entry<Tag>, Scopes.guard(Tag, options, inside), outside)) == Done{Table.Table{routes, compiled, layers, count}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
   {Table.scoped_stage_ids(Tag, layers, route, stage) == ScopedSelectionSpec.stage_ids(Tag, List.append(&2, Table.Entry<Tag>, AssemblySpec.guard(Tag, options, inside), outside), route, stage) : List<&2, Tag>}
 
 law scoped_group_built_selection:
@@ -1161,7 +1169,8 @@ law scoped_group_built_selection:
   for +routes: List<&2, Methods.Registration(Tag)>
   for +compiled: Methods.Index<Tag>
   for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
   for +route: Maybe<&2, Nat>
   for +stage: Table.Stage
-  for +built: {Table.build(Tag, List.append(&2, Table.Entry<Tag>, Scopes.group(Tag, prefix, hooks, inside), outside)) == Done{Table.Table{routes, compiled, layers}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  for +built: {Table.build(Tag, List.append(&2, Table.Entry<Tag>, Scopes.group(Tag, prefix, hooks, inside), outside)) == Done{Table.Table{routes, compiled, layers, count}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
   {Table.scoped_stage_ids(Tag, layers, route, stage) == ScopedSelectionSpec.stage_ids(Tag, List.append(&2, Table.Entry<Tag>, AssemblySpec.group(Tag, prefix, hooks, inside), outside), route, stage) : List<&2, Tag>}

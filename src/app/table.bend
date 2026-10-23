@@ -57,9 +57,10 @@ type Middleware<-Tag: Data> is Data:
   Scoped{from_end: Nat, hooks: List<&2, Placement<Tag>>}
   Middleware{pattern: Maybe<&2, Pattern.Pattern>, tag: Tag}
 
-# The compiled index holds the validated table and its trie, built once.
+# The compiled index and route count are built once. Request-time scope
+# identity conversion must not traverse the registration list.
 type Table<-Tag: Data> is Data:
-  Table{entries: List<&2, Methods.Registration(Tag)>, compiled: Methods.Index<Tag>, middleware: List<&2, Middleware<Tag>>}
+  Table{entries: List<&2, Methods.Registration(Tag)>, compiled: Methods.Index<Tag>, middleware: List<&2, Middleware<Tag>>, count: Nat}
 
 def route_entries(-Tag: Data, xs: List<&2, Entry<Tag>>) -> List<&2, Methods.Registration(Tag)>:
   match xs:
@@ -101,10 +102,10 @@ def middleware_entries(-Tag: Data, xs: List<&2, Entry<Tag>>, +index: Nat) -> Res
     case Use{Some{+source}, tag} <> tail:
       pattern_built(Tag, index, source, tag, Pattern.compile(source), u => middleware_entries(Tag, tail, 1n+index))
 
-def built(-Tag: Data, entries: List<&2, Methods.Registration(Tag)>, middleware: List<&2, Middleware<Tag>>, result: Result<&2, &2, Methods.BuildError, Methods.Valid<Tag>>) -> Result<&2, &2, Methods.BuildError, Table<Tag>>:
+def built(-Tag: Data, +entries: List<&2, Methods.Registration(Tag)>, middleware: List<&2, Middleware<Tag>>, result: Result<&2, &2, Methods.BuildError, Methods.Valid<Tag>>) -> Result<&2, &2, Methods.BuildError, Table<Tag>>:
   match result:
     case Fail{error}: Fail{error}
-    case Done{table}: Done{Table{entries, Methods.prepare(Tag, table), middleware}}
+    case Done{table}: Done{Table{entries, Methods.prepare(Tag, table), middleware, List.length(&2, Methods.Registration(Tag), entries)}}
 
 def collected(-Tag: Data, +entries: List<&2, Methods.Registration(Tag)>, result: Result<&2, &2, Methods.BuildError, List<&2, Middleware<Tag>>>) -> Result<&2, &2, Methods.BuildError, Table<Tag>>:
   match result:

@@ -25,7 +25,7 @@ def filter(-Tag: Data, entries: List<&2, Table.Entry<Tag>>, +path: String) -> Li
       compiled(Tag, tag, filter(Tag, rest, path), path, Pattern.compile(source))
 
 def selected(-Tag: Data, table: Table.Table<Tag>, path: String) -> List<&2, Tag>:
-  Table.Table{entries, routes, middleware} = table
+  Table.Table{entries, routes, middleware, count} = table
   Table.selected(Tag, middleware, path)
 
 # Independent constructor comparison, deliberately not Table.stage_number.
