@@ -2,6 +2,7 @@
 import Base
 import ./bytes.bend as Bytes
 import ./request.bend as Request
+import ../data/utf8.bend as Utf8
 
 type Res is Data:
   Res{status: U32, headers: List<&2, Request.Header>, body: List<&2, U32>, representation: Maybe<&2, List<&2, U32>>}
@@ -17,43 +18,43 @@ def scalar_valid(c: U32, valid: Bool) -> U32:
 def scalar(+c: U32) -> U32:
   scalar_valid(c, (c <= 1114111 : U32) && Bool.not((c >= 55296 : U32) && (c <= 57343 : U32)))
 
-def utf8_four(+c: U32, tail: List<&2, U32>, short: Bool) -> List<&2, U32>:
-  match short:
-    case True{}:
-      (224 + (c / 4096) : U32) <> (128 + ((c / 64) % 64) : U32) <> (128 + (c % 64) : U32) <> tail
-    case False{}:
-      (240 + (c / 262144) : U32) <> (128 + ((c / 4096) % 64) : U32) <> (128 + ((c / 64) % 64) : U32) <> (128 + (c % 64) : U32) <> tail
-
-def utf8_three(+c: U32, tail: List<&2, U32>, short: Bool) -> List<&2, U32>:
-  match short:
-    case True{}:
-      (192 + (c / 64) : U32) <> (128 + (c % 64) : U32) <> tail
-    case False{}:
-      utf8_four(c, tail, (c < 65536 : U32))
-
-def utf8_one(+c: U32, tail: List<&2, U32>, ascii: Bool) -> List<&2, U32>:
-  match ascii:
-    case True{}:
-      c <> tail
-    case False{}:
-      utf8_three(c, tail, (c < 2048 : U32))
-
-def utf8_char(+c: U32, tail: List<&2, U32>) -> List<&2, U32>:
-  utf8_one(c, tail, (c < 128 : U32))
-
-def utf8(s: String) -> List<&2, U32>:
+# Preserve the replacement policy for malformed Char values, then use the
+# shared proven codec. Both passes are tail recursive in compiled JavaScript.
+def scalars_go(s: String, acc: String) -> String:
   match s:
     case SNil{}:
-      []
+      String.reverse(acc)
     case SCon{Chr{c}, t}:
-      utf8_char(scalar(c), utf8(t))
+      scalars_go(t, SCon{Chr{scalar(c)}, acc})
+
+def scalars(s: String) -> String:
+  scalars_go(s, "")
+
+def utf8(s: String) -> List<&2, U32>:
+  Utf8.encode(scalars(s))
+
+def octets_go(xs: List<&2, U32>, ok: Bool) -> Bool:
+  match xs ok:
+    case _ False{}:
+      False{}
+    case Nil{} True{}:
+      True{}
+    case c <> t True{}:
+      octets_go(t, (c <= 255 : U32))
 
 def octets(xs: List<&2, U32>) -> Bool:
+  octets_go(xs, True{})
+
+# Count in an accumulator: Base List.length is recursive on the JS stack.
+def length_go(xs: List<&2, U32>, n: Nat) -> Nat:
   match xs:
     case Nil{}:
-      True{}
+      n
     case c <> t:
-      (c <= 255 : U32) && octets(t)
+      length_go(t, 1n+n)
+
+def length(xs: List<&2, U32>) -> Nat:
+  length_go(xs, 0n)
 
 def representation_valid(r: Maybe<&2, List<&2, U32>>) -> Bool:
   match r:

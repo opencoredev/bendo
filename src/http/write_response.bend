@@ -43,14 +43,14 @@ def representation_length(rep: Maybe<&2, List<&2, U32>>, hs: List<&2, Request.He
     case None{}:
       hs
     case Some{b}:
-      length_header(List.length(&2, U32, b)) <> hs
+      length_header(Response.length(b)) <> hs
 
 def reset_headers(body: List<&2, U32>, hs: List<&2, Request.Header>, reset: Bool) -> List<&2, Request.Header>:
   match reset:
     case True{}:
       length_header(0n) <> hs
     case False{}:
-      length_header(List.length(&2, U32, body)) <> hs
+      length_header(Response.length(body)) <> hs
 
 def modified_headers(body: List<&2, U32>, rep: Maybe<&2, List<&2, U32>>, hs: List<&2, Request.Header>, reset: Bool, unmodified: Bool) -> List<&2, Request.Header>:
   match unmodified:

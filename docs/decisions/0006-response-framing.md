@@ -4,6 +4,9 @@ BND-9 adds `Response.Res` and `WriteResponse.write(method, res)`. Bodies are
 `List<&2, U32>` octets, following [0002](0002-bytes.md). `Response.text(status,
 text)` UTF-8 encodes the text once. The writer counts the resulting octets,
 not Bend characters. Invalid Unicode scalar values encode as U+FFFD.
+`Response.text` uses the shared `src/data/utf8.bend` encoder after replacing
+invalid scalar values. `response_utf8_encode` proves that decoding the encoding
+of any scalar String returns that String. The framing laws cover all octet bodies.
 
 ## Framing table
 
@@ -87,7 +90,19 @@ table, checks text and binary bodies, conflicting framing, invalid headers,
 HEAD across every status, and exact curl/raw-socket heads for 101, 200, 204,
 304 and 404. `bun run prove` checks the universal framing laws in `LAWS.bend`.
 
-The universal head-safety and Content-Length proofs remain open in this progress
-commit. The root `prove` and `check` gates fail; passing wire tests do not close
-those claims. The HEAD and payload-equation proofs check separately with the
-strict kernel.
+The response suite also compiles the JavaScript writer and writes 64 KiB
+binary, ASCII, and multibyte UTF-8 bodies. Validation, scalar normalization,
+UTF-8 encoding, and length counting use tail recursion so these bodies do not
+consume one JavaScript stack frame per byte or character.
+
+The BND-9 laws observe the first CRLFCRLF with an independent splitter and
+parse the complete head with the BND-7 header parser. They require valid heads,
+exact case-insensitive Content-Length value lists, no Transfer-Encoding, and
+exact payload suffixes. Separate laws cover 304 representation witnesses and
+compare independently split GET and HEAD wire output. These statements replace
+the earlier substring checks, which did not establish uniqueness or exclude an
+overlapping delimiter. `bend PROOF.bend --verdict` prints `ALL PROOFS CHECK`,
+including all five BND-9 laws. The response suite passes 14 tests, including native
+wire checks and the 64 KiB JavaScript regression. On 2026-10-22,
+`bun run check` passes the version, strict proofs, lint, formatting, TypeScript,
+benchmark typecheck, and integration gates: 349 tests pass, with zero failures.

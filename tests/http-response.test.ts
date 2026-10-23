@@ -66,6 +66,25 @@ const write = exported("write");
 const checked = exported("checked");
 const utf8 = exported("utf8");
 const text = exported("text");
+const splitFirst = exported("split_first");
+const parseHead = exported("parse_head");
+const headerValues = exported("header_values");
+function some(value: unknown): unknown {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "$" in value &&
+    value.$ === "Some" &&
+    "value" in value
+  )
+    return value.value;
+  throw new Error("Expected Some from the independent response observer");
+}
+function splitPair(value: unknown): { fst: unknown; snd: unknown } {
+  if (typeof value === "object" && value !== null && "fst" in value && "snd" in value)
+    return { fst: value.fst, snd: value.snd };
+  throw new Error("Expected split pair from the independent response observer");
+}
 const get = { $: "Get" };
 const head = { $: "Head" };
 function response(
@@ -159,6 +178,38 @@ const reasons: Readonly<Record<number, string>> = {
   511: "Network Authentication Required",
 };
 
+describe("independent response law observers", () => {
+  test("first delimiter wins over overlapping and payload delimiters", () => {
+    for (const raw of [
+      "HTTP/1.1 200 OK\r\ncontent-length: 5\r\nx: y\r\n\r\n\r\ncafé",
+      "HTTP/1.1 200 OK\r\ncontent-length: 5\r\n\r\ncafé\r\n\r\n",
+    ]) {
+      const expected = Buffer.from(raw);
+      const offset = expected.indexOf("\r\n\r\n");
+      const observed = splitPair(some(splitFirst(list(Array.from(expected)))));
+      expect(bytes(observed.fst)).toEqual(expected.subarray(0, offset));
+      expect(bytes(observed.snd)).toEqual(expected.subarray(offset + 4));
+    }
+    expect(splitFirst(list(Array.from(Buffer.from("HTTP/1.1 200 OK\r\n"))))).toEqual({ $: "None" });
+  });
+  test("parses framing fields independently, preserving duplicates and folding case", () => {
+    const raw =
+      "HTTP/1.1 200 OK\r\nContent-Length: 5\r\ncOnTeNt-LeNgTh: 999\r\nTransfer-Encoding: chunked\r\n\r\n";
+    const parsed = some(parseHead(list(Array.from(Buffer.from(raw)))));
+    expect(headerValues(parsed, "CONTENT-LENGTH")).toEqual(list([list([53]), list([57, 57, 57])]));
+    expect(headerValues(parsed, "transfer-ENCODING")).toEqual(
+      list([list(Array.from(Buffer.from("chunked")))]),
+    );
+    for (const invalid of [
+      "HTTP/1.1 200 OK\r\nbad name: value\r\n\r\n",
+      "HTTP/1.1 200 OK\r\nx: a\nb\r\n\r\n",
+      "HTTP/1.1 200 OK\r\nx: a\r\n\r\nextra",
+      "HTTP/1.1 999 Wrong\r\n\r\n",
+    ])
+      expect(parseHead(list(Array.from(Buffer.from(invalid))))).toEqual({ $: "None" });
+  });
+});
+
 describe("compiled buffered response writer", () => {
   test("every assigned status from 100 through 599 writes its standard reason phrase", () => {
     for (let status = 100; status <= 599; status++) {
@@ -181,6 +232,19 @@ describe("compiled buffered response writer", () => {
         `HTTP/1.1 200 OK\r\ncontent-length: ${expected.length}\r\ncontent-type: text/plain; charset=utf-8`,
       );
       expect(result.body).toEqual(expected);
+    }
+  });
+  test("compiled JavaScript writes 64 KiB binary and UTF-8 text bodies without stack overflow", () => {
+    const binary = Buffer.alloc(65536, 255);
+    const binaryResult = parts(wire(get, response(200, Array.from(binary))));
+    expect(binaryResult.head).toBe("HTTP/1.1 200 OK\r\ncontent-length: 65536");
+    expect(binaryResult.body).toEqual(binary);
+
+    for (const value of ["x".repeat(65536), "é".repeat(32768)]) {
+      expect(bytes(utf8(value))).toEqual(Buffer.from(value));
+      const result = parts(wire(get, text(200, value)));
+      expect(result.head).toContain("\r\ncontent-length: 65536\r\n");
+      expect(result.body).toEqual(Buffer.from(value));
     }
   });
   test("binary bodies preserve all 256 octets and decimal length boundaries", () => {

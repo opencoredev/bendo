@@ -1,6 +1,7 @@
 # Constructive decimal formatting safety, independent of the root laws.
 import Base
 import ../src/http/bytes.bend as Bytes
+import ./equality.bend as E
 
 type DecimalState is Data:
   D0{}
@@ -60,10 +61,10 @@ def remainder(s: DecimalState) -> Nat:
     case D9{}:
       9n
 
-def digit(c: Char) -> Bool:
+def digit(+c: Char) -> Bool:
   match c:
     case Chr{x}:
-      Bytes.value_octet(x)
+      Bytes.value_octet(x) && Bool.not(Bytes.ows(x))
 
 def pair_digit(dq: Char & Nat) -> Bool:
   (d, q) = dq
@@ -117,10 +118,24 @@ def divmod_digit(+n: Nat, +s: DecimalState, +d: Nat) -> {pair_digit(Nat.show.put
         case D9{}:
           divmod_digit(p, D0{}, 1n+d)
 
+def and_left(a: Bool, b: Bool, e: {a && b == True{} : Bool}) -> {a == True{} : Bool}:
+  match a:
+    case False{}:
+      e
+    case True{}:
+      {==}
+
+def and_right(a: Bool, b: Bool, e: {a && b == True{} : Bool}) -> {b == True{} : Bool}:
+  match a:
+    case False{}:
+      E.absurd({b == True{} : Bool}, E.false_true(e))
+    case True{}:
+      e
+
 def value_cons(+d: Char, +s: String, de: {digit(d) == True{} : Bool}, se: {Bytes.value(Bytes.encode(s)) == True{} : Bool}) -> {Bytes.value(Bytes.encode(SCon{d, s})) == True{} : Bool}:
   match d:
     case Chr{x}:
-      Equal.trans(Bool, Bytes.value_octet(x) && Bytes.value(Bytes.encode(s)), Bytes.value(Bytes.encode(s)), True{}, Equal.cong(Bool, Bool, b => b && Bytes.value(Bytes.encode(s)), Bytes.value_octet(x), True{}, de), se)
+      Equal.trans(Bool, Bytes.value_octet(x) && Bytes.value(Bytes.encode(s)), Bytes.value(Bytes.encode(s)), True{}, Equal.cong(Bool, Bool, b => b && Bytes.value(Bytes.encode(s)), Bytes.value_octet(x), True{}, and_left(Bytes.value_octet(x), Bool.not(Bytes.ows(x)), de)), se)
 
 def fin_value(+g: Nat, +acc: String, dq: Char & Nat, de: {pair_digit(dq) == True{} : Bool}, ae: {Bytes.value(Bytes.encode(acc)) == True{} : Bool}, step: @n:Nat -> @s:String -> {Bytes.value(Bytes.encode(s)) == True{} : Bool} -> {Bytes.value(Bytes.encode(Nat.show.go(g, n, s))) == True{} : Bool}) -> {Bytes.value(Bytes.encode(Nat.show.fin(g, acc, dq))) == True{} : Bool}:
   match dq:
@@ -160,3 +175,46 @@ def go_nonempty(+f: Nat, +n: Nat, +acc: String, ae: {String.is_empty(acc) == Fal
 
 def nat_show_nonempty(+n: Nat) -> {String.is_empty(Nat.show(n)) == False{} : Bool}:
   fin_nonempty(n, SNil{}, Nat.show.put(Nat.divmod(n, 10n)), +k => +s => e => go_nonempty(n, k, s, e))
+
+
+def no_ows(xs: List<&2, U32>) -> Bool:
+  match xs:
+    case Nil{}:
+      True{}
+    case +c <> t:
+      Bool.not(Bytes.ows(c)) && no_ows(t)
+
+def no_ows_cons(+c: U32, +t: List<&2, U32>, yes: {Bool.not(Bytes.ows(c)) == True{} : Bool}, tail: {no_ows(t) == True{} : Bool}) -> {no_ows(c <> t) == True{} : Bool}:
+  %Equal.sym(Bool, Bool.not(Bytes.ows(c)), True{}, yes) : {_ && no_ows(t) == True{} : Bool}
+  tail
+
+def no_ows_char(+d: Char, +s: String, de: {digit(d) == True{} : Bool}, se: {no_ows(Bytes.encode(s)) == True{} : Bool}) -> {no_ows(Bytes.encode(SCon{d, s})) == True{} : Bool}:
+  match d:
+    case Chr{x}:
+      no_ows_cons(x, Bytes.encode(s), and_right(Bytes.value_octet(x), Bool.not(Bytes.ows(x)), de), se)
+
+def fin_no_ows(+g: Nat, +acc: String, dq: Char & Nat, de: {pair_digit(dq) == True{} : Bool}, ae: {no_ows(Bytes.encode(acc)) == True{} : Bool}, step: @n:Nat -> @s:String -> {no_ows(Bytes.encode(s)) == True{} : Bool} -> {no_ows(Bytes.encode(Nat.show.go(g, n, s))) == True{} : Bool}) -> {no_ows(Bytes.encode(Nat.show.fin(g, acc, dq))) == True{} : Bool}:
+  match dq:
+    case (+d, q):
+      match q:
+        case 0n:
+          no_ows_char(d, acc, de, ae)
+        case 1n+p:
+          step(1n+p, SCon{d, acc}, no_ows_char(d, acc, de, ae))
+
+def go_no_ows(+f: Nat, +n: Nat, +acc: String, ae: {no_ows(Bytes.encode(acc)) == True{} : Bool}) -> {no_ows(Bytes.encode(Nat.show.go(f, n, acc))) == True{} : Bool}:
+  match f:
+    case 0n:
+      ae
+    case 1n+g:
+      fin_no_ows(g, acc, Nat.show.put(Nat.divmod(n, 10n)), divmod_digit(n, D0{}, 0n), ae, +k => +s => e => go_no_ows(g, k, s, e))
+
+def nat_show_no_ows(+n: Nat) -> {no_ows(Bytes.encode(Nat.show(n))) == True{} : Bool}:
+  fin_no_ows(n, SNil{}, Nat.show.put(Nat.divmod(n, 10n)), divmod_digit(n, D0{}, 0n), {==}, +k => +s => e => go_no_ows(n, k, s, e))
+
+def reverse_no_ows(+xs: List<&2, U32>, +acc: List<&2, U32>, +ok: {no_ows(xs) == True{} : Bool}, +ae: {no_ows(acc) == True{} : Bool}) -> {no_ows(List.reverse.go(&2, U32, xs, acc)) == True{} : Bool}:
+  match xs:
+    case Nil{}:
+      ae
+    case c <> t:
+      reverse_no_ows(t, c <> acc, and_right(Bool.not(Bytes.ows(c)), no_ows(t), ok), no_ows_cons(c, acc, and_left(Bool.not(Bytes.ows(c)), no_ows(t), ok), ae))
