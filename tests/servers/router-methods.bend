@@ -69,12 +69,18 @@ def options(q: Maybe<&2, String>) -> M.Options:
     case _:
       M.defaults()
 
+# This fixture handles one request per socket. Advertise the close so fetch
+# never races a reused connection against Socket.close under parallel load.
+def closing(res: Response.Res) -> Response.Res:
+  Response.Res{status, hs, body, rep} = res
+  Response.Res{status, Request.Header{"connection", Bytes.encode("close")} <> hs, body, rep}
+
 def respond(table: M.Valid<Tag>, parsed: Request.ParseResult) -> List<&2, U32>:
   match parsed:
     case Request.Parsed{Request.Req{+m, p, q, v, hs}, rest}:
-      Write.write(m, answer(M.resolve(Tag, table, p, m, options(q))))
+      Write.write(m, closing(answer(M.resolve(Tag, table, p, m, options(q)))))
     case _:
-      Write.write(Request.Get{}, Response.body(400, [], []))
+      Write.write(Request.Get{}, closing(Response.body(400, [], [])))
 
 def sent(m: Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>) -> IO(Unit):
   (s, r) = m
