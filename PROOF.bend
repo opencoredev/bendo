@@ -2,6 +2,7 @@
 import Base
 import ./proof/json.bend as JsonProof
 import ./proof/json-codec.bend as JsonCodecProof
+import ./proof/json-number.bend as JsonNumberProof
 import ./src/http/response.bend as Response
 import ./src/http/write_response.bend as WriteResponse
 import ./src/http.bend as Http

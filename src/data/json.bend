@@ -26,6 +26,18 @@ type Frame is Data:
   ObjectFrame{rev: List<&2, Field>}
   MemberFrame{key: String, rev: List<&2, Field>}
 
+type Phase is Data:
+  PStart{}
+  PMinus{}
+  PZero{}
+  PInteger{}
+  PDot{}
+  PFraction{}
+  PExponent{}
+  PSign{}
+  PDigits{}
+  PInvalid{}
+
 type Mode is Data:
   MValue{}
   MArrayFirst{}
@@ -41,7 +53,7 @@ type Mode is Data:
   MLowSlash{high: U32, rev: String, key: Bool}
   MLowU{high: U32, rev: String, key: Bool}
   MLiteral{rest: String, value: Json}
-  MNumber{phase: U32, rev: String}
+  MNumber{phase: Phase, rev: String}
   MBad{error: Error}
 
 type Machine is Data:
@@ -58,51 +70,50 @@ def whitespace(c: U32) -> Bool:
 def digit(+c: U32) -> Bool:
   (c >= 48 : U32) && (c <= 57 : U32)
 
-# 0=start, 1=minus, 2=zero, 3=integer, 4=dot, 5=fraction,
-# 6=exponent marker, 7=exponent sign, 8=exponent digits, 99=invalid.
-def number_digit(phase: U32, c: U32, yes: Bool) -> U32:
+# A closed phase type keeps grammar transitions and their proofs exhaustive.
+def number_digit(phase: Phase, c: U32, yes: Bool) -> Phase:
   match phase c yes:
-    case 0 45 _: 1
-    case 0 48 _: 2
-    case 1 48 _: 2
-    case 0 _ True{}: 3
-    case 1 _ True{}: 3
-    case 3 _ True{}: 3
-    case 4 _ True{}: 5
-    case 5 _ True{}: 5
-    case 6 _ True{}: 8
-    case 7 _ True{}: 8
-    case 8 _ True{}: 8
-    case 2 46 _: 4
-    case 3 46 _: 4
-    case 2 101 _: 6
-    case 2 69 _: 6
-    case 3 101 _: 6
-    case 3 69 _: 6
-    case 5 101 _: 6
-    case 5 69 _: 6
-    case 6 43 _: 7
-    case 6 45 _: 7
-    case _ _ _: 99
+    case PStart{} 45 _: PMinus{}
+    case PStart{} 48 _: PZero{}
+    case PMinus{} 48 _: PZero{}
+    case PStart{} _ True{}: PInteger{}
+    case PMinus{} _ True{}: PInteger{}
+    case PInteger{} _ True{}: PInteger{}
+    case PDot{} _ True{}: PFraction{}
+    case PFraction{} _ True{}: PFraction{}
+    case PExponent{} _ True{}: PDigits{}
+    case PSign{} _ True{}: PDigits{}
+    case PDigits{} _ True{}: PDigits{}
+    case PZero{} 46 _: PDot{}
+    case PInteger{} 46 _: PDot{}
+    case PZero{} 101 _: PExponent{}
+    case PZero{} 69 _: PExponent{}
+    case PInteger{} 101 _: PExponent{}
+    case PInteger{} 69 _: PExponent{}
+    case PFraction{} 101 _: PExponent{}
+    case PFraction{} 69 _: PExponent{}
+    case PExponent{} 43 _: PSign{}
+    case PExponent{} 45 _: PSign{}
+    case _ _ _: PInvalid{}
 
-def number_step(phase: U32, +c: U32) -> U32:
+def number_step(phase: Phase, +c: U32) -> Phase:
   number_digit(phase, c, digit(c))
 
-def number_end(phase: U32) -> Bool:
+def number_end(phase: Phase) -> Bool:
   match phase:
-    case 2: True{}
-    case 3: True{}
-    case 5: True{}
-    case 8: True{}
+    case PZero{}: True{}
+    case PInteger{}: True{}
+    case PFraction{}: True{}
+    case PDigits{}: True{}
     case _: False{}
 
-def number_valid_go(s: String, phase: U32) -> Bool:
+def number_valid_go(s: String, phase: Phase) -> Bool:
   match s:
     case SNil{}: number_end(phase)
     case SCon{Chr{c}, t}: number_valid_go(t, number_step(phase, c))
 
 def number_valid(s: String) -> Bool:
-  number_valid_go(s, 0)
+  number_valid_go(s, PStart{})
 
 def scalar_go(s: String, ok: Bool) -> Bool:
   match s ok:
@@ -171,9 +182,9 @@ def number_finish(rev: String, ok: Bool) -> Mode:
     case True{}: MEmit{JNumber{String.reverse(rev)}}
     case False{}: MBad{Syntax{}}
 
-def number_next(next: U32, phase: U32, rev: String, +c: U32, t: String, stack: List<&2, Frame>, depth: Nat) -> Machine:
+def number_next(next: Phase, phase: Phase, rev: String, +c: U32, t: String, stack: List<&2, Frame>, depth: Nat) -> Machine:
   match next:
-    case 99: Machine{number_finish(rev, number_end(phase)), SCon{Chr{c}, t}, stack, depth}
+    case PInvalid{}: Machine{number_finish(rev, number_end(phase)), SCon{Chr{c}, t}, stack, depth}
     case n: Machine{MNumber{n, SCon{Chr{c}, rev}}, t, stack, depth}
 
 def open_container(mode: Mode, t: String, stack: List<&2, Frame>, depth: Nat, full: Bool) -> Machine:
@@ -204,7 +215,7 @@ def token(mode: Mode, input: String, stack: List<&2, Frame>, depth: Nat) -> Mach
     case MValue{} SCon{Chr{34}, t} fs d: Machine{MText{"", False{}}, t, fs, d}
     case MValue{} SCon{Chr{91}, t} fs +d: open_container(MArrayFirst{}, t, fs, d, Nat.is_ge(d, 512n))
     case MValue{} SCon{Chr{123}, t} fs +d: open_container(MReadKey{True{}}, t, ObjectFrame{[]} <> fs, d, Nat.is_ge(d, 512n))
-    case MValue{} SCon{Chr{+c}, t} fs d: number_next(number_step(0, c), 0, "", c, t, fs, d)
+    case MValue{} SCon{Chr{+c}, t} fs d: number_next(number_step(PStart{}, c), PStart{}, "", c, t, fs, d)
     case MArrayFirst{} SCon{Chr{93}, t} fs 1n+d: Machine{MEmit{JArray{[]}}, t, fs, d}
     case MArrayFirst{} s fs d: Machine{MValue{}, s, ArrayFrame{[]} <> fs, d}
     case MArrayAfter{rev} SCon{Chr{44}, t} fs d: Machine{MValue{}, t, ArrayFrame{rev} <> fs, d}
