@@ -198,6 +198,33 @@ test("a body nested deeper than the call stack still keys by its content", async
   expect(calls).toBe(2);
 });
 
+test("bodies key by their exact JSON tokens, not parsed numbers", async () => {
+  let calls = 0;
+  const counting: Fetch = async () => {
+    calls += 1;
+    return Response.json({ method: "PUT" });
+  };
+  const api = createClient<Routes>("http://127.0.0.1:1", { fetch: counting });
+  const { client } = harness();
+  // JSON.rawJSON (ES2025) is in Bun but not yet in TypeScript's lib.
+  const rawJSON: unknown = Reflect.get(JSON, "rawJSON");
+  if (typeof rawJSON !== "function") throw new Error("this runtime lacks JSON.rawJSON");
+  const body = (raw: string) => ({ n: Reflect.apply(rawJSON, JSON, [raw]), s: 'a"b' });
+  const hash = (raw: string) => hashKey(queryKey(api.any.put, { body: body(raw) }));
+  // JSON.parse rounds both to 9007199254740992 and reads 1e400 as Infinity.
+  expect(hash("9007199254740992")).not.toBe(hash("9007199254740993"));
+  expect(hash("1e400")).not.toBe(hashKey(queryKey(api.any.put, { body: { n: null, s: 'a"b' } })));
+  const fetchWith = (raw: string) =>
+    client.fetchQuery({ ...queryOptions(api.any.put, { body: body(raw) }), staleTime: Infinity });
+  await fetchWith("9007199254740992");
+  await fetchWith("9007199254740993");
+  expect(calls).toBe(2);
+  // Key order still does not matter.
+  expect(hashKey(queryKey(api.any.put, { body: { b: [1, {}], a: { y: [], x: "" } } }))).toBe(
+    hashKey(queryKey(api.any.put, { body: { a: { x: "", y: [] }, b: [1, {}] } })),
+  );
+});
+
 test("header values key as fetch sends them, without surrounding whitespace", () => {
   const api = createClient<Routes>("http://127.0.0.1:1");
   const hash = (value: string) => hashKey(queryKey(api.any.get, { headers: { "x-test": value } }));

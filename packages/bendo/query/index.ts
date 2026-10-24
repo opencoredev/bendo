@@ -119,44 +119,127 @@ function textKey(entries: readonly [string, string][]): [string, string | string
   });
 }
 
-type Piece = { kind: "text"; text: string } | { kind: "value"; value: unknown };
+/**
+ * A JSON text as a tree whose leaves keep their exact tokens. Keying on tokens
+ * rather than parsed values keeps bodies apart that `JSON.parse` would merge,
+ * such as `JSON.rawJSON("9007199254740993")` and `9007199254740992`.
+ */
+type JsonNode =
+  | { kind: "token"; text: string }
+  | { kind: "array"; items: JsonNode[] }
+  | { kind: "object"; fields: JsonField[]; key: JsonKey | undefined };
+type JsonKey = { token: string; name: string };
+type JsonField = { key: JsonKey; value: JsonNode };
+
+/** End of the string token that starts at `start`, just past its closing quote. */
+function stringEnd(text: string, start: number): number {
+  let i = start + 1;
+  while (i < text.length && text[i] !== '"') i += text[i] === "\\" ? 2 : 1;
+  return i + 1;
+}
+
+/** Index of the next `,`, `]`, `}` or whitespace at or after `start`. */
+function tokenEnd(text: string, start: number): number {
+  let i = start;
+  while (i < text.length && !",]} \t\n\r".includes(text[i] ?? ",")) i += 1;
+  return i;
+}
 
 /**
- * JSON text with object keys sorted at every level. It walks an explicit stack
- * rather than recursing, so a body nested deeper than the call stack still gets
- * its own key instead of a shared failure marker.
+ * Reads JSON text that `JSON.stringify` produced. It keeps an explicit stack of
+ * open containers, so nesting depth is limited by memory, not the call stack.
  */
-function canonicalText(root: unknown): string {
+function jsonTree(text: string): JsonNode {
+  const open: Exclude<JsonNode, { kind: "token" }>[] = [];
+  let root: JsonNode = { kind: "token", text: "null" };
+  const attach = (node: JsonNode): void => {
+    const top = open.at(-1);
+    if (top === undefined) root = node;
+    else if (top.kind === "array") top.items.push(node);
+    else if (top.key !== undefined) {
+      top.fields.push({ key: top.key, value: node });
+      top.key = undefined;
+    }
+  };
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i] ?? "";
+    if (c === "[" || c === "{") {
+      open.push(
+        c === "[" ? { kind: "array", items: [] } : { kind: "object", fields: [], key: undefined },
+      );
+      i += 1;
+    } else if (c === "]" || c === "}") {
+      const done = open.pop();
+      if (done !== undefined) attach(done);
+      i += 1;
+    } else if (c === "," || c === ":" || c === " " || c === "\t" || c === "\n" || c === "\r") {
+      i += 1;
+    } else if (c === '"') {
+      const end = stringEnd(text, i);
+      const token = text.slice(i, end);
+      const top = open.at(-1);
+      // In an object, a string with no pending key is the next key.
+      if (top?.kind === "object" && top.key === undefined) {
+        const name: unknown = JSON.parse(token);
+        top.key = { token, name: typeof name === "string" ? name : token };
+      } else attach({ kind: "token", text: token });
+      i = end;
+    } else {
+      const end = Math.max(tokenEnd(text, i), i + 1);
+      attach({ kind: "token", text: text.slice(i, end) });
+      i = end;
+    }
+  }
+  return root;
+}
+
+type Piece = { kind: "text"; text: string } | { kind: "node"; node: JsonNode };
+
+function byName(a: JsonField, b: JsonField): number {
+  return a.key.name < b.key.name ? -1 : a.key.name > b.key.name ? 1 : 0;
+}
+
+/**
+ * The tree as JSON text with object keys sorted at every level. It walks an
+ * explicit stack rather than recursing, so a body nested deeper than the call
+ * stack still gets its own key instead of a shared failure marker.
+ */
+function canonicalText(root: JsonNode): string {
   const out: string[] = [];
-  const stack: Piece[] = [{ kind: "value", value: root }];
+  const stack: Piece[] = [{ kind: "node", node: root }];
   for (let piece = stack.pop(); piece !== undefined; piece = stack.pop()) {
     if (piece.kind === "text") {
       out.push(piece.text);
       continue;
     }
-    const { value } = piece;
-    if (typeof value !== "object" || value === null) {
-      out.push(JSON.stringify(value));
-      continue;
-    }
+    const { node } = piece;
     // Pieces are pushed in reverse so they pop in order.
     const pending: Piece[] = [];
-    if (Array.isArray(value)) {
-      pending.push({ kind: "text", text: "[" });
-      value.forEach((item: unknown, index) => {
-        if (index > 0) pending.push({ kind: "text", text: "," });
-        pending.push({ kind: "value", value: item });
-      });
-      pending.push({ kind: "text", text: "]" });
-    } else {
-      pending.push({ kind: "text", text: "{" });
-      Object.keys(value)
-        .sort()
-        .forEach((name, index) => {
-          pending.push({ kind: "text", text: `${index > 0 ? "," : ""}${JSON.stringify(name)}:` });
-          pending.push({ kind: "value", value: Reflect.get(value, name) });
+    switch (node.kind) {
+      case "token":
+        out.push(node.text);
+        continue;
+      case "array":
+        pending.push({ kind: "text", text: "[" });
+        node.items.forEach((item, index) => {
+          if (index > 0) pending.push({ kind: "text", text: "," });
+          pending.push({ kind: "node", node: item });
         });
-      pending.push({ kind: "text", text: "}" });
+        pending.push({ kind: "text", text: "]" });
+        break;
+      case "object":
+        pending.push({ kind: "text", text: "{" });
+        [...node.fields].sort(byName).forEach((field, index) => {
+          pending.push({ kind: "text", text: `${index > 0 ? "," : ""}${field.key.token}:` });
+          pending.push({ kind: "node", node: field.value });
+        });
+        pending.push({ kind: "text", text: "}" });
+        break;
+      default: {
+        const exhaustive: never = node;
+        return exhaustive;
+      }
     }
     for (let i = pending.length - 1; i >= 0; i--) {
       const next = pending[i];
@@ -176,9 +259,8 @@ function bodyKey(body: unknown): string | { "!": string } {
     return { "!": `body has no JSON form: ${String(cause)}` };
   }
   if (typeof json !== "string") return { "!": "body has no JSON form" };
-  // JSON.parse keeps `__proto__` as an own field, so the sort sees every name.
-  // The text came from JSON.stringify, so parsing it does not fail.
-  return canonicalText(JSON.parse(json));
+  // `__proto__` stays a field name here, so the sort sees every name.
+  return canonicalText(jsonTree(json));
 }
 
 /** Fetch strips leading and trailing HTTP whitespace from header values. */
