@@ -46,6 +46,8 @@ The `perf` CI job fails a commit whose hello-world throughput is more than 25% b
 
 Every law needs an entry in `docs/laws/`. `tests/laws-docs.test.ts` reads the law names through `scripts/laws-index.ts` and fails when a law has no entry or an entry names a law that no longer exists. `docs/laws/README.md` gives the entry format.
 
+Every public API needs an entry in `docs/api/`: each def in `src/main.bend`, each name an example or guide calls through another `src/` module, and each export of the `bendo` and `vite-plugin-bendo` entry points. `tests/api-coverage.test.ts` fails on a missing or unknown entry and compiles or typechecks every example on those pages. `docs/SITE.md` gives the entry format.
+
 ## TypeScript
 
 Follow `~/.agents/skills/typescript-best-practices/SKILL.md` when it exists on your machine: discriminated unions, no `as` casts, parse external data at the boundary, exhaustive switches.

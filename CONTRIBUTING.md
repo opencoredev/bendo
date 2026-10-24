@@ -110,6 +110,11 @@ says how to move the baseline after an intentional change.
 TypeScript code uses discriminated unions, parses external data at the
 boundary, avoids `as` casts and switches exhaustively.
 
+Every public function, type and export needs an entry in the
+[API reference](docs/api/index.md), with an example.
+`tests/api-coverage.test.ts` fails when one is missing and compiles or
+typechecks every example. [`docs/SITE.md`](docs/SITE.md) gives the entry format.
+
 ## How work is tracked
 
 Work is tracked in Linear, team BND, project "Bendo v1". Each change belongs to
