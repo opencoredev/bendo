@@ -3,6 +3,7 @@ import Base
 import ./stream-rfc-spec.bend as S
 import ../src/http/chunked.bend as C
 import ../src/http/bytes.bend as B
+import ./bytes-tail.bend as BT
 import ../src/http/stream_framing.bend as Stream
 import ./chunked.bend as P
 import ./chunked-roundtrip.bend as Q
@@ -121,7 +122,7 @@ law size_line:
   for fit: {Nat.is_le(Nat.add(m, List.length(&2, Word(4n), ds)), 9n) == True{} : Bool}
   {S.feed(B.append(P.hex_bytes(ds), rest), S.Size{budget, body, line, U32.from_nat(m), False{}}) == S.feed(rest, S.Size{budget, body, List.reverse.go(&2, U32, P.hex_bytes(ds), line), U32.from_nat(Nat.add(m, List.length(&2, Word(4n), ds))), False{}}) : S.State & S.DecodeResult}
 
-def size_line(ds, m, budget, body, line, rest, fit):
+def size_line_list(+ds: List<&2, Word(4n)>, +m: Nat, +budget: U32, +body: List<&2, U32>, +line: List<&2, U32>, +rest: List<&2, U32>, fit: {Nat.is_le(Nat.add(m, List.length(&2, Word(4n), ds)), 9n) == True{} : Bool}) -> {S.feed(List.append(&2, U32, P.hex_bytes(ds), rest), S.Size{budget, body, line, U32.from_nat(m), False{}}) == S.feed(rest, S.Size{budget, body, List.reverse.go(&2, U32, P.hex_bytes(ds), line), U32.from_nat(Nat.add(m, List.length(&2, Word(4n), ds))), False{}}) : S.State & S.DecodeResult}:
   match ds:
     case Nil{}:
       %Equal.sym(Nat, Nat.add(m, 0n), m, A.add_zero_r(m)) : {S.feed(rest, S.Size{budget, body, line, U32.from_nat(m), False{}}) == S.feed(rest, S.Size{budget, body, line, U32.from_nat(_), False{}}) : S.State & S.DecodeResult}
@@ -135,11 +136,16 @@ def size_line(ds, m, budget, body, line, rest, fit):
       fit1 = {
         %A.add_succ_r(m, len) : {Nat.is_le(_, 9n) == True{} : Bool}
         fit : {Nat.is_le(1n+Nat.add(m, len), 9n) == True{} : Bool}}
-      %Equal.sym(Bool, (U32.from_nat(m) < 8192 : U32), True{}, Q.small_count(m, fit0)) : {S.feed(B.append(P.hex_bytes(t), rest), S.branch(S.State, _, u => S.size_octet_inner(budget, body, line, (U32.from_nat(m) + 1 : U32), False{}, hc), u => S.Failed{400})) == S.feed(rest, S.Size{budget, body, List.reverse.go(&2, U32, P.hex_bytes(t), hc <> line), U32.from_nat(Nat.add(m, 1n+len)), False{}}) : S.State & S.DecodeResult}
-      %Equal.sym(U32, (U32.from_nat(m) + 1 : U32), U32.from_nat(1n+m), Q.small_inc(m, fit0)) : {S.feed(B.append(P.hex_bytes(t), rest), S.size_octet_inner(budget, body, line, _, False{}, hc)) == S.feed(rest, S.Size{budget, body, List.reverse.go(&2, U32, P.hex_bytes(t), hc <> line), U32.from_nat(Nat.add(m, 1n+len)), False{}}) : S.State & S.DecodeResult}
-      %Equal.sym(S.State, S.size_octet_inner(budget, body, line, U32.from_nat(1n+m), False{}, hc), S.Size{budget, body, hc <> line, U32.from_nat(1n+m), False{}}, size_hex_octet(d, budget, body, line, U32.from_nat(1n+m))) : {S.feed(B.append(P.hex_bytes(t), rest), _) == S.feed(rest, S.Size{budget, body, List.reverse.go(&2, U32, P.hex_bytes(t), hc <> line), U32.from_nat(Nat.add(m, 1n+len)), False{}}) : S.State & S.DecodeResult}
-      %Equal.sym(Nat, Nat.add(m, 1n+len), 1n+Nat.add(m, len), A.add_succ_r(m, len)) : {S.feed(B.append(P.hex_bytes(t), rest), S.Size{budget, body, hc <> line, U32.from_nat(1n+m), False{}}) == S.feed(rest, S.Size{budget, body, List.reverse.go(&2, U32, P.hex_bytes(t), hc <> line), U32.from_nat(_), False{}}) : S.State & S.DecodeResult}
-      size_line(t, 1n+m, budget, body, hc <> line, rest, fit1)
+      %Equal.sym(Bool, (U32.from_nat(m) < 8192 : U32), True{}, Q.small_count(m, fit0)) : {S.feed(List.append(&2, U32, P.hex_bytes(t), rest), S.branch(S.State, _, u => S.size_octet_inner(budget, body, line, (U32.from_nat(m) + 1 : U32), False{}, hc), u => S.Failed{400})) == S.feed(rest, S.Size{budget, body, List.reverse.go(&2, U32, P.hex_bytes(t), hc <> line), U32.from_nat(Nat.add(m, 1n+len)), False{}}) : S.State & S.DecodeResult}
+      %Equal.sym(U32, (U32.from_nat(m) + 1 : U32), U32.from_nat(1n+m), Q.small_inc(m, fit0)) : {S.feed(List.append(&2, U32, P.hex_bytes(t), rest), S.size_octet_inner(budget, body, line, _, False{}, hc)) == S.feed(rest, S.Size{budget, body, List.reverse.go(&2, U32, P.hex_bytes(t), hc <> line), U32.from_nat(Nat.add(m, 1n+len)), False{}}) : S.State & S.DecodeResult}
+      %Equal.sym(S.State, S.size_octet_inner(budget, body, line, U32.from_nat(1n+m), False{}, hc), S.Size{budget, body, hc <> line, U32.from_nat(1n+m), False{}}, size_hex_octet(d, budget, body, line, U32.from_nat(1n+m))) : {S.feed(List.append(&2, U32, P.hex_bytes(t), rest), _) == S.feed(rest, S.Size{budget, body, List.reverse.go(&2, U32, P.hex_bytes(t), hc <> line), U32.from_nat(Nat.add(m, 1n+len)), False{}}) : S.State & S.DecodeResult}
+      %Equal.sym(Nat, Nat.add(m, 1n+len), 1n+Nat.add(m, len), A.add_succ_r(m, len)) : {S.feed(List.append(&2, U32, P.hex_bytes(t), rest), S.Size{budget, body, hc <> line, U32.from_nat(1n+m), False{}}) == S.feed(rest, S.Size{budget, body, List.reverse.go(&2, U32, P.hex_bytes(t), hc <> line), U32.from_nat(_), False{}}) : S.State & S.DecodeResult}
+      size_line_list(t, 1n+m, budget, body, hc <> line, rest, fit1)
+
+# The induction runs over List.append; Bytes.append is a reversed tail loop (BND-84).
+def size_line(ds, m, budget, body, line, rest, fit):
+  %Equal.sym(List<&2, U32>, B.append(P.hex_bytes(ds), rest), List.append(&2, U32, P.hex_bytes(ds), rest), BT.append_equiv(P.hex_bytes(ds), rest)) : {S.feed(_, S.Size{budget, body, line, U32.from_nat(m), False{}}) == S.feed(rest, S.Size{budget, body, List.reverse.go(&2, U32, P.hex_bytes(ds), line), U32.from_nat(Nat.add(m, List.length(&2, Word(4n), ds))), False{}}) : S.State & S.DecodeResult}
+  size_line_list(ds, m, budget, body, line, rest, fit)
 
 law size_line_end:
   for +n: Nat
@@ -265,7 +271,7 @@ law scan_payload:
   for len: {U32.to_nat(left) == 1n+List.length(&2, U32, t) : Nat}
   {S.feed(c <> B.append(t, 13 <> 10 <> more), S.Payload{budget, acc, left}) == S.feed(more, S.Size{budget, List.reverse.go(&2, U32, c <> t, acc), [], 0, False{}}) : S.State & S.DecodeResult}
 
-def scan_payload(t, c, budget, acc, left, more, oct, len):
+def scan_payload_list(+t: List<&2, U32>, +c: U32, +budget: U32, +acc: List<&2, U32>, +left: U32, +more: List<&2, U32>, oct: {C.octets(c <> t) == True{} : Bool}, len: {U32.to_nat(left) == 1n+List.length(&2, U32, t) : Nat}) -> {S.feed(c <> List.append(&2, U32, t, 13 <> 10 <> more), S.Payload{budget, acc, left}) == S.feed(more, S.Size{budget, List.reverse.go(&2, U32, c <> t, acc), [], 0, False{}}) : S.State & S.DecodeResult}:
   match t:
     case Nil{}:
       +oct = oct
@@ -280,10 +286,15 @@ def scan_payload(t, c, budget, acc, left, more, oct, len):
       +k = List.length(&2, U32, t2)
       sub = Equal.trans(Nat, 1n+U32.to_nat((left - 1 : U32)), U32.to_nat(left), 2n+k, A.u32_sub_nat(left, 1, one_le(left, k, len)), len)
       len2 = Equal.cong(Nat, Nat, x => A.pred(x), 1n+U32.to_nat((left - 1 : U32)), 2n+k, sub)
-      %Equal.sym(S.State, S.data_octet(budget, acc, left, c), S.Payload{budget, c <> acc, (left - 1 : U32)}, payload_octet(budget, acc, left, c, octc, left_eq(left, 2n+k, 1, len), left_eq(left, 2n+k, 0, len))) : {S.feed(c2 <> B.append(t2, 13 <> 10 <> more), _) == S.feed(more, S.Size{budget, List.reverse.go(&2, U32, c2 <> t2, c <> acc), [], 0, False{}}) : S.State & S.DecodeResult}
-      scan_payload(t2, c2, budget, c <> acc, (left - 1 : U32), more, octr, len2)
+      %Equal.sym(S.State, S.data_octet(budget, acc, left, c), S.Payload{budget, c <> acc, (left - 1 : U32)}, payload_octet(budget, acc, left, c, octc, left_eq(left, 2n+k, 1, len), left_eq(left, 2n+k, 0, len))) : {S.feed(c2 <> List.append(&2, U32, t2, 13 <> 10 <> more), _) == S.feed(more, S.Size{budget, List.reverse.go(&2, U32, c2 <> t2, c <> acc), [], 0, False{}}) : S.State & S.DecodeResult}
+      scan_payload_list(t2, c2, budget, c <> acc, (left - 1 : U32), more, octr, len2)
 
 # One producer chunk.
+
+# The induction runs over List.append; Bytes.append is a reversed tail loop (BND-84).
+def scan_payload(t, c, budget, acc, left, more, oct, len):
+  %Equal.sym(List<&2, U32>, B.append(t, 13 <> 10 <> more), List.append(&2, U32, t, 13 <> 10 <> more), BT.append_equiv(t, 13 <> 10 <> more)) : {S.feed(c <> _, S.Payload{budget, acc, left}) == S.feed(more, S.Size{budget, List.reverse.go(&2, U32, c <> t, acc), [], 0, False{}}) : S.State & S.DecodeResult}
+  scan_payload_list(t, c, budget, acc, left, more, oct, len)
 
 def size_nonzero(+size: U32, +k: Nat, exact: {U32.to_nat(size) == 1n+k : Nat}) -> {U32.is_eq(size, 0) == False{} : Bool}:
   %Equal.sym(Bool, U32.is_eq(size, 0), Nat.is_eq(U32.to_nat(size), U32.to_nat(0)), A.u32_nat_eq(size, 0)) : {_ == False{} : Bool}
@@ -332,9 +343,9 @@ def rest_fit(+k: Nat, +lr: Nat, +total: Nat, +left: Nat, sum: {Nat.add(k, left) 
   %Equal.sym(Nat, Nat.add(k, left), total, sum) : {Nat.is_le(Nat.add(k, lr), _) == True{} : Bool}
   fit
 
-def total_fit(+body: List<&2, U32>, +rc: List<&2, U32>, +budget: U32, fit: {Nat.is_le(List.length(&2, U32, B.append(body, rc)), U32.to_nat(budget)) == True{} : Bool}) ->
+def total_fit(+body: List<&2, U32>, +rc: List<&2, U32>, +budget: U32, fit: {Nat.is_le(List.length(&2, U32, List.append(&2, U32, body, rc)), U32.to_nat(budget)) == True{} : Bool}) ->
     {Nat.is_le(Nat.add(List.length(&2, U32, body), List.length(&2, U32, rc)), U32.to_nat(budget)) == True{} : Bool}:
-  %Q.length_append(body, rc) : {Nat.is_le(_, U32.to_nat(budget)) == True{} : Bool}
+  %Q.length_append_list(body, rc) : {Nat.is_le(_, U32.to_nat(budget)) == True{} : Bool}
   fit
 
 law roundtrip_from:
@@ -359,7 +370,7 @@ def roundtrip_from(chunks, budget, acc, suffix, oct, fit):
       +size = U32.from_nat(List.length(&2, U32, body))
       +k = List.length(&2, U32, tail)
       +lr = List.length(&2, U32, rc)
-      +both = Equal.trans(Bool, C.octets(body) && C.octets(rc), C.octets(B.append(body, rc)), True{}, Equal.sym(Bool, C.octets(B.append(body, rc)), C.octets(body) && C.octets(rc), P.octets_append(body, rc)), oct)
+      +both = Equal.trans(Bool, C.octets(body) && C.octets(rc), C.octets(List.append(&2, U32, body, rc)), True{}, Equal.sym(Bool, C.octets(List.append(&2, U32, body, rc)), C.octets(body) && C.octets(rc), P.octets_append_list(body, rc)), oct)
       +total = total_fit(body, rc, budget, fit)
       +fitc = A.le_add_r(1n+k, lr, U32.to_nat(budget), total)
       +exact = A.from_nat_exact(1n+k, budget, fitc)
@@ -368,9 +379,11 @@ def roundtrip_from(chunks, budget, acc, suffix, oct, fit):
         Equal.cong(Nat, Nat, x => Nat.add(x, U32.to_nat((budget - size : U32))), 1n+k, U32.to_nat(size), Equal.sym(Nat, U32.to_nat(size), 1n+k, exact)), sub)
       fitr = rest_fit(1n+k, lr, U32.to_nat(budget), U32.to_nat((budget - size : U32)), sum, total)
       +h = C.hex_go(8n, size, [])
-      -goal = done_pair(List.reverse.go(&2, U32, B.append(body, rc), acc), suffix)
+      -goal = done_pair(List.reverse.go(&2, U32, List.append(&2, U32, body, rc), acc), suffix)
       %Equal.sym(List<&2, U32>, B.append(B.append(h, 13 <> 10 <> B.append(body, 13 <> 10 <> e)), suffix), B.append(h, B.append(13 <> 10 <> B.append(body, 13 <> 10 <> e), suffix)), Q.append_assoc(h, 13 <> 10 <> B.append(body, 13 <> 10 <> e), suffix)) : {S.feed(_, S.Size{budget, acc, [], 0, False{}}) == goal : S.State & S.DecodeResult}
+      %Equal.sym(List<&2, U32>, B.append(13 <> 10 <> B.append(body, 13 <> 10 <> e), suffix), 13 <> 10 <> c <> B.append(B.append(tail, 13 <> 10 <> e), suffix), Equal.trans(List<&2, U32>, B.append(13 <> 10 <> B.append(body, 13 <> 10 <> e), suffix), 13 <> 10 <> B.append(B.append(body, 13 <> 10 <> e), suffix), 13 <> 10 <> c <> B.append(B.append(tail, 13 <> 10 <> e), suffix), Q.append_cons2(13, 10, B.append(body, 13 <> 10 <> e), suffix), Equal.trans(List<&2, U32>, 13 <> 10 <> B.append(B.append(body, 13 <> 10 <> e), suffix), 13 <> 10 <> B.append(c <> B.append(tail, 13 <> 10 <> e), suffix), 13 <> 10 <> c <> B.append(B.append(tail, 13 <> 10 <> e), suffix), Equal.cong(List<&2, U32>, List<&2, U32>, l => 13 <> 10 <> B.append(l, suffix), B.append(body, 13 <> 10 <> e), c <> B.append(tail, 13 <> 10 <> e), Q.append_cons(c, tail, 13 <> 10 <> e)), Equal.cong(List<&2, U32>, List<&2, U32>, l => 13 <> 10 <> l, B.append(c <> B.append(tail, 13 <> 10 <> e), suffix), c <> B.append(B.append(tail, 13 <> 10 <> e), suffix), Q.append_cons(c, B.append(tail, 13 <> 10 <> e), suffix))))) : {S.feed(B.append(h, _), S.Size{budget, acc, [], 0, False{}}) == goal : S.State & S.DecodeResult}
       %Equal.sym(List<&2, U32>, B.append(B.append(tail, 13 <> 10 <> e), suffix), B.append(tail, B.append(13 <> 10 <> e, suffix)), Q.append_assoc(tail, 13 <> 10 <> e, suffix)) : {S.feed(B.append(h, 13 <> 10 <> c <> _), S.Size{budget, acc, [], 0, False{}}) == goal : S.State & S.DecodeResult}
+      %Equal.sym(List<&2, U32>, B.append(13 <> 10 <> e, suffix), 13 <> 10 <> B.append(e, suffix), Q.append_cons2(13, 10, e, suffix)) : {S.feed(B.append(h, 13 <> 10 <> c <> B.append(tail, _)), S.Size{budget, acc, [], 0, False{}}) == goal : S.State & S.DecodeResult}
       Equal.trans(S.State & S.DecodeResult,
         S.feed(B.append(h, 13 <> 10 <> c <> B.append(tail, 13 <> 10 <> B.append(e, suffix))), S.Size{budget, acc, [], 0, False{}}),
         S.feed(B.append(e, suffix), S.Size{(budget - size : U32), List.reverse.go(&2, U32, body, acc), [], 0, False{}}),
@@ -381,7 +394,7 @@ def roundtrip_from(chunks, budget, acc, suffix, oct, fit):
           done_pair(List.reverse.go(&2, U32, rc, List.reverse.go(&2, U32, body, acc)), suffix),
           goal,
           roundtrip_from(rest, (budget - size : U32), List.reverse.go(&2, U32, body, acc), suffix, P.both_right(C.octets(body), C.octets(rc), both), fitr),
-          Equal.cong(List<&2, U32>, S.State & S.DecodeResult, x => done_pair(x, suffix), List.reverse.go(&2, U32, rc, List.reverse.go(&2, U32, body, acc)), List.reverse.go(&2, U32, B.append(body, rc), acc), Equal.sym(List<&2, U32>, List.reverse.go(&2, U32, B.append(body, rc), acc), List.reverse.go(&2, U32, rc, List.reverse.go(&2, U32, body, acc)), Q.reverse_go_append(body, rc, acc)))))
+          Equal.cong(List<&2, U32>, S.State & S.DecodeResult, x => done_pair(x, suffix), List.reverse.go(&2, U32, rc, List.reverse.go(&2, U32, body, acc)), List.reverse.go(&2, U32, List.append(&2, U32, body, rc), acc), Equal.sym(List<&2, U32>, List.reverse.go(&2, U32, List.append(&2, U32, body, rc), acc), List.reverse.go(&2, U32, rc, List.reverse.go(&2, U32, body, acc)), Q.reverse_go_append_list(body, rc, acc)))))
 
 # The independent grammar parser reads every admissible partition and suffix.
 law roundtrip:

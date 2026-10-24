@@ -26,22 +26,27 @@ def starts_tail(+s: String, +p: String, same: Bool, yes: {String.starts_with.go.
       yes
 
 # A colon terminates a token, so a delimited prefix identifies the whole name.
-def token_delimited_sound(+s: String, +p: String, +tail: String, +sv: {B.token_tail(s) == True{} : Bool}, +pv: {B.token_tail(p) == True{} : Bool}, +yes: {String.starts_with(s ++ ":" ++ tail, p ++ ":") == True{} : Bool}) -> {s == p : String}:
+def token_delimited_sound_spec(+s: String, +p: String, +tail: String, +sv: {B.token_tail_spec(s) == True{} : Bool}, +pv: {B.token_tail_spec(p) == True{} : Bool}, +yes: {String.starts_with(s ++ ":" ++ tail, p ++ ":") == True{} : Bool}) -> {s == p : String}:
   match s p:
     case SNil{} SNil{}:
       {==}
     case SNil{} SCon{Chr{c}, pt}:
       eq = starts_head(58, c, tail, pt ++ ":", Char.is_eq(':', Chr{c}), {==}, yes)
-      bad = Equal.trans(Bool, False{}, B.tchar(c), True{}, Equal.cong(U32, Bool, x => B.tchar(x), 58, c, eq), Laws.and_left(B.tchar(c), B.token_tail(pt), pv))
+      bad = Equal.trans(Bool, False{}, B.tchar(c), True{}, Equal.cong(U32, Bool, x => B.tchar(x), 58, c, eq), Laws.and_left(B.tchar(c), B.token_tail_spec(pt), pv))
       E.absurd({SNil{} == SCon{Chr{c}, pt} : String}, E.false_true(bad))
     case SCon{Chr{c}, st} SNil{}:
       eq = starts_head(c, 58, st ++ ":" ++ tail, "", Char.is_eq(Chr{c}, ':'), {==}, yes)
-      bad = Equal.trans(Bool, False{}, B.tchar(c), True{}, Equal.cong(U32, Bool, x => B.tchar(x), 58, c, Equal.sym(U32, c, 58, eq)), Laws.and_left(B.tchar(c), B.token_tail(st), sv))
+      bad = Equal.trans(Bool, False{}, B.tchar(c), True{}, Equal.cong(U32, Bool, x => B.tchar(x), 58, c, Equal.sym(U32, c, 58, eq)), Laws.and_left(B.tchar(c), B.token_tail_spec(st), sv))
       E.absurd({SCon{Chr{c}, st} == SNil{} : String}, E.false_true(bad))
     case SCon{Chr{a}, st} SCon{Chr{b}, pt}:
       head = starts_head(a, b, st ++ ":" ++ tail, pt ++ ":", Char.is_eq(Chr{a}, Chr{b}), {==}, yes)
-      rest = token_delimited_sound(st, pt, tail, Laws.and_right(B.tchar(a), B.token_tail(st), sv), Laws.and_right(B.tchar(b), B.token_tail(pt), pv), starts_tail(st ++ ":" ++ tail, pt ++ ":", Char.is_eq(Chr{a}, Chr{b}), yes))
+      rest = token_delimited_sound_spec(st, pt, tail, Laws.and_right(B.tchar(a), B.token_tail_spec(st), sv), Laws.and_right(B.tchar(b), B.token_tail_spec(pt), pv), starts_tail(st ++ ":" ++ tail, pt ++ ":", Char.is_eq(Chr{a}, Chr{b}), yes))
       Equal.trans(String, SCon{Chr{a}, st}, SCon{Chr{b}, st}, SCon{Chr{b}, pt}, Equal.cong(U32, String, c => SCon{Chr{c}, st}, a, b, head), Equal.cong(String, String, t => SCon{Chr{b}, t}, st, pt, rest))
+
+# Token checks are tail loops (BND-84); the induction above runs on the spec.
+def token_delimited_sound(+s: String, +p: String, +tail: String, +sv: {B.token_tail(s) == True{} : Bool}, +pv: {B.token_tail(p) == True{} : Bool}, +yes: {String.starts_with(s ++ ":" ++ tail, p ++ ":") == True{} : Bool}) -> {s == p : String}:
+  token_delimited_sound_spec(s, p, tail, Scanner.tail_ok(s, sv), Scanner.tail_ok(p, pv), yes)
+
 
 def header_token(+n: String, +v: List<&2, U32>, +valid: {R.header_valid(R.Header{n, v}) == True{} : Bool}) -> {B.token_tail(n) == True{} : Bool}:
   a = Laws.and_left(B.token(n) && String.eq(n, B.fold(n)) && B.value(v) && R.value_start(v), R.value_start(List.reverse(&2, U32, v)), valid)

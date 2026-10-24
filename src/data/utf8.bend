@@ -4,12 +4,23 @@ import Base
 def scalar(+c: U32) -> Bool:
   (c <= 1114111 : U32) && Bool.not((c >= 55296 : U32) && (c <= 57343 : U32))
 
-def valid(s: String) -> Bool:
+def valid_spec(s: String) -> Bool:
   match s:
     case SNil{}:
       True{}
     case SCon{Chr{c}, t}:
-      scalar(c) && valid(t)
+      scalar(c) && valid_spec(t)
+
+# The spec's right fold as a tail loop over the reversed string (BND-84).
+def valid_go(rev: String, acc: Bool) -> Bool:
+  match rev:
+    case SNil{}:
+      acc
+    case SCon{Chr{c}, r}:
+      valid_go(r, scalar(c) && acc)
+
+def valid(s: String) -> Bool:
+  valid_go(String.reverse(s), True{})
 
 # Words are little endian. Keep payload chunks structural so the inverse
 # does not depend on arithmetic identities for shifts, masks and carries.

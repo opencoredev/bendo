@@ -34,16 +34,16 @@ def scalar(+c: U32, ok: {U.scalar(c) == True{} : Bool}) -> {R.scalar(c) == c : U
   %Equal.sym(Bool, U.scalar(c), True{}, ok) : {R.scalar_valid(c, _) == c : U32}
   {==}
 
-def scalars_go(+s: String, +acc: String, +ok: {U.valid(s) == True{} : Bool}) -> {R.scalars_go(s, acc) == String.reverse.go(acc, s) : String}:
+def scalars_go(+s: String, +acc: String, +ok: {U.valid_spec(s) == True{} : Bool}) -> {R.scalars_go(s, acc) == String.reverse.go(acc, s) : String}:
   match s:
     case SNil{}:
       {==}
     case SCon{Chr{c}, t}:
-      %Equal.sym(U32, R.scalar(c), c, scalar(c, Utf8Proof.and_left(U.scalar(c), U.valid(t), ok))) : {R.scalars_go(t, SCon{Chr{_}, acc}) == String.reverse.go(acc, SCon{Chr{c}, t}) : String}
-      scalars_go(t, SCon{Chr{c}, acc}, Utf8Proof.and_right(U.scalar(c), U.valid(t), ok))
+      %Equal.sym(U32, R.scalar(c), c, scalar(c, Utf8Proof.and_left(U.scalar(c), U.valid_spec(t), ok))) : {R.scalars_go(t, SCon{Chr{_}, acc}) == String.reverse.go(acc, SCon{Chr{c}, t}) : String}
+      scalars_go(t, SCon{Chr{c}, acc}, Utf8Proof.and_right(U.scalar(c), U.valid_spec(t), ok))
 
 def scalars(+s: String, ok: {U.valid(s) == True{} : Bool}) -> {R.scalars(s) == s : String}:
-  scalars_go(s, "", ok)
+  scalars_go(s, "", Utf8Proof.valid_spec_of(s, ok))
 
 def utf8(+s: String, +ok: {U.valid(s) == True{} : Bool}) -> {U.decode(R.utf8(s)) == Some{s} : Maybe<&2, String>}:
   %Equal.sym(String, R.scalars(s), s, scalars(s, ok)) : {U.decode(U.encode(_)) == Some{s} : Maybe<&2, String>}

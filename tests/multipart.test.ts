@@ -340,3 +340,50 @@ test("outer Content-Type rejects controls even in ignored quoted parameters", ()
     ).toEqual(fail("Malformed"));
   }
 });
+
+test("header transitions preserve the previous parser across budgets and byte prefixes", () => {
+  if (!("headers_before" in exports) || !("headers_after" in exports)) {
+    throw new Error("Missing header comparison exports");
+  }
+  const before = callable(exports.headers_before);
+  const after = callable(exports.headers_after);
+  const meta = {
+    $: "Meta",
+    name: { $: "None" },
+    filename: { $: "None" },
+    content_type: { $: "None" },
+    disposition: false,
+  };
+  const states = [done(meta), fail("Malformed"), fail("TooLarge")];
+  const inputs = [
+    "",
+    "\r",
+    "\n",
+    "\r\n",
+    "\r\n ",
+    "\r\n\t",
+    "\r\nx",
+    "x\r\n\r\nrest",
+    "x: ok\r\n folded\r\n\r\nrest",
+    'Content-Disposition: form-data; name="x"\r\n\r\nrest',
+  ];
+  for (let byte = 0; byte < 256; byte++) inputs.push(`${String.fromCharCode(byte)}\r\n`);
+  for (const input of inputs) {
+    const bytes = list(new TextEncoder().encode(input));
+    for (const left of [
+      0,
+      1,
+      2,
+      3,
+      input.length - 1,
+      input.length,
+      input.length + 1,
+      4294967295,
+    ].filter((n) => n >= 0)) {
+      for (const line of [list([]), list([120])]) {
+        for (const state of states)
+          expect(after(bytes, left, line, state)).toEqual(before(bytes, left, line, state));
+      }
+    }
+  }
+});

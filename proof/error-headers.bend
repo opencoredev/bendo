@@ -6,23 +6,31 @@ import ../src/http/request.bend as Request
 import ../src/http/response.bend as Response
 import ../src/http/bytes.bend as Bytes
 import ./error-spec.bend as Spec
+import ./bytes-tail.bend as BT
+import ./parse-tail.bend as PT
 
 # Header admissibility: the framework's validity check is Spec.admissible.
 
-def token_rest_spec(+s: String) -> {Bytes.token_tail(s) == Spec.token_rest(s) : Bool}:
+def token_rest_spec_inner(+s: String) -> {Bytes.token_tail_spec(s) == Spec.token_rest(s) : Bool}:
   match s:
     case SNil{}: {==}
-    case SCon{Chr{+c}, t}: Equal.cong(Bool, Bool, x => Bytes.tchar(c) && x, Bytes.token_tail(t), Spec.token_rest(t), token_rest_spec(t))
+    case SCon{Chr{+c}, t}: Equal.cong(Bool, Bool, x => Bytes.tchar(c) && x, Bytes.token_tail_spec(t), Spec.token_rest(t), token_rest_spec_inner(t))
+
+def token_rest_spec(+s: String) -> {Bytes.token_tail(s) == Spec.token_rest(s) : Bool}:
+  Equal.trans(Bool, Bytes.token_tail(s), Bytes.token_tail_spec(s), Spec.token_rest(s), BT.token_tail_equiv(s), token_rest_spec_inner(s))
 
 def token_spec(+s: String) -> {Bytes.token(s) == Spec.token(s) : Bool}:
   match s:
     case SNil{}: {==}
     case SCon{Chr{+c}, t}: Equal.cong(Bool, Bool, x => Bytes.tchar(c) && x, Bytes.token_tail(t), Spec.token_rest(t), token_rest_spec(t))
 
-def octets_value_spec(+xs: List<&2, U32>) -> {Bytes.value(xs) == Spec.field_octets(xs) : Bool}:
+def octets_value_spec_inner(+xs: List<&2, U32>) -> {Bytes.value_spec(xs) == Spec.field_octets(xs) : Bool}:
   match xs:
     case Nil{}: {==}
-    case +c <> t: Equal.cong(Bool, Bool, x => Bytes.value_octet(c) && x, Bytes.value(t), Spec.field_octets(t), octets_value_spec(t))
+    case +c <> t: Equal.cong(Bool, Bool, x => Bytes.value_octet(c) && x, Bytes.value_spec(t), Spec.field_octets(t), octets_value_spec_inner(t))
+
+def octets_value_spec(+xs: List<&2, U32>) -> {Bytes.value(xs) == Spec.field_octets(xs) : Bool}:
+  Equal.trans(Bool, Bytes.value(xs), Bytes.value_spec(xs), Spec.field_octets(xs), BT.value_equiv(xs), octets_value_spec_inner(xs))
 
 def first_spec(+xs: List<&2, U32>) -> {Request.value_start(xs) == Spec.first_clear(xs) : Bool}:
   match xs:
@@ -129,11 +137,14 @@ def fields_step(+v: List<&2, U32>, +a: List<&2, List<&2, U32>>, +b: List<&2, Lis
     case True{}: Equal.cong(List<&2, List<&2, U32>>, List<&2, List<&2, U32>>, x => v <> x, a, b, ih)
     case False{}: ih
 
-def fields_spec(+hs: List<&2, Request.Header>) -> {Request.lookup_folded(hs, "vary") == Spec.vary_fields(hs) : List<&2, List<&2, U32>>}:
+def fields_spec_inner(+hs: List<&2, Request.Header>) -> {Request.lookup_folded_spec(hs, "vary") == Spec.vary_fields(hs) : List<&2, List<&2, U32>>}:
   match hs:
     case Nil{}: {==}
     case Request.Header{+n, +v} <> t:
-      fields_step(v, Request.lookup_folded(t, "vary"), Spec.vary_fields(t), String.eq(n, "vary"), fields_spec(t))
+      fields_step(v, Request.lookup_folded_spec(t, "vary"), Spec.vary_fields(t), String.eq(n, "vary"), fields_spec_inner(t))
+
+def fields_spec(+hs: List<&2, Request.Header>) -> {Request.lookup_folded(hs, "vary") == Spec.vary_fields(hs) : List<&2, List<&2, U32>>}:
+  Equal.trans(List<&2, List<&2, U32>>, Request.lookup_folded(hs, "vary"), Request.lookup_folded_spec(hs, "vary"), Spec.vary_fields(hs), PT.lookup_equiv(hs, "vary"), fields_spec_inner(hs))
 
 # The wildcard scan: Blank expects *, Star expects only whitespace, Other fails.
 def after(st: C.Wild, ys: List<&2, U32>) -> Bool:

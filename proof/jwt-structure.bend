@@ -8,6 +8,7 @@ import ../src/crypto/hmac.bend as HMAC
 import ../src/data/utf8.bend as U
 import ../src/data/json.bend as Json
 import ./jwt.bend as JwtProof
+import ./cut-tail.bend as CutTail
 import ./jwt-spec.bend as Spec
 
 def nonzero(n: Nat) -> Type:
@@ -23,23 +24,23 @@ def succ_zero(+n: Nat, e: {1n+n == 0n : Nat}) -> Empty:
 
 # ---- Separators ----
 
-def free_step(+c: Char, +t: String, +x: Bool, ex: {Char.is_eq(c, '.') == x : Bool}, z: {Spec.count_dot(x, Spec.dots(t)) == 0n : Nat}, ih: {Spec.dots(t) == 0n : Nat} -> {J.dotfree(t) == True{} : Bool}) -> {J.dotfree(SCon{c, t}) == True{} : Bool}:
+def free_step(+c: Char, +t: String, +x: Bool, ex: {Char.is_eq(c, '.') == x : Bool}, z: {Spec.count_dot(x, Spec.dots(t)) == 0n : Nat}, ih: {Spec.dots(t) == 0n : Nat} -> {J.dotfree_spec(t) == True{} : Bool}) -> {J.dotfree_spec(SCon{c, t}) == True{} : Bool}:
   match x:
     case True{}:
-      JwtProof.absurd({J.dotfree(SCon{c, t}) == True{} : Bool}, succ_zero(Spec.dots(t), z))
+      JwtProof.absurd({J.dotfree_spec(SCon{c, t}) == True{} : Bool}, succ_zero(Spec.dots(t), z))
     case False{}:
-      %Equal.sym(Bool, Char.is_eq(c, '.'), False{}, ex) : {Bool.not(_) && J.dotfree(t) == True{} : Bool}
+      %Equal.sym(Bool, Char.is_eq(c, '.'), False{}, ex) : {Bool.not(_) && J.dotfree_spec(t) == True{} : Bool}
       ih(z)
 
 # A string without '.' is dot-free in the verifier's sense.
-def dotfree_of(+s: String, z: {Spec.dots(s) == 0n : Nat}) -> {J.dotfree(s) == True{} : Bool}:
+def dotfree_of_spec(+s: String, z: {Spec.dots(s) == 0n : Nat}) -> {J.dotfree_spec(s) == True{} : Bool}:
   match s:
     case SNil{}:
       {==}
     case SCon{+c, +t}:
-      free_step(c, t, Char.is_eq(c, '.'), {==}, z, w => dotfree_of(t, w))
+      free_step(c, t, Char.is_eq(c, '.'), {==}, z, w => dotfree_of_spec(t, w))
 
-def dots_step(+c: Char, +t: String, +x: Bool, ex: {Char.is_eq(c, '.') == x : Bool}, f: {Bool.not(x) && J.dotfree(t) == True{} : Bool}, ih: {J.dotfree(t) == True{} : Bool} -> {Spec.dots(t) == 0n : Nat}) -> {Spec.count_dot(x, Spec.dots(t)) == 0n : Nat}:
+def dots_step(+c: Char, +t: String, +x: Bool, ex: {Char.is_eq(c, '.') == x : Bool}, f: {Bool.not(x) && J.dotfree_spec(t) == True{} : Bool}, ih: {J.dotfree_spec(t) == True{} : Bool} -> {Spec.dots(t) == 0n : Nat}) -> {Spec.count_dot(x, Spec.dots(t)) == 0n : Nat}:
   match x:
     case True{}:
       JwtProof.absurd({Spec.count_dot(True{}, Spec.dots(t)) == 0n : Nat}, JwtProof.false_true(f))
@@ -47,12 +48,12 @@ def dots_step(+c: Char, +t: String, +x: Bool, ex: {Char.is_eq(c, '.') == x : Boo
       ih(f)
 
 # A dot-free string has no '.'.
-def dots_of(+s: String, f: {J.dotfree(s) == True{} : Bool}) -> {Spec.dots(s) == 0n : Nat}:
+def dots_of_spec(+s: String, f: {J.dotfree_spec(s) == True{} : Bool}) -> {Spec.dots(s) == 0n : Nat}:
   match s:
     case SNil{}:
       {==}
     case SCon{+c, +t}:
-      dots_step(c, t, Char.is_eq(c, '.'), {==}, f, g => dots_of(t, g))
+      dots_step(c, t, Char.is_eq(c, '.'), {==}, f, g => dots_of_spec(t, g))
 
 # The separators that remain after a split.
 def after(m: Maybe<&2, J.Cut>) -> Nat:
@@ -69,20 +70,32 @@ def after_prepend(+c: Char, +m: Maybe<&2, J.Cut>) -> {after(J.prepend(c, m)) == 
     case Some{J.Cut{a, r}}:
       {==}
 
-def split_step(+c: Char, +t: String, +x: Bool, ih: {Spec.dots(t) == after(J.split(t)) : Nat}) -> {Spec.count_dot(x, Spec.dots(t)) == after(J.split_pick(c, t, J.split(t), x)) : Nat}:
+def split_step(+c: Char, +t: String, +x: Bool, ih: {Spec.dots(t) == after(J.split_spec(t)) : Nat}) -> {Spec.count_dot(x, Spec.dots(t)) == after(J.split_pick(c, t, J.split_spec(t), x)) : Nat}:
   match x:
     case True{}:
       {==}
     case False{}:
-      Equal.trans(Nat, Spec.dots(t), after(J.split(t)), after(J.prepend(c, J.split(t))), ih, Equal.sym(Nat, after(J.prepend(c, J.split(t))), after(J.split(t)), after_prepend(c, J.split(t))))
+      Equal.trans(Nat, Spec.dots(t), after(J.split_spec(t)), after(J.prepend(c, J.split_spec(t))), ih, Equal.sym(Nat, after(J.prepend(c, J.split_spec(t))), after(J.split_spec(t)), after_prepend(c, J.split_spec(t))))
 
 # Splitting at the first '.' leaves one separator fewer.
-def dots_split(+s: String) -> {Spec.dots(s) == after(J.split(s)) : Nat}:
+def dots_split_spec(+s: String) -> {Spec.dots(s) == after(J.split_spec(s)) : Nat}:
   match s:
     case SNil{}:
       {==}
     case SCon{+c, +t}:
-      split_step(c, t, Char.is_eq(c, '.'), dots_split(t))
+      split_step(c, t, Char.is_eq(c, '.'), dots_split_spec(t))
+
+# The verifier's dotfree and split are tail loops (BND-84); move each fact
+# across their equivalence with the recursive specs.
+def dotfree_of(+s: String, z: {Spec.dots(s) == 0n : Nat}) -> {J.dotfree(s) == True{} : Bool}:
+  Equal.trans(Bool, J.dotfree(s), J.dotfree_spec(s), True{}, JwtProof.dotfree_equiv(s), dotfree_of_spec(s, z))
+
+def dots_of(+s: String, f: {J.dotfree(s) == True{} : Bool}) -> {Spec.dots(s) == 0n : Nat}:
+  dots_of_spec(s, JwtProof.dotfree_spec_of(s, f))
+
+def dots_split(+s: String) -> {Spec.dots(s) == after(J.split(s)) : Nat}:
+  %Equal.sym(Maybe<&2, J.Cut>, J.split(s), J.split_spec(s), CutTail.J_equiv(s)) : {Spec.dots(s) == after(_) : Nat}
+  dots_split_spec(s)
 
 def two(+token: String, +rest: String, +c: String, d: {Spec.dots(token) == 1n+Spec.dots(rest) : Nat}, d2: {Spec.dots(rest) == 1n+Spec.dots(c) : Nat}, z: {Spec.dots(c) == 0n : Nat}) -> {Spec.dots(token) == 2n : Nat}:
   %z : {Spec.dots(token) == 1n+(1n+_) : Nat}

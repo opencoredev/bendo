@@ -398,22 +398,152 @@ def empty(state: State) -> Maybe<&2, String>:
     case _:
       None{}
 
-def decode(bs: List<&2, U32>, state: State) -> Maybe<&2, String>:
+# The recursive decoder, kept as the specification of `decode`. It waits for
+# the decoded tail before it emits a character, so it is not stack safe.
+def decode_spec(bs: List<&2, U32>, state: State) -> Maybe<&2, String>:
   match bs:
     case Nil{}:
       empty(state)
     case h <> t:
       do Maybe<&2, String>:
         +action : Step <- step(state, h)
-        finish(action, decode(t, next_state(action)))
+        finish(action, decode_spec(t, next_state(action)))
 
-# This includes arbitrary malformed suffixes: no assumption about tail is made.
-law decode_code_suffix:
-  for +code: Code
-  for +tail: List<&2, U32>
-  {decode(List.append(&2, U32, bytes(code), tail), Start{}) == finish(EmitCode{code}, decode(tail, Start{})) : Maybe<&2, String>}
+# A running decode: the UTF-8 state and the characters decoded so far, most
+# recent first. A failure ignores the rest of the input.
+type Run is Data:
+  Going{state: State, chars: String}
+  Failed{}
 
-def decode_code_suffix(code, tail):
+def emit_run(+code: Code, chars: String, valid: Bool) -> Run:
+  match valid:
+    case True{}:
+      Going{Start{}, SCon{Chr{value(code)}, chars}}
+    case False{}:
+      Failed{}
+
+def absorb_step(m: Maybe<&2, Step>, chars: String) -> Run:
+  match m:
+    case None{}:
+      Failed{}
+    case Some{Next{state}}:
+      Going{state, chars}
+    case Some{EmitCode{+code}}:
+      emit_run(code, chars, scalar(value(code)) && canonical(code))
+
+def absorb(r: Run, h: U32) -> Run:
+  match r:
+    case Going{state, chars}:
+      absorb_step(step(state, h), chars)
+    case Failed{}:
+      Failed{}
+
+def run(bs: List<&2, U32>, r: Run) -> Run:
+  match bs:
+    case Nil{}:
+      r
+    case h <> t:
+      run(t, absorb(r, h))
+
+def finished(state: State, chars: String) -> Maybe<&2, String>:
+  match state:
+    case Start{}:
+      Some{String.reverse(chars)}
+    case _:
+      None{}
+
+def result(r: Run) -> Maybe<&2, String>:
+  match r:
+    case Going{state, chars}:
+      finished(state, chars)
+    case Failed{}:
+      None{}
+
+# One tail-recursive pass over the bytes, so request-sized input cannot
+# exhaust the JavaScript stack. `decode_equiv` proves it equals decode_spec.
+def decode(bs: List<&2, U32>, state: State) -> Maybe<&2, String>:
+  result(run(bs, Going{state, ""}))
+
+def prefix(chars: String, m: Maybe<&2, String>) -> Maybe<&2, String>:
+  match m:
+    case None{}:
+      None{}
+    case Some{x}:
+      Some{String.reverse.go(chars, x)}
+
+def failed_run(bs: List<&2, U32>) -> {result(run(bs, Failed{})) == None{} : Maybe<&2, String>}:
+  match bs:
+    case Nil{}:
+      {==}
+    case h <> t:
+      failed_run(t)
+
+def finished_empty(state: State, +chars: String) -> {finished(state, chars) == prefix(chars, empty(state)) : Maybe<&2, String>}:
+  match state:
+    case Start{}:
+      {==}
+    case NeedTwo{hi}:
+      {==}
+    case NeedThree{hi}:
+      {==}
+    case EndThree{hi, mid}:
+      {==}
+    case NeedFour{hi}:
+      {==}
+    case MidFour{hi, upper}:
+      {==}
+    case EndFour{hi, upper, mid}:
+      {==}
+
+def prefix_char(+c: Char, +chars: String, m: Maybe<&2, String>) ->
+    {prefix(SCon{c, chars}, m) == prefix(chars, Maybe.bind(&2, String, String, m, rest => Some{SCon{c, rest}})) : Maybe<&2, String>}:
+  match m:
+    case None{}:
+      {==}
+    case Some{x}:
+      {==}
+
+def emit_equiv(+code: Code, +chars: String, +t: List<&2, U32>, valid: Bool,
+    ih: {result(run(t, Going{Start{}, SCon{Chr{value(code)}, chars}})) == prefix(SCon{Chr{value(code)}, chars}, decode_spec(t, Start{})) : Maybe<&2, String>}) ->
+    {result(run(t, emit_run(code, chars, valid))) == prefix(chars, emit_valid(code, decode_spec(t, Start{}), valid)) : Maybe<&2, String>}:
+  match valid:
+    case True{}:
+      Equal.trans(Maybe<&2, String>, result(run(t, Going{Start{}, SCon{Chr{value(code)}, chars}})), prefix(SCon{Chr{value(code)}, chars}, decode_spec(t, Start{})), prefix(chars, Maybe.bind(&2, String, String, decode_spec(t, Start{}), rest => Some{SCon{Chr{value(code)}, rest}})), ih, prefix_char(Chr{value(code)}, chars, decode_spec(t, Start{})))
+    case False{}:
+      failed_run(t)
+
+def step_equiv(m: Maybe<&2, Step>, +chars: String, +t: List<&2, U32>,
+    ih: @s: State -> @c: String -> {result(run(t, Going{s, c})) == prefix(c, decode_spec(t, s)) : Maybe<&2, String>}) ->
+    {result(run(t, absorb_step(m, chars))) == prefix(chars, Maybe.bind(&2, Step, String, m, +action => finish(action, decode_spec(t, next_state(action))))) : Maybe<&2, String>}:
+  match m:
+    case None{}:
+      failed_run(t)
+    case Some{Next{s}}:
+      ih(s, chars)
+    case Some{EmitCode{+code}}:
+      emit_equiv(code, chars, t, scalar(value(code)) && canonical(code), ih(Start{}, SCon{Chr{value(code)}, chars}))
+
+def run_equiv(bs: List<&2, U32>, state: State, +chars: String) ->
+    {result(run(bs, Going{state, chars})) == prefix(chars, decode_spec(bs, state)) : Maybe<&2, String>}:
+  match bs:
+    case Nil{}:
+      finished_empty(state, chars)
+    case h <> +t:
+      step_equiv(step(state, h), chars, t, s => c => run_equiv(t, s, c))
+
+def prefix_empty(m: Maybe<&2, String>) -> {prefix("", m) == m : Maybe<&2, String>}:
+  match m:
+    case None{}:
+      {==}
+    case Some{x}:
+      {==}
+
+# Stated spec first, so `%decode_equiv(..)` rewrites decode into decode_spec.
+def decode_equiv(+bs: List<&2, U32>, +state: State) -> {decode_spec(bs, state) == decode(bs, state) : Maybe<&2, String>}:
+  Equal.sym(Maybe<&2, String>, decode(bs, state), decode_spec(bs, state), Equal.trans(Maybe<&2, String>, decode(bs, state), prefix("", decode_spec(bs, state)), decode_spec(bs, state), run_equiv(bs, state, ""), prefix_empty(decode_spec(bs, state))))
+
+def decode_spec_code_suffix(+code: Code, +tail: List<&2, U32>) ->
+    {decode_spec(List.append(&2, U32, bytes(code), tail), Start{}) == finish(EmitCode{code}, decode_spec(tail, Start{})) : Maybe<&2, String>}:
   match code:
     case One{WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{b4, WCon{b5, WCon{b6, WNil{}}}}}}}}}:
       {==}
@@ -423,6 +553,17 @@ def decode_code_suffix(code, tail):
       {==}
     case Four{WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{b4, WCon{b5, WCon{b6, WCon{b7, WCon{b8, WCon{b9, WCon{b10, WCon{b11, WCon{b12, WCon{b13, WCon{b14, WCon{b15, WCon{b16, WCon{b17, WCon{b18, WCon{b19, WCon{b20, WNil{}}}}}}}}}}}}}}}}}}}}}}}:
       {==}
+
+# This includes arbitrary malformed suffixes: no assumption about tail is made.
+law decode_code_suffix:
+  for +code: Code
+  for +tail: List<&2, U32>
+  {decode(List.append(&2, U32, bytes(code), tail), Start{}) == finish(EmitCode{code}, decode(tail, Start{})) : Maybe<&2, String>}
+
+def decode_code_suffix(code, tail):
+  %decode_equiv(List.append(&2, U32, bytes(code), tail), Start{}) : {_ == finish(EmitCode{code}, decode(tail, Start{})) : Maybe<&2, String>}
+  %decode_equiv(tail, Start{}) : {decode_spec(List.append(&2, U32, bytes(code), tail), Start{}) == finish(EmitCode{code}, _) : Maybe<&2, String>}
+  decode_spec_code_suffix(code, tail)
 
 # The prefix API shares the same state machine as full-string decoding.
 def finish_read(+action: Step, tail: List<&2, U32>, remaining: Unit -> Maybe<&2, Read>) -> Maybe<&2, Read>:

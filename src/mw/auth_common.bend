@@ -3,6 +3,7 @@ import Base
 import ../http/request.bend as Request
 import ../http/response.bend as Response
 import ../http/bytes.bend as Bytes
+import ../http/text.bend as Text
 import ../crypto/sha256.bend as SHA256
 import ../crypto/compare.bend as Compare
 import ../data/utf8.bend as Utf8
@@ -27,11 +28,20 @@ def cut_pick(c: Char, t: String, rest: Maybe<&2, Cut>, here: Bool) -> Maybe<&2, 
     case True{}: Some{Cut{"", t}}
     case False{}: cut_prepend(c, rest)
 
-# Split at the first occurrence of sep.
-def cut(s: String, +sep: Char) -> Maybe<&2, Cut>:
+def cut_spec(s: String, +sep: Char) -> Maybe<&2, Cut>:
   match s:
     case SNil{}: None{}
-    case SCon{+c, +t}: cut_pick(c, t, cut(t, sep), Char.is_eq(c, sep))
+    case SCon{+c, +t}: cut_pick(c, t, cut_spec(t, sep), Char.is_eq(c, sep))
+
+def from_text(r: Maybe<&2, Text.Cut>) -> Maybe<&2, Cut>:
+  match r:
+    case None{}: None{}
+    case Some{Text.Cut{a, b}}: Some{Cut{a, b}}
+
+# Split at the first occurrence of sep. Loops over header text in this module
+# are tail calls (BND-84).
+def cut(s: String, +sep: Char) -> Maybe<&2, Cut>:
+  from_text(Text.cut(s, sep))
 
 def spaces(s: String) -> String:
   match s:
@@ -70,12 +80,23 @@ def supplied(header: Maybe<&2, String>, +scheme: String) -> Supplied:
     case None{}: Missing{}
     case Some{value}: split_scheme(cut(trim(value), ' '), scheme)
 
-def escape(s: String) -> String:
+def escape_spec(s: String) -> String:
   match s:
     case SNil{}: ""
-    case SCon{'"', t}: "\\\"" ++ escape(t)
-    case SCon{'\\', t}: "\\\\" ++ escape(t)
-    case SCon{c, t}: SCon{c, escape(t)}
+    case SCon{'"', t}: "\\\"" ++ escape_spec(t)
+    case SCon{'\\', t}: "\\\\" ++ escape_spec(t)
+    case SCon{c, t}: SCon{c, escape_spec(t)}
+
+# rev holds the output so far, reversed. Same patterns as escape_spec.
+def escape_go(s: String, rev: String) -> String:
+  match s:
+    case SNil{}: String.reverse(rev)
+    case SCon{'"', t}: escape_go(t, SCon{'"', SCon{'\\', rev}})
+    case SCon{'\\', t}: escape_go(t, SCon{'\\', SCon{'\\', rev}})
+    case SCon{c, t}: escape_go(t, SCon{c, rev})
+
+def escape(s: String) -> String:
+  escape_go(s, "")
 
 # A quoted-string auth-param value.
 def quoted(s: String) -> String:

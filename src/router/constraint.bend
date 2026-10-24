@@ -29,12 +29,25 @@ def alpha(+n: U32) -> Bool:
 def hex(+n: U32) -> Bool:
   digit(n) || in_range(n, 97, 102) || in_range(n, 65, 70)
 
-def digits(s: String) -> Bool:
+# Capture values come from the request, so each loop over one is a tail call
+# (BND-84). The `_spec` defs keep the recursive originals;
+# constraint-proofs.bend proves each loop equal to its spec.
+def digits_spec(s: String) -> Bool:
   match s:
     case SNil{}:
       True{}
     case SCon{Chr{n}, t}:
-      digit(n) && digits(t)
+      digit(n) && digits_spec(t)
+
+def digits_go(s: String, ok: Bool) -> Bool:
+  match s:
+    case SNil{}:
+      ok
+    case SCon{Chr{n}, t}:
+      digits_go(t, ok && digit(n))
+
+def digits(s: String) -> Bool:
+  digits_go(s, True{})
 
 def integer(s: String) -> Bool:
   match s:
@@ -45,23 +58,52 @@ def integer(s: String) -> Bool:
     case SCon{Chr{n}, t}:
       digit(n) && digits(t)
 
-def slug(s: String) -> Bool:
+def slug_char(+n: U32) -> Bool:
+  lower(n) || digit(n) || U32.is_eq(n, 45)
+
+def slug_spec(s: String) -> Bool:
   match s:
     case SNil{}:
       True{}
     case SCon{Chr{+n}, t}:
-      (lower(n) || digit(n) || U32.is_eq(n, 45)) && slug(t)
+      (lower(n) || digit(n) || U32.is_eq(n, 45)) && slug_spec(t)
 
-def uuid(s: String, +pos: Nat) -> Bool:
+def slug_go(s: String, ok: Bool) -> Bool:
+  match s:
+    case SNil{}:
+      ok
+    case SCon{Chr{+n}, t}:
+      slug_go(t, ok && slug_char(n))
+
+def slug(s: String) -> Bool:
+  slug_go(s, True{})
+
+def dash_at(+pos: Nat) -> Bool:
+  Nat.is_eq(pos, 8n) || Nat.is_eq(pos, 13n) || Nat.is_eq(pos, 18n) || Nat.is_eq(pos, 23n)
+
+def uuid_spec(s: String, +pos: Nat) -> Bool:
   match s:
     case SNil{}:
       Nat.is_eq(pos, 36n)
     case SCon{Chr{+n}, +t}:
       E.choose(Bool, Nat.is_eq(pos, 8n) || Nat.is_eq(pos, 13n) || Nat.is_eq(pos, 18n) || Nat.is_eq(pos, 23n), u => (
-        U32.is_eq(n, 45) && uuid(t, 1n+pos)
+        U32.is_eq(n, 45) && uuid_spec(t, 1n+pos)
       ), u => (
-        hex(n) && uuid(t, 1n+pos)
+        hex(n) && uuid_spec(t, 1n+pos)
       ))
+
+def uuid_char(+n: U32, dash: Bool) -> Bool:
+  E.choose(Bool, dash, u => U32.is_eq(n, 45), u => hex(n))
+
+def uuid_go(s: String, +pos: Nat, ok: Bool) -> Bool:
+  match s:
+    case SNil{}:
+      ok && Nat.is_eq(pos, 36n)
+    case SCon{Chr{+n}, t}:
+      uuid_go(t, 1n+pos, ok && uuid_char(n, dash_at(pos)))
+
+def uuid(s: String, +pos: Nat) -> Bool:
+  uuid_go(s, pos, True{})
 
 def member(ranges: List<&2, Range>, +n: U32) -> Bool:
   match ranges:
@@ -70,12 +112,22 @@ def member(ranges: List<&2, Range>, +n: U32) -> Bool:
     case Range{lo, hi} <> t:
       in_range(n, lo, hi) || member(t, n)
 
-def class_chars(s: String, +ranges: List<&2, Range>) -> Bool:
+def class_chars_spec(s: String, +ranges: List<&2, Range>) -> Bool:
   match s:
     case SNil{}:
       True{}
     case SCon{Chr{n}, t}:
-      member(ranges, n) && class_chars(t, ranges)
+      member(ranges, n) && class_chars_spec(t, ranges)
+
+def class_chars_go(s: String, +ranges: List<&2, Range>, ok: Bool) -> Bool:
+  match s:
+    case SNil{}:
+      ok
+    case SCon{Chr{n}, t}:
+      class_chars_go(t, ranges, ok && member(ranges, n))
+
+def class_chars(s: String, +ranges: List<&2, Range>) -> Bool:
+  class_chars_go(s, ranges, True{})
 
 def count_ok(count: Maybe<&2, Nat>, n: Nat) -> Bool:
   match count:

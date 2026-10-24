@@ -8,6 +8,8 @@ import ./compile-proofs.bend as Compile
 import ./utf8-proofs.bend as Codec
 import ./equality-proofs.bend as Eq
 import ./utf8-code.bend as Code
+import ./encoding-proofs.bend as EP
+import ./pattern-stack-proofs.bend as PS
 
 # The proof carries filling, separator cleanliness, and matching together.
 def Roundtrip(+segs: List<&2, P.Segment>, +ps: P.Params) -> Type:
@@ -186,7 +188,8 @@ def encode_percent(+c: C.Constraint, +v: String, valid: {P.value_ok(c, v) == Tru
     case SNil{}:
       Core.absurd({P.no_percent(E.encode(SNil{})) == False{} : Bool}, Core.false_true(valid))
     case SCon{Chr{+n}, +t}:
-      +scalars = Core.and_left(E.scalar(n) && E.scalars(t), C.accepts(c, SCon{Chr{n}, t}), valid)
+      +scalars = Equal.trans(Bool, E.scalar(n) && E.scalars(t), E.scalars(SCon{Chr{n}, t}), True{}, EP.scalars_cons(n, t), Core.and_left(E.scalars(SCon{Chr{n}, t}), C.accepts(c, SCon{Chr{n}, t}), valid))
+      %EP.encode_cons(n, t) : {P.no_percent(_) == False{} : Bool}
       packed_percent(Code.represent(n), Codec.scalar_is_packed(n, Core.and_left(E.scalar(n), E.scalars(t), scalars)), E.encode(t))
 
 def choose_none(+name: String, +v: String, b: Bool) ->
@@ -426,6 +429,7 @@ def scan_cons(+rest: List<&2, P.Segment>, +h: String, +t: List<&2, String>, +nam
     {P.span_scan(h <> t, P.match_rows(~String.eq, ~String.starts_with, rest, h <> t), name, taken) == None{} : Maybe<&2, P.Params>}:
   (here, later) = parts
   %Equal.sym(Core.Rows, P.match_rows(~String.eq, ~String.starts_with, rest, h <> t), P.search_segments(rest, h <> t) <> P.match_rows(~String.eq, ~String.starts_with, rest, t), Core.rows_cons(rest, h, t)) : {P.span_scan(h <> t, _, name, taken) == None{} : Maybe<&2, P.Params>}
+  %PS.span_scan_cons(h, t, P.search_segments(rest, h <> t), P.match_rows(~String.eq, ~String.starts_with, rest, t), name, taken) : {_ == None{} : Maybe<&2, P.Params>}
   %Equal.sym(Maybe<&2, P.Params>, P.span_scan(t, P.match_rows(~String.eq, ~String.starts_with, rest, t), name, h <> taken), None{}, inner(later)) : {P.prefer(_, u => P.span_value(name, h <> taken, P.row_head(P.match_rows(~String.eq, ~String.starts_with, rest, t)))) == None{} : Maybe<&2, P.Params>}
   %Equal.sym(Maybe<&2, P.Params>, P.search_segments(rest, t), None{}, here) : {P.span_value(name, h <> taken, _) == None{} : Maybe<&2, P.Params>}
   {==}
@@ -467,6 +471,7 @@ def span_step(+name: String, +rest: List<&2, P.Segment>, +key: String, +value: S
     clean
   ), (
     %Equal.sym(Core.Rows, P.match_rows(~String.eq, ~String.starts_with, rest, enc <> xs), P.search_segments(rest, enc <> xs) <> P.match_rows(~String.eq, ~String.starts_with, rest, xs), Core.rows_cons(rest, enc, xs)) : {P.span_scan(enc <> xs, _, name, Nil{}) == Some{P.Param{key, value} <> tail} : Maybe<&2, P.Params>}
+    %PS.span_scan_cons(enc, xs, P.search_segments(rest, enc <> xs), P.match_rows(~String.eq, ~String.starts_with, rest, xs), name, Nil{}) : {_ == Some{P.Param{key, value} <> tail} : Maybe<&2, P.Params>}
     %Equal.sym(Maybe<&2, P.Params>, P.span_scan(xs, P.match_rows(~String.eq, ~String.starts_with, rest, xs), name, [enc]), None{}, scan_none(rest, xs, name, [enc], proper_fail(rest, xs, tail_fixed(rest, anchored), counted))) : {P.prefer(_, u => P.span_value(name, [enc], P.row_head(P.match_rows(~String.eq, ~String.starts_with, rest, xs)))) == Some{P.Param{key, value} <> tail} : Maybe<&2, P.Params>}
     %Equal.sym(Maybe<&2, P.Params>, P.search_segments(rest, xs), Some{tail}, Equal.trans(Maybe<&2, P.Params>, P.search_segments(rest, xs), P.match_segments(rest, xs), Some{tail}, Core.search_equal(rest, xs), matched)) : {P.span_value(name, [enc], _) == Some{P.Param{key, value} <> tail} : Maybe<&2, P.Params>}
     %Equal.sym(Maybe<&2, String>, E.decode(E.encode(value)), Some{value}, Codec.codec_roundtrip(value, unicode)) : {Maybe.bind(&2, String, P.Params, _, +v => E.choose(Maybe<&2, P.Params>, P.value_ok(C.Any{}, v), u => Some{P.Param{name, v} <> tail}, u => None{})) == Some{P.Param{key, value} <> tail} : Maybe<&2, P.Params>}
@@ -558,6 +563,7 @@ def match_fill_segments(segs, ps, clean, admitted):
         %Equal.sym(Bool, Core.no_slash(E.encode(value)), True{}, Core.encode_no_slash(value, unicode)) : {_ && True{} == True{} : Bool}
         {==}
       ), (
+        %PS.decode_segments_equiv([E.encode(value)]) : {P.wildcard_param(name, _) == Some{[P.Param{key, value}]} : Maybe<&2, P.Params>}
         %Equal.sym(Maybe<&2, String>, E.decode(E.encode(value)), Some{value}, Codec.codec_roundtrip(value, unicode)) : {P.wildcard_param(name, _) == Some{[P.Param{key, value}]} : Maybe<&2, P.Params>}
         Equal.cong(String, Maybe<&2, P.Params>, n => Some{[P.Param{n, value}]}, name, key, Eq.string_eq_sound(name, key, Core.and_left(String.eq(name, key), E.scalars(value), ok)))
       ))))

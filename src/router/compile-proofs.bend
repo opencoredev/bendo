@@ -4,6 +4,7 @@ import ./pattern.bend as P
 import ./constraint.bend as C
 import ./encoding.bend as E
 import ./proofs.bend as Core
+import ./pattern-stack-proofs.bend as PS
 
 def segment_clean(s: P.Segment) -> Bool:
   match s:
@@ -329,16 +330,20 @@ def split_fin_nonempty(+h: Char, +xs: List<&2, String>, cut: Bool) ->
     case False{}:
       split_push_nonempty(h, xs)
 
+def split_nonempty_base(+s: String) -> {List.is_empty(&2, String, String.split(s, '/')) == False{} : Bool}:
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{+h, +t}:
+      split_fin_nonempty(h, String.split(t, '/'), Char.is_eq(h, '/'))
+
 law split_nonempty:
   for +s: String
   {List.is_empty(&2, String, P.path_segments(s)) == False{} : Bool}
 
 def split_nonempty(s):
-  match s:
-    case SNil{}:
-      {==}
-    case SCon{+h, +t}:
-      split_fin_nonempty(h, P.path_segments(t), Char.is_eq(h, '/'))
+  %PS.segments_equiv(s) : {List.is_empty(&2, String, _) == False{} : Bool}
+  split_nonempty_base(s)
 
 def pattern_good(p: P.Pattern) -> Bool:
   match p:

@@ -316,20 +316,50 @@ def step_char(+c: U32, +rev: String, +ok: {U.scalar(c) == True{} : Bool}) -> {wa
     case U32{w}:
       step_char32(w, rev, zero_sound(11n, U.high(21n, 11n, w), fits(w, ok)), ok)
 
-def roundtrip_go(+s: String, +rev: String, +ok: {U.valid(s) == True{} : Bool}) -> {U.decode_go(U.encode_spec(s), U.UtfReady{rev}) == Some{String.reverse.go(rev, s)} : Maybe<&2, String>}:
+# ---- valid: a tail loop over the reversed string equals the spec ----
+
+# The spec's right fold, onto the verdict acc for the text after it.
+def valid_onto(s: String, +acc: Bool) -> Bool:
+  match s:
+    case SNil{}:
+      acc
+    case SCon{Chr{c}, t}:
+      U.scalar(c) && valid_onto(t, acc)
+
+def valid_onto_true(+s: String) -> {valid_onto(s, True{}) == U.valid_spec(s) : Bool}:
   match s:
     case SNil{}:
       {==}
     case SCon{Chr{c}, t}:
-      head = and_left(U.scalar(c), U.valid(t), ok)
-      tail = and_right(U.scalar(c), U.valid(t), ok)
+      Equal.cong(Bool, Bool, x => U.scalar(c) && x, valid_onto(t, True{}), U.valid_spec(t), valid_onto_true(t))
+
+def valid_reverse(+s: String, +r: String, +acc: Bool) -> {U.valid_go(String.reverse.go(s, r), acc) == U.valid_go(r, valid_onto(s, acc)) : Bool}:
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{Chr{c}, t}:
+      valid_reverse(t, SCon{Chr{c}, r}, acc)
+
+def valid_equiv(+s: String) -> {U.valid(s) == U.valid_spec(s) : Bool}:
+  Equal.trans(Bool, U.valid(s), valid_onto(s, True{}), U.valid_spec(s), valid_reverse(s, "", True{}), valid_onto_true(s))
+
+def valid_spec_of(+s: String, ok: {U.valid(s) == True{} : Bool}) -> {U.valid_spec(s) == True{} : Bool}:
+  Equal.trans(Bool, U.valid_spec(s), U.valid(s), True{}, Equal.sym(Bool, U.valid(s), U.valid_spec(s), valid_equiv(s)), ok)
+
+def roundtrip_go(+s: String, +rev: String, +ok: {U.valid_spec(s) == True{} : Bool}) -> {U.decode_go(U.encode_spec(s), U.UtfReady{rev}) == Some{String.reverse.go(rev, s)} : Maybe<&2, String>}:
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{Chr{c}, t}:
+      head = and_left(U.scalar(c), U.valid_spec(t), ok)
+      tail = and_right(U.scalar(c), U.valid_spec(t), ok)
       a = decode_append(U.encode_char(c), U.encode_spec(t), U.UtfReady{rev})
       b = Equal.cong(U.State, Maybe<&2, String>, st => U.decode_go(U.encode_spec(t), st), walk(U.encode_char(c), U.UtfReady{rev}), U.UtfReady{SCon{Chr{c}, rev}}, step_char(c, rev, head))
       Equal.trans(Maybe<&2, String>, U.decode_go(List.append(&2, U32, U.encode_char(c), U.encode_spec(t)), U.UtfReady{rev}), U.decode_go(U.encode_spec(t), U.UtfReady{SCon{Chr{c}, rev}}), Some{String.reverse.go(rev, SCon{Chr{c}, t})}, Equal.trans(Maybe<&2, String>, U.decode_go(List.append(&2, U32, U.encode_char(c), U.encode_spec(t)), U.UtfReady{rev}), U.decode_go(U.encode_spec(t), walk(U.encode_char(c), U.UtfReady{rev})), U.decode_go(U.encode_spec(t), U.UtfReady{SCon{Chr{c}, rev}}), a, b), roundtrip_go(t, SCon{Chr{c}, rev}, tail))
 
 # Universal, with an independently defined Unicode-scalar premise.
 def roundtrip_spec(+s: String, ok: {U.valid(s) == True{} : Bool}) -> {U.decode(U.encode_spec(s)) == Some{s} : Maybe<&2, String>}:
-  roundtrip_go(s, "", ok)
+  roundtrip_go(s, "", valid_spec_of(s, ok))
 
 # The public stack-safe encoder has the same universal inverse.
 def roundtrip(+s: String, ok: {U.valid(s) == True{} : Bool}) -> {U.decode(U.encode(s)) == Some{s} : Maybe<&2, String>}:

@@ -169,14 +169,14 @@ def octets_app(+xs: List<&2, U32>, +ys: List<&2, U32>, +ox: {Response.octets(xs)
 # A string that is valid UTF-8 text and whose encoding is octets.
 def good(s: String) -> Bool:
   +x = s
-  U.valid(x) && Response.octets(U.encode_spec(x))
+  U.valid_spec(x) && Response.octets(U.encode_spec(x))
 
 def plain_cons(+x: U32, +rest: String, +px: {plain(Chr{x}) == True{} : Bool}, +pr: {good(rest) == True{} : Bool}) -> {good(SCon{Chr{x}, rest}) == True{} : Bool}:
   +vx = left(U.scalar(x), Response.octets(U.encode_char(x)), px)
   +ox = right(U.scalar(x), Response.octets(U.encode_char(x)), px)
-  +vr = left(U.valid(rest), Response.octets(U.encode_spec(rest)), pr)
-  +orr = right(U.valid(rest), Response.octets(U.encode_spec(rest)), pr)
-  and_intro(U.scalar(x) && U.valid(rest), Response.octets(List.append(&2, U32, U.encode_char(x), U.encode_spec(rest))), and_intro(U.scalar(x), U.valid(rest), vx, vr), octets_app(U.encode_char(x), U.encode_spec(rest), ox, orr))
+  +vr = left(U.valid_spec(rest), Response.octets(U.encode_spec(rest)), pr)
+  +orr = right(U.valid_spec(rest), Response.octets(U.encode_spec(rest)), pr)
+  and_intro(U.scalar(x) && U.valid_spec(rest), Response.octets(List.append(&2, U32, U.encode_char(x), U.encode_spec(rest))), and_intro(U.scalar(x), U.valid_spec(rest), vx, vr), octets_app(U.encode_char(x), U.encode_spec(rest), ox, orr))
 
 def char_cons(+d: Char, +acc: String, +t: String, +de: {plain(d) == True{} : Bool}, +ae: {good(acc ++ t) == True{} : Bool}) -> {good(SCon{d, acc} ++ t) == True{} : Bool}:
   match d:
@@ -214,10 +214,10 @@ def status_spec(+code: U32) -> {Errors.status(code) == Spec.status(code) : U32}:
   status_spec_in(code, (code >= 400 : U32) && (code <= 599 : U32))
 
 def utf8_octets(+s: String, +g: {good(s) == True{} : Bool}) -> {Response.octets(Response.utf8(s)) == True{} : Bool}:
-  +v = left(U.valid(s), Response.octets(U.encode_spec(s)), g)
+  +v = Equal.trans(Bool, U.valid(s), U.valid_spec(s), True{}, Utf8Proof.valid_equiv(s), left(U.valid_spec(s), Response.octets(U.encode_spec(s)), g))
   %Equal.sym(String, Response.scalars(s), s, ResponseRuntime.scalars(s, v)) : {Response.octets(U.encode(_)) == True{} : Bool}
   %Equal.sym(List<&2, U32>, U.encode(s), U.encode_spec(s), Utf8Proof.encode_equiv(s)) : {Response.octets(_) == True{} : Bool}
-  right(U.valid(s), Response.octets(U.encode_spec(s)), g)
+  right(U.valid_spec(s), Response.octets(U.encode_spec(s)), g)
 
 def private_json_text(+code: U32) -> String:
   "{\"error\":\"Internal Server Error\",\"status\":" ++ Nat.show(U32.to_nat(Errors.status(code))) ++ "}"
@@ -277,12 +277,15 @@ def checked_guard(+r: Response.Res, v: Bool) -> {C.checked(r, v) == Spec.guard_p
     case True{}: {==}
     case False{}: {==}
 
-def scalar_go_valid(+t: String, b: Bool) -> {Json.scalar_go(t, b) == b && U.valid(t) : Bool}:
+def scalar_go_valid_inner(+t: String, b: Bool) -> {Json.scalar_go(t, b) == b && U.valid_spec(t) : Bool}:
   match t b:
     case SNil{} True{}: {==}
     case SNil{} False{}: {==}
-    case SCon{Chr{+c}, rest} True{}: scalar_go_valid(rest, U.scalar(c))
+    case SCon{Chr{+c}, rest} True{}: scalar_go_valid_inner(rest, U.scalar(c))
     case SCon{Chr{+c}, rest} False{}: {==}
+
+def scalar_go_valid(+t: String, +b: Bool) -> {Json.scalar_go(t, b) == b && U.valid(t) : Bool}:
+  Equal.trans(Bool, Json.scalar_go(t, b), b && U.valid_spec(t), b && U.valid(t), scalar_go_valid_inner(t, b), Equal.cong(Bool, Bool, x => b && x, U.valid_spec(t), U.valid(t), Equal.sym(Bool, U.valid(t), U.valid_spec(t), Utf8Proof.valid_equiv(t))))
 
 def default_text(m: String, +code: U32) -> {Errors.message_default(m, Response.reason(code), String.is_empty(m)) == Spec.public_text(m, code) : String}:
   match m:

@@ -3,6 +3,7 @@ import ../app/context.bend as C
 import ../http/response.bend as Response
 import ../http/request.bend as Request
 import ../http/bytes.bend as Bytes
+import ../http/text.bend as Text
 import ../data/json.bend as Json
 import ./common.bend as Common
 
@@ -38,7 +39,7 @@ def first(parts: List<&2, String>) -> String:
 def media(value: Maybe<&2, String>) -> Bool:
   match value:
     case None{}: False{}
-    case Some{s}: String.eq(Bytes.fold(Bytes.ascii(Bytes.trim(Bytes.encode(first(String.split(s, ';')))))), "application/json")
+    case Some{s}: String.eq(Bytes.fold(Bytes.ascii(Bytes.trim(Bytes.encode(first(Text.split(s, ';')))))), "application/json")
 
 def absent(value: Maybe<&2, String>) -> Bool:
   match value:

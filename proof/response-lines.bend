@@ -9,6 +9,7 @@ import ../src/http/request.bend as R
 import ../src/http/response.bend as Response
 import ../src/http/write_response.bend as W
 import ./support.bend as Support
+import ./bytes-tail.bend as BT
 
 def value_not_cr_case(+c: U32, ok: {B.value_octet(c) == True{} : Bool}, same: Bool, eq: {U32.is_eq(c, 13) == same : Bool}) -> {same == False{} : Bool}:
   match same:
@@ -22,42 +23,62 @@ def value_not_cr_case(+c: U32, ok: {B.value_octet(c) == True{} : Bool}, same: Bo
 def value_not_cr(+c: U32, ok: {B.value_octet(c) == True{} : Bool}) -> {Char.is_eq(Chr{c}, '\r') == False{} : Bool}:
   value_not_cr_case(c, ok, U32.is_eq(c, 13), {==})
 
-def clear_scan(+s: String, +tail: String, +needle_tail: String, +ok: {B.value(B.encode(s)) == True{} : Bool}) -> {String.contains(s ++ tail, "\r" ++ needle_tail) == String.contains(tail, "\r" ++ needle_tail) : Bool}:
+# Bytes.encode and Bytes.value are tail loops (BND-84); induction uses the specs.
+def value_encode_ok(+s: String, ok: {B.value(B.encode(s)) == True{} : Bool}) -> {B.value_spec(B.encode_spec(s)) == True{} : Bool}:
+  Equal.trans(Bool, B.value_spec(B.encode_spec(s)), B.value_spec(B.encode(s)), True{}, Equal.cong(List<&2, U32>, Bool, l => B.value_spec(l), B.encode_spec(s), B.encode(s), Equal.sym(List<&2, U32>, B.encode(s), B.encode_spec(s), BT.encode_equiv(s))), Equal.trans(Bool, B.value_spec(B.encode(s)), B.value(B.encode(s)), True{}, Equal.sym(Bool, B.value(B.encode(s)), B.value_spec(B.encode(s)), BT.value_equiv(B.encode(s))), ok))
+
+def clear_scan_spec(+s: String, +tail: String, +needle_tail: String, +ok: {B.value_spec(B.encode_spec(s)) == True{} : Bool}) -> {String.contains(s ++ tail, "\r" ++ needle_tail) == String.contains(tail, "\r" ++ needle_tail) : Bool}:
   match s:
     case SNil{}:
       {==}
     case SCon{Chr{c}, t}:
-      %Equal.sym(Bool, Char.is_eq(Chr{c}, '\r'), False{}, value_not_cr(c, Laws.and_left(B.value_octet(c), B.value(B.encode(t)), ok))) : {String.contains.if(t ++ tail, "\r" ++ needle_tail, String.starts_with.go.if(needle_tail, t ++ tail, _)) == String.contains(tail, "\r" ++ needle_tail) : Bool}
-      clear_scan(t, tail, needle_tail, Laws.and_right(B.value_octet(c), B.value(B.encode(t)), ok))
+      %Equal.sym(Bool, Char.is_eq(Chr{c}, '\r'), False{}, value_not_cr(c, Laws.and_left(B.value_octet(c), B.value_spec(B.encode_spec(t)), ok))) : {String.contains.if(t ++ tail, "\r" ++ needle_tail, String.starts_with.go.if(needle_tail, t ++ tail, _)) == String.contains(tail, "\r" ++ needle_tail) : Bool}
+      clear_scan_spec(t, tail, needle_tail, Laws.and_right(B.value_octet(c), B.value_spec(B.encode_spec(t)), ok))
 
-def encode_ascii(+xs: List<&2, U32>) -> {B.encode(B.ascii(xs)) == xs : List<&2, U32>}:
+def clear_scan(+s: String, +tail: String, +needle_tail: String, +ok: {B.value(B.encode(s)) == True{} : Bool}) -> {String.contains(s ++ tail, "\r" ++ needle_tail) == String.contains(tail, "\r" ++ needle_tail) : Bool}:
+  clear_scan_spec(s, tail, needle_tail, value_encode_ok(s, ok))
+
+
+def encode_ascii_spec(+xs: List<&2, U32>) -> {B.encode_spec(B.ascii_spec(xs)) == xs : List<&2, U32>}:
   match xs:
     case Nil{}:
       {==}
     case c <> t:
-      %encode_ascii(t) : {c <> B.encode(B.ascii(t)) == c <> _ : List<&2, U32>}
+      %encode_ascii_spec(t) : {c <> B.encode_spec(B.ascii_spec(t)) == c <> _ : List<&2, U32>}
       {==}
 
-def encode_append(+a: String, +b: String) -> {B.encode(a ++ b) == B.append(B.encode(a), B.encode(b)) : List<&2, U32>}:
+def encode_ascii(+xs: List<&2, U32>) -> {B.encode(B.ascii(xs)) == xs : List<&2, U32>}:
+  Equal.trans(List<&2, U32>, B.encode(B.ascii(xs)), B.encode_spec(B.ascii(xs)), xs, BT.encode_equiv(B.ascii(xs)), Equal.trans(List<&2, U32>, B.encode_spec(B.ascii(xs)), B.encode_spec(B.ascii_spec(xs)), xs, Equal.cong(String, List<&2, U32>, s => B.encode_spec(s), B.ascii(xs), B.ascii_spec(xs), BT.ascii_equiv(xs)), encode_ascii_spec(xs)))
+
+
+def encode_append_spec(+a: String, +b: String) -> {B.encode_spec(a ++ b) == List.append(&2, U32, B.encode_spec(a), B.encode_spec(b)) : List<&2, U32>}:
   match a:
     case SNil{}:
       {==}
     case SCon{Chr{c}, t}:
-      %encode_append(t, b) : {c <> B.encode(t ++ b) == c <> _ : List<&2, U32>}
+      %encode_append_spec(t, b) : {c <> B.encode_spec(t ++ b) == c <> _ : List<&2, U32>}
       {==}
 
-def ascii_append(+a: List<&2, U32>, +b: List<&2, U32>) -> {B.ascii(B.append(a, b)) == B.ascii(a) ++ B.ascii(b) : String}:
+def encode_append(+a: String, +b: String) -> {B.encode(a ++ b) == B.append(B.encode(a), B.encode(b)) : List<&2, U32>}:
+  Equal.trans(List<&2, U32>, B.encode(a ++ b), B.encode_spec(a ++ b), B.append(B.encode(a), B.encode(b)), BT.encode_equiv(a ++ b), Equal.trans(List<&2, U32>, B.encode_spec(a ++ b), List.append(&2, U32, B.encode_spec(a), B.encode_spec(b)), B.append(B.encode(a), B.encode(b)), encode_append_spec(a, b), Equal.trans(List<&2, U32>, List.append(&2, U32, B.encode_spec(a), B.encode_spec(b)), List.append(&2, U32, B.encode(a), B.encode_spec(b)), B.append(B.encode(a), B.encode(b)), Equal.cong(List<&2, U32>, List<&2, U32>, l => List.append(&2, U32, l, B.encode_spec(b)), B.encode_spec(a), B.encode(a), Equal.sym(List<&2, U32>, B.encode(a), B.encode_spec(a), BT.encode_equiv(a))), Equal.trans(List<&2, U32>, List.append(&2, U32, B.encode(a), B.encode_spec(b)), List.append(&2, U32, B.encode(a), B.encode(b)), B.append(B.encode(a), B.encode(b)), Equal.cong(List<&2, U32>, List<&2, U32>, l => List.append(&2, U32, B.encode(a), l), B.encode_spec(b), B.encode(b), Equal.sym(List<&2, U32>, B.encode(b), B.encode_spec(b), BT.encode_equiv(b))), Equal.sym(List<&2, U32>, B.append(B.encode(a), B.encode(b)), List.append(&2, U32, B.encode(a), B.encode(b)), BT.append_equiv(B.encode(a), B.encode(b)))))))
+
+
+def ascii_append_spec(+a: List<&2, U32>, +b: List<&2, U32>) -> {B.ascii_spec(List.append(&2, U32, a, b)) == B.ascii_spec(a) ++ B.ascii_spec(b) : String}:
   match a:
     case Nil{}:
       {==}
     case c <> t:
-      %ascii_append(t, b) : {SCon{Chr{c}, B.ascii(B.append(t, b))} == SCon{Chr{c}, _} : String}
+      %ascii_append_spec(t, b) : {SCon{Chr{c}, B.ascii_spec(List.append(&2, U32, t, b))} == SCon{Chr{c}, _} : String}
       {==}
+
+def ascii_append(+a: List<&2, U32>, +b: List<&2, U32>) -> {B.ascii(B.append(a, b)) == B.ascii(a) ++ B.ascii(b) : String}:
+  Equal.trans(String, B.ascii(B.append(a, b)), B.ascii_spec(B.append(a, b)), B.ascii(a) ++ B.ascii(b), BT.ascii_equiv(B.append(a, b)), Equal.trans(String, B.ascii_spec(B.append(a, b)), B.ascii_spec(List.append(&2, U32, a, b)), B.ascii(a) ++ B.ascii(b), Equal.cong(List<&2, U32>, String, l => B.ascii_spec(l), B.append(a, b), List.append(&2, U32, a, b), BT.append_equiv(a, b)), Equal.trans(String, B.ascii_spec(List.append(&2, U32, a, b)), B.ascii_spec(a) ++ B.ascii_spec(b), B.ascii(a) ++ B.ascii(b), ascii_append_spec(a, b), Equal.trans(String, B.ascii_spec(a) ++ B.ascii_spec(b), B.ascii(a) ++ B.ascii_spec(b), B.ascii(a) ++ B.ascii(b), Equal.cong(String, String, x => x ++ B.ascii_spec(b), B.ascii_spec(a), B.ascii(a), Equal.sym(String, B.ascii(a), B.ascii_spec(a), BT.ascii_equiv(a))), Equal.cong(String, String, x => B.ascii(a) ++ x, B.ascii_spec(b), B.ascii(b), Equal.sym(String, B.ascii(b), B.ascii_spec(b), BT.ascii_equiv(b)))))))
+
 
 def header_encode(+h: R.Header) -> {B.encode(W.header_text(h)) == Support.header_content(h) : List<&2, U32>}:
   match h:
     case R.Header{n, v}:
-      Equal.trans(List<&2, U32>, B.encode(W.header_text(R.Header{n, v})), B.append(B.encode(n), 58 <> 32 <> B.encode(B.ascii(v))), Support.header_content(R.Header{n, v}), encode_append(n, ": " ++ B.ascii(v)), Equal.cong(List<&2, U32>, List<&2, U32>, xs => B.append(B.encode(n), 58 <> 32 <> xs), B.encode(B.ascii(v)), v, encode_ascii(v)))
+      Equal.trans(List<&2, U32>, B.encode(W.header_text(R.Header{n, v})), B.append(B.encode(n), B.encode(": " ++ B.ascii(v))), Support.header_content(R.Header{n, v}), encode_append(n, ": " ++ B.ascii(v)), Equal.trans(List<&2, U32>, B.append(B.encode(n), B.encode(": " ++ B.ascii(v))), B.append(B.encode(n), 58 <> 32 <> B.encode(B.ascii(v))), Support.header_content(R.Header{n, v}), Equal.cong(List<&2, U32>, List<&2, U32>, l => B.append(B.encode(n), l), B.encode(": " ++ B.ascii(v)), 58 <> 32 <> B.encode(B.ascii(v)), encode_append(": ", B.ascii(v))), Equal.cong(List<&2, U32>, List<&2, U32>, xs => B.append(B.encode(n), 58 <> 32 <> xs), B.encode(B.ascii(v)), v, encode_ascii(v))))
 
 def header_clear(+h: R.Header, ok: {B.value(Support.header_content(h)) == True{} : Bool}) -> {B.value(B.encode(W.header_text(h))) == True{} : Bool}:
   %Equal.sym(List<&2, U32>, B.encode(W.header_text(h)), Support.header_content(h), header_encode(h)) : {B.value(_) == True{} : Bool}
@@ -68,7 +89,7 @@ def header_not_blank(+h: R.Header, +tail: String, ok: {B.value(B.encode(W.header
     case R.Header{SNil{}, v}:
       {==}
     case R.Header{SCon{Chr{c}, n}, v}:
-      %Equal.sym(Bool, Char.is_eq(Chr{c}, '\r'), False{}, value_not_cr(c, Laws.and_left(B.value_octet(c), B.value(B.encode(n ++ ": " ++ B.ascii(v))), ok))) : {String.starts_with.go.if("\n", (n ++ ": " ++ B.ascii(v)) ++ tail, _) == False{} : Bool}
+      %Equal.sym(Bool, Char.is_eq(Chr{c}, '\r'), False{}, value_not_cr(c, Laws.and_left(B.value_octet(c), B.value_spec(B.encode_spec(n ++ ": " ++ B.ascii(v))), value_encode_ok(W.header_text(R.Header{SCon{Chr{c}, n}, v}), ok)))) : {String.starts_with.go.if("\n", (n ++ ": " ++ B.ascii(v)) ++ tail, _) == False{} : Bool}
       {==}
 
 def header_blank_step(+h: R.Header, +tail: String, +ok: {B.value(B.encode(W.header_text(h))) == True{} : Bool}, absent: {String.contains(tail, "\r\n\r\n") == False{} : Bool}) -> {String.contains("\r\n" ++ W.header_text(h) ++ tail, "\r\n\r\n") == False{} : Bool}:

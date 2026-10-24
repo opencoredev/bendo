@@ -1,6 +1,7 @@
 import Base
 import ../src/data/cookie.bend as C
 import ../src/http/bytes.bend as B
+import ./bytes-tail.bend as BT
 
 def and_assoc(+a: Bool, +b: Bool, +c: Bool) -> {(a && b) && c == a && (b && c) : Bool}:
   match a:
@@ -20,15 +21,18 @@ def valid_acc(+s: String, +acc: Bool) -> {C.value_valid_go(s, acc) == acc && C.v
 def valid_fast(+s: String) -> {C.value_valid_fast(s) == C.value_valid(s) : Bool}:
   valid_acc(s, True{})
 
-def name_acc(+s: String, +acc: Bool) -> {C.name_valid_go(s, acc) == acc && B.token_tail(s) : Bool}:
+def name_acc_inner(+s: String, +acc: Bool) -> {C.name_valid_go(s, acc) == acc && B.token_tail_spec(s) : Bool}:
   match s:
     case SNil{}:
       match acc:
         case True{}: {==}
         case False{}: {==}
     case SCon{Chr{+c}, +t}:
-      %Equal.sym(Bool, C.name_valid_go(t, acc && B.tchar(c)), (acc && B.tchar(c)) && B.token_tail(t), name_acc(t, acc && B.tchar(c))) : {_ == acc && (B.tchar(c) && B.token_tail(t)) : Bool}
-      and_assoc(acc, B.tchar(c), B.token_tail(t))
+      %Equal.sym(Bool, C.name_valid_go(t, acc && B.tchar(c)), (acc && B.tchar(c)) && B.token_tail_spec(t), name_acc_inner(t, acc && B.tchar(c))) : {_ == acc && (B.tchar(c) && B.token_tail_spec(t)) : Bool}
+      and_assoc(acc, B.tchar(c), B.token_tail_spec(t))
+
+def name_acc(+s: String, +acc: Bool) -> {C.name_valid_go(s, acc) == acc && B.token_tail(s) : Bool}:
+  Equal.trans(Bool, C.name_valid_go(s, acc), acc && B.token_tail_spec(s), acc && B.token_tail(s), name_acc_inner(s, acc), Equal.cong(Bool, Bool, x => acc && x, B.token_tail_spec(s), B.token_tail(s), Equal.sym(Bool, B.token_tail(s), B.token_tail_spec(s), BT.token_tail_equiv(s))))
 
 def name_fast(+s: String) -> {C.name_valid_fast(s) == C.name_valid(s) : Bool}:
   match s:
