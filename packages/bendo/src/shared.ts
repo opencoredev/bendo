@@ -7,7 +7,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { findBend } from "./bend.ts";
@@ -213,31 +213,43 @@ export function declarations(
 const COMPILE_TIMEOUT_MS = 180_000;
 
 // node:child_process rather than Bun.spawn, so vite-plugin-bendo runs under Node.
+// Output is streamed into memory with no cap, so a long diagnostic arrives whole.
 function compileModule(bend: string, entry: string, output: string): Promise<string> {
   return new Promise((done, fail) => {
-    execFile(
-      bend,
-      [entry, "-o", output],
-      {
-        timeout: COMPILE_TIMEOUT_MS,
-        maxBuffer: 64 * 1024 * 1024,
-        env: { ...process.env, BEND_NO_TELEMETRY: "1" },
-      },
-      (error, stdout, stderr) => {
-        if (error === null) {
+    const child = spawn(bend, [entry, "-o", output], {
+      env: { ...process.env, BEND_NO_TELEMETRY: "1" },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+    let settled = false;
+    const settle = (finish: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      finish();
+    };
+    const timer = setTimeout(() => child.kill("SIGTERM"), COMPILE_TIMEOUT_MS);
+    child.on("error", (error) => settle(() => fail(error)));
+    child.on("close", (code, signal) =>
+      settle(() => {
+        if (signal !== null) {
+          fail(new Error(`${entry}: bend stopped (${signal}) after at most 180s`));
+          return;
+        }
+        if (code !== 0) {
+          const text = `${Buffer.concat(stdout).toString()}${Buffer.concat(stderr).toString()}`;
+          fail(new BendCompileError(entry, text.trim()));
+          return;
+        }
+        try {
           done(readFileSync(output, "utf8"));
-          return;
-        }
-        if (error.signal !== null && error.signal !== undefined) {
-          fail(new Error(`${entry}: bend stopped (${error.signal}) after at most 180s`));
-          return;
-        }
-        if (typeof error.code !== "number") {
+        } catch (error) {
           fail(error);
-          return;
         }
-        fail(new BendCompileError(entry, `${stdout}${stderr}`.trim()));
-      },
+      }),
     );
   });
 }

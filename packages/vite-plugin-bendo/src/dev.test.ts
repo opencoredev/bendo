@@ -2,14 +2,17 @@
 // listens on Vite's HMR WebSocket like the browser client does, edits the
 // .bend files and checks the updates, the error payload and the recovery.
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createServer, type ViteDevServer } from "vite";
 import bendo from "./index.ts";
 import { copyFixture } from "./fixture.ts";
 
 const app = copyFixture("dev");
+// A directory beside the app, outside Vite's root and so outside its watcher.
+const outside = `${app.root}-outside`;
+mkdirSync(outside);
 let server: ViteDevServer;
 let base = "";
 let socket: WebSocket;
@@ -107,6 +110,7 @@ afterAll(async () => {
   socket.close();
   await server.close();
   app[Symbol.dispose]();
+  rmSync(outside, { recursive: true, force: true });
 });
 
 test("editing the imported .bend file sends an HMR update its importer accepts", async () => {
@@ -155,6 +159,59 @@ test("a compile error reaches the overlay with its file, line and message, then 
   app.edit("shared/rules.bend", "  three", "  4n");
   // The Vite client clears its overlay when this update arrives.
   const update = await nextMessage(fixed, isType("update"));
+  expect(updatePaths(update)).toEqual(["/src/main.ts <- /shared/handle.bend"]);
+  const module = await fetchModule("/shared/handle.bend");
+  expect(module.status).toBe(200);
+  expect(await run(module.text, "min_length")).toBe(4);
+});
+
+const errorMessage = (message: unknown) => String(field(field(message, "err"), "message"));
+
+test("a broken import outside the root recovers once it is created and fixed", async () => {
+  const extra = join(outside, "extra.bend");
+  const missing = messages.length;
+  app.edit(
+    "shared/handle.bend",
+    "import ./rules.bend as Rules\n",
+    `import ./rules.bend as Rules\nimport ../../${basename(outside)}/extra.bend as Extra\n`,
+  );
+  app.write(
+    "shared/handle.bend",
+    `${app.read("shared/handle.bend")}\ndef extra() -> Nat:\n  Extra.seven()\n`,
+  );
+  expect(errorMessage(await nextMessage(missing, isType("error")))).toContain(extra);
+  // The plugin asked chokidar to watch the missing path. Its watch on the
+  // directory is set up asynchronously; a file created before then is missed.
+  for (let i = 0; server.watcher.getWatched()[outside] === undefined; i++) {
+    if (i === 200) throw new Error(`${outside} never became watched`);
+    await Bun.sleep(10);
+  }
+
+  // Creating it fires a create event; its type error must reach the overlay.
+  const created = messages.length;
+  writeFileSync(extra, 'import Base\n\ndef seven() -> Nat:\n  "seven"\n');
+  const error = await nextMessage(created, isType("error"));
+  expect(field(error, "err")).toMatchObject({ id: extra, loc: { file: extra, line: 4 } });
+
+  const fixed = messages.length;
+  writeFileSync(extra, "import Base\n\ndef seven() -> Nat:\n  7n\n");
+  const update = await nextMessage(fixed, isType("update"));
+  expect(updatePaths(update)).toEqual(["/src/main.ts <- /shared/handle.bend"]);
+  const module = await fetchModule("/shared/handle.bend");
+  expect(module.status).toBe(200);
+  expect(await run(module.text, "extra")).toBe(7);
+});
+
+test("deleting an imported file shows the error, and restoring it sends the update", async () => {
+  const source = app.read("shared/rules.bend");
+  const deleted = messages.length;
+  rmSync(app.path("shared/rules.bend"));
+  expect(errorMessage(await nextMessage(deleted, isType("error")))).toContain("rules.bend");
+  expect((await fetchModule("/shared/handle.bend")).status).toBe(500);
+
+  const restored = messages.length;
+  app.write("shared/rules.bend", source);
+  const update = await nextMessage(restored, isType("update"));
   expect(updatePaths(update)).toEqual(["/src/main.ts <- /shared/handle.bend"]);
   const module = await fetchModule("/shared/handle.bend");
   expect(module.status).toBe(200);

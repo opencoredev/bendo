@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import { accessSync, constants, existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
+import {
+  accessSync,
+  constants,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
 import { writeFile, rename } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { delimiter, join, resolve } from "node:path";
@@ -10,15 +18,22 @@ import {
   sourceGraph,
   type CompiledShared,
 } from "bendo/shared";
-import { ioDiagnostic, locate, type Diagnostic } from "./diagnostic.ts";
+import { at, ioDiagnostic, locate, type Diagnostic } from "./diagnostic.ts";
 
 /** Bump when the cached shape or the generated code changes. */
 const CACHE_FORMAT = "vite-plugin-bendo/1";
 const GENERATOR = "vite-plugin-bendo";
+/** Compiles of one entry whose files kept changing before the plugin gives up. */
+const ATTEMPTS = 3;
 
 export type Outcome =
   | { kind: "compiled"; compiled: CompiledShared; files: string[]; fresh: boolean }
   | { kind: "failed"; diagnostic: Diagnostic; files: string[] };
+
+/** One compile attempt; `stale` means a file changed while Bend read it. */
+type Attempt = Outcome | { kind: "stale" };
+
+type Snapshot = { files: string[]; hash: string };
 
 /** Canonical path, so watcher paths and import-graph paths compare equal. */
 export function canonical(file: string): string {
@@ -105,12 +120,13 @@ export class Compiler {
   private readonly gate: Gate;
   /** The latest result per entry; older ones live only in the disk cache. */
   private readonly results = new Map<string, { hash: string; outcome: Outcome }>();
-  private readonly pending = new Map<string, Promise<Outcome>>();
+  private readonly pending = new Map<string, Promise<Attempt>>();
   /** Every file each compiled entry read, including the entry itself. */
   private readonly graphs = new Map<string, string[]>();
   /** The hash of each entry's newest snapshot, so a slower older compile cannot replace it. */
   private readonly wanted = new Map<string, string>();
-  private bendVersion: string | undefined;
+  /** `bend version`, rerun when the binary's mtime or size changes. */
+  private bendVersion: { stamp: string; version: string } | undefined;
   compiles = 0;
 
   constructor(options: CompilerOptions) {
@@ -132,22 +148,35 @@ export class Compiler {
   }
 
   private version(): string {
-    if (this.bendVersion === undefined) {
+    let stamp = "missing";
+    try {
+      const stat = statSync(this.options.bend);
+      stamp = `${stat.mtimeMs}:${stat.size}`;
+    } catch {
+      // Hash as "unknown" below; the compile itself reports the missing binary.
+    }
+    if (this.bendVersion?.stamp !== stamp) {
+      let version = "unknown";
       try {
-        this.bendVersion = execFileSync(this.options.bend, ["version"], {
+        version = execFileSync(this.options.bend, ["version"], {
           encoding: "utf8",
           timeout: 5000,
         }).trim();
       } catch {
-        this.bendVersion = "unknown";
+        // An unreadable version still hashes consistently.
       }
+      this.bendVersion = { stamp, version };
     }
-    return this.bendVersion;
+    return this.bendVersion.version;
   }
 
-  private snapshot(entry: string): { files: string[]; hash: string } {
+  /**
+   * Hashes every file in the entry's import graph. A missing import throws;
+   * by then `onFile` has seen every path reached, the missing one included.
+   */
+  private snapshot(entry: string, onFile?: (file: string) => void): Snapshot {
     const hash = createHash("sha256").update(`${CACHE_FORMAT}\0${this.version()}\0`);
-    const graph = sourceGraph(entry);
+    const graph = sourceGraph(entry, onFile);
     for (const [file, content] of [...graph].sort(([a], [b]) => a.localeCompare(b)))
       hash.update(`${file}\0${content.length}\0`).update(content);
     return { files: [...graph.keys()], hash: hash.digest("hex") };
@@ -156,18 +185,33 @@ export class Compiler {
   /** Compiles `file`, or returns the result for its unchanged import graph. */
   async compile(file: string): Promise<Outcome> {
     const entry = canonical(file);
-    let snapshot: { files: string[]; hash: string };
+    for (let attempt = 1; ; attempt++) {
+      const outcome = await this.attempt(entry);
+      if (outcome.kind !== "stale") return outcome;
+      if (attempt === ATTEMPTS)
+        return {
+          kind: "failed",
+          diagnostic: at(
+            `${entry}: its files changed during each of ${ATTEMPTS} compiles; save again to retry`,
+            entry,
+          ),
+          files: this.graphs.get(entry) ?? [entry],
+        };
+    }
+  }
+
+  private async attempt(entry: string): Promise<Attempt> {
+    let snapshot: Snapshot;
+    const reached = new Set<string>();
     try {
-      snapshot = this.snapshot(entry);
+      snapshot = this.snapshot(entry, (file) => reached.add(file));
     } catch (error) {
-      // A missing import: report it at the entry and keep watching what was read.
+      // A missing import: report it at the entry and watch every file reached,
+      // the missing one too, so creating it recompiles the entry.
       const message = error instanceof Error ? error.message : String(error);
-      const files = this.graphs.get(entry) ?? [entry];
-      return {
-        kind: "failed",
-        diagnostic: { message, frame: "", loc: { file: entry, line: 1, column: 1 } },
-        files,
-      };
+      const files = [...new Set([entry, ...reached, ...(this.graphs.get(entry) ?? [])])];
+      this.graphs.set(entry, files);
+      return { kind: "failed", diagnostic: at(message, entry), files };
     }
     this.graphs.set(entry, snapshot.files);
     this.wanted.set(entry, snapshot.hash);
@@ -185,10 +229,16 @@ export class Compiler {
     return work;
   }
 
-  private async build(
-    entry: string,
-    snapshot: { files: string[]; hash: string },
-  ): Promise<Outcome> {
+  /** Whether the graph still hashes to `hash`, after Bend read the live files. */
+  private unchanged(entry: string, hash: string): boolean {
+    try {
+      return this.snapshot(entry).hash === hash;
+    } catch {
+      return false;
+    }
+  }
+
+  private async build(entry: string, snapshot: Snapshot): Promise<Attempt> {
     const cached = this.readDisk(snapshot.hash);
     if (cached !== undefined) {
       const outcome: Outcome = {
@@ -207,7 +257,6 @@ export class Compiler {
         this.options.compile ?? ((path) => compileShared(path, this.options.bend, GENERATOR))
       )(entry);
       outcome = { kind: "compiled", compiled, files: snapshot.files, fresh: true };
-      await this.writeDisk(snapshot.hash, compiled);
     } catch (error) {
       if (error instanceof BendCompileError)
         outcome = {
@@ -223,6 +272,10 @@ export class Compiler {
         };
       else throw error;
     }
+    // Bend read the files after the snapshot. If one changed meanwhile, this
+    // result may belong to newer text than `snapshot.hash` names: drop it.
+    if (!this.unchanged(entry, snapshot.hash)) return { kind: "stale" };
+    if (outcome.kind === "compiled") await this.writeDisk(snapshot.hash, outcome.compiled);
     this.remember(entry, snapshot.hash, outcome);
     return outcome;
   }

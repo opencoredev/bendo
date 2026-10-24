@@ -3,12 +3,12 @@
 // the same file's checks compare every declared shape with the runtime value.
 import { expect, test } from "bun:test";
 import { deepStrictEqual } from "node:assert";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { COMPILE_TEST_TIMEOUT_MS } from "../../../tests/harness.ts";
-import { declarations, parseExportTable } from "../src/shared.ts";
+import { BendCompileError, compileShared, declarations, parseExportTable } from "../src/shared.ts";
 
 const here = import.meta.dir;
 const root = resolve(here, "../../..");
@@ -163,4 +163,46 @@ test("bendo build --shared reports a missing directory and bad arguments", () =>
   const extra = bendo(["build", "--shared", "a", "b"], abi);
   expect(extra.code).toBe(1);
   expect(extra.output).toContain("Unexpected arguments");
+});
+
+// A stand-in `bend` script: the compile wrapper's handling of its output does
+// not depend on what the real compiler prints.
+function fakeBend(dir: string, script: string): string {
+  const path = join(dir, "bend");
+  writeFileSync(path, `#!/bin/sh\n${script}\n`);
+  chmodSync(path, 0o755);
+  return path;
+}
+
+test("a Bend diagnostic over 64 MiB reaches the error whole", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bendo-shared-big-"));
+  try {
+    const entry = join(dir, "x.bend");
+    writeFileSync(entry, "def x() -> Nat:\n  1n\n");
+    // 70 MiB of "a" on stderr, then a failing exit.
+    const bend = fakeBend(dir, "head -c 73400320 /dev/zero | tr '\\0' a >&2; exit 1");
+    const failure: unknown = await compileShared(entry, bend).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(BendCompileError);
+    expect(failure instanceof BendCompileError && failure.output.length).toBe(73400320);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a Bend run that exits 0 without writing its output rejects instead of throwing", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bendo-shared-empty-"));
+  try {
+    const entry = join(dir, "x.bend");
+    writeFileSync(entry, "def x() -> Nat:\n  1n\n");
+    const failure: unknown = await compileShared(entry, fakeBend(dir, "exit 0")).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toMatchObject({ code: "ENOENT" });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

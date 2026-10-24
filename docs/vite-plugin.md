@@ -27,6 +27,11 @@ The plugin supports Vite 7 and 8 and runs under Node 24 or Bun. It needs
 `bend` on `PATH` or in `~/.bend/bin`. The working example is
 `packages/vite-plugin-bendo/fixtures/app`: run `bunx vite` there.
 
+CI tests the plugin on Linux only, and it is untested on Windows. There it
+looks for `bend` on `PATH`, not `bend.exe`, so pass the full path in the
+`bend` option. It also compares paths with `/` separators, so watching files
+outside the root and matching code frames to files may not work.
+
 ## TypeScript
 
 For each imported `x.bend` the plugin writes `x.d.bend.ts` in the same
@@ -68,6 +73,13 @@ reload. What happens next depends on the importer:
   Refresh boundary, so component state survives.
 - If no importer accepts the update, Vite reloads the page.
 
+Creating or deleting a file counts as an edit. Deleting an import sends its
+importers' compile error to the overlay, and restoring it sends the update. A
+file the entry imports from outside Vite's root is watched too, including one
+that does not exist yet: creating it recompiles the entry. Vite needs a moment
+to set up that watch, so a file created within a few milliseconds of the
+failed compile can be missed; save it again.
+
 A compiled `.bend` module never accepts itself: its exports are plain values,
 and an importer that captured the old functions would keep calling them.
 
@@ -77,7 +89,10 @@ A failed compile appears in Vite's error overlay with the file, line and
 column, Bend's message and its code frame. The file is the one that holds the
 error, which may be an import of the file you saved. Bend's diagnostic does not
 name the file, so the plugin picks the file in the import graph whose lines
-match the code frame.
+match the code frame, using the def name Bend reports when several match. If
+that still leaves more than one file, the overlay says the location is
+ambiguous and lists the candidates without a line number. If no file matches,
+it says the location is unknown.
 
 While a file is broken the page keeps running its last good build; the plugin
 sends the error and no update. Reloading the page shows the same error. The
@@ -91,10 +106,17 @@ the offending def.
 ## Caching and compile load
 
 A compile's result is keyed by a hash of every file it read plus the Bend
-version. An unchanged import graph is never recompiled. Results also go to
-`<cacheDir>/bendo/<hash>.json` (by default `node_modules/.vite/bendo`), so a
-restarted dev server or a second `vite build` reuses them. Pass
-`diskCache: false` to keep results in memory only.
+version. An unchanged import graph is never recompiled. Bend reads the files
+after the plugin hashes them, so the plugin hashes them again once Bend
+finishes. If a file changed in between, it discards the result and compiles
+again, up to three times, then reports that the files kept changing.
+
+Results also go to `<cacheDir>/bendo/<hash>.json` (by default
+`node_modules/.vite/bendo`), so a restarted dev server or a second
+`vite build` reuses them. Pass `diskCache: false` to keep results in memory
+only. The plugin reruns `bend version` whenever the `bend` binary's
+modification time or size changes, so upgrading Bend in place needs no Vite
+restart.
 
 Bend compiles can take seconds and gigabytes, so the plugin runs one at a time
 by default. Requests for the same graph while it compiles share that compile.

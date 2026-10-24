@@ -1,11 +1,17 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
-import type { ErrorPayload, HmrContext, ModuleNode, Plugin } from "vite";
+import type {
+  EnvironmentModuleNode,
+  ErrorPayload,
+  HotUpdateOptions,
+  Plugin,
+  ViteDevServer,
+} from "vite";
 import { Compiler, canonical, findBendPath, type CompilerOptions } from "./compiler.ts";
 import type { Diagnostic } from "./diagnostic.ts";
 
 export { Compiler, Gate, type Outcome } from "./compiler.ts";
-export { locate, type Diagnostic, type Location } from "./diagnostic.ts";
+export { locate, type Diagnostic, type Location, type Place } from "./diagnostic.ts";
 
 export type BendoPluginOptions = {
   /** Path to the `bend` compiler. Defaults to `bend` on PATH, then `~/.bend/bin/bend`. */
@@ -69,14 +75,33 @@ function writeIfChanged(file: string, text: string): void {
 
 /** The error Vite shows in its overlay: message, `file:line:column` and the frame. */
 export function overlayError(diagnostic: Diagnostic): ErrorPayload["err"] {
-  return {
-    message: diagnostic.message,
-    stack: "",
-    id: diagnostic.loc.file,
-    frame: diagnostic.frame,
-    plugin: NAME,
-    loc: diagnostic.loc,
-  };
+  const base = { stack: "", frame: diagnostic.frame, plugin: NAME };
+  const place = diagnostic.place;
+  switch (place.kind) {
+    case "located":
+      return { ...base, message: diagnostic.message, id: place.loc.file, loc: place.loc };
+    case "ambiguous":
+      return {
+        ...base,
+        id: place.entry,
+        message: [
+          diagnostic.message,
+          "",
+          `Location ambiguous: Bend names no file, and its code frame matches ${place.candidates.length} files:`,
+          ...place.candidates.map((file) => `  ${file}`),
+        ].join("\n"),
+      };
+    case "unknown":
+      return {
+        ...base,
+        id: place.entry,
+        message: `${diagnostic.message}\n\nLocation unknown: Bend names no file, and its code frame matches none in the import graph.`,
+      };
+    default: {
+      const _exhaustive: never = place;
+      return _exhaustive;
+    }
+  }
 }
 
 function thrown(diagnostic: Diagnostic): Error {
@@ -92,12 +117,22 @@ function thrown(diagnostic: Diagnostic): Error {
  */
 export default function bendo(options: BendoPluginOptions = {}): Plugin {
   let compiler: Compiler | undefined;
+  let server: ViteDevServer | undefined;
   let root = process.cwd();
   const writeDeclarations = options.declarations ?? true;
 
   const ready = (): Compiler => {
     if (compiler === undefined) throw new Error(`${NAME}: used before Vite resolved its config`);
     return compiler;
+  };
+
+  // Vite watches the root, and `addWatchFile` skips files that do not exist.
+  // A missing import outside the root still needs a watch, or creating it
+  // would never recompile the broken entry.
+  const watchOutsideRoot = (files: readonly string[]): void => {
+    if (server === undefined) return;
+    const outside = files.filter((file) => !file.startsWith(`${root}/`));
+    if (outside.length > 0) server.watcher.add(outside);
   };
 
   return {
@@ -117,6 +152,10 @@ export default function bendo(options: BendoPluginOptions = {}): Plugin {
       });
     },
 
+    configureServer(dev) {
+      server = dev;
+    },
+
     resolveId(source, importer) {
       return resolveBend(source, importer, root) ?? null;
     },
@@ -126,6 +165,7 @@ export default function bendo(options: BendoPluginOptions = {}): Plugin {
       if (file === undefined || !existsSync(file)) return null;
       const outcome = await ready().compile(file);
       for (const dependency of outcome.files) this.addWatchFile(dependency);
+      watchOutsideRoot(outcome.files);
       if (outcome.kind === "failed") throw thrown(outcome.diagnostic);
       if (outcome.fresh) for (const warning of outcome.compiled.warnings) this.warn(warning);
       if (writeDeclarations) writeIfChanged(declarationPath(file), outcome.compiled.declarations);
@@ -133,19 +173,23 @@ export default function bendo(options: BendoPluginOptions = {}): Plugin {
       return { code: outcome.compiled.module, map: { mappings: "" } };
     },
 
-    async handleHotUpdate(context: HmrContext): Promise<ModuleNode[] | undefined> {
-      const entries = ready().importersOf(context.file);
+    // `hotUpdate` (Vite 6+) also fires on create and delete, which
+    // `handleHotUpdate` does not see in Vite 8. It runs once per environment.
+    async hotUpdate(update: HotUpdateOptions): Promise<EnvironmentModuleNode[] | undefined> {
+      const entries = ready().importersOf(update.file);
       if (entries.length === 0) return undefined;
-      const graph = context.server.moduleGraph;
-      const updated = new Set(context.modules);
+      const { moduleGraph, hot } = this.environment;
+      const updated = new Set(update.modules);
       let failure: Diagnostic | undefined;
       for (const entry of entries) {
         const outcome = await ready().compile(entry);
-        const modules = graph.getModulesByFile(entry) ?? new Set<ModuleNode>();
+        watchOutsideRoot(outcome.files);
+        const modules = moduleGraph.getModulesByFile(entry) ?? new Set<EnvironmentModuleNode>();
         // A reload must recompile, not reuse the last transform, even after a failure.
-        for (const module of modules) graph.invalidateModule(module);
+        for (const module of modules) moduleGraph.invalidateModule(module);
         if (outcome.kind === "failed") {
-          failure ??= outcome.diagnostic;
+          // Only an environment that loaded the entry shows its error.
+          if (modules.size > 0) failure ??= outcome.diagnostic;
           continue;
         }
         if (writeDeclarations)
@@ -154,7 +198,7 @@ export default function bendo(options: BendoPluginOptions = {}): Plugin {
       }
       if (failure !== undefined) {
         // Keep the page on its last good build; the next good save clears the overlay.
-        context.server.ws.send({ type: "error", err: overlayError(failure) });
+        hot.send({ type: "error", err: overlayError(failure) });
         return [];
       }
       return [...updated];

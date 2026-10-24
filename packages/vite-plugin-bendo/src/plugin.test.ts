@@ -1,18 +1,26 @@
 // BND-59: the plugin's hooks, run inside a real Vite server without a port,
 // plus the compile queue, the cache and the diagnostic locator.
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createServer,
-  type HmrContext,
-  type ModuleNode,
+  type EnvironmentModuleNode,
+  type HotUpdateOptions,
   type Plugin,
   type ViteDevServer,
 } from "vite";
 import type { CompiledShared } from "bendo/shared";
-import bendo, { Compiler, Gate, bendFile, declarationPath, locate, resolveBend } from "./index.ts";
+import bendo, {
+  Compiler,
+  Gate,
+  bendFile,
+  declarationPath,
+  locate,
+  overlayError,
+  resolveBend,
+} from "./index.ts";
 import { findBendPath } from "./compiler.ts";
 import { copyFixture } from "./fixture.ts";
 
@@ -35,14 +43,20 @@ afterAll(async () => {
   app[Symbol.dispose]();
 });
 
-function handler(hook: Plugin["handleHotUpdate"]): (context: HmrContext) => unknown {
-  if (hook === undefined) throw new Error("no handleHotUpdate hook");
+/** Calls the plugin's `hotUpdate` the way Vite does for the client environment. */
+function handler(hook: Plugin["hotUpdate"]): (update: HotUpdateOptions) => unknown {
+  if (hook === undefined) throw new Error("no hotUpdate hook");
   const fn = typeof hook === "function" ? hook : hook.handler;
-  return (context) => Reflect.apply(fn, undefined, [context]);
+  return (update) => Reflect.apply(fn, { environment: server.environments.client }, [update]);
 }
 
-function hotContext(file: string, modules: ModuleNode[] = []): HmrContext {
+function hotContext(
+  file: string,
+  modules: EnvironmentModuleNode[] = [],
+  type: HotUpdateOptions["type"] = "update",
+): HotUpdateOptions {
   return {
+    type,
     file,
     timestamp: Date.now(),
     modules,
@@ -116,10 +130,11 @@ test("load reports a compile error with its file, line and column", async () => 
   }
 });
 
-test("handleHotUpdate returns the importing module when a dependency changes", async () => {
-  const hot = handler(plugin.handleHotUpdate);
-  await server.transformRequest("/shared/handle.bend");
-  const [module] = server.moduleGraph.getModulesByFile(app.path("shared/handle.bend")) ?? [];
+test("hotUpdate returns the importing module when a dependency changes", async () => {
+  const hot = handler(plugin.hotUpdate);
+  await server.environments.client.transformRequest("/shared/handle.bend");
+  const [module] =
+    server.environments.client.moduleGraph.getModulesByFile(app.path("shared/handle.bend")) ?? [];
   expect(module).toBeDefined();
   // A file outside every graph falls through to Vite.
   expect(await hot(hotContext(app.path("src/style.css")))).toBeUndefined();
@@ -129,10 +144,11 @@ test("handleHotUpdate returns the importing module when a dependency changes", a
   expect(app.read("shared/handle.d.bend.ts")).toContain("headline");
 });
 
-test("handleHotUpdate sends a broken build to the overlay and updates nothing", async () => {
+test("hotUpdate sends a broken build to the overlay and updates nothing", async () => {
   const sent: unknown[] = [];
-  const send = server.ws.send;
-  server.ws.send = (...args: unknown[]) => {
+  const hot = server.environments.client.hot;
+  const send = hot.send;
+  hot.send = (...args: unknown[]) => {
     sent.push(args[0]);
   };
   try {
@@ -141,7 +157,7 @@ test("handleHotUpdate sends a broken build to the overlay and updates nothing", 
       "def check(name: String) -> Bool:",
       "def check(name: String) -> Bool\n",
     );
-    const modules: unknown = await handler(plugin.handleHotUpdate)(
+    const modules: unknown = await handler(plugin.hotUpdate)(
       hotContext(app.path("shared/handle.bend")),
     );
     expect(modules).toEqual([]);
@@ -151,7 +167,7 @@ test("handleHotUpdate sends a broken build to the overlay and updates nothing", 
       err: { plugin: "vite-plugin-bendo", loc: { file: app.path("shared/handle.bend") } },
     });
   } finally {
-    server.ws.send = send;
+    hot.send = send;
   }
 });
 
@@ -240,6 +256,77 @@ test("an edited import invalidates its importer, and the disk cache survives a r
   expect(existsSync(cacheDir)).toBe(true);
 });
 
+test("an edit during a slow compile is recompiled, never cached under the older hash", async () => {
+  using dir = scratch();
+  const lib = dir.file("lib.bend", "def one() -> Nat:\n  1n\n");
+  const main = dir.file("main.bend", "import ./lib.bend as Lib\n");
+  const cacheDir = join(dir.dir, "cache");
+  let edits = 1;
+  // Like Bend, the fake reads the files when it runs, after the plugin hashed them.
+  const make = () =>
+    new Compiler({
+      bend: "bend",
+      cacheDir,
+      concurrency: 1,
+      compile: async (entry) => {
+        if (edits > 0) {
+          edits--;
+          writeFileSync(lib, "def one() -> Nat:\n  2n\n");
+        }
+        await Bun.sleep(10);
+        return { ...fake(entry), module: readFileSync(lib, "utf8") };
+      },
+    });
+  const compiler = make();
+  const outcome = await compiler.compile(main);
+  expect(outcome.kind === "compiled" && outcome.compiled.module).toContain("2n");
+  expect(compiler.compiles).toBe(2);
+  // One entry, for the text that compiled; the first snapshot's hash stored nothing.
+  expect(readdirSync(cacheDir)).toHaveLength(1);
+  // Restoring the first text must compile it, not return the edited module.
+  writeFileSync(lib, "def one() -> Nat:\n  1n\n");
+  const restored = await make().compile(main);
+  expect(restored.kind === "compiled" && restored.compiled.module).toContain("1n");
+});
+
+test("a graph that changes during every compile fails instead of looping", async () => {
+  using dir = scratch();
+  const main = dir.file("main.bend", "def one() -> Nat:\n  1n\n");
+  let n = 0;
+  const compiler = new Compiler({
+    bend: "bend",
+    cacheDir: join(dir.dir, "cache"),
+    concurrency: 1,
+    compile: async (entry) => {
+      writeFileSync(main, `def one() -> Nat:\n  ${(n += 1) + 1}n\n`);
+      return fake(entry);
+    },
+  });
+  const outcome = await compiler.compile(main);
+  expect(outcome.kind).toBe("failed");
+  expect(outcome.kind === "failed" && outcome.diagnostic.message).toContain("changed during each");
+  expect(compiler.compiles).toBe(3);
+  expect(existsSync(join(dir.dir, "cache"))).toBe(false);
+});
+
+test("a missing import keeps the partial graph so creating it recompiles", async () => {
+  using dir = scratch();
+  const main = dir.file("main.bend", "import ./lib.bend as Lib\n");
+  const lib = join(dir.dir, "lib.bend");
+  const compiler = new Compiler({
+    bend: "bend",
+    cacheDir: undefined,
+    concurrency: 1,
+    compile: async (entry) => fake(entry),
+  });
+  const failed = await compiler.compile(main);
+  expect(failed.kind).toBe("failed");
+  expect(failed.files).toEqual([main, lib]);
+  expect(compiler.importersOf(lib)).toEqual([main]);
+  writeFileSync(lib, "def one() -> Nat:\n  1n\n");
+  expect((await compiler.compile(main)).kind).toBe("compiled");
+});
+
 test("the gate rejects a concurrency that is not a positive integer", () => {
   expect(() => new Gate(0)).toThrow("concurrency must be a positive integer");
   expect(() => new Gate(1.5)).toThrow("concurrency must be a positive integer");
@@ -266,13 +353,51 @@ test("locate finds the imported file from the code frame", () => {
   expect(locate(output, entry, [entry, words])).toEqual({
     message: "- expected : String\n- observed : U32\nLocation: hello",
     frame: "3 | def hello() -> String:\n4>|   5\n  |   ^\n5 | ",
-    loc: { file: words, line: 4, column: 3 },
+    place: { kind: "located", loc: { file: words, line: 4, column: 3 } },
   });
   // A parse error has no def name; the frame alone picks the file.
   const parse = ["Error:", "- expected : a term", "Location:", "4 |   5", "5>| ", "  | ^"].join(
     "\n",
   );
-  expect(locate(parse, entry, [entry, words]).loc).toEqual({ file: words, line: 5, column: 1 });
+  expect(locate(parse, entry, [entry, words]).place).toEqual({
+    kind: "located",
+    loc: { file: words, line: 5, column: 1 },
+  });
+});
+
+test("locate lists the candidates when the code frame matches several files", () => {
+  using dir = scratch();
+  const body = "import Base\n\ndef hello() -> String:\n  5\n";
+  const entry = dir.file("main.bend", "import ./a.bend as A\nimport ./b.bend as B\n");
+  const a = dir.file("a.bend", body);
+  const b = dir.file("b.bend", body);
+  const output = [
+    "Error:",
+    "- expected : String",
+    "Location: hello",
+    "3 | def hello() -> String:",
+    "4>|   5",
+    "  |   ^",
+  ].join("\n");
+  const diagnostic = locate(output, entry, [entry, a, b]);
+  expect(diagnostic.place).toEqual({ kind: "ambiguous", entry, candidates: [a, b] });
+  const err = overlayError(diagnostic);
+  expect(err.loc).toBeUndefined();
+  expect(err.id).toBe(entry);
+  expect(err.message).toContain("Location ambiguous");
+  expect(err.message).toContain(`  ${a}\n  ${b}`);
+  // The def name settles it when only one candidate defines it.
+  dir.file("b.bend", body.replace("def hello", "def other"));
+  expect(
+    locate(output.replace("3 | def hello() -> String:\n", ""), entry, [entry, a, b]).place,
+  ).toEqual({
+    kind: "located",
+    loc: { file: a, line: 4, column: 3 },
+  });
+  // A frame that matches no file gets no location.
+  const none = locate(output.replace("4>|   5", "4>|   6"), entry, [entry, a, b]);
+  expect(none.place).toEqual({ kind: "unknown", entry });
+  expect(overlayError(none).message).toContain("Location unknown");
 });
 
 test("findBendPath finds the installed compiler", () => {
