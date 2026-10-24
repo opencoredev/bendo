@@ -80,9 +80,18 @@ scheme and host in lowercase, the default port dropped. So
 grant echoes the serialized form. `http://app.example`,
 `https://app.example:8443` and `https://sub.app.example` are other origins.
 
-Origin equivalence currently follows this parser, pending BND-85's independent
-origin specification. It does not implement every browser URL normalization:
-configured `http://127.1` and browser `http://127.0.0.1` are different strings.
+Hosts must be written the way browsers send them, as described in
+[the CSRF section](auth.md#csrf): an entry such as `http://127.1` or
+`https://[0::1]` is dropped, so configure `http://127.0.0.1` or
+`https://[::1]`.
+
+Dropped entries are silent with `B.cors_allow`. Build the list once at
+startup with `B.cors_allow_checked(origins)` instead, an `IO(B.CorsConfig)`,
+and each dropped entry prints one line on stderr:
+
+```text
+bendo: cors: ignoring allowed origin "app.example": not an http or https URL
+```
 
 Configured entries may be full URLs; only their origin counts, so
 `https://app.example/login` configures `https://app.example`. Request `Origin`

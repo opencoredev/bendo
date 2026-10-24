@@ -58,10 +58,13 @@ timeout; the fixture's echo loop shows one way.
 - `B.websocket_origins(config, ["https://app.example"])` requires exactly one
   `Origin` field whose serialized origin is listed. Entries are serialized with
   the same rules as CORS and CSRF (`src/http/origin.bend`): any path is ignored,
-  and entries that are not http or https URLs are dropped. A missing, repeated
+  and entries that are not http or https URLs, or whose host is not written the
+  way browsers send it, are dropped. A missing, repeated
   or unlisted Origin gets 403. Browsers always send Origin, so list your origins
   whenever a session trusts cookies; otherwise any site can open a socket with
-  the user's credentials.
+  the user's credentials. `B.websocket_origins_checked(config, origins)` does
+  the same in `IO` at startup and prints one stderr line per dropped entry
+  (`bendo: websocket: ignoring allowed origin "..."`).
 - `B.websocket_protocols(config, ["chat.v2", "chat"])` lists the subprotocols the
   server speaks, most preferred first. Bendo answers with the first listed
   protocol that the client offered in any `Sec-WebSocket-Protocol` field. Offers

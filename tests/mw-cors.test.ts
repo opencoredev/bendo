@@ -585,3 +585,25 @@ test("invalid retained fields yield 500 without erasing valid policies or observ
   for (const [name, value] of Object.entries(SECURITY_DEFAULTS))
     expect(res.headers.get(name)).toBe(value);
 });
+
+test("cors_allow_checked reports each dropped allow-list entry once at startup", async () => {
+  const lines = server
+    .stderr()
+    .split("\n")
+    .filter((line) => line.startsWith("bendo: cors:"));
+  expect(lines).toEqual([
+    'bendo: cors: ignoring allowed origin "null": not an http or https URL',
+    'bendo: cors: ignoring allowed origin "checked.example": not an http or https URL',
+  ]);
+  // The kept entry still works, and requests print nothing more.
+  const res = await request("/checked/data", { headers: { origin: "https://checked.example" } });
+  expect(res.headers.get("access-control-allow-origin")).toBe("https://checked.example");
+  const denied = await request("/checked/data", { headers: { origin: "null" } });
+  expect(denied.headers.get("access-control-allow-origin")).toBeNull();
+  expect(
+    server
+      .stderr()
+      .split("\n")
+      .filter((line) => line.startsWith("bendo: cors:")),
+  ).toHaveLength(2);
+});

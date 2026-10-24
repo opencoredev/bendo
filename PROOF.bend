@@ -18,6 +18,12 @@ import ./proof/compose.bend as ComposeProof
 import ./proof/validate.bend as ValidateProof
 import ./proof/plugin.bend as PluginProof
 
+# BND-85
+import ./proof/trim.bend as TrimProof
+import ./proof/media.bend as MediaProof
+import ./proof/origin.bend as OriginProof
+import ./proof/csrf-v1.bend as CsrfV1Proof
+
 # BND-47
 import ./proof/proxy.bend as ProxyProof
 
@@ -62,6 +68,7 @@ import ./src/http/write_response.bend as WriteResponse
 import ./src/http/chunked.bend as Chunked
 import ./proof/stream.bend as StreamProof
 import ./proof/stream-rfc.bend as StreamRfcProof
+import ./proof/stream-sized.bend as StreamSizedProof
 import ./proof/sse.bend as SseProof
 import ./src/http/sse.bend as SseImpl
 import ./proof/sse-spec.bend as SseSpecM
@@ -705,6 +712,21 @@ def Laws.stream_rfc_roundtrip(chunks, limit, suffix, valid):
 
 def Laws.stream_rfc_last_chunk(limit, suffix):
   StreamRfcProof.last_chunk(limit, suffix)
+
+def Laws.stream_sized_fields(n, headers):
+  {==}
+
+def Laws.stream_sized_body(chunks, n):
+  StreamSizedProof.sized(chunks, n)
+
+def Laws.stream_sized_exact(bytes, n):
+  StreamSizedProof.exact_length(bytes, n)
+
+def Laws.stream_head_matches_get(status, n, headers, allowed):
+  StreamSizedProof.head_matches_get(status, n, headers, allowed)
+
+def Laws.stream_http10_needs_length(length):
+  {==}
 
 # BND-41
 def Laws.conditional_if_none_match_spec(field, tag): LimitsProof.matches(field, tag)

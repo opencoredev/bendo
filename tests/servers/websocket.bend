@@ -65,12 +65,16 @@ def session(label: String, s: Socket, rest: List<&2, U32>) -> IO(Unit):
 def cleanup(label: String) -> IO(Unit):
   IO.print("cleanup:" ++ label)
 
-def chat() -> B.WebSocketConfig:
-  B.websocket_protocols(B.websocket_origins(B.websocket_config(), ["https://app.example/ignored-path", "not an origin"]), ["chat.v2", "chat", "bad token"])
+def chat_origins() -> List<&2, String>:
+  ["https://app.example/ignored-path", "not an origin"]
 
-def handler(tag: Tag, c: B.Context(Unit), env: Unit) -> IO(B.Res):
+def chat(origins: B.WebSocketConfig) -> B.WebSocketConfig:
+  B.websocket_protocols(origins, ["chat.v2", "chat", "bad token"])
+
+# env is the chat origin allow list, built at startup by the checked builder.
+def handler(tag: Tag, c: B.Context(Unit), env: B.WebSocketConfig) -> IO(B.Res):
   match tag:
-    case Chat{}: B.websocket(~Unit, ~String, ~session, ~cleanup, c, "chat", chat())
+    case Chat{}: B.websocket(~Unit, ~String, ~session, ~cleanup, c, "chat", chat(env))
     case Subprotocol{}: B.websocket(~Unit, ~String, ~session, ~cleanup, c, "subprotocol", B.websocket_protocols(B.websocket_config(), ["chat.v2", "chat"]))
     case Duplicate{}:
       +ctx = c
@@ -106,7 +110,7 @@ def rewritten(c: B.Context(Unit), flag: Maybe<&2, String>, next: B.Context(Unit)
       +ctx = c
       next(C.rewrite(Unit, ctx, Request.Get{}, C.path(Unit, ctx)))
 
-def middleware(tag: Tag, c: B.Context(Unit), env: Unit, next: B.Context(Unit) -> IO(B.Res)) -> IO(B.Res):
+def middleware(tag: Tag, c: B.Context(Unit), env: B.WebSocketConfig, next: B.Context(Unit) -> IO(B.Res)) -> IO(B.Res):
   match tag:
     case Builtin{id}: B.builtin(Unit, id, c, next)
     case Late{}:
@@ -137,12 +141,12 @@ def middleware(tag: Tag, c: B.Context(Unit), env: Unit, next: B.Context(Unit) ->
         return res
     case _: next(c)
 
-def ready(result: Result<&2, &2, Methods.BuildError, B.Routes(Tag)>) -> IO(Unit):
+def ready(result: Result<&2, &2, Methods.BuildError, B.Routes(Tag)>, origins: B.WebSocketConfig) -> IO(Unit):
   match result:
     case Fail{error}: IO.die(Unit, 1, "routes")
-    case Done{table}: B.serve_with(~Unit, ~Tag, ~Unit, ~handler, ~middleware, table, Unit{}, B.config())
+    case Done{table}: B.serve_with(~Unit, ~Tag, ~B.WebSocketConfig, ~handler, ~middleware, table, origins, B.config())
 
-def main() -> IO(Unit):
+def app(origins: B.WebSocketConfig) -> IO(Unit):
   ready(B.routes(Tag, [
     B.on_request(Tag, Builtin{B.logger()}),
     B.on_request(Tag, Rewrite{}),
@@ -169,4 +173,9 @@ def main() -> IO(Unit):
     B.get(Tag, "/forbid", Forbid{}),
     B.get(Tag, "/garble", Garble{}),
     B.all(Tag, "/override", Echo{})
-  ]))
+  ]), origins)
+
+def main() -> IO(Unit):
+  do IO<Unit>:
+    origins : B.WebSocketConfig <- B.websocket_origins_checked(B.websocket_config(), chat_origins())
+    app(origins)

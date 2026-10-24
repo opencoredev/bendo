@@ -1,10 +1,11 @@
 # BND-43: the CSRF request policy, stated without the middleware's helpers.
-# Origin serialization (src/http/origin.bend) and the media-type essence
-# (src/http/media.bend) are shared parsing primitives, not policy.
+# Origins and media types come from the independent specifications
+# (proof/origin-spec.bend, proof/media-spec.bend; BND-85), not from the
+# parsers the middleware runs.
 import Base
 import ../src/http/request.bend as Request
-import ../src/http/origin.bend as Origin
-import ../src/http/media.bend as Media
+import ./origin-spec.bend as OriginSpec
+import ./media-spec.bend as MediaSpec
 import ../src/http/bytes.bend as Bytes
 
 # GET and HEAD are never inspected.
@@ -25,11 +26,14 @@ def form_essence(+e: String) -> Bool:
   String.eq(e, "application/x-www-form-urlencoded") || String.eq(e, "multipart/form-data") || String.eq(e, "text/plain")
 
 # A body an HTML form can send without a CORS preflight. A request without
-# Content-Type counts, since a browser may omit it.
+# Content-Type counts, since a browser may omit it. So does a value whose media
+# type is malformed (MediaSpec.well_formed): the policy fails closed, and a
+# value main's looser trim read as a form type is never exempt (BND-85,
+# law csrf_spec_v1_denies).
 def simple_body(content_type: Maybe<&2, String>) -> Bool:
   match content_type:
     case None{}: True{}
-    case Some{v}: form_essence(Media.essence(v))
+    case Some{+v}: form_essence(MediaSpec.essence(v)) || Bool.not(MediaSpec.well_formed(v))
 
 def inspected(m: Request.Method, content_type: Maybe<&2, String>) -> Bool:
   Bool.not(reads_only(m)) && simple_body(content_type)
@@ -45,8 +49,8 @@ def site_is(site: Maybe<&2, String>, +value: String) -> Bool:
 # is "null" or malformed; the Referer's origin only without Origin.
 def source(origin: Maybe<&2, String>, referer: Maybe<&2, String>) -> Maybe<&2, String>:
   match origin referer:
-    case Some{o} r: Origin.canonical(o)
-    case None{} Some{r}: Origin.of_url(r)
+    case Some{o} r: OriginSpec.canonical(o)
+    case None{} Some{r}: OriginSpec.of_url(r)
     case None{} None{}: None{}
 
 def listed(+o: String, origins: List<&2, String>) -> Bool:
@@ -57,7 +61,7 @@ def listed(+o: String, origins: List<&2, String>) -> Bool:
 # The origin the request addressed, when the deployment supplies its scheme.
 def addressed(scheme: Maybe<&2, String>, host: Maybe<&2, String>) -> Maybe<&2, String>:
   match scheme host:
-    case Some{s} Some{h}: Origin.of_host(s, h)
+    case Some{s} Some{h}: OriginSpec.of_host(s, h)
     case _ _: None{}
 
 def names(m: Maybe<&2, String>, +o: String) -> Bool:
@@ -89,7 +93,7 @@ def present(m: Maybe<&2, String>) -> List<&2, String>:
 def configured(xs: List<&2, String>) -> List<&2, String>:
   match xs:
     case Nil{}: []
-    case x <> t: List.append(&2, String, present(Origin.of_url(x)), configured(t))
+    case x <> t: List.append(&2, String, present(OriginSpec.of_url(x)), configured(t))
 
 # The configured scheme, compared in ASCII lowercase.
 def configured_scheme(s: Maybe<&2, String>) -> Maybe<&2, String>:

@@ -10,6 +10,8 @@ import ./websocket-spec.bend as Spec
 import ../src/data/base64.bend as Base64
 import ../src/crypto/sha1.bend as Sha1Hash
 import ../src/http/origin.bend as Origin
+import ./origin-spec.bend as OriginSpec
+import ./origin.bend as OriginProof
 import ../src/http/text.bend as T
 import ./text.bend as TP
 import ./bytes-tail.bend as BT
@@ -193,7 +195,7 @@ def serialized(+xs: List<&2, String>, +m: Maybe<&2, String>) -> {Spec.serialized
 
 def origin_tail(+xs: List<&2, String>, +v: List<&2, U32>, +t: List<&2, List<&2, U32>>) -> {Spec.one_origin(xs, v <> t) == W.origin_sent(xs, v <> t) : Bool}:
   match t:
-    case Nil{}: serialized(xs, Origin.canonical(Bytes.ascii(v)))
+    case Nil{}: Equal.trans(Bool, Spec.serialized_in(xs, OriginSpec.canonical(Bytes.ascii(v))), Spec.serialized_in(xs, Origin.canonical(Bytes.ascii(v))), W.origin_in(xs, Origin.canonical(Bytes.ascii(v))), Equal.cong(Maybe<&2, String>, Bool, m => Spec.serialized_in(xs, m), OriginSpec.canonical(Bytes.ascii(v)), Origin.canonical(Bytes.ascii(v)), Equal.sym(Maybe<&2, String>, Origin.canonical(Bytes.ascii(v)), OriginSpec.canonical(Bytes.ascii(v)), OriginProof.canonical_same(Bytes.ascii(v)))), serialized(xs, Origin.canonical(Bytes.ascii(v))))
     case w <> r: {==}
 
 def origin_values(+xs: List<&2, String>, +values: List<&2, List<&2, U32>>) -> {Spec.one_origin(xs, values) == W.origin_sent(xs, values) : Bool}:

@@ -112,8 +112,10 @@ def ready(result: Result<&2, &2, Methods.BuildError, B.Routes(Tag)>) -> IO(Unit)
     case Fail{error}: IO.die(Unit, 1, "invalid routes")
     case Done{table}: B.serve_with(~Unit, ~Tag, ~Unit, ~handler, ~middleware, table, Unit{}, B.config())
 
-def main() -> IO(Unit):
+def app(checked: B.CorsConfig) -> IO(Unit):
   ready(B.routes(Tag, [
+    B.use_path(Tag, "/checked/*", Builtin{B.cors(checked)}),
+    B.get(Tag, "/checked/data", Hello{}),
     B.on_error(Tag, Recover{}),
     B.map_response(Tag, Map{}),
     B.map_response(Tag, SecureFirst{}),
@@ -171,3 +173,9 @@ def main() -> IO(Unit):
     B.get(Tag, "/trim-always/page", Hello{}),
     B.get(Tag, "/trim-always/page/", Hello{})
   ]))
+
+# The checked builder reports the two entries it drops on stderr at startup.
+def main() -> IO(Unit):
+  do IO<Unit>:
+    checked : B.CorsConfig <- B.cors_allow_checked([B.cors_origin("https://checked.example"), B.cors_origin("null"), B.cors_origin("checked.example")])
+    app(checked)
