@@ -63,5 +63,24 @@ cd docs && bunx wrangler@4 deploy
 That publishes the site at `bendo-docs.<account>.workers.dev`. A custom domain
 needs a DNS change and is Leo's call.
 
-Planned additions: the API reference (BND-71) and task and migration guides
-(BND-72). Add their pages to `sidebar.ts` where its comment says.
+## API reference
+
+`docs/api/` is the API reference. `bun scripts/api-coverage.ts` reports what
+is missing or wrong, and `tests/api-coverage.test.ts` runs the same checks
+plus the examples. `docs/api/index.md` states which names count as public.
+
+- An entry is an H3 made only of backticked names: ``### `B.param` `` or
+  ``### `B.get`, `B.post` ``. Bend names are qualified (`B.`, `J.`, `S.`).
+  TypeScript pages name bare exports and set `module:` in their frontmatter.
+- Each entry needs an example below it, before the next H2 or H3, that uses
+  every name in the heading.
+- A fence with info `bend signature` or `ts signature` is shown, not checked.
+  Every other `bend`, `ts` or `tsx` fence on a reference page is checked: the
+  Bend fences of a page form one program, compiled to C through the cached
+  fixture harness; each TypeScript fence is typechecked as its own module.
+- Adding a def to `src/main.bend`, an export to a package entry point, or a new
+  companion call to an example fails the test until it has an entry. A newly
+  imported companion module also needs an alias in `scripts/api-coverage.ts`.
+
+Planned additions: task and migration guides (BND-72). Add their pages to
+`sidebar.ts` where its comment says.
