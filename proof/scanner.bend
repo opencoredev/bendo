@@ -8,6 +8,7 @@ import ../src/http/bytes.bend as B
 import ../src/http/request.bend as R
 import ../src/http/parse.bend as P
 import ../src/http/write.bend as W
+import ./bytes-tail.bend as BT
 
 def Laws.advance_request(c, rev, ok):
   %Equal.sym(Bool, Support.printable_octet(c), True{}, ok) : {P.request_octet(_, c, rev) == P.RequestLine{c <> rev, False{}} : P.State}
@@ -17,25 +18,47 @@ def Laws.advance_header(r, c, rev, ok):
   %Equal.sym(Bool, B.value_octet(c), True{}, ok) : {P.header_octet(_, c, r, rev) == P.Headers{r, c <> rev, False{}} : P.State}
   {==}
 
-def Laws.scan_request_line_acc(xs, rev, tail, ok):
+# Bytes.append is a reversed tail loop (BND-84); these restate it over List.append.
+def append_cons2(+a: U32, +b: U32, +t: List<&2, U32>, +ys: List<&2, U32>) -> {B.append(a <> b <> t, ys) == a <> b <> B.append(t, ys) : List<&2, U32>}:
+  Equal.trans(List<&2, U32>, B.append(a <> b <> t, ys), List.append(&2, U32, a <> b <> t, ys), a <> b <> B.append(t, ys), BT.append_equiv(a <> b <> t, ys), Equal.cong(List<&2, U32>, List<&2, U32>, l => a <> b <> l, List.append(&2, U32, t, ys), B.append(t, ys), Equal.sym(List<&2, U32>, B.append(t, ys), List.append(&2, U32, t, ys), BT.append_equiv(t, ys))))
+
+def value_ok(+xs: List<&2, U32>, ok: {B.value(xs) == True{} : Bool}) -> {B.value_spec(xs) == True{} : Bool}:
+  Equal.trans(Bool, B.value_spec(xs), B.value(xs), True{}, Equal.sym(Bool, B.value(xs), B.value_spec(xs), BT.value_equiv(xs)), ok)
+
+def tail_ok(+s: String, ok: {B.token_tail(s) == True{} : Bool}) -> {B.token_tail_spec(s) == True{} : Bool}:
+  Equal.trans(Bool, B.token_tail_spec(s), B.token_tail(s), True{}, Equal.sym(Bool, B.token_tail(s), B.token_tail_spec(s), BT.token_tail_equiv(s)), ok)
+
+# A valid nonempty token's tail check, over the spec.
+def token_spec_ok(+c: U32, +t: String, ok: {B.token(SCon{Chr{c}, t}) == True{} : Bool}) -> {B.token_tail_spec(SCon{Chr{c}, t}) == True{} : Bool}:
+  Equal.trans(Bool, B.tchar(c) && B.token_tail_spec(t), B.tchar(c) && B.token_tail(t), True{}, Equal.cong(Bool, Bool, x => B.tchar(c) && x, B.token_tail_spec(t), B.token_tail(t), Equal.sym(Bool, B.token_tail(t), B.token_tail_spec(t), BT.token_tail_equiv(t))), ok)
+
+def scan_request_line_list(+xs: List<&2, U32>, +rev: List<&2, U32>, +tail: List<&2, U32>, +ok: {Support.printable(xs) == True{} : Bool}) -> {P.feed(List.append(&2, U32, xs, 13 <> 10 <> tail), P.RequestLine{rev, False{}}) == P.feed(tail, P.request_line(List.reverse(&2, U32, List.reverse.go(&2, U32, xs, rev)))) : P.State & R.ParseResult}:
   match xs:
     case Nil{}:
       {==}
     case c <> t:
-      %Equal.sym(P.State, P.advance(P.RequestLine{rev, False{}}, c), P.RequestLine{c <> rev, False{}}, Laws.advance_request(c, rev, Laws.and_left(Support.printable_octet(c), Support.printable(t), ok))) : {P.feed(B.append(t, 13 <> 10 <> tail), _) == P.feed(tail, P.request_line(List.reverse(&2, U32, List.reverse.go(&2, U32, t, c <> rev)))) : P.State & R.ParseResult}
-      Laws.scan_request_line_acc(t, c <> rev, tail, Laws.and_right(Support.printable_octet(c), Support.printable(t), ok))
+      %Equal.sym(P.State, P.advance(P.RequestLine{rev, False{}}, c), P.RequestLine{c <> rev, False{}}, Laws.advance_request(c, rev, Laws.and_left(Support.printable_octet(c), Support.printable(t), ok))) : {P.feed(List.append(&2, U32, t, 13 <> 10 <> tail), _) == P.feed(tail, P.request_line(List.reverse(&2, U32, List.reverse.go(&2, U32, t, c <> rev)))) : P.State & R.ParseResult}
+      scan_request_line_list(t, c <> rev, tail, Laws.and_right(Support.printable_octet(c), Support.printable(t), ok))
+
+def Laws.scan_request_line_acc(xs, rev, tail, ok):
+  Equal.trans(P.State & R.ParseResult, P.feed(B.append(xs, 13 <> 10 <> tail), P.RequestLine{rev, False{}}), P.feed(List.append(&2, U32, xs, 13 <> 10 <> tail), P.RequestLine{rev, False{}}), P.feed(tail, P.request_line(List.reverse(&2, U32, List.reverse.go(&2, U32, xs, rev)))), Equal.cong(List<&2, U32>, P.State & R.ParseResult, l => P.feed(l, P.RequestLine{rev, False{}}), B.append(xs, 13 <> 10 <> tail), List.append(&2, U32, xs, 13 <> 10 <> tail), BT.append_equiv(xs, 13 <> 10 <> tail)), scan_request_line_list(xs, rev, tail, ok))
+
 
 def Laws.scan_request_line(xs, tail, ok):
   %Laws.reverse_twice(U32, xs) : {P.feed(B.append(xs, 13 <> 10 <> tail), P.initial()) == P.feed(tail, P.request_line(_)) : P.State & R.ParseResult}
   Laws.scan_request_line_acc(xs, [], tail, ok)
 
-def Laws.scan_header_line_acc(r, xs, rev, tail, ok):
+def scan_header_line_list(+r: R.Req, +xs: List<&2, U32>, +rev: List<&2, U32>, +tail: List<&2, U32>, +ok: {B.value_spec(xs) == True{} : Bool}) -> {P.feed(List.append(&2, U32, xs, 13 <> 10 <> tail), P.Headers{r, rev, False{}}) == P.feed(tail, P.header_line(r, List.reverse(&2, U32, List.reverse.go(&2, U32, xs, rev)))) : P.State & R.ParseResult}:
   match xs:
     case Nil{}:
       {==}
     case c <> t:
-      %Equal.sym(P.State, P.advance(P.Headers{r, rev, False{}}, c), P.Headers{r, c <> rev, False{}}, Laws.advance_header(r, c, rev, Laws.and_left(B.value_octet(c), B.value(t), ok))) : {P.feed(B.append(t, 13 <> 10 <> tail), _) == P.feed(tail, P.header_line(r, List.reverse(&2, U32, List.reverse.go(&2, U32, t, c <> rev)))) : P.State & R.ParseResult}
-      Laws.scan_header_line_acc(r, t, c <> rev, tail, Laws.and_right(B.value_octet(c), B.value(t), ok))
+      %Equal.sym(P.State, P.advance(P.Headers{r, rev, False{}}, c), P.Headers{r, c <> rev, False{}}, Laws.advance_header(r, c, rev, Laws.and_left(B.value_octet(c), B.value_spec(t), ok))) : {P.feed(List.append(&2, U32, t, 13 <> 10 <> tail), _) == P.feed(tail, P.header_line(r, List.reverse(&2, U32, List.reverse.go(&2, U32, t, c <> rev)))) : P.State & R.ParseResult}
+      scan_header_line_list(r, t, c <> rev, tail, Laws.and_right(B.value_octet(c), B.value_spec(t), ok))
+
+def Laws.scan_header_line_acc(r, xs, rev, tail, ok):
+  Equal.trans(P.State & R.ParseResult, P.feed(B.append(xs, 13 <> 10 <> tail), P.Headers{r, rev, False{}}), P.feed(List.append(&2, U32, xs, 13 <> 10 <> tail), P.Headers{r, rev, False{}}), P.feed(tail, P.header_line(r, List.reverse(&2, U32, List.reverse.go(&2, U32, xs, rev)))), Equal.cong(List<&2, U32>, P.State & R.ParseResult, l => P.feed(l, P.Headers{r, rev, False{}}), B.append(xs, 13 <> 10 <> tail), List.append(&2, U32, xs, 13 <> 10 <> tail), BT.append_equiv(xs, 13 <> 10 <> tail)), scan_header_line_list(r, xs, rev, tail, value_ok(xs, ok)))
+
 
 def Laws.scan_header_line(r, xs, tail, ok):
   %Laws.reverse_twice(U32, xs) : {P.feed(B.append(xs, 13 <> 10 <> tail), P.Headers{r, [], False{}}) == P.feed(tail, P.header_line(r, _)) : P.State & R.ParseResult}
@@ -44,18 +67,23 @@ def Laws.scan_header_line(r, xs, tail, ok):
 
 # This predicate describes only scanner octets; semantic header validity
 # remains R.headers_valid and is independently required below.
-def Laws.append_assoc(xs, ys, zs):
+def append_assoc_list(+xs: List<&2, U32>, +ys: List<&2, U32>, +zs: List<&2, U32>) -> {List.append(&2, U32, List.append(&2, U32, xs, ys), zs) == List.append(&2, U32, xs, List.append(&2, U32, ys, zs)) : List<&2, U32>}:
   match xs:
     case Nil{}:
       {==}
     case c <> t:
-      %Laws.append_assoc(t, ys, zs) : {c <> B.append(B.append(t, ys), zs) == c <> _ : List<&2, U32>}
+      %append_assoc_list(t, ys, zs) : {c <> List.append(&2, U32, List.append(&2, U32, t, ys), zs) == c <> _ : List<&2, U32>}
       {==}
+
+def Laws.append_assoc(xs, ys, zs):
+  Equal.trans(List<&2, U32>, B.append(B.append(xs, ys), zs), List.append(&2, U32, B.append(xs, ys), zs), B.append(xs, B.append(ys, zs)), BT.append_equiv(B.append(xs, ys), zs), Equal.trans(List<&2, U32>, List.append(&2, U32, B.append(xs, ys), zs), List.append(&2, U32, List.append(&2, U32, xs, ys), zs), B.append(xs, B.append(ys, zs)), Equal.cong(List<&2, U32>, List<&2, U32>, l => List.append(&2, U32, l, zs), B.append(xs, ys), List.append(&2, U32, xs, ys), BT.append_equiv(xs, ys)), Equal.trans(List<&2, U32>, List.append(&2, U32, List.append(&2, U32, xs, ys), zs), List.append(&2, U32, xs, List.append(&2, U32, ys, zs)), B.append(xs, B.append(ys, zs)), append_assoc_list(xs, ys, zs), Equal.trans(List<&2, U32>, List.append(&2, U32, xs, List.append(&2, U32, ys, zs)), List.append(&2, U32, xs, B.append(ys, zs)), B.append(xs, B.append(ys, zs)), Equal.cong(List<&2, U32>, List<&2, U32>, l => List.append(&2, U32, xs, l), List.append(&2, U32, ys, zs), B.append(ys, zs), Equal.sym(List<&2, U32>, B.append(ys, zs), List.append(&2, U32, ys, zs), BT.append_equiv(ys, zs))), Equal.sym(List<&2, U32>, B.append(xs, B.append(ys, zs)), List.append(&2, U32, xs, B.append(ys, zs)), BT.append_equiv(xs, B.append(ys, zs)))))))
+
 
 def Laws.header_bytes(h, tail):
   match h:
     case R.Header{n, v}:
-      Equal.sym(List<&2, U32>, B.append(B.append(B.encode(n), 58 <> 32 <> v), 13 <> 10 <> tail), B.append(B.encode(n), 58 <> 32 <> B.append(v, 13 <> 10 <> tail)), Laws.append_assoc(B.encode(n), 58 <> 32 <> v, 13 <> 10 <> tail))
+      Equal.trans(List<&2, U32>, B.append(B.encode(n), 58 <> 32 <> B.append(v, 13 <> 10 <> tail)), B.append(B.encode(n), B.append(58 <> 32 <> v, 13 <> 10 <> tail)), B.append(B.append(B.encode(n), 58 <> 32 <> v), 13 <> 10 <> tail), Equal.cong(List<&2, U32>, List<&2, U32>, l => B.append(B.encode(n), l), 58 <> 32 <> B.append(v, 13 <> 10 <> tail), B.append(58 <> 32 <> v, 13 <> 10 <> tail), Equal.sym(List<&2, U32>, B.append(58 <> 32 <> v, 13 <> 10 <> tail), 58 <> 32 <> B.append(v, 13 <> 10 <> tail), append_cons2(58, 32, v, 13 <> 10 <> tail))), Equal.sym(List<&2, U32>, B.append(B.append(B.encode(n), 58 <> 32 <> v), 13 <> 10 <> tail), B.append(B.encode(n), B.append(58 <> 32 <> v, 13 <> 10 <> tail)), Laws.append_assoc(B.encode(n), 58 <> 32 <> v, 13 <> 10 <> tail)))
+
 
 def Laws.scan_header_octets(r, h, tail, ok, bytes):
   match h:
@@ -70,11 +98,10 @@ def Laws.scan_header_octets(r, h, tail, ok, bytes):
 def Laws.header_suffix(h, body, tail):
   match h:
     case R.Header{n, v}:
-      +raw = {58 <> 32 <> B.append(v, 13 <> 10 <> body) : List<&2, U32>}
-      Equal.trans(List<&2, U32>, B.append(W.header(R.Header{n, v}, body), tail), B.append(B.encode(n), B.append(raw, tail)), W.header(R.Header{n, v}, B.append(body, tail)), Laws.append_assoc(B.encode(n), raw, tail),
-        Equal.cong(List<&2, U32>, List<&2, U32>, xs => B.append(B.encode(n), 58 <> 32 <> xs), B.append(B.append(v, 13 <> 10 <> body), tail), B.append(v, 13 <> 10 <> B.append(body, tail)), Laws.append_assoc(v, 13 <> 10 <> body, tail)))
+      Equal.trans(List<&2, U32>, B.append(B.append(B.encode(n), 58 <> 32 <> B.append(v, 13 <> 10 <> body)), tail), B.append(B.encode(n), B.append(58 <> 32 <> B.append(v, 13 <> 10 <> body), tail)), B.append(B.encode(n), 58 <> 32 <> B.append(v, 13 <> 10 <> B.append(body, tail))), Laws.append_assoc(B.encode(n), 58 <> 32 <> B.append(v, 13 <> 10 <> body), tail), Equal.trans(List<&2, U32>, B.append(B.encode(n), B.append(58 <> 32 <> B.append(v, 13 <> 10 <> body), tail)), B.append(B.encode(n), 58 <> 32 <> B.append(B.append(v, 13 <> 10 <> body), tail)), B.append(B.encode(n), 58 <> 32 <> B.append(v, 13 <> 10 <> B.append(body, tail))), Equal.cong(List<&2, U32>, List<&2, U32>, l => B.append(B.encode(n), l), B.append(58 <> 32 <> B.append(v, 13 <> 10 <> body), tail), 58 <> 32 <> B.append(B.append(v, 13 <> 10 <> body), tail), append_cons2(58, 32, B.append(v, 13 <> 10 <> body), tail)), Equal.trans(List<&2, U32>, B.append(B.encode(n), 58 <> 32 <> B.append(B.append(v, 13 <> 10 <> body), tail)), B.append(B.encode(n), 58 <> 32 <> B.append(v, B.append(13 <> 10 <> body, tail))), B.append(B.encode(n), 58 <> 32 <> B.append(v, 13 <> 10 <> B.append(body, tail))), Equal.cong(List<&2, U32>, List<&2, U32>, l => B.append(B.encode(n), 58 <> 32 <> l), B.append(B.append(v, 13 <> 10 <> body), tail), B.append(v, B.append(13 <> 10 <> body, tail)), Laws.append_assoc(v, 13 <> 10 <> body, tail)), Equal.cong(List<&2, U32>, List<&2, U32>, l => B.append(B.encode(n), 58 <> 32 <> B.append(v, l)), B.append(13 <> 10 <> body, tail), 13 <> 10 <> B.append(body, tail), append_cons2(13, 10, body, tail)))))
 
 # Generalized over already accumulated headers and any trailing input.
+
 def Laws.scan_headers_octets(hs, m, p, q, v, acc, tail, ok, bytes):
   match hs:
     case Nil{}:
@@ -1104,26 +1131,37 @@ def and_true(a: Bool, b: Bool, ea: {a == True{} : Bool}, eb: {b == True{} : Bool
     case True{}:
       eb
 
-def Laws.value_append(xs, ys, xok, yok):
+def value_append_spec(+xs: List<&2, U32>, +ys: List<&2, U32>, +xok: {B.value_spec(xs) == True{} : Bool}, +yok: {B.value_spec(ys) == True{} : Bool}) -> {B.value_spec(List.append(&2, U32, xs, ys)) == True{} : Bool}:
   match xs:
     case Nil{}:
       yok
     case c <> t:
-      and_true(B.value_octet(c), B.value(B.append(t, ys)), Laws.and_left(B.value_octet(c), B.value(t), xok), Laws.value_append(t, ys, Laws.and_right(B.value_octet(c), B.value(t), xok), yok))
+      and_true(B.value_octet(c), B.value_spec(List.append(&2, U32, t, ys)), Laws.and_left(B.value_octet(c), B.value_spec(t), xok), value_append_spec(t, ys, Laws.and_right(B.value_octet(c), B.value_spec(t), xok), yok))
 
-def Laws.token_tail_value(s, ok):
+def Laws.value_append(xs, ys, xok, yok):
+  Equal.trans(Bool, B.value(B.append(xs, ys)), B.value_spec(B.append(xs, ys)), True{}, BT.value_equiv(B.append(xs, ys)), Equal.trans(Bool, B.value_spec(B.append(xs, ys)), B.value_spec(List.append(&2, U32, xs, ys)), True{}, Equal.cong(List<&2, U32>, Bool, l => B.value_spec(l), B.append(xs, ys), List.append(&2, U32, xs, ys), BT.append_equiv(xs, ys)), value_append_spec(xs, ys, value_ok(xs, xok), value_ok(ys, yok))))
+
+
+def token_tail_value_spec(+s: String, +ok: {B.token_tail_spec(s) == True{} : Bool}) -> {B.value_spec(B.encode_spec(s)) == True{} : Bool}:
   match s:
     case SNil{}:
       {==}
     case SCon{Chr{c}, t}:
-      and_true(B.value_octet(c), B.value(B.encode(t)), Laws.printable_value_octet(c, Laws.tchar_printable(c, Laws.and_left(B.tchar(c), B.token_tail(t), ok))), Laws.token_tail_value(t, Laws.and_right(B.tchar(c), B.token_tail(t), ok)))
+      and_true(B.value_octet(c), B.value_spec(B.encode_spec(t)), Laws.printable_value_octet(c, Laws.tchar_printable(c, Laws.and_left(B.tchar(c), B.token_tail_spec(t), ok))), token_tail_value_spec(t, Laws.and_right(B.tchar(c), B.token_tail_spec(t), ok)))
+
+def value_encode_spec(+s: String, ok: {B.value_spec(B.encode_spec(s)) == True{} : Bool}) -> {B.value(B.encode(s)) == True{} : Bool}:
+  Equal.trans(Bool, B.value(B.encode(s)), B.value_spec(B.encode(s)), True{}, BT.value_equiv(B.encode(s)), Equal.trans(Bool, B.value_spec(B.encode(s)), B.value_spec(B.encode_spec(s)), True{}, Equal.cong(List<&2, U32>, Bool, l => B.value_spec(l), B.encode(s), B.encode_spec(s), BT.encode_equiv(s)), ok))
+
+def Laws.token_tail_value(s, ok):
+  value_encode_spec(s, token_tail_value_spec(s, tail_ok(s, ok)))
+
 
 def Laws.token_value(s, ok):
   match s:
     case SNil{}:
       {==}
     case SCon{Chr{c}, t}:
-      Laws.token_tail_value(SCon{Chr{c}, t}, ok)
+      value_encode_spec(SCon{Chr{c}, t}, token_tail_value_spec(SCon{Chr{c}, t}, token_spec_ok(c, t, ok)))
 
 def Laws.header_scannable_valid(h, ok):
   match h:
@@ -1148,23 +1186,34 @@ def Laws.scan_header(r, h, tail, ok):
 def Laws.scan_headers(hs, m, p, q, v, acc, tail, ok):
   Laws.scan_headers_octets(hs, m, p, q, v, acc, tail, ok, Laws.headers_scannable_valid(hs, ok))
 
-def Laws.printable_append(xs, ys, xok, yok):
+def printable_append_list(+xs: List<&2, U32>, +ys: List<&2, U32>, +xok: {Support.printable(xs) == True{} : Bool}, +yok: {Support.printable(ys) == True{} : Bool}) -> {Support.printable(List.append(&2, U32, xs, ys)) == True{} : Bool}:
   match xs:
     case Nil{}:
       yok
     case c <> t:
-      and_true(Support.printable_octet(c), Support.printable(B.append(t, ys)), Laws.and_left(Support.printable_octet(c), Support.printable(t), xok), Laws.printable_append(t, ys, Laws.and_right(Support.printable_octet(c), Support.printable(t), xok), yok))
+      and_true(Support.printable_octet(c), Support.printable(List.append(&2, U32, t, ys)), Laws.and_left(Support.printable_octet(c), Support.printable(t), xok), printable_append_list(t, ys, Laws.and_right(Support.printable_octet(c), Support.printable(t), xok), yok))
 
-def Laws.token_tail_printable(s, ok):
+def Laws.printable_append(xs, ys, xok, yok):
+  Equal.trans(Bool, Support.printable(B.append(xs, ys)), Support.printable(List.append(&2, U32, xs, ys)), True{}, Equal.cong(List<&2, U32>, Bool, l => Support.printable(l), B.append(xs, ys), List.append(&2, U32, xs, ys), BT.append_equiv(xs, ys)), printable_append_list(xs, ys, xok, yok))
+
+
+def token_tail_printable_spec(+s: String, +ok: {B.token_tail_spec(s) == True{} : Bool}) -> {Support.printable(B.encode_spec(s)) == True{} : Bool}:
   match s:
     case SNil{}:
       {==}
     case SCon{Chr{c}, t}:
-      and_true(Support.printable_octet(c), Support.printable(B.encode(t)), Laws.tchar_printable(c, Laws.and_left(B.tchar(c), B.token_tail(t), ok)), Laws.token_tail_printable(t, Laws.and_right(B.tchar(c), B.token_tail(t), ok)))
+      and_true(Support.printable_octet(c), Support.printable(B.encode_spec(t)), Laws.tchar_printable(c, Laws.and_left(B.tchar(c), B.token_tail_spec(t), ok)), token_tail_printable_spec(t, Laws.and_right(B.tchar(c), B.token_tail_spec(t), ok)))
+
+def printable_encode_spec(+s: String, ok: {Support.printable(B.encode_spec(s)) == True{} : Bool}) -> {Support.printable(B.encode(s)) == True{} : Bool}:
+  Equal.trans(Bool, Support.printable(B.encode(s)), Support.printable(B.encode_spec(s)), True{}, Equal.cong(List<&2, U32>, Bool, l => Support.printable(l), B.encode(s), B.encode_spec(s), BT.encode_equiv(s)), ok)
+
+def Laws.token_tail_printable(s, ok):
+  printable_encode_spec(s, token_tail_printable_spec(s, tail_ok(s, ok)))
+
 
 def Laws.token_printable(s, ok):
   match s:
     case SNil{}:
       {==}
     case SCon{Chr{c}, t}:
-      Laws.token_tail_printable(SCon{Chr{c}, t}, ok)
+      printable_encode_spec(SCon{Chr{c}, t}, token_tail_printable_spec(SCon{Chr{c}, t}, token_spec_ok(c, t, ok)))

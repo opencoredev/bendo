@@ -5,6 +5,7 @@ import ./encoding.bend as E
 import ./codec-bits.bend as Bits
 import ./utf8-code.bend as Code
 import ./octet-proofs.bend as Octet
+import ./encoding-proofs.bend as EP
 
 law high_scalar_impossible:
   for +lo: Word(21n)
@@ -152,9 +153,10 @@ def unescape_string(s, valid):
     case SNil{}:
       {==}
     case SCon{Chr{+n}, +t}:
-      +yes = valid
+      +yes = Equal.trans(Bool, E.scalar(n) && E.scalars(t), E.scalars(SCon{Chr{n}, t}), True{}, EP.scalars_cons(n, t), valid)
       first = and_left(E.scalar(n), E.scalars(t), yes)
       rest = and_right(E.scalar(n), E.scalars(t), yes)
+      %EP.encode_cons(n, t) : {E.unescape(_) == Some{string_bytes(SCon{Chr{n}, t})} : Maybe<&2, List<&2, U32>>}
       %Equal.sym(Maybe<&2, List<&2, U32>>, E.unescape(E.encode_char(n) ++ E.encode(t)), Maybe.bind(&2, List<&2, U32>, List<&2, U32>, E.unescape(E.encode(t)), bs => Some{List.append(&2, U32, E.char_bytes(n), bs)}), unescape_char_suffix(n, E.encode(t), first)) : {_ == Some{string_bytes(SCon{Chr{n}, t})} : Maybe<&2, List<&2, U32>>}
       %Equal.sym(Maybe<&2, List<&2, U32>>, E.unescape(E.encode(t)), Some{string_bytes(t)}, unescape_string(t, rest)) : {Maybe.bind(&2, List<&2, U32>, List<&2, U32>, _, bs => Some{List.append(&2, U32, E.char_bytes(n), bs)}) == Some{string_bytes(SCon{Chr{n}, t})} : Maybe<&2, List<&2, U32>>}
       {==}
@@ -169,7 +171,7 @@ def utf8_string(s, valid):
     case SNil{}:
       {==}
     case SCon{Chr{+n}, +t}:
-      +yes = valid
+      +yes = Equal.trans(Bool, E.scalar(n) && E.scalars(t), E.scalars(SCon{Chr{n}, t}), True{}, EP.scalars_cons(n, t), valid)
       first = and_left(E.scalar(n), E.scalars(t), yes)
       rest = and_right(E.scalar(n), E.scalars(t), yes)
       %Equal.sym(Maybe<&2, String>, Code.decode(List.append(&2, U32, E.char_bytes(n), string_bytes(t)), Code.Start{}), Maybe.bind(&2, String, String, Code.decode(string_bytes(t), Code.Start{}), xs => Some{SCon{Chr{n}, xs}}), utf8_char_suffix(n, string_bytes(t), first)) : {_ == Some{SCon{Chr{n}, t}} : Maybe<&2, String>}

@@ -7,10 +7,19 @@ import ./auth_common.bend as A
 def token_char(+c: U32) -> Bool:
   ((c >= 65 : U32) && (c <= 90 : U32)) || ((c >= 97 : U32) && (c <= 122 : U32)) || ((c >= 48 : U32) && (c <= 57 : U32)) || U32.is_eq(c, 45) || U32.is_eq(c, 46) || U32.is_eq(c, 95) || U32.is_eq(c, 126) || U32.is_eq(c, 43) || U32.is_eq(c, 47)
 
-def body_go(s: String) -> Bool:
+def body_spec(s: String) -> Bool:
   match s:
     case SNil{}: True{}
-    case SCon{Chr{+c}, t}: token_char(c) && body_go(t)
+    case SCon{Chr{+c}, t}: token_char(c) && body_spec(t)
+
+# body_spec as a tail loop over the reversed text (BND-84).
+def body_fold(rev: String, acc: Bool) -> Bool:
+  match rev:
+    case SNil{}: acc
+    case SCon{Chr{+c}, r}: body_fold(r, token_char(c) && acc)
+
+def body_go(s: String) -> Bool:
+  body_fold(String.reverse(s), True{})
 
 # Scans the reversed token: trailing '=' first, then at least one token char.
 def b64token_split(s: String) -> Bool:

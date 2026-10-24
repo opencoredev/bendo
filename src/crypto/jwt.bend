@@ -7,6 +7,7 @@ import ../data/utf8.bend as Utf8
 import ../data/json.bend as Json
 import ./hmac.bend as HMAC
 import ./compare.bend as Compare
+import ../http/text.bend as Text
 
 type Error is Data:
   Malformed{}
@@ -38,12 +39,23 @@ def decode(s: String) -> Maybe<&2, List<&2, U32>>:
   Base64.decode(s, True{}, False{})
 
 # True when no character is '.', the compact-serialization separator.
-def dotfree(s: String) -> Bool:
+def dotfree_spec(s: String) -> Bool:
   match s:
     case SNil{}:
       True{}
     case SCon{+c, t}:
-      Bool.not(Char.is_eq(c, '.')) && dotfree(t)
+      Bool.not(Char.is_eq(c, '.')) && dotfree_spec(t)
+
+# Tail calls throughout (BND-84): tokens may be as long as a header.
+def dotfree_go(s: String, acc: Bool) -> Bool:
+  match s:
+    case SNil{}:
+      acc
+    case SCon{+c, t}:
+      dotfree_go(t, acc && Bool.not(Char.is_eq(c, '.')))
+
+def dotfree(s: String) -> Bool:
+  dotfree_go(s, True{})
 
 def prepend(c: Char, r: Maybe<&2, Cut>) -> Maybe<&2, Cut>:
   match r:
@@ -59,20 +71,40 @@ def split_pick(c: Char, t: String, rest: Maybe<&2, Cut>, dot: Bool) -> Maybe<&2,
     case False{}:
       prepend(c, rest)
 
-# Split at the first '.'; None when there is none.
-def split(s: String) -> Maybe<&2, Cut>:
+def split_spec(s: String) -> Maybe<&2, Cut>:
   match s:
     case SNil{}:
       None{}
     case SCon{+c, +t}:
-      split_pick(c, t, split(t), Char.is_eq(c, '.'))
+      split_pick(c, t, split_spec(t), Char.is_eq(c, '.'))
 
-def codes(s: String) -> List<&2, U32>:
+def from_text(r: Maybe<&2, Text.Cut>) -> Maybe<&2, Cut>:
+  match r:
+    case None{}:
+      None{}
+    case Some{Text.Cut{a, b}}:
+      Some{Cut{a, b}}
+
+# Split at the first '.'; None when there is none.
+def split(s: String) -> Maybe<&2, Cut>:
+  from_text(Text.cut(s, '.'))
+
+def codes_spec(s: String) -> List<&2, U32>:
   match s:
     case SNil{}:
       []
     case SCon{Chr{c}, t}:
-      c <> codes(t)
+      c <> codes_spec(t)
+
+def codes_go(s: String, acc: List<&2, U32>) -> List<&2, U32>:
+  match s:
+    case SNil{}:
+      acc
+    case SCon{Chr{c}, t}:
+      codes_go(t, c <> acc)
+
+def codes(s: String) -> List<&2, U32>:
+  codes_go(String.reverse(s), [])
 
 def signing_input(a: String, b: String) -> String:
   a ++ ("." ++ b)

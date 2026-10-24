@@ -5,6 +5,8 @@ import ../src/http/request.bend as Request
 import ../src/http/bytes.bend as Bytes
 import ./override-spec.bend as Spec
 import ./csrf-spec.bend as CsrfSpec
+import ../src/http/text.bend as Text
+import ./text.bend as TP
 
 def distinguish(b: Bool) -> Type:
   match b:
@@ -82,7 +84,7 @@ def chosen_sound(+allowed: List<&2, Request.Method>, +m: Request.Method) -> {sou
 def named_sound(+allowed: List<&2, Request.Method>, +s: String) -> {sound(allowed, Request.Post{}, P.named(allowed, s)) == True{} : Bool}:
   match s:
     case SNil{}: {==}
-    case SCon{+h, +t}: chosen_sound(allowed, Request.method(String.to_upper(SCon{h, t})))
+    case SCon{+h, +t}: chosen_sound(allowed, Request.method(Text.upper(SCon{h, t})))
 
 def single_sound(+allowed: List<&2, Request.Method>, +v: String, +rest: List<&2, String>) -> {sound(allowed, Request.Post{}, P.single(allowed, v, rest)) == True{} : Bool}:
   match rest:
@@ -216,7 +218,9 @@ def chosen_pick(+allowed: List<&2, Request.Method>, +m: Request.Method) -> {P.ch
 def named_one(+allowed: List<&2, Request.Method>, +s: String) -> {P.named(allowed, s) == Spec.one(allowed, s) : P.Outcome}:
   match s:
     case SNil{}: {==}
-    case SCon{+h, +t}: chosen_pick(allowed, Request.method(String.to_upper(SCon{h, t})))
+    case SCon{+h, +t}:
+      %TP.upper_equiv(SCon{h, t}) : {P.chosen(allowed, Request.method(Text.upper(SCon{h, t}))) == Spec.pick(allowed, Request.method(_), Spec.is_post(Request.method(_)), Spec.named_safe(Request.method_text(Request.method(_)))) : P.Outcome}
+      chosen_pick(allowed, Request.method(Text.upper(SCon{h, t})))
 
 # The decision equals the specification for every allowlist, method and
 # list of submitted values.

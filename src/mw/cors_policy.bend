@@ -4,6 +4,7 @@ import Base
 import ../http/request.bend as Request
 import ../http/origin.bend as Origin
 import ../http/bytes.bend as Bytes
+import ../http/text.bend as Text
 
 # One allowed origin. credentials: whether responses to it may carry
 # Access-Control-Allow-Credentials: true.
@@ -97,24 +98,35 @@ def kept_token(+t: String, rest: List<&2, String>, ok: Bool) -> List<&2, String>
     case True{}: t <> rest
     case False{}: rest
 
-def tokens(xs: List<&2, String>) -> List<&2, String>:
+def tokens_spec(xs: List<&2, String>) -> List<&2, String>:
   match xs:
     case Nil{}: []
     case x <> t:
       +name = Bytes.fold(String.trim(x))
-      kept_token(name, tokens(t), Bytes.token(name))
+      kept_token(name, tokens_spec(t), Bytes.token(name))
+
+# tokens_spec as a tail loop over the reversed list (BND-84).
+def tokens_go(rev: List<&2, String>, acc: List<&2, String>) -> List<&2, String>:
+  match rev:
+    case Nil{}: acc
+    case x <> r:
+      +name = Bytes.fold(String.trim(x))
+      tokens_go(r, kept_token(name, acc, Bytes.token(name)))
+
+def tokens(xs: List<&2, String>) -> List<&2, String>:
+  tokens_go(List.reverse(&2, String, xs), [])
 
 def joined(xs: List<&2, String>) -> Maybe<&2, String>:
   match xs:
     case Nil{}: None{}
-    case x <> t: Some{String.join(x <> t, ",")}
+    case x <> t: Some{Text.join(x <> t, ",")}
 
 # Access-Control-Request-Headers as a lowercase comma list of the field names
 # it lists. Items that are not tokens are dropped.
 def reflect(requested_headers: Maybe<&2, String>) -> Maybe<&2, String>:
   match requested_headers:
     case None{}: None{}
-    case Some{v}: joined(tokens(String.split(v, ',')))
+    case Some{v}: joined(tokens(Text.split(v, ',')))
 
 def cat(xs: List<&2, Field>, ys: List<&2, Field>) -> List<&2, Field>:
   List.append(&2, Field, xs, ys)

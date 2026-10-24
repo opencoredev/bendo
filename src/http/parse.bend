@@ -2,6 +2,7 @@
 # target forms are explicitly unsupported. See decision 0004.
 import Base
 import ./bytes.bend as Bytes
+import ./text.bend as Text
 import ./request.bend as R
 
 type State is Data:
@@ -75,7 +76,7 @@ def request_line_parts(parts: List<&2, String>) -> State:
       Bad{R.InvalidRequestLine{}}
 
 def request_line(line: List<&2, U32>) -> State:
-  request_line_parts(String.split(Bytes.ascii(line), ' '))
+  request_line_parts(Text.split(Bytes.ascii(line), ' '))
 
 def push_header(r: R.Req, h: R.Header) -> State:
   match r:
@@ -109,14 +110,27 @@ def field_push(c: U32, f: Field) -> Field:
     case Field{n, v}:
       Field{SCon{Chr{c}, n}, v}
 
-def field(xs: List<&2, U32>) -> Field:
+def field_spec(xs: List<&2, U32>) -> Field:
   match xs:
     case Nil{}:
       MissingColon{}
     case 58 <> t:
       Field{"", t}
     case c <> t:
-      field_push(c, field(t))
+      field_push(c, field_spec(t))
+
+# rev holds the name read so far, reversed. Same patterns as field_spec.
+def field_go(xs: List<&2, U32>, rev: String) -> Field:
+  match xs:
+    case Nil{}:
+      MissingColon{}
+    case 58 <> t:
+      Field{String.reverse(rev), t}
+    case c <> t:
+      field_go(t, SCon{Chr{c}, rev})
+
+def field(xs: List<&2, U32>) -> Field:
+  field_go(xs, "")
 
 def header_field(r: R.Req, f: Field) -> State:
   match f:

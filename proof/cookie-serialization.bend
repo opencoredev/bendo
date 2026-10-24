@@ -6,15 +6,19 @@ import ./cookie-serialization-laws.bend as Laws
 import ./utf8.bend as U
 import ./cookie-age-safety.bend as Age
 import ./cookie-fast.bend as Fast
+import ./bytes-tail.bend as BT
 
 def both_equal(+a: Bool, +b: Bool, +c: Bool, +d: Bool, ab: {a == b : Bool}, cd: {c == d : Bool}) -> {a && c == b && d : Bool}:
   Equal.trans(Bool, a && c, b && c, b && d, Equal.cong(Bool, Bool, x => x && c, a, b, ab), Equal.cong(Bool, Bool, x => b && x, c, d, cd))
 
-def token_tail_equiv(+s: String) -> {Bytes.token_tail(s) == Spec.token_tail(s) : Bool}:
+def token_tail_equiv_inner(+s: String) -> {Bytes.token_tail_spec(s) == Spec.token_tail(s) : Bool}:
   match s:
     case SNil{}: {==}
     case SCon{Chr{+c}, +t}:
-      Equal.cong(Bool, Bool, x => Spec.tchar(c) && x, Bytes.token_tail(t), Spec.token_tail(t), token_tail_equiv(t))
+      Equal.cong(Bool, Bool, x => Spec.tchar(c) && x, Bytes.token_tail_spec(t), Spec.token_tail(t), token_tail_equiv_inner(t))
+
+def token_tail_equiv(+s: String) -> {Bytes.token_tail(s) == Spec.token_tail(s) : Bool}:
+  Equal.trans(Bool, Bytes.token_tail(s), Bytes.token_tail_spec(s), Spec.token_tail(s), BT.token_tail_equiv(s), token_tail_equiv_inner(s))
 
 def name_equiv(+s: String) -> {C.name_valid(s) == Spec.name_valid(s) : Bool}:
   match s:
