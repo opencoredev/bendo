@@ -1,4 +1,4 @@
-# 0013: Hot-path performance and the CI throughput budget
+# 0014: Hot-path performance and the CI throughput budget
 
 Date: 2026-10-24. Issue: BND-68. Status: accepted for M9.
 
