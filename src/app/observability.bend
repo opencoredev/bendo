@@ -1,5 +1,6 @@
 # Request-local framework metadata; separate from application variables.
 import Base
+import ../net/conn_info.bend as Conn
 import ../http/stream_types.bend as StreamTypes
 import ../mw/response_policy.bend as Policy
 import ./store.bend as Store
@@ -16,22 +17,22 @@ type Access is Data:
   Access{prefix: String, elapsed: Nat, fallback: Maybe<&2, String>}
 
 type State is Data:
-  State{id: Maybe<&2, String>, timing: Maybe<&2, Store.Store<List<&2, Mark>>>, finalized: Maybe<&2, Chan(Maybe<&2, String>)>, policies: Maybe<&2, Chan(List<&2, Policy.Policy>)>, stream: Maybe<&2, Chan(StreamTypes.Registration)>, access: Maybe<&2, Chan(List<&2, Access>)>}
+  State{id: Maybe<&2, String>, timing: Maybe<&2, Store.Store<List<&2, Mark>>>, finalized: Maybe<&2, Chan(Maybe<&2, String>)>, policies: Maybe<&2, Chan(List<&2, Policy.Policy>)>, stream: Maybe<&2, Chan(StreamTypes.Registration)>, peer: Maybe<&2, Conn.ConnInfo>, access: Maybe<&2, Chan(List<&2, Access>)>}
 
 def empty() -> State:
-  State{None{}, None{}, None{}, None{}, None{}, None{}}
+  State{None{}, None{}, None{}, None{}, None{}, None{}, None{}}
 
 def id(state: State) -> Maybe<&2, String>:
-  State{id, timing, finalized, policies, stream, access} = state
+  State{id, timing, finalized, policies, stream, peer, access} = state
   id
 
 def timing(state: State) -> Maybe<&2, Store.Store<List<&2, Mark>>>:
-  State{id, timing, finalized, policies, stream, access} = state
+  State{id, timing, finalized, policies, stream, peer, access} = state
   timing
 
 def with_id(state: State, id: String) -> State:
-  State{old, timing, finalized, policies, stream, access} = state
-  State{Some{id}, timing, finalized, policies, stream, access}
+  State{old, timing, finalized, policies, stream, peer, access} = state
+  State{Some{id}, timing, finalized, policies, stream, peer, access}
 
 # Final response fields win, including mixed-case names. Only fill missing fields.
 def has_header(hs: List<&2, Request.Header>, +name: String) -> Bool:
@@ -102,7 +103,7 @@ def timed(res: Response.Res, got: Poll<&1, &1, Maybe<&1, Maybe<&2, String>>, Uni
 # The timing owner publishes once after next returns. Consume and close its
 # request-local mailbox after hooks and validation, before observers or transport.
 def finalized_timing(state: State, res: Response.Res) -> IO(Response.Res):
-  State{id, timing, finalized, policies, stream, access} = state
+  State{id, timing, finalized, policies, stream, peer, access} = state
   match finalized:
     case None{}: IO.pure(Response.Res, request_id(res, id))
     case Some{+channel}:
@@ -114,8 +115,8 @@ def finalized_timing(state: State, res: Response.Res) -> IO(Response.Res):
 # One request owns this mailbox. Immutable context copies share its policies,
 # so short-circuits and response hooks need not forward a new context.
 def with_policies(state: State, channel: Chan(List<&2, Policy.Policy>)) -> State:
-  State{id, timing, finalized, old, stream, access} = state
-  State{id, timing, finalized, Some{channel}, stream, access}
+  State{id, timing, finalized, old, stream, peer, access} = state
+  State{id, timing, finalized, Some{channel}, stream, peer, access}
 
 def recorded(+channel: Chan(List<&2, Policy.Policy>), policy: Policy.Policy, got: Maybe<&1, List<&2, Policy.Policy>>) -> IO(Unit):
   match got:
@@ -126,7 +127,7 @@ def recorded(+channel: Chan(List<&2, Policy.Policy>), policy: Policy.Policy, got
         return Unit{}
 
 def retain(state: State, policy: Policy.Policy) -> IO(Unit):
-  State{id, timing, finalized, policies, stream, access} = state
+  State{id, timing, finalized, policies, stream, peer, access} = state
   match policies:
     case None{}: IO.pure(Unit, Unit{})
     case Some{+channel}:
@@ -149,31 +150,40 @@ def finalized_policies(policies: Maybe<&2, Chan(List<&2, Policy.Policy>)>, res: 
         return applied(got, res)
 
 def finalize(+state: State, res: Response.Res) -> IO(Response.Res):
-  State{id, timing, finalized, policies, stream, access} = state
+  State{id, timing, finalized, policies, stream, peer, access} = state
   do IO<Response.Res>:
     decorated : Response.Res <- finalized_policies(policies, res)
     finalized_timing(state, decorated)
 
 # Transport metadata survives policy and timing updates.
 def stream(state: State) -> Maybe<&2, Chan(StreamTypes.Registration)>:
-  State{id, timing, finalized, policies, stream, access} = state
+  State{id, timing, finalized, policies, stream, peer, access} = state
   stream
 
 def with_stream(state: State, stream: Chan(StreamTypes.Registration)) -> State:
-  State{id, timing, finalized, policies, old, access} = state
-  State{id, timing, finalized, policies, Some{stream}, access}
+  State{id, timing, finalized, policies, old, peer, access} = state
+  State{id, timing, finalized, policies, Some{stream}, peer, access}
 
 # The logger records its onion duration, but prints only after transport has
 # selected the status the client receives.
 def with_access(state: State, channel: Chan(List<&2, Access>)) -> State:
-  State{id, timing, finalized, policies, stream, old} = state
-  State{id, timing, finalized, policies, stream, Some{channel}}
+  State{id, timing, finalized, policies, stream, peer, old} = state
+  State{id, timing, finalized, policies, stream, peer, Some{channel}}
 
 def access(state: State) -> Maybe<&2, Chan(List<&2, Access>)>:
-  State{id, timing, finalized, policies, stream, channel} = state
+  State{id, timing, finalized, policies, stream, peer, channel} = state
   channel
 
 # Observers run after transport selection and can log their response directly.
 def without_access(state: State) -> State:
-  State{id, timing, finalized, policies, stream, access} = state
-  State{id, timing, finalized, policies, stream, None{}}
+  State{id, timing, finalized, policies, stream, peer, access} = state
+  State{id, timing, finalized, policies, stream, peer, None{}}
+
+# The peer is immutable connection metadata and survives all request updates.
+def peer(state: State) -> Maybe<&2, Conn.ConnInfo>:
+  State{id, timing, finalized, policies, stream, peer, access} = state
+  peer
+
+def with_peer(state: State, peer: Maybe<&2, Conn.ConnInfo>) -> State:
+  State{id, timing, finalized, policies, stream, old, access} = state
+  State{id, timing, finalized, policies, stream, peer, access}

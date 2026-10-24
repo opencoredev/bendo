@@ -41,6 +41,11 @@ import ./http/response.bend as Response
 import ./router/methods.bend as Methods
 import ./router/router.bend as Router
 import ./static/serve.bend as Static
+import ./net/ip.bend as Ip
+import ./net/conn_info.bend as Conn
+import ./mw/ip_restriction.bend as IpRestriction
+import ./mw/rate_limit.bend as RateLimit
+import ./mw/rate_limit_core.bend as RateCore
 
 def HttpError() -> Data: Errors.HttpError
 def http_error(status: U32, message: String) -> Errors.HttpError: Errors.http_error(status, message)
@@ -311,3 +316,55 @@ def static_buffer_bytes(options: Static.Options, max: Nat) -> Static.Options: St
 def static_cache_control(options: Static.Options, value: String) -> Static.Options: Static.with_cache_control(options, value)
 def serve_static(c: Handle.Ctx, options: Static.Options) -> IO(Response.Res): Static.serve(Unit, c, options)
 def serve_static_with(-Vars: Data, c: Context.Ctx<Vars>, options: Static.Options) -> IO(Response.Res): Static.serve(Vars, c, options)
+
+# Connection info: the socket peer from getpeername, never a client header.
+def ConnInfo() -> Data: Conn.ConnInfo
+def conn_info(-Vars: Data, c: Context.Ctx<Vars>) -> Maybe<&2, Conn.ConnInfo>: Context.conn_info(Vars, c)
+def remote_address(info: Conn.ConnInfo) -> String: Conn.text(info)
+def remote_port(info: Conn.ConnInfo) -> U32: Conn.port(info)
+def address_type(info: Conn.ConnInfo) -> String: Ip.address_type(Conn.address(info))
+
+# IP allow and deny lists. Deny wins; an empty allow list admits everyone not
+# denied. trusted lists proxies whose X-Forwarded-For is believed (default none).
+def IpPolicy() -> Data: IpRestriction.Policy
+def ip_policy(deny: List<&2, String>, allow: List<&2, String>, trusted: List<&2, String>) -> Maybe<&2, IpRestriction.Policy>: IpRestriction.policy(deny, allow, trusted)
+def ip_rules(deny: List<&2, String>, allow: List<&2, String>) -> Maybe<&2, IpRestriction.Policy>: IpRestriction.policy(deny, allow, [])
+def ip_restriction(policy: IpRestriction.Policy) -> Builtin.Builtin: Builtin.IpRestriction{policy}
+# The client address after the trusted-proxy rule, canonical text.
+def client_address(-Vars: Data, c: Context.Ctx<Vars>, trusted: List<&2, Ip.Cidr>) -> Maybe<&2, String>:
+  RateLimit.key_option(IpRestriction.client(Vars, c, trusted))
+def Cidr() -> Data: Ip.Cidr
+def cidrs(ranges: List<&2, String>) -> Maybe<&2, List<&2, Ip.Cidr>>: Ip.parse_cidrs(ranges)
+
+# Rate limiting on a store actor. Create the limiter at startup, keep it in
+# env and call B.rate_limit from a middleware case.
+def RateLimitPolicy() -> Data: RateCore.Policy
+def RateLimitConfig() -> Data: RateLimit.Config
+def RateLimiter() -> Data: RateLimit.Limiter
+def fixed_window(limit: Nat, window_ms: Nat) -> RateCore.Policy: RateCore.fixed_window_policy(limit, window_ms)
+def token_bucket(capacity: Nat, refill: Nat, every_ms: Nat) -> RateCore.Policy: RateCore.token_bucket_policy(capacity, refill, every_ms)
+def rate_limit_config(name: String, policy: RateCore.Policy, max_keys: Nat, trusted: List<&2, Ip.Cidr>) -> RateLimit.Config: RateLimit.Config{name, policy, max_keys, trusted, RateCore.AllowUntracked{}}
+# What a new key gets while the key table is full of live entries.
+def RateLimitSaturation() -> Data: RateCore.Saturation
+def saturation_allow() -> RateCore.Saturation: RateCore.AllowUntracked{}
+def saturation_shared() -> RateCore.Saturation: RateCore.SharedQuota{}
+def saturation_evict() -> RateCore.Saturation: RateCore.EvictOldest{}
+def rate_limit_saturation(config: RateLimit.Config, mode: RateCore.Saturation) -> RateLimit.Config: RateLimit.with_saturation(config, mode)
+# Monitoring counters: tracked keys, requests that met a full table, saturated now.
+def RateLimitStats() -> Data: RateCore.Stats
+def rate_limit_stats(limiter: RateLimit.Limiter) -> IO(Result<&2, &2, Store.Error, RateCore.Stats>): RateLimit.stats(limiter)
+def stats_tracked(s: RateCore.Stats) -> Nat:
+  RateCore.Stats{tracked, saturated, saturating} = s
+  tracked
+def stats_saturated(s: RateCore.Stats) -> Nat:
+  RateCore.Stats{tracked, saturated, saturating} = s
+  saturated
+def stats_saturating(s: RateCore.Stats) -> Bool:
+  RateCore.Stats{tracked, saturated, saturating} = s
+  saturating
+def rate_limiter(policy: RateCore.Policy) -> IO(RateLimit.Limiter): RateLimit.limiter(RateLimit.config(policy))
+def rate_limiter_with(config: RateLimit.Config) -> IO(RateLimit.Limiter): RateLimit.limiter(config)
+def rate_limit(-Vars: Data, limiter: RateLimit.Limiter, c: Context.Ctx<Vars>, next: Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
+  RateLimit.limit(Vars, limiter, c, next)
+def rate_limit_with(-Vars: Data, limiter: RateLimit.Limiter, key: String, now_ms: Nat, c: Context.Ctx<Vars>, next: Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
+  RateLimit.limit_with(Vars, limiter, key, now_ms, c, next)
