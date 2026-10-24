@@ -59,7 +59,8 @@ def encode_bytes_go(xs: List<&2, U32>, +form: Bool, acc: String) -> String:
 def encode_bytes(xs: List<&2, U32>, form: Bool) -> String:
   encode_bytes_go(List.reverse(&2, U32, xs), form, "")
 
-# These encoders accept Strings of Unicode scalar values (Utf8.valid).
+# These encoders read a String as its UTF-8 octets, so a non-scalar Char is
+# escaped as U+FFFD (%EF%BF%BD). Only Utf8.valid Strings roundtrip.
 def encode(s: String) -> String:
   encode_bytes(Utf8.encode(s), False{})
 
@@ -131,11 +132,31 @@ def decode_result(r: Result<&2, &2, Error, List<&2, U32>>) -> Result<&2, &2, Err
 def decode_bytes(xs: List<&2, U32>, form: Bool) -> Result<&2, &2, Error, String>:
   decode_result(percent_decode(xs, form))
 
+# A String holding a non-scalar Char has no UTF-8 octets: Utf8.encode would
+# turn it into U+FFFD. Once the percent stage succeeds, such a wire fails
+# with InvalidUtf8 instead of decoding to a replacement character (BND-100).
+def scalar_result(xs: List<&2, U32>, scalars: Bool) -> Result<&2, &2, Error, String>:
+  match scalars:
+    case True{}:
+      utf8_result(Utf8.decode(xs))
+    case False{}:
+      Fail{InvalidUtf8{}}
+
+def checked_result(r: Result<&2, &2, Error, List<&2, U32>>, scalars: Bool) -> Result<&2, &2, Error, String>:
+  match r:
+    case Fail{e}:
+      Fail{e}
+    case Done{xs}:
+      scalar_result(xs, scalars)
+
+def decode_text(+s: String, form: Bool) -> Result<&2, &2, Error, String>:
+  checked_result(percent_decode(Utf8.encode(s), form), Utf8.valid(s))
+
 def decode(s: String) -> Result<&2, &2, Error, String>:
-  decode_bytes(Utf8.encode(s), False{})
+  decode_text(s, False{})
 
 def decode_form(s: String) -> Result<&2, &2, Error, String>:
-  decode_bytes(Utf8.encode(s), True{})
+  decode_text(s, True{})
 
 # Split at the first '=' only, without interpreting percent escapes.
 def field_go(xs: List<&2, U32>, rev: List<&2, U32>) -> List<&2, U32> & List<&2, U32>:
@@ -195,8 +216,19 @@ def parse_parts(parts: List<&2, List<&2, U32>>) -> Result<&2, &2, Error, List<&2
 def parse_pairs_bytes(body: List<&2, U32>) -> Result<&2, &2, Error, List<&2, Entry>>:
   parse_parts(split(body))
 
-def parse_pairs(s: String) -> Result<&2, &2, Error, List<&2, Entry>>:
-  parse_pairs_bytes(Utf8.encode(s))
+def scalar_pairs(r: Result<&2, &2, Error, List<&2, Entry>>, scalars: Bool) -> Result<&2, &2, Error, List<&2, Entry>>:
+  match r scalars:
+    case Fail{e} _:
+      Fail{e}
+    case Done{ps} True{}:
+      Done{ps}
+    case Done{ps} False{}:
+      Fail{InvalidUtf8{}}
+
+# As in decode, a percent error wins; otherwise a non-scalar Char anywhere in
+# the text fails with InvalidUtf8.
+def parse_pairs(+s: String) -> Result<&2, &2, Error, List<&2, Entry>>:
+  scalar_pairs(parse_pairs_bytes(Utf8.encode(s)), Utf8.valid(s))
 
 def select_value(v: String, rest: List<&2, String>, same: Bool) -> List<&2, String>:
   match same:
