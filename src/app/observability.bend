@@ -8,27 +8,28 @@ import ../http/response.bend as Response
 import ../http/bytes.bend as Bytes
 import ../http/request_id.bend as RequestId
 import ../data/utf8.bend as Utf8
+import ../net/conn_info.bend as Conn
 
 type Mark is Data:
   Mark{name: String, duration_ms: Nat}
 
 type State is Data:
-  State{id: Maybe<&2, String>, timing: Maybe<&2, Store.Store<List<&2, Mark>>>, finalized: Maybe<&2, Chan(Maybe<&2, String>)>, policies: Maybe<&2, Chan(List<&2, Policy.Policy>)>, stream: Maybe<&2, Chan(StreamTypes.Registration)>}
+  State{id: Maybe<&2, String>, timing: Maybe<&2, Store.Store<List<&2, Mark>>>, finalized: Maybe<&2, Chan(Maybe<&2, String>)>, policies: Maybe<&2, Chan(List<&2, Policy.Policy>)>, stream: Maybe<&2, Chan(StreamTypes.Registration)>, peer: Maybe<&2, Conn.ConnInfo>}
 
 def empty() -> State:
-  State{None{}, None{}, None{}, None{}, None{}}
+  State{None{}, None{}, None{}, None{}, None{}, None{}}
 
 def id(state: State) -> Maybe<&2, String>:
-  State{id, timing, finalized, policies, stream} = state
+  State{id, timing, finalized, policies, stream, p} = state
   id
 
 def timing(state: State) -> Maybe<&2, Store.Store<List<&2, Mark>>>:
-  State{id, timing, finalized, policies, stream} = state
+  State{id, timing, finalized, policies, stream, p} = state
   timing
 
 def with_id(state: State, id: String) -> State:
-  State{old, timing, finalized, policies, stream} = state
-  State{Some{id}, timing, finalized, policies, stream}
+  State{old, timing, finalized, policies, stream, p} = state
+  State{Some{id}, timing, finalized, policies, stream, p}
 
 # Final response fields win, including mixed-case names. Only fill missing fields.
 def has_header(hs: List<&2, Request.Header>, +name: String) -> Bool:
@@ -99,7 +100,7 @@ def timed(res: Response.Res, got: Poll<&1, &1, Maybe<&1, Maybe<&2, String>>, Uni
 # The timing owner publishes once after next returns. Consume and close its
 # request-local mailbox after hooks and validation, before observers or transport.
 def finalized_timing(state: State, res: Response.Res) -> IO(Response.Res):
-  State{id, timing, finalized, policies, stream} = state
+  State{id, timing, finalized, policies, stream, p} = state
   match finalized:
     case None{}: IO.pure(Response.Res, request_id(res, id))
     case Some{+channel}:
@@ -111,8 +112,8 @@ def finalized_timing(state: State, res: Response.Res) -> IO(Response.Res):
 # One request owns this mailbox. Immutable context copies share its policies,
 # so short-circuits and response hooks need not forward a new context.
 def with_policies(state: State, channel: Chan(List<&2, Policy.Policy>)) -> State:
-  State{id, timing, finalized, old, stream} = state
-  State{id, timing, finalized, Some{channel}, stream}
+  State{id, timing, finalized, old, stream, p} = state
+  State{id, timing, finalized, Some{channel}, stream, p}
 
 def recorded(+channel: Chan(List<&2, Policy.Policy>), policy: Policy.Policy, got: Maybe<&1, List<&2, Policy.Policy>>) -> IO(Unit):
   match got:
@@ -123,7 +124,7 @@ def recorded(+channel: Chan(List<&2, Policy.Policy>), policy: Policy.Policy, got
         return Unit{}
 
 def retain(state: State, policy: Policy.Policy) -> IO(Unit):
-  State{id, timing, finalized, policies, stream} = state
+  State{id, timing, finalized, policies, stream, p} = state
   match policies:
     case None{}: IO.pure(Unit, Unit{})
     case Some{+channel}:
@@ -146,16 +147,26 @@ def finalized_policies(policies: Maybe<&2, Chan(List<&2, Policy.Policy>)>, res: 
         return applied(got, res)
 
 def finalize(+state: State, res: Response.Res) -> IO(Response.Res):
-  State{id, timing, finalized, policies, stream} = state
+  State{id, timing, finalized, policies, stream, p} = state
   do IO<Response.Res>:
     decorated : Response.Res <- finalized_policies(policies, res)
     finalized_timing(state, decorated)
 
 # Transport metadata survives policy and timing updates.
 def stream(state: State) -> Maybe<&2, Chan(StreamTypes.Registration)>:
-  State{id, timing, finalized, policies, stream} = state
+  State{id, timing, finalized, policies, stream, p} = state
   stream
 
 def with_stream(state: State, stream: Chan(StreamTypes.Registration)) -> State:
-  State{id, timing, finalized, policies, old} = state
-  State{id, timing, finalized, policies, Some{stream}}
+  State{id, timing, finalized, policies, old, p} = state
+  State{id, timing, finalized, policies, Some{stream}, p}
+
+# The socket peer, set once per connection by the server. None for
+# network-free handling and when getpeername fails.
+def peer(state: State) -> Maybe<&2, Conn.ConnInfo>:
+  State{id, timing, finalized, policies, stream, peer} = state
+  peer
+
+def with_peer(state: State, peer: Maybe<&2, Conn.ConnInfo>) -> State:
+  State{id, timing, finalized, policies, stream, old} = state
+  State{id, timing, finalized, policies, stream, peer}
