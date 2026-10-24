@@ -284,6 +284,19 @@ describe("config and CLI", () => {
     expect(() => parseOpenApiConfig({ info: { title: 1 } })).toThrow("info.title must be a string");
     expect(() => parseOpenApiConfig({ servers: [{}] })).toThrow("servers[0] needs a url");
     expect(() => parseOpenApiConfig({ allMethods: ["GET"] })).toThrow("allMethods has GET");
+    expect(() =>
+      parseOpenApiConfig({
+        info: {
+          license: { name: "MIT", identifier: "MIT", url: "https://opensource.org/license/mit" },
+        },
+      }),
+    ).toThrow("info.license takes an identifier or a url, not both");
+    expect(
+      parseOpenApiConfig({ info: { license: { name: "MIT", identifier: "MIT" } } }).info?.license,
+    ).toEqual({
+      name: "MIT",
+      identifier: "MIT",
+    });
     expect(
       parseOpenApiConfig({ servers: [{ url: "https://api.example.com" }], autoTags: false }),
     ).toEqual({

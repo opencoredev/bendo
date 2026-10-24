@@ -100,7 +100,11 @@ export type Contact = {
   url?: string | undefined;
   email?: string | undefined;
 };
-export type License = { name: string; identifier?: string | undefined; url?: string | undefined };
+/** OpenAPI 3.1 allows an SPDX `identifier` or a `url` for a license, never both. */
+export type License =
+  | { name: string }
+  | { name: string; identifier: string }
+  | { name: string; url: string };
 export type Info = {
   title: string;
   version: string;
@@ -172,11 +176,13 @@ function parseLicense(value: unknown): License | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value) || typeof value.name !== "string")
     throw new Error("OpenAPI config: info.license needs a name");
-  return {
-    name: value.name,
-    identifier: optionalString(value, "identifier", "info.license"),
-    url: optionalString(value, "url", "info.license"),
-  };
+  const identifier = optionalString(value, "identifier", "info.license");
+  const url = optionalString(value, "url", "info.license");
+  if (identifier !== undefined && url !== undefined)
+    throw new Error("OpenAPI config: info.license takes an identifier or a url, not both");
+  if (identifier !== undefined) return { name: value.name, identifier };
+  if (url !== undefined) return { name: value.name, url };
+  return { name: value.name };
 }
 
 function parseInfo(value: unknown): InfoConfig | undefined {
