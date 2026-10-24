@@ -181,3 +181,9 @@ def consume_full(+c: Char, +t: String, +a: Nat, +m: J.Machine, +v: J.Json, h: {J
   %Equal.sym(Nat, J.fuel_go(t, 1n+(3n+a)), 1n+J.fuel_go(t, 3n+a), fuel_succ(t, 3n+a)) : {J.parse_go(_, m) == Done{v} : Result<&2, &2, J.Error, J.Json>}
   %Equal.sym(Result<&2, &2, J.Error, J.Json>, J.parse_go(1n+J.fuel_go(t, 3n+a), m), J.parse_go(J.fuel_go(t, 3n+a), J.step(m)), go) : {_ == Done{v} : Result<&2, &2, J.Error, J.Json>}
   h
+
+# One consumed character with a known exact transition to the next machine.
+def consume_to(+c: Char, +t: String, +a: Nat, +m: J.Machine, +m2: J.Machine, +v: J.Json, h: {J.parse_go(J.fuel_go(t, a), m2) == Done{v} : Result<&2, &2, J.Error, J.Json>}, go: {J.parse_go(1n+J.fuel_go(t, 3n+a), m) == J.parse_go(J.fuel_go(t, 3n+a), m2) : Result<&2, &2, J.Error, J.Json>}) -> {J.parse_go(J.fuel_go(SCon{c, t}, a), m) == Done{v} : Result<&2, &2, J.Error, J.Json>}:
+  %Equal.sym(Nat, J.fuel_go(t, 1n+(3n+a)), 1n+J.fuel_go(t, 3n+a), fuel_succ(t, 3n+a)) : {J.parse_go(_, m) == Done{v} : Result<&2, &2, J.Error, J.Json>}
+  %Equal.sym(Result<&2, &2, J.Error, J.Json>, J.parse_go(1n+J.fuel_go(t, 3n+a), m), J.parse_go(J.fuel_go(t, 3n+a), m2), go) : {_ == Done{v} : Result<&2, &2, J.Error, J.Json>}
+  raise_add(3n, t, a, m2, v, h)
