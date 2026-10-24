@@ -49,7 +49,8 @@ for the last case, naming the def.
 
 Types declared in the file are top-level exports. Types of imported modules sit
 in a namespace named after the file, so `src/data/schema.bend`'s `Schema` is
-`schema.Schema`. A type-level def with only erased type parameters and a type
+`schema.Schema`. A file named after a reserved word gets a trailing underscore:
+`default.bend` becomes `default_`. A type-level def with only erased type parameters and a type
 body becomes a type alias: `def Errors() -> Data: List<&2, Error>` gives
 `schema.Errors`.
 
@@ -74,6 +75,7 @@ These mappings were read from Bend 2.0.38's compiled output and are checked by
 | `Word(n)` | `Word`: bits as `WCon{head, tail}` ending in `WNil`, least significant first |
 | A user type | A union of `{ $: "Constructor"; field: ... }` objects |
 | `type Box<-A: Data>` | `Box<A>`; quantities such as `&2` and index parameters disappear |
+| `List<U32>`, `List<&2, U32>` | `List<number>`; omitting the quantities gives the same type |
 | `A -> B` parameter | `(arg: A) => B`; a plain JavaScript function works |
 | `def f(x: A) -> B -> C` | `(x: A, arg1: B) => C`; Bend uncurries a function-typed result |
 | Proofs `{a == b}`, value-indexed types | `unknown` |
@@ -92,7 +94,8 @@ Bend checks a few values at the boundary and nothing else:
 
 ## What cannot be shared
 
-- **IO.** A file whose own def returns `IO(...)` is refused:
+- **IO.** A file whose own def returns `IO(...)`, directly or through a
+  type-level alias such as `def Action() -> Type: IO(Unit)`, is refused:
   `shared code must be pure, but \`announce\` returns IO`. Effects need Bend's
   event loop, which the module does not include. An imported module's IO defs
   still appear on `default`, typed as `unknown`; do not call them.

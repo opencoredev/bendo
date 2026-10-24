@@ -38,7 +38,7 @@ const typesFile = join(abi, "dist/abi.d.mts");
 
 test("bendo build --shared writes the module and its declarations", () => {
   expect(build.code, build.output).toBe(0);
-  expect(build.output).toContain("build: dist/abi.mjs (27 named exports) and dist/abi.d.mts");
+  expect(build.output).toContain("build: dist/abi.mjs (38 named exports) and dist/abi.d.mts");
   expect(build.output).not.toContain("warning");
   expect(existsSync(moduleFile)).toBe(true);
   expect(existsSync(typesFile)).toBe(true);
@@ -91,7 +91,7 @@ test(
       writeFileSync(join(dir, "tsconfig.json"), readFileSync(join(abi, "tsconfig.json")));
       const run = typecheck(["-p", join(dir, "tsconfig.json")]);
       const errors = run.output.match(/^\S+\(\d+,\d+\): error TS\d+/gm) ?? [];
-      expect(cases).toBe(13);
+      expect(cases).toBe(18);
       expect(errors.length, run.output).toBe(cases);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -106,7 +106,7 @@ test("runtime values have the declared shapes", async () => {
     throw new Error("no checks");
   const checks: unknown = usage.checks;
   if (!Array.isArray(checks)) throw new Error("checks is not an array");
-  expect(checks.length).toBe(35);
+  expect(checks.length).toBe(45);
   for (const check of checks) {
     if (typeof check !== "object" || check === null) throw new Error("invalid check");
     const name: unknown = Reflect.get(check, "name");
@@ -133,7 +133,7 @@ test("an arity that disagrees with the Bend signature is typed as unknown, with 
 });
 
 test(
-  "shared code that returns IO is refused",
+  "shared code that returns IO, directly or through an alias, is refused",
   () => {
     const out = mkdtempSync(join(tmpdir(), "bendo-impure-"));
     try {
@@ -142,7 +142,9 @@ test(
         join(here, "fixtures/impure"),
       );
       expect(run.code).toBe(1);
-      expect(run.output).toContain("shared code must be pure, but `announce` returns IO");
+      expect(run.output).toContain(
+        "shared code must be pure, but `announce`, `shout`, `later`, `remote` return IO",
+      );
       expect(existsSync(join(out, "impure.mjs"))).toBe(false);
     } finally {
       rmSync(out, { recursive: true, force: true });

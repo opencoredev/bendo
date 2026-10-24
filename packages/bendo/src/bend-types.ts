@@ -229,6 +229,11 @@ function parseAtom(c: Cursor): TypeExpr {
     c.next();
     return { kind: "quantity" };
   }
+  // `+List<U32>` is `List<&2, U32>`: the marker only picks the omitted quantities.
+  if (token === "+") {
+    c.next();
+    return parseAtom(c);
+  }
   if (token === "(") {
     c.next();
     const inner = parseType(c);
@@ -494,28 +499,33 @@ export const PRELUDE_NAMES = new Set([
   "BendMap",
 ]);
 
-type BaseRule = { quantities: number; render: (args: string[]) => string };
+/** A Base type: its leading quantity parameters, then its type parameters. */
+type BaseRule = { quantities: number; types: number; render: (args: string[]) => string };
 
 const BASE: ReadonlyMap<string, BaseRule> = new Map<string, BaseRule>([
-  ["Nat", { quantities: 0, render: () => "number" }],
-  ["U32", { quantities: 0, render: () => "number" }],
-  ["F32", { quantities: 0, render: () => "number" }],
-  ["Bool", { quantities: 0, render: () => "boolean" }],
-  ["String", { quantities: 0, render: () => "string" }],
-  ["Char", { quantities: 0, render: () => "string" }],
-  ["Unit", { quantities: 0, render: () => "Unit" }],
-  ["Cmp", { quantities: 0, render: () => "Cmp" }],
-  ["Empty", { quantities: 0, render: () => "never" }],
-  ["List", { quantities: 1, render: ([a]) => `List<${a}>` }],
-  ["Maybe", { quantities: 1, render: ([a]) => `Maybe<${a}>` }],
-  ["Result", { quantities: 2, render: ([e, a]) => `Result<${e}, ${a}>` }],
-  ["Either", { quantities: 2, render: ([a, b]) => `Either<${a}, ${b}>` }],
-  ["Sigma", { quantities: 2, render: ([a, b]) => `Sigma<${a}, ${b}>` }],
-  ["Poll", { quantities: 2, render: ([a, r]) => `Poll<${a}, ${r}>` }],
-  ["Map", { quantities: 1, render: ([v]) => `BendMap<${v}>` }],
-  ["Array", { quantities: 0, render: ([t]) => `${t}[]` }],
-  ["Word.Nil", { quantities: 0, render: () => "Word" }],
-  ["Word.Con", { quantities: 0, render: () => "Word" }],
+  ["Nat", { quantities: 0, types: 0, render: () => "number" }],
+  ["U32", { quantities: 0, types: 0, render: () => "number" }],
+  ["F32", { quantities: 0, types: 0, render: () => "number" }],
+  ["Bool", { quantities: 0, types: 0, render: () => "boolean" }],
+  ["String", { quantities: 0, types: 0, render: () => "string" }],
+  ["Char", { quantities: 0, types: 0, render: () => "string" }],
+  ["Unit", { quantities: 0, types: 0, render: () => "Unit" }],
+  ["Cmp", { quantities: 0, types: 0, render: () => "Cmp" }],
+  ["Empty", { quantities: 0, types: 0, render: () => "never" }],
+  ["List", { quantities: 1, types: 1, render: ([a]) => `List<${a}>` }],
+  ["Maybe", { quantities: 1, types: 1, render: ([a]) => `Maybe<${a}>` }],
+  ["Result", { quantities: 2, types: 2, render: ([e, a]) => `Result<${e}, ${a}>` }],
+  ["Either", { quantities: 2, types: 2, render: ([a, b]) => `Either<${a}, ${b}>` }],
+  ["Sigma", { quantities: 2, types: 2, render: ([a, b]) => `Sigma<${a}, ${b}>` }],
+  ["Poll", { quantities: 2, types: 2, render: ([a, r]) => `Poll<${a}, ${r}>` }],
+  ["Map", { quantities: 1, types: 1, render: ([v]) => `BendMap<${v}>` }],
+  // Not `Array<...>`, which a module namespace could shadow; an arrow needs parentheses.
+  [
+    "Array",
+    { quantities: 0, types: 1, render: ([t = ""]) => (t.includes("=>") ? `(${t})[]` : `${t}[]`) },
+  ],
+  ["Word.Nil", { quantities: 0, types: 0, render: () => "Word" }],
+  ["Word.Con", { quantities: 0, types: 0, render: () => "Word" }],
 ]);
 
 /** Base's type-level defs, called with parentheses. */
@@ -540,10 +550,14 @@ export function isExportName(name: string): boolean {
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) && !RESERVED.has(name);
 }
 
-function identifier(name: string): string {
+/** Words TypeScript reads as an operator where a type is expected, as in `keyof.T`. */
+const TYPE_OPERATORS = new Set(["infer", "keyof", "readonly", "unique"]);
+
+/** A TypeScript identifier for a Bend name: a type, parameter or namespace. */
+export function identifier(name: string): string {
   const clean = name.replace(/[^A-Za-z0-9_$]/g, "_");
   const safe = /^[0-9]/.test(clean) ? `_${clean}` : clean;
-  return RESERVED.has(safe) ? `${safe}_` : safe;
+  return RESERVED.has(safe) || TYPE_OPERATORS.has(safe) ? `${safe}_` : safe;
 }
 
 /** How a rendered type refers to another module's declarations. */
@@ -555,7 +569,28 @@ export type Naming = {
 
 export type Rendered = { text: string; io: boolean; kind: boolean };
 
-type Scope = { module: Module; params: ReadonlySet<string>; naming: Naming };
+type Scope = {
+  module: Module;
+  params: ReadonlySet<string>;
+  naming: Naming;
+  /** Aliases being expanded, as `file#def`, so a cyclic alias stops. */
+  expanding: ReadonlySet<string>;
+};
+
+/**
+ * The type arguments of a use of a type whose parameters have the given roles,
+ * or undefined when the count fits neither form. Bend lets a use omit every
+ * quantity: `List<U32>` is `List<&1, U32>`.
+ */
+function typeArgs(args: TypeExpr[], roles: TypeParamRole[]): TypeExpr[] | undefined {
+  const spelled =
+    args.length === roles.length
+      ? roles
+      : args.length === roles.filter((role) => role !== "quantity").length
+        ? roles.filter((role) => role !== "quantity")
+        : undefined;
+  return spelled === undefined ? undefined : args.filter((_, i) => spelled[i] === "type");
+}
 
 /** True when a def computes a type: its result is Data, Type or a Kind. */
 export function isTypeLevel(def: DefDecl): boolean {
@@ -634,20 +669,25 @@ function renderName(type: Extract<TypeExpr, { kind: "name" }>, scope: Scope): Re
     const prefix = scope.naming.prefix(module.file);
     const decl = module.types.get(found.local);
     if (decl !== undefined && !type.call) {
-      const kept = type.args.filter((_, i) => decl.params[i]?.role === "type");
+      const kept = typeArgs(
+        type.args,
+        decl.params.map((p) => p.role),
+      );
+      if (kept === undefined) return plain("unknown");
       const rendered = kept.map((arg) => render(arg, scope).text);
-      const params = decl.params.filter((p) => p.role === "type").length;
-      if (rendered.length !== params) return plain("unknown");
       const name = `${prefix}${identifier(decl.name)}`;
       return plain(rendered.length === 0 ? name : `${name}<${rendered.join(", ")}>`);
     }
     const def = module.defs.get(found.local);
     if (def !== undefined && type.call) {
+      // An alias may stand for IO, as in `def Action() -> Type: IO(Unit)`.
+      const io = aliasIo(def, module, scope);
       const body = aliasBody(def);
-      if (body === undefined) return plain("unknown");
+      if (body === undefined) return { text: "unknown", io, kind: false };
       const rendered = args();
       const name = `${prefix}${identifier(def.name)}`;
-      return plain(rendered.length === 0 ? name : `${name}<${rendered.join(", ")}>`);
+      const text = rendered.length === 0 ? name : `${name}<${rendered.join(", ")}>`;
+      return { text, io, kind: false };
     }
     // A name declared in the module shadows Base; anything else is Base.
     if (decl !== undefined || def !== undefined) return plain("unknown");
@@ -658,8 +698,28 @@ function renderName(type: Extract<TypeExpr, { kind: "name" }>, scope: Scope): Re
   }
   const rule = BASE.get(type.name);
   if (rule === undefined) return plain("unknown");
-  const rendered = args().slice(rule.quantities);
-  return plain(rule.render(rendered));
+  const roles: TypeParamRole[] = [
+    ...Array<TypeParamRole>(rule.quantities).fill("quantity"),
+    ...Array<TypeParamRole>(rule.types).fill("type"),
+  ];
+  const kept = typeArgs(type.args, roles);
+  if (kept === undefined) return plain("unknown");
+  return plain(rule.render(kept.map((arg) => render(arg, scope).text)));
+}
+
+/** True when a type-level def's body is IO, directly or through other aliases. */
+function aliasIo(def: DefDecl, module: Module, scope: Scope): boolean {
+  const key = `${module.file}#${def.name}`;
+  if (!isTypeLevel(def) || def.body === undefined || scope.expanding.has(key)) return false;
+  let body: TypeExpr;
+  try {
+    body = parseTypeText(def.body);
+  } catch {
+    return false;
+  }
+  const params = new Set(def.params.map((p) => p.name));
+  const expanding = new Set([...scope.expanding, key]);
+  return render(body, { module, params, naming: scope.naming, expanding }).io;
 }
 
 /** A rendered declaration for a module's own types and type-level aliases. */
@@ -667,7 +727,7 @@ export function renderTypes(module: Module, naming: Naming): string[] {
   const lines: string[] = [];
   for (const decl of module.types.values()) {
     const params = decl.params.filter((p) => p.role === "type").map((p) => p.name);
-    const scope: Scope = { module, params: new Set(params), naming };
+    const scope: Scope = { module, params: new Set(params), naming, expanding: new Set() };
     const ctors = decl.ctors.map((ctor) => {
       const fields = ctor.fields.map(
         (f) => `; ${JSON.stringify(f.name)}: ${render(f.type, scope).text}`,
@@ -683,7 +743,7 @@ export function renderTypes(module: Module, naming: Naming): string[] {
     const body = aliasBody(def);
     if (body === undefined || module.types.has(def.name)) continue;
     const params = def.params.map((p) => p.name);
-    const scope: Scope = { module, params: new Set(params), naming };
+    const scope: Scope = { module, params: new Set(params), naming, expanding: new Set() };
     const generics = params.length === 0 ? "" : `<${params.map(identifier).join(", ")}>`;
     lines.push(`export type ${identifier(def.name)}${generics} = ${render(body, scope).text};`);
   }
@@ -709,7 +769,7 @@ export function renderSignature(
   const generics = def.params
     .filter((p) => p.mode === "erased" && isKindExpr(p.type))
     .map((p) => p.name);
-  const scope: Scope = { module, params: new Set(generics), naming };
+  const scope: Scope = { module, params: new Set(generics), naming, expanding: new Set() };
   // An untyped parameter of a typed def is a quantity, as in `Map.new(a, ...)`.
   const runtime = def.params.filter(
     (p) => (p.mode === "plain" || p.mode === "dup") && p.type !== undefined,

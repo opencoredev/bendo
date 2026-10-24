@@ -5,6 +5,9 @@ type Shape is Data:
   Dot{}
   Line{length: Nat}
 
+type Pile<a, -A: Kind(a)> is Kind(a):
+  Pile{top: Maybe<a, A>}
+
 def Shapes() -> Data:
   List<&2, Shape>
 

@@ -14,6 +14,7 @@ import {
   BendSyntaxError,
   PRELUDE,
   PRELUDE_NAMES,
+  identifier,
   isExportName,
   isTypeLevel,
   parseModule,
@@ -119,9 +120,11 @@ function namespaces(graph: Graph): Map<string, string> {
   const names = new Map<string, string>();
   for (const file of [...graph.modules.keys(), ...graph.failed.keys()].sort()) {
     if (file === graph.entry) continue;
-    const stem = basename(file, ".bend").replace(/[^A-Za-z0-9_$]/g, "_");
-    let name = /^[0-9]/.test(stem) ? `_${stem}` : stem;
-    for (let i = 2; taken.has(name); i++) name = `${stem}_${i}`;
+    // `default.bend` becomes `default_`, then `default_2` on a collision.
+    const stem = identifier(basename(file, ".bend"));
+    const glue = stem.endsWith("_") ? "" : "_";
+    let name = stem;
+    for (let i = 2; taken.has(name); i++) name = `${stem}${glue}${i}`;
     taken.add(name);
     names.set(file, name);
   }

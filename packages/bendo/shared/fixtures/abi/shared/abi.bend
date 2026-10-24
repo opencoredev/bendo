@@ -2,6 +2,11 @@
 # `bendo build --shared` and checks the declarations and the runtime values.
 import Base
 import ../lib/shapes.bend as Shapes
+# Files named after reserved words become escaped namespaces (`default_`).
+import ../lib/default.bend as Default
+import ../lib/class.bend as Class
+import ../lib/delete.bend as Delete
+import ../lib/keyof.bend as Keyof
 
 type Color is Data:
   Red{}
@@ -13,6 +18,10 @@ type Box<-A: Data> is Data:
 type Tree<-A: Data> is Data:
   Leaf{}
   Node{left: Tree<A>, value: A, right: Tree<A>}
+
+# Quantity parameters, which a use may omit: `Bag<U32>` is `Bag<&1, U32>`.
+type Bag<a, -A: Kind(a)> is Kind(a):
+  Bag{items: List<a, A>}
 
 def Names() -> Data:
   List<&2, String>
@@ -115,3 +124,43 @@ def filled(+d: Nat, +v: U32) -> Array<U32>:
 
 def lookup(key: String) -> Map<&2, U32> & U32:
   Map.get(U32, 0, Map.set(&2, U32, Map.new(&2, U32), "a", 1), key)
+
+# Shorthand generics omit the quantities; each must type like its full form.
+def short_list() -> List<U32>:
+  [4, 5]
+
+def dup_list() -> +List<U32>:
+  [6]
+
+def short_maybe(s: String) -> Maybe<Char>:
+  match s:
+    case SCon{c, t}: Some{c}
+    case SNil{}: None{}
+
+def short_result(ok: Bool) -> Result<String, U32>:
+  match ok:
+    case True{}: Done{1}
+    case False{}: Fail{"no"}
+
+def bag_short(x: U32) -> Bag<U32>:
+  Bag{[x]}
+
+def bag_full(+x: U32) -> Bag<&2, U32>:
+  Bag{[x, x]}
+
+def pile_short(x: U32) -> Shapes.Pile<U32>:
+  Shapes.Pile{Some{x}}
+
+def pile_full(x: U32) -> Shapes.Pile<&2, U32>:
+  Shapes.Pile{Some{x}}
+
+def call_taken(x: U32, r: Array<(U32 -> U32)> & (U32 -> U32)) -> U32:
+  match r:
+    case (rest, f): f(x)
+
+# An array of functions, not a function returning an array.
+def first_fn(fs: Array<(U32 -> U32)>, x: U32) -> U32:
+  call_taken(x, Array.swap(U32 -> U32, fs, 0, y => y))
+
+def reserved(+n: Nat) -> Default.Thing & Class.Thing & Delete.Thing & Keyof.Thing:
+  (Default.Default{n}, Class.Class{n}, Delete.Delete{n}, Keyof.Keyof{n})

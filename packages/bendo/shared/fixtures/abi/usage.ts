@@ -5,11 +5,15 @@ import bendo, {
   add_u32,
   adder,
   apply,
+  bag_full,
+  bag_short,
   boxed,
   brightness,
   color,
   counts,
+  dup_list,
   filled,
+  first_fn,
   greet,
   half,
   initial,
@@ -23,8 +27,14 @@ import bendo, {
   order,
   pair,
   parse_flag,
+  pile_full,
+  pile_short,
+  reserved,
   shape,
   shapes,
+  short_list,
+  short_maybe,
+  short_result,
   side,
   singleton,
   total,
@@ -32,6 +42,8 @@ import bendo, {
   type Color,
   type List,
   type Result,
+  type class_ as ClassNs,
+  type default_ as DefaultNs,
   type shapes as Shapes,
 } from "./dist/abi.mjs";
 
@@ -106,6 +118,28 @@ same(
 );
 same("Array is a JavaScript array", filled(2, 9), [9, 9, 9, 9]);
 same("Map", lookup("a").snd, 1);
+same("shorthand List", short_list(), list(4, 5));
+same("shorthand reusable List", dup_list(), list(6));
+same("shorthand Maybe", short_maybe("a"), { $: "Some", value: "a" });
+same("shorthand Result", short_result(false), { $: "Fail", error: "no" });
+same("shorthand user type", bag_short(3), { $: "Bag", items: list(3) });
+same("explicit user type", bag_full(4), { $: "Bag", items: list(4, 4) });
+same("shorthand imported type", pile_short(1), { $: "Pile", top: { $: "Some", value: 1 } });
+same("explicit imported type", pile_full(2), { $: "Pile", top: { $: "Some", value: 2 } });
+same("array of functions", first_fn([(x) => x + 1, (x) => x * 2], 41), 42);
+const kept: [DefaultNs.Thing, ClassNs.Thing] = [
+  { $: "Default", n: 2 },
+  { $: "Class", n: 2 },
+];
+same("reserved-word namespaces", reserved(2), {
+  $: "Tuple",
+  fst: kept[0],
+  snd: {
+    $: "Tuple",
+    fst: kept[1],
+    snd: { $: "Tuple", fst: { $: "Delete", n: 2 }, snd: { $: "Keyof", n: 2 } },
+  },
+});
 same("default export", bendo.greet("x"), "hello x");
 same("imported def on the default export", bendo["../lib/shapes:length"]({ $: "Dot" }), 0);
 
@@ -139,4 +173,17 @@ export function rejected(): void {
   bendo["../lib/shapes:length"]({ $: "Line" });
   // @ts-expect-error A function argument gets a Nat.
   apply((s: string) => s.length, 1);
+  // @ts-expect-error A shorthand user type keeps its element type.
+  const words: List<string> = bag_short(1).items;
+  void words;
+  // @ts-expect-error So does a shorthand imported type.
+  const pile: Shapes.Pile<string> = pile_short(1);
+  void pile;
+  // @ts-expect-error The argument is an array of functions, not a function.
+  first_fn((x: number) => [x], 1);
+  // @ts-expect-error Each element is a function.
+  first_fn([1], 1);
+  // @ts-expect-error A namespace keeps its module's constructors.
+  const thing: DefaultNs.Thing = { $: "Class", n: 1 };
+  void thing;
 }

@@ -56,6 +56,19 @@ test.each([
     2,
     "(a: number[], m: BendMap<number>) => BendMap<Unit>",
   ],
+  ["def f(xs: List<U32>) -> Maybe<Char>:", 1, "(xs: List<number>) => Maybe<string>"],
+  ["def f(xs: +List<U32>) -> Map<Nat>:", 1, "(xs: List<number>) => BendMap<number>"],
+  [
+    "def f(e: Either<U32, Unit>) -> Result<String, Nat>:",
+    1,
+    "(e: Either<number, Unit>) => Result<string, number>",
+  ],
+  ["def f(p: Result<&2, String, Nat>) -> Nat:", 1, "(p: unknown) => number"],
+  [
+    "def f(fs: Array<(U32 -> U32)>) -> Array<List<U32>>:",
+    1,
+    "(fs: ((arg: number) => number)[]) => List<number>[]",
+  ],
   ["def f(ok: {x == True{} : Bool}) -> Nat:", 1, "(ok: unknown) => number"],
   ["def f(s: String) -> IO(Unit):", 1, "io"],
   ["def f() -> Data:", 0, "type-level"],
@@ -88,6 +101,75 @@ test("user types render as unions of `$`-tagged objects with type parameters", (
     'export type Counted<A> = { $: "Counted"; "items": List<A>; "size": number };',
     "export type Forest<A> = List<Tree<A>>;",
   ]);
+});
+
+test("a use of a type may omit its quantities", () => {
+  const lib = parseModule(
+    "/lib",
+    "type Pile<a, -A: Kind(a), -n: Nat> is Kind(a):\n  Pile{top: Maybe<a, A>}\n",
+    (path) => path,
+  );
+  const { m, naming } = setup(
+    [
+      "import ./lib.bend as L",
+      "type Bag<a, -A: Kind(a)> is Kind(a):",
+      "  Bag{items: List<a, A>, more: Bag<A>}",
+      "type Two<a, b, -A: Kind(a), -B: Kind(b)> is Kind(a <&> b):",
+      "  Two{a: A, b: B}",
+    ].join("\n"),
+    [lib],
+  );
+  expect(renderTypes(m, naming)).toEqual([
+    'export type Bag<A> = { $: "Bag"; "items": List<A>; "more": Bag<A> };',
+    'export type Two<A, B> = { $: "Two"; "a": A; "b": B };',
+  ]);
+  const render = (type: string): string => {
+    const def = parseModule("/m.bend", `def f(x: ${type}) -> Nat:\n  0n\n`, (p) => p).defs.get("f");
+    if (def === undefined) throw new Error("no def");
+    const rendered = renderSignature(def, m, naming, 1);
+    return rendered.kind === "function" ? rendered.params : rendered.kind;
+  };
+  expect(render("Bag<U32>")).toBe("x: Bag<number>");
+  expect(render("Bag<&2, U32>")).toBe("x: Bag<number>");
+  expect(render("Two<U32, String>")).toBe("x: Two<number, string>");
+  expect(render("Two<&2, &1, U32, String>")).toBe("x: Two<number, string>");
+  expect(render("Two<&2, U32, String>")).toBe("x: unknown");
+  expect(render("L.Pile<U32, 3n>")).toBe("x: lib.Pile<number>");
+  expect(render("L.Pile<&2, U32, 3n>")).toBe("x: lib.Pile<number>");
+});
+
+test("a def returning an IO alias is IO, however the alias is reached", () => {
+  const lib = parseModule(
+    "/lib",
+    "def Effect() -> Type: IO(Unit)\ndef Pure() -> Type: Nat\n",
+    (path) => path,
+  );
+  const { m, naming } = setup(
+    [
+      "import ./lib.bend as L",
+      "def Action() -> Type: IO(Unit)",
+      "def Later() -> Type: Action()",
+      "def Remote() -> Type: L.Effect()",
+      "def Loop() -> Type: Loop()",
+      "def Ping() -> Type: Pong()",
+      "def Pong() -> Type: Ping()",
+      "def a() -> Action(): x",
+      "def b() -> Later(): x",
+      "def c() -> L.Effect(): x",
+      "def d() -> Remote(): x",
+      "def e() -> L.Pure(): x",
+      "def f() -> Loop(): x",
+      "def g() -> Ping(): x",
+    ].join("\n"),
+    [lib],
+  );
+  const kinds = ["a", "b", "c", "d", "e", "f", "g"].map((name) => {
+    const def = m.defs.get(name);
+    if (def === undefined) throw new Error(`no def ${name}`);
+    const rendered = renderSignature(def, m, naming, 0);
+    return rendered.kind === "function" ? rendered.text : rendered.kind;
+  });
+  expect(kinds).toEqual(["io", "io", "io", "io", "() => lib.Pure", "() => Loop", "() => Ping"]);
 });
 
 test("imported names resolve through their alias and namespace", () => {
