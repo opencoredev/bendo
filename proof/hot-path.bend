@@ -16,6 +16,7 @@ import ../src/mw/cors.bend as Cors
 import ../src/mw/cors_request.bend as CR
 import ../src/mw/cors_policy.bend as CP
 import ../src/app/observability.bend as Obs
+import ./stream-marker.bend as SM
 
 def Laws.hot_utf8_encode_char(c):
   Equal.sym(List<&2, U32>, Utf8.encode_char_spec(c), Utf8.encode_char(c), UP.encode_char_equiv(c))
@@ -335,3 +336,8 @@ def Laws.hot_body_head_feed(xs, s, bytes, limit, headers):
 
 def Laws.hot_body_head_feed_policy(Policy, select, policy, xs, s, bytes, limit, headers):
   head_feed_equiv(~Policy, ~select, policy, xs, s, bytes, limit, headers)
+
+# ---- BND-96: the fused stream-marker name test ----
+
+def Laws.hot_marker_named(name):
+  SM.named_equiv(name)

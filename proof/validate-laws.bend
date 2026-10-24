@@ -288,3 +288,77 @@ law finalizers_only_stamp:
   for +id: Maybe<&2, String>
   for +timing: Maybe<&2, String>
   {Final.unstamped(Obs.stamped(res, id, timing)) == Final.unstamped(res) : Response.Res}
+
+# BND-96: a route without a response schema needs no response check. For
+# every mode, registration claim and response, the check answers Send, with
+# the validating decoder and without it, so finalization sends the response
+# the retained policies produced without building the check.
+law response_without_schema_is_sent_run:
+  for +mode: Config.Mode
+  for +claim: Marker.Claim
+  for +res: Response.Res
+  {Final.action(~V.run, mode, claim, None{}, res) == V.Send{} : V.Action}
+
+law response_without_schema_is_sent_skip:
+  for +mode: Config.Mode
+  for +claim: Marker.Claim
+  for +res: Response.Res
+  {Final.action(~V.skip, mode, claim, None{}, res) == V.Send{} : V.Action}
+
+# BND-96: a table that declares no route schema validates nothing. Every
+# route's effective schema set is empty, so serving such a table (which the
+# plain entrypoints guarantee at startup) can skip the per-route schema
+# lookup, the request check and the response check.
+law undeclared_table_checks_nothing:
+  for -Tag: Data
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +route: Maybe<&2, Nat>
+  for +undeclared: {Table.declares_schemas(Tag, layers) == False{} : Bool}
+  {Table.route_schemas(Tag, layers, route) == V.none() : V.Schemas}
+
+# BND-96: a route whose schemas check nothing in the request skips the
+# request step. For every schema set and request input, when the validator's
+# own probe says the step need not run, the step would have admitted the
+# request with no decoded values: with the decoder, a set with only a response
+# schema (or none); without it, a set with no schema at all, so a
+# response-only route still reaches the step that refuses it.
+law request_free_route_is_admitted_run:
+  for +set: V.Schemas
+  for +input: V.Input
+  for +unchecked: {V.checks_request(V.enabled(V.run(V.Probe{})), set) == False{} : Bool}
+  {V.run(V.RequestJob{set, input}) == V.Judged{V.Valid{V.no_values()}} : V.Answer}
+
+law request_free_route_is_admitted_skip:
+  for +set: V.Schemas
+  for +input: V.Input
+  for +unchecked: {V.checks_request(V.enabled(V.skip(V.Probe{})), set) == False{} : Bool}
+  {V.skip(V.RequestJob{set, input}) == V.Judged{V.Valid{V.no_values()}} : V.Answer}
+
+# BND-96: the request step enters through the validator's answer, and the
+# skip path forwards C.without_values. For every context, including one whose
+# early hooks stored decoded values, a route that skips the step enters with
+# exactly the context the step would have admitted.
+law request_free_route_enters_cleared_run:
+  for -Vars: Data
+  for +c: C.Ctx<Vars>
+  for +set: V.Schemas
+  for +input: V.Input
+  for +unchecked: {V.checks_request(V.enabled(V.run(V.Probe{})), set) == False{} : Bool}
+  {C.answered(Vars, c, V.run(V.RequestJob{set, input})) == C.EnterHandler{C.without_values(Vars, c)} : C.Entry<Vars>}
+
+law request_free_route_enters_cleared_skip:
+  for -Vars: Data
+  for +c: C.Ctx<Vars>
+  for +set: V.Schemas
+  for +input: V.Input
+  for +unchecked: {V.checks_request(V.enabled(V.skip(V.Probe{})), set) == False{} : Bool}
+  {C.answered(Vars, c, V.skip(V.RequestJob{set, input})) == C.EnterHandler{C.without_values(Vars, c)} : C.Entry<Vars>}
+
+# BND-96: a route that declares no schema at all never took the step, before
+# BND-96 or after, so its hooks' context reaches the handler as they left it.
+# For a fresh context that is also what admitting with no values reads.
+law no_values_entry_reads_unchanged:
+  for -Vars: Data
+  for +c: C.Ctx<Vars>
+  for +fresh: {Obs.valid(C.observation(Vars, c)) == None{} : Maybe<&2, V.Values>}
+  {C.values(Vars, C.with_values(Vars, c, V.no_values())) == C.values(Vars, c) : V.Values}
