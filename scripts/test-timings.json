@@ -24,6 +24,7 @@
     "tests/schema-compound.test.ts": 120000,
     "tests/fuzz/http.test.ts": 180000,
     "tests/errors.test.ts": 120000,
-    "tests/proxy.test.ts": 70000
+    "tests/proxy.test.ts": 70000,
+    "tests/ws-frame.test.ts": 5000
   }
 }
