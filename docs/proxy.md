@@ -44,12 +44,25 @@ returns a new value.
 | `B.proxy_timeouts(o, connect, send, head, read)` | 5000, 30000, 30000, 30000 ms | See [timeouts](#timeouts). |
 | `B.proxy_stream_config(o, config)` | `B.stream_config()` | Write budget and maximum chunk size of the client stream. |
 
-The upstream URL is `http://host[:port][/base]`. `host` must be a numeric IPv4
-address or `localhost`, which means `127.0.0.1`. The port defaults to 80, and
-`base` is prefixed to every forwarded path. Bendo refuses any other URL,
-including `https`, DNS names, IPv6 literals, userinfo, a query or a fragment,
-and answers `500` `Proxy upstream misconfigured`. Base's `TCP.connect` has no
-resolver and only IPv4 sockets, so DNS names and IPv6 need a new effect.
+The upstream URL is `http://host[:port][/base]`. The scheme and host may be
+in any case; Bendo lowercases them. `host` is one of:
+
+- a DNS name, such as `api.internal` or `localhost`. Labels are 1 to 63
+  characters of `a-z`, `0-9`, `-` and `_`, may not start or end with `-`, and
+  the name has at most 253 characters. Empty labels, and so a trailing root
+  dot, are refused. A name that ends in a number, such as `127.1` or
+  `0x7f.1`, is read as IPv4 and refused, because a resolver would rewrite it.
+- a dotted-quad IPv4 address without leading zeros, such as `10.0.0.5`.
+- an IPv6 address in brackets, in RFC 5952 form: lowercase (Bendo lowercases
+  it for you), compressed, with no zone ID and no embedded IPv4, such as
+  `[::1]` or `[2001:db8::1]`. `[0::1]` and `[::ffff:1.2.3.4]` are refused.
+
+The port has one to five digits with a value from 1 to 65535 and defaults to
+80. `base` is prefixed to every forwarded path. Bendo refuses any other URL,
+including `https`, userinfo, an empty port, a query or a fragment, and answers
+`500` `Proxy upstream misconfigured`. The host grammar is the origin host
+grammar of `src/http/origin.bend` plus the label rules, and two laws check the
+parser (see [Verify](#verify)).
 
 A rewritten path must still be an origin-form path (it starts with `/` and has
 only path characters). Otherwise the request gets `500`
@@ -68,8 +81,10 @@ paths under `base`, enforce that upstream or reject such paths before calling
 The upstream request line is `METHOD target HTTP/1.1`. Bendo builds the header
 list in this order:
 
-1. `host`: the upstream URL's authority (`127.0.0.1:3000`), or with
-   `preserve_host` the client's `Host` when it has one.
+1. `host`: the upstream URL's host, in lowercase and with IPv6 in brackets,
+   followed by `:` and the port exactly when the URL has one, digits as
+   written (`127.0.0.1:3000`, `api.internal`, `[::1]:8080`). With
+   `preserve_host` it is the client's `Host` when it has one.
 2. The client's end-to-end fields, unchanged and in arrival order. Bendo first
    removes the hop-by-hop fields described below. It then drops `Host`,
    `Content-Length`, `Transfer-Encoding`, `Expect` (the server already answered
@@ -166,6 +181,7 @@ response hooks, request IDs and `Date` apply as for any stream.
 | Upstream URL not supported | `500` `Proxy upstream misconfigured` |
 | Rewrite leaves an invalid path | `500` `Proxy rewrite produced an invalid target` |
 | `CONNECT` request | `501` `Not Implemented: CONNECT is not proxied` |
+| The upstream host name does not resolve | `502` `Bad Gateway: upstream host did not resolve` |
 | Connection refused or unreachable, or the request send fails | `502` `Bad Gateway: upstream connection failed` |
 | Malformed status line, headers or framing, `101`, or EOF before the head ends | `502` `Bad Gateway: invalid upstream response` |
 | Connect, request-send or head timeout | `504` `Gateway Timeout: upstream did not answer in time` |
@@ -179,10 +195,10 @@ receives may already have been delivered.
 
 ## Timeouts
 
-- **connect** (5000 ms): Bendo's own connect effect
-  (`src/effects/upstream_connect.c`) parks until the socket is writable or the
-  deadline passes. On timeout it closes the descriptor itself, so a slow
-  upstream leaves no socket or background task behind.
+- **connect** (5000 ms): one absolute budget for resolving the host and
+  connecting to it, described [below](#name-resolution-and-connecting). On
+  timeout the connect effect closes its own descriptors, so a slow upstream
+  leaves no socket behind.
 - **send** (30000 ms): one absolute budget for writing the request head and
   body.
 - **head** (30000 ms): one absolute budget for the complete response head,
@@ -192,6 +208,45 @@ receives may already have been delivered.
   Server-Sent Events.
 
 Writes to the client use the stream's write budget, as for any `B.stream`.
+
+## Name resolution and connecting
+
+Base's `TCP.connect` has no resolver and opens only IPv4 sockets, so the proxy
+uses its own effect, `src/effects/upstream_connect.c`, with a JS twin in
+`upstream_connect.js`.
+
+A numeric IPv4 or IPv6 host is used as it is, with no lookup. A DNS name is
+resolved with `getaddrinfo` on a detached thread started for that lookup, so
+the event loop keeps serving other requests. The thread signals completion
+through a pipe, and the request waits on that pipe until the answer or the
+connect deadline arrives. At most 32 lookups run at once; another request
+fails with `502` until one finishes. The runtime's own helper threads can't be
+abandoned at a deadline, and `getaddrinfo_a` exists only in glibc, which is
+why each lookup gets its own thread.
+
+A lookup still running at the deadline is abandoned and the request gets
+`504`. The thread frees its result and closes the pipe when `getaddrinfo`
+returns, so a late answer opens no socket. The C library's resolver settings
+(`/etc/hosts`, `/etc/resolv.conf`, `nsswitch.conf`) apply, and nothing is
+cached between requests.
+
+The resolved addresses are tried one at a time, at most 8 of them, in the
+resolver's order (RFC 6724). Families alternate starting with the first
+result's family, as RFC 8305 suggests. Each attempt except the last gets an
+equal share of the time left, and the last gets all of it. A refused or
+unreachable address moves on to the next one at once, and a slow attempt's
+socket is closed before the next one opens. Attempts never run in parallel,
+so this is a simplified Happy Eyeballs: a black-holed first address costs its
+share of the budget before the next address is tried.
+
+`localhost` goes through the resolver like any name. If it resolves to both
+`::1` and `127.0.0.1` and the upstream listens only on IPv4, the `::1`
+attempt is refused at once and the IPv4 one connects.
+
+In the JS build, the IO loop blocks in `select`, so `dns.lookup` callbacks
+can't run on the main thread. One shared worker thread does the lookups and
+writes each answer to a pipe made for that request. The connect logic matches
+the C effect.
 
 ## Connections and cleanup
 
@@ -229,7 +284,24 @@ upstream. It covers:
   socket, chunked and close-delimited bodies complete, and post-commit
   failures abort;
 - timeouts: connect, head and per-read timeouts;
+- names and IPv6: `localhost` through the resolver, a `.invalid` name that
+  gets `502`, a bracketed `[::1]` upstream with its `Host`, and the connect
+  effect alone in both the native and JS builds (a name, NXDOMAIN, a refused
+  port, an unroutable address timing out at its deadline, and an IPv6
+  literal). The IPv6 tests are skipped with a message when the machine has no
+  IPv6 loopback;
 - cleanup: the upstream socket closes on client disconnect, HEAD and
   middleware replacement.
 
-`bend PROOF.bend --verdict` checks the two header laws.
+`bend PROOF.bend --verdict` checks the two header laws and the upstream host
+laws in [`proof/proxy-laws.bend`](../proof/proxy-laws.bend):
+
+- `proxy_upstream_authority_spec`: the authority parser
+  (`Upstream.read_authority`) accepts exactly the authorities that the grammar
+  in [`proof/upstream-host-spec.bend`](../proof/upstream-host-spec.bend)
+  accepts, and reads the same host and port.
+- `proxy_upstream_host_round_trip`: the `Host` value sent upstream parses back
+  to exactly the endpoint it came from.
+
+Closed examples cover an IPv6 URL, a name URL, IPv4 shorthand, uncompressed
+IPv6, an empty label, a trailing dot, a leading hyphen and port 0.

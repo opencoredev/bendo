@@ -1,4 +1,5 @@
 # BND-47 fixture: upstream URLs come from the environment at startup.
+# BND-93 adds a named upstream, a name that never resolves and an IPv6 one.
 import Base
 import ../../src/main.bend as B
 import ../../src/http/response.bend as Response
@@ -16,21 +17,32 @@ type Tag is Data:
   Refused{}
   Blackhole{}
   Misconfigured{}
+  Named{}
+  Unresolved{}
+  V6{}
   BadRewrite{}
   Replaced{}
   Replace{}
   Observe{}
 
 type Env is Data:
-  Env{up: String, raw: String}
+  Env{up: String, raw: String, named: String, v6: String}
 
 def up_url(env: Env) -> String:
-  Env{up, raw} = env
+  Env{up, raw, named, v6} = env
   up
 
 def raw_url(env: Env) -> String:
-  Env{up, raw} = env
+  Env{up, raw, named, v6} = env
   raw
+
+def named_url(env: Env) -> String:
+  Env{up, raw, named, v6} = env
+  named
+
+def v6_url(env: Env) -> String:
+  Env{up, raw, named, v6} = env
+  v6
 
 def options(tag: Tag, env: Env) -> B.ProxyOptions:
   match tag:
@@ -42,7 +54,10 @@ def options(tag: Tag, env: Env) -> B.ProxyOptions:
     case Replaced{}: B.proxy_rewrite(B.proxy_options(raw_url(env)), "/replaced", "")
     case Refused{}: B.proxy_options("http://127.0.0.1:1")
     case Blackhole{}: B.proxy_timeouts(B.proxy_options("http://10.255.255.1:80"), 300, 1000, 1000, 1000)
-    case Misconfigured{}: B.proxy_options("http://example.com")
+    case Misconfigured{}: B.proxy_options("http://example.com:0")
+    case Named{}: B.proxy_rewrite(B.proxy_options(named_url(env)), "/named", "")
+    case Unresolved{}: B.proxy_options("http://bendo-upstream.invalid")
+    case V6{}: B.proxy_rewrite(B.proxy_options(v6_url(env)), "/v6", "")
     case BadRewrite{}: B.proxy_rewrite(B.proxy_options(up_url(env)), "/bad", "nope")
     case _: B.proxy_options(up_url(env))
 
@@ -79,7 +94,9 @@ def main() -> IO(Unit):
   do IO<Unit>:
     up : String <- IO.try(String, IO.get_env("BENDO_UPSTREAM"))
     raw : String <- IO.try(String, IO.get_env("BENDO_RAW_UPSTREAM"))
-    ready(Env{up, raw}, B.routes(Tag, [
+    named : String <- IO.try(String, IO.get_env("BENDO_NAMED_UPSTREAM"))
+    v6 : String <- IO.try(String, IO.get_env("BENDO_V6_UPSTREAM"))
+    ready(Env{up, raw, named, v6}, B.routes(Tag, [
       B.on_after_response(Tag, Observe{}),
       B.use_path(Tag, "/replaced/*", Replace{}),
       B.all(Tag, "/preserve/*", Preserve{}),
@@ -91,6 +108,9 @@ def main() -> IO(Unit):
       B.get(Tag, "/refused", Refused{}),
       B.get(Tag, "/blackhole", Blackhole{}),
       B.get(Tag, "/misconfigured", Misconfigured{}),
+      B.all(Tag, "/named/*", Named{}),
+      B.get(Tag, "/unresolved", Unresolved{}),
+      B.all(Tag, "/v6/*", V6{}),
       B.get(Tag, "/bad/*", BadRewrite{}),
       B.all(Tag, "/*", Up{})
     ]))
