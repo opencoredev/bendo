@@ -26,6 +26,8 @@ Pre-stage hooks perform their work before `next`. Response-stage hooks call
 Each response hook wraps that value in a one-layer onion; this preserves
 registration order for both effects and response changes.
 
+<!-- #region stage-order -->
+
 | Order | Hook | Middleware form | Can short-circuit? | Sees what |
 | --- | --- | --- | --- | --- |
 | 1 | `on_request` | Outer pre-next chain, before route resolution | Yes: skip routing and remaining pre stages | Buffered request/body and decoded query; no route params |
@@ -37,6 +39,8 @@ registration order for both effects and response changes.
 | 7 | `map_response` | One-layer post-next response middleware | May replace the response; later response hooks still run | Response from `after_handle`; may set Content-Type or encode a body |
 | 8 | `on_error` | Conditional one-layer post-next response middleware | May recover; all registered error hooks run | Current error response, after mapping and response validation |
 | 9 | `on_after_response` | One-layer observer after transport send completes | No: returned responses are discarded | Latest forwarded context and final normalized response |
+
+<!-- #endregion stage-order -->
 
 Ordinary `use`/`use_path` middleware keeps its registration-ordered onion. It
 enters after routing, wraps parse/transform/before/handler, then unwinds before
