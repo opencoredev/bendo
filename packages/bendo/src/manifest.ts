@@ -60,7 +60,7 @@ export function parseManifest(text: string): Manifest {
       typeof route.method !== "string" ||
       !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(route.method) ||
       typeof route.path !== "string" ||
-      !route.path.startsWith("/") ||
+      !(route.path.startsWith("/") || route.path === "*") ||
       [...route.path].some(
         (character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
       )

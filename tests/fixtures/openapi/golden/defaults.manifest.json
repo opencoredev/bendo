@@ -1,0 +1,42 @@
+{
+  "bendo": 1,
+  "routes": [
+    { "method": "GET", "path": "/", "params": [] },
+    { "method": "GET", "path": "/users/:id", "params": ["id"] },
+    {
+      "method": "POST",
+      "path": "/users/:user_id/avatar",
+      "params": ["user_id"],
+      "schemas": {
+        "body": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": { "url": { "type": "string" } },
+          "required": ["url"],
+          "additionalProperties": false
+        },
+        "response": true
+      }
+    },
+    { "method": "GET", "path": "/users/:name{slug}", "params": ["name"] },
+    {
+      "method": "GET",
+      "path": "/search",
+      "params": [],
+      "schemas": {
+        "query": { "anyOf": [{ "type": "object" }] },
+        "headers": {
+          "type": "object",
+          "properties": { "Accept": { "type": "string" }, "x-trace": { "type": "string" } },
+          "required": ["x-trace"]
+        }
+      }
+    },
+    { "method": "ALL", "path": "/any", "params": [], "all": true },
+    { "method": "GET", "path": "/any", "params": [] },
+    { "method": "QUERY", "path": "/any", "params": [] },
+    { "method": "get", "path": "/lower", "params": [] },
+    { "method": "OPTIONS", "path": "/:a?/:b?", "params": ["a", "b"] },
+    { "method": "GET", "path": "/café", "params": [], "future": "ignored" }
+  ]
+}
