@@ -27,6 +27,7 @@
     "tests/fuzz/http.test.ts": 180000,
     "tests/errors.test.ts": 120000,
     "tests/proxy.test.ts": 70000,
+    "tests/chat-example.test.ts": 90000,
     "tests/ws-frame.test.ts": 5000,
     "packages/bendo/shared/signup.test.ts": 150000,
     "packages/bendo/shared/stack.test.ts": 20000,

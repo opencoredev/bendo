@@ -4,6 +4,7 @@
   "type": "module",
   "workspaces": [
     "packages/*",
+    "examples/chat",
     "examples/todo"
   ],
   "scripts": {
