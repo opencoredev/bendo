@@ -31,10 +31,27 @@ requests after a closing response are discarded without dispatch.
 Every intentional final close replaces all application Connection fields with
 one `connection: close`. `B.handle` has already applied the response writer's
 framing, so the shell preserves its headers and payload, including HEAD's GET
-length and empty payload. Transport errors close immediately. After a successful
-closing send, teardown retains [0005](0005-framing.md)'s bounded drain: at most
-4 MiB and one second, using timed receives. A peer can read the response before
-that drain ends. Base has no write-side shutdown, so EOF may follow later.
+length and empty payload. Transport errors close immediately.
+
+After a successful closing send, the shell calls `shutdown(SHUT_WR)` through
+the `effects/shutdown_write` effect, then runs [0005](0005-framing.md)'s bounded
+drain: at most 4 MiB and one second, using timed receives, ending early at the
+peer's EOF. The FIN follows the response bytes, so a client waiting for EOF sees
+it right after the last response byte. This is the lingering close: closing a
+socket with unread request bytes (a rejected body, a discarded pipelined
+request) makes the kernel send an RST, which can destroy response bytes the
+client has not read yet. The drain reads those bytes away until the client
+closes its side.
+
+Until BND-90, base had no write-side shutdown, so the FIN waited for the drain.
+A client that kept its side open, which is what any HTTP client waiting for EOF
+does, saw EOF about one second after the response, for every `Connection:
+close` response, HTTP/1.0 request, and max-requests cap. The drain keeps its
+one-second bound rather than a shorter one: it no longer delays the client,
+and a shorter window would let request bytes still in flight on a slow link
+arrive after the close and reset the connection. A peer that never closes holds
+a descriptor for at most one second. Idle-timeout and EOF closes have no
+response to protect and call `Socket.close` at once.
 
 The legacy `Serve.serve` and two-field `Serve.Config` byte-handler API remains
 single-request. Its bounded head transformation replaces Connection fields with
@@ -67,7 +84,11 @@ through raw sockets, including a client sending one byte per 100 ms while a
 second client completes requests. It checks sequential reuse, ordered pipelines,
 partial suffixes, fixed/chunked body boundaries, HEAD framing, exact head limits,
 leading CRLFs, absolute head/body deadlines, idle EOF, max requests, HTTP/1.0,
-request/response close tokens, and rejection in a pipeline. The suite also
+request/response close tokens, and rejection in a pipeline. For `Connection:
+close`, HTTP/1.0, the max-requests cap, and a 400 with 32 KiB of unread request
+bytes, it checks that EOF follows the last response byte within 400 ms or four
+times the request's response latency, whichever is larger, while the client's
+write side stays open. The suite also
 compiles the pure state machine to JavaScript to check every split of a request
 and its suffix, absolute deadlines, and buffered-head timestamps. A legacy byte
 fixture checks mixed-case repeated Connection fields and binary payloads.

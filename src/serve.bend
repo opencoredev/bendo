@@ -2,6 +2,7 @@
 # in http/connection.bend. Each socket is owned by one spawned computation.
 import Base
 import ./effects/peer.bend as Peer
+import ./effects/shutdown_write.bend as Shutdown
 import ./net/conn_info.bend as Conn
 import ./stream.bend as Stream
 import ./http/stream_types.bend as StreamTypes
@@ -33,7 +34,9 @@ def sent(m: Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>) -> IO
   (s, r) = m
   Socket.close(s)
 
-# Base TCP has no write-side shutdown. Keep the affine socket in this
+# Lingering close (0009). Shutdown.shutdown_write has already sent the FIN, so
+# the peer sees EOF right after the response; the drain only keeps unread
+# request bytes from turning close into an RST. Keep the affine socket in this
 # computation: IO.within would leave its losing receive alive after timeout.
 type DrainEvent is Type:
   Drain{socket: Socket}
@@ -67,8 +70,9 @@ def rejected(m: Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>) -
   match result:
     case Done{u}:
       do IO<Unit>:
+        sock : Socket <- Shutdown.shutdown_write(s)
         now : Nat <- IO.now()
-        drain(Drain{s}, 4194304, Nat.add(now, 1000n))
+        drain(Drain{sock}, 4194304, Nat.add(now, 1000n))
     case Fail{e}:
       Socket.close(s)
 
