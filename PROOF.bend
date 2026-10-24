@@ -840,3 +840,4 @@ def Laws.manifest_schema_accepted(Tag, sources, compiled, layers, count, schemas
 
 def Laws.json_schema_object_node_exact(fields, unknown): JsonSchemaProof.object_node_exact(fields, unknown)
 def Laws.json_schema_string_node_exact(min, max, pattern, format): JsonSchemaProof.string_node_exact(min, max, pattern, format)
+def Laws.json_schema_boolean_node_exact(): {==}

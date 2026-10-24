@@ -2273,3 +2273,8 @@ law json_schema_string_node_exact:
   for +pattern: Maybe<&2, SchemaPattern.Pattern>
   for +format: Schema.Format
   {JsonSchema.go(Schema.StringSchema{min, max, pattern, format}, JsonSchema.start(Schema.StringSchema{min, max, pattern, format})) == JsonSchemaSpec.string(min, max, pattern, format) : Json.Json}
+
+# A boolean node is exactly {"type": "boolean"}: no other keyword can narrow
+# the two values the decoder accepts.
+law json_schema_boolean_node_exact:
+  {JsonSchema.go(Schema.BooleanSchema{}, JsonSchema.start(Schema.BooleanSchema{})) == Json.JObject{[Json.Field{"type", Json.JString{"boolean"}}]} : Json.Json}
