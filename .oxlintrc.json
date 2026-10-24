@@ -3,5 +3,5 @@
   "categories": {
     "correctness": "warn"
   },
-  "ignorePatterns": ["node_modules/", "dist/"]
+  "ignorePatterns": ["node_modules/", "dist/", "tests/fixtures/static/vite-app/build/**"]
 }

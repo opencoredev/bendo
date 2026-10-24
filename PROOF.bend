@@ -99,6 +99,15 @@ import ./proof/jwt.bend as JwtProof
 import ./proof/jwt-structure.bend as JwtStructureProof
 import ./proof/jwt-encoding.bend as JwtEncodingProof
 import ./proof/csrf.bend as CsrfProof
+import ./proof/cors.bend as CorsProof
+import ./proof/cors-response.bend as CorsResponseProof
+import ./proof/cors-vary.bend as CorsVaryProof
+import ./proof/response-policy.bend as ResponsePolicyProof
+import ./proof/secure-headers.bend as SecureHeadersProof
+import ./proof/override.bend as OverrideProof
+import ./proof/trailing.bend as TrailingProof
+
+import ./proof/static-path.bend as StaticProof
 
 # Check the pure crypto implementations with the strict kernel as well.
 import ./src/crypto/sha1.bend as SHA1
@@ -689,3 +698,103 @@ def Laws.sse_retry_decimal(ms):
 
 def Laws.sse_retry_value(ms):
   SseProof.retry_value(ms)
+
+# BND-40: CORS, method override and trailing-slash decisions.
+
+def Laws.cors_grant_spec(origins, sent):
+  CorsProof.grant(origins, sent)
+
+def Laws.cors_wildcard_never_credentials(sent):
+  CorsProof.wildcard(sent)
+
+def Laws.cors_listed_denies_unusable_origin(es, sent, h):
+  CorsProof.unparsed(es, sent, h)
+
+def Laws.cors_listed_grant_echoes_origin(es, sent, o, c, h):
+  CorsProof.echo(es, sent, o, c, h)
+
+def Laws.cors_configured_origins(xs):
+  CorsProof.configured(xs)
+
+def Laws.cors_preflight_spec(method, sent, requests_method):
+  CorsProof.preflight(method, sent, requests_method)
+
+def Laws.cors_preflight_fields_spec(config, g, reflected):
+  CorsProof.preflight_fields(config, g, reflected)
+
+def Laws.cors_actual_fields_spec(config, g):
+  CorsProof.actual_fields(config, g)
+
+def Laws.cors_response_spec(config, req, res):
+  CorsResponseProof.response(config, req, res)
+
+def Laws.cors_vary_origin(es, methods, headers, expose, max_age, req, res):
+  CorsVaryProof.vary_origin(es, methods, headers, expose, max_age, req, res)
+
+def Laws.vary_add_spec(hs, names):
+  ResponsePolicyProof.vary_add(hs, names)
+
+def Laws.secure_headers_defaults_spec(res):
+  SecureHeadersProof.defaults(res)
+
+def Laws.override_rewrites_only_post(allowed, wire, values, m, h):
+  OverrideProof.only_post(allowed, wire, values, m, h)
+
+def Laws.override_never_safe_destination(allowed, wire, values, m, h):
+  OverrideProof.unsafe_destination(allowed, wire, values, m, h)
+
+def Laws.override_destination_listed(allowed, wire, values, m, h):
+  OverrideProof.destination_listed(allowed, wire, values, m, h)
+
+def Laws.override_rejects_repeated(allowed, v, w, rest):
+  OverrideProof.repeated(allowed, v, w, rest)
+
+def Laws.override_keeps_non_post(allowed, wire, values, h):
+  OverrideProof.non_post(allowed, wire, values, h)
+
+def Laws.override_never_safe_name(allowed, wire, values, m, h):
+  OverrideProof.safe_name_excluded(allowed, wire, values, m, h)
+
+def Laws.override_decision_spec(allowed, wire, values):
+  OverrideProof.decide_spec(allowed, wire, values)
+
+def Laws.override_allowlist_unsafe(xs):
+  OverrideProof.allowlist(xs)
+
+def Laws.trailing_redirect_same_origin(mode, m, path, q, loc, h):
+  TrailingProof.redirect_safe(mode, m, path, q, loc, h)
+
+def Laws.trailing_redirect_reads_only(mode, m, path, q, loc, h):
+  TrailingProof.redirect_reads(mode, m, path, q, loc, h)
+
+def Laws.trailing_target_spec(mode, m, path, q):
+  TrailingProof.target_spec(mode, m, path, q)
+
+def Laws.trailing_trim_keeps_root(m, q):
+  TrailingProof.root(m, q)
+
+def Laws.trailing_trim_target(base, q, m, r, ok):
+  TrailingProof.trim_target(base, q, m, r, ok)
+
+def Laws.trailing_append_target(path, q, m, r, ends, ok):
+  TrailingProof.append_target(path, q, m, r, ends, ok)
+
+# BND-45: static path confinement.
+
+def Laws.static_path_confined(raw, index):
+  StaticProof.confined(raw, index)
+
+def Laws.static_path_target(root, raw, index):
+  StaticProof.target(root, raw, index)
+
+def Laws.static_path_segments(raw, index):
+  StaticProof.segments(raw, index)
+
+def Laws.static_path_no_dotfiles(raw, index):
+  StaticProof.no_dotfiles(raw, index)
+
+def Laws.static_path_complete(first, rest, index, servable):
+  StaticProof.complete(first, rest, index, servable)
+
+def Laws.static_path_index(xs, index, servable, named):
+  StaticProof.index_law(xs, index, servable, named)
