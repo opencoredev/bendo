@@ -27,7 +27,8 @@ export type RunningServer = {
   [Symbol.asyncDispose]: () => Promise<void>;
 };
 
-type Target = "native" | "mjs" | "js";
+// "c" emits C only: it typechecks every def, much faster than a native build.
+type Target = "native" | "mjs" | "js" | "c";
 
 let compiler: ReturnType<typeof findBend> | undefined;
 let nativePlatform: string | undefined;
