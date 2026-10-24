@@ -175,3 +175,9 @@ def u32_eq_sound(+a: U32, +b: U32, +e: {U32.is_eq(a, b) == True{} : Bool}) -> {a
   match a b:
     case U32{x} U32{y}:
       Equal.cong(Word(32n), U32, w => U32{w}, x, y, word_eq_sound(32n, x, y, e))
+
+# The same step, keeping all three spare credits for the continuation.
+def consume_full(+c: Char, +t: String, +a: Nat, +m: J.Machine, +v: J.Json, h: {J.parse_go(J.fuel_go(t, 3n+a), J.step(m)) == Done{v} : Result<&2, &2, J.Error, J.Json>}, go: {J.parse_go(1n+J.fuel_go(t, 3n+a), m) == J.parse_go(J.fuel_go(t, 3n+a), J.step(m)) : Result<&2, &2, J.Error, J.Json>}) -> {J.parse_go(J.fuel_go(SCon{c, t}, a), m) == Done{v} : Result<&2, &2, J.Error, J.Json>}:
+  %Equal.sym(Nat, J.fuel_go(t, 1n+(3n+a)), 1n+J.fuel_go(t, 3n+a), fuel_succ(t, 3n+a)) : {J.parse_go(_, m) == Done{v} : Result<&2, &2, J.Error, J.Json>}
+  %Equal.sym(Result<&2, &2, J.Error, J.Json>, J.parse_go(1n+J.fuel_go(t, 3n+a), m), J.parse_go(J.fuel_go(t, 3n+a), J.step(m)), go) : {_ == Done{v} : Result<&2, &2, J.Error, J.Json>}
+  h
