@@ -108,10 +108,13 @@ def unsubscribe(peer: Peer, topic: String) -> IO(Bool):
 
 # Removes every ID joined under `token` from every topic and revokes it, in
 # one registry update. Queued behind the join, so it also undoes a join that
-# timed out but committed.
+# timed out but committed. The release is never dropped: it waits for room in
+# the hub's queue however long that takes, and only the acknowledgement is
+# bounded. False means the hub is gone, or the release is queued but was not
+# acknowledged in time; it is applied all the same.
 def leave(hub: Hub, +token: String) -> IO(Bool):
   do IO<Bool>:
-    got : Result<&2, &2, Store.Error, T.Ledger<W.Handle>> <- Store.update(T.Ledger<W.Handle>, registry(hub), l => T.release(W.Handle, l, token))
+    got : Result<&2, &2, Store.Error, T.Ledger<W.Handle>> <- Store.update_queued(T.Ledger<W.Handle>, registry(hub), l => T.release(W.Handle, l, token))
     return acknowledged(got)
 
 type Offer is Data:
@@ -170,13 +173,15 @@ def deliver(+command: S.Command, xs: List<&2, T.Sub<W.Handle>>, tally: Tally) ->
         result : Offer <- offer(handle, command)
         deliver(command, rest, counted(tally, sid, result))
 
+# Removes the closed connections from every topic and forgets their claims.
+# If this update fails, the next publication to those topics finds them again.
 def pruned(tally: Tally, hub: Hub) -> IO(Delivery):
   Tally{delivery, ids} = tally
   match ids:
     case Nil{}: IO.pure(Delivery, delivery)
     case +first <> rest:
       do IO<Delivery>:
-        ok : Bool <- change(hub, r => T.remove_all(W.Handle, first <> rest, r))
+        got : Result<&2, &2, Store.Error, T.Ledger<W.Handle>> <- Store.update(T.Ledger<W.Handle>, registry(hub), l => T.prune(W.Handle, l, first <> rest))
         return delivery
 
 def fan_out(+hub: Hub, +topic: String, +sender: Maybe<&2, Nat>, +command: S.Command, got: Result<&2, &2, Store.Error, T.Ledger<W.Handle>>) -> IO(Result<&2, &2, Store.Error, Delivery>):
@@ -296,7 +301,8 @@ def joined_message(~User: Data, ~on_message: User -> Peer -> M.Message -> IO(Use
 # Runs on every close path, 1006 included. The mailbox is already closed, so
 # a publication that races this removal is refused, not queued. One registry
 # update drops the subscriptions and revokes the ID the token joined, even if
-# the join's acknowledgement timed out.
+# the join's acknowledgement timed out. It waits for room in a full hub queue
+# rather than give up, so the release always reaches the hub.
 def joined_close(~User: Data, ~on_close: User -> U32 -> String -> IO(Unit), state: Joined<User>, code: U32, reason: String) -> IO(Unit):
   Joined{user, id, token, hub} = state
   do IO<Unit>:

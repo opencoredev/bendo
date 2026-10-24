@@ -21,6 +21,9 @@ before a BendHub release exists. Keep that directory with your app. The generate
 package scripts assume `bendo` is available on `PATH`; the toolkit itself is not
 yet available from npm. An existing destination is refused without overwriting it.
 
+For an app with typed routes, or one with a React front end, use
+[create-bendo](../packages/create-bendo/README.md) instead of `bendo new`.
+
 ## Commands
 
 Every command supports `--help`.

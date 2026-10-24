@@ -389,3 +389,73 @@ law ws_topics_ledger_history_wf:
   for -A: Data
   for +evs: List<&2, Spec.Step<A>>
   {Spec.wf(A, T.registry(A, Spec.play(A, evs))) == True{} : Bool}
+
+# ---- Other connections' claims and pruning (BND-98) ----
+
+# A claim under k keeps every other token's claims, in order.
+law ws_topics_claim_others:
+  for -A: Data
+  for +l: T.Ledger<A>
+  for +k: String
+  for +j: String
+  for +other: {String.eq(k, j) == False{} : Bool}
+  {T.claimed(T.claims(A, T.claim(A, l, k)), j) == T.claimed(T.claims(A, l), j) : List<&2, Nat>}
+
+# A release of k keeps every other token's claims, in order.
+law ws_topics_release_others:
+  for -A: Data
+  for +l: T.Ledger<A>
+  for +k: String
+  for +j: String
+  for +other: {String.eq(k, j) == False{} : Bool}
+  {T.claimed(T.claims(A, T.release(A, l, k)), j) == T.claimed(T.claims(A, l), j) : List<&2, Nat>}
+
+# Pruning is remove_all on the registry, and keeps exactly the claims whose
+# ID was not pruned, in order.
+law ws_topics_prune_registry:
+  for -A: Data
+  for +l: T.Ledger<A>
+  for +ids: List<&2, Nat>
+  {T.registry(A, T.prune(A, l, ids)) == T.remove_all(A, ids, T.registry(A, l)) : T.Registry<A>}
+
+law ws_topics_prune_claims:
+  for -A: Data
+  for +l: T.Ledger<A>
+  for +ids: List<&2, Nat>
+  for +k: String
+  {T.claimed(T.claims(A, T.prune(A, l, ids)), k) == Spec.outside(T.claimed(T.claims(A, l), k), ids) : List<&2, Nat>}
+
+# A pruned ID is claimed under no token afterwards.
+law ws_topics_prune_unclaims:
+  for -A: Data
+  for +l: T.Ledger<A>
+  for +ids: List<&2, Nat>
+  for +k: String
+  for +c: Nat
+  for +gone: {Spec.has(ids, c) == True{} : Bool}
+  {Spec.has(T.claimed(T.claims(A, T.prune(A, l, ids)), k), c) == False{} : Bool}
+
+law ws_topics_wf_prune:
+  for -A: Data
+  for +l: T.Ledger<A>
+  for +ids: List<&2, Nat>
+  for +wf: {Spec.wf(A, T.registry(A, l)) == True{} : Bool}
+  {Spec.wf(A, T.registry(A, T.prune(A, l, ids))) == True{} : Bool}
+
+# A claim under k, then any ledger history (registry changes, prunes, other
+# tokens' claims and releases, even earlier claims and releases of k), then a
+# release of k: the ID that claim got is inactive and in no topic.
+law ws_topics_history_release_revokes:
+  for -A: Data
+  for +l: T.Ledger<A>
+  for +k: String
+  for +evs: List<&2, Spec.Step<A>>
+  {Spec.has(T.live(A, T.registry(A, T.release(A, Spec.play_from(A, evs, T.claim(A, l, k)), k))), T.next(A, T.registry(A, l))) == False{} : Bool}
+
+law ws_topics_history_release_leaves:
+  for -A: Data
+  for +l: T.Ledger<A>
+  for +k: String
+  for +evs: List<&2, Spec.Step<A>>
+  for +t: String
+  {Spec.has(T.members(A, T.registry(A, T.release(A, Spec.play_from(A, evs, T.claim(A, l, k)), k)), t), T.next(A, T.registry(A, l))) == False{} : Bool}

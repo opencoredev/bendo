@@ -55,6 +55,12 @@ kept after the close can no longer subscribe. You don't need to unsubscribe in
 and `subscribe` returns `False`. The close still revokes the ID the hub
 assigned, because each connection joins and leaves under its own random token.
 
+The close's release is never dropped. Other hub requests give up when the
+hub's 128-request queue stays full past the hub's timeout, but the release
+waits for room as long as that takes, ahead of anyone who arrives later. So a
+burst of traffic can delay a connection's cleanup, but cannot leave its ID
+active or its subscriptions behind.
+
 To send to one connection, use `P.handle(peer)` with the usual
 `B.websocket_send_text` helpers, or keep the handle to send from elsewhere.
 
@@ -89,7 +95,9 @@ A publication returns `P.Delivery{sent, dropped, gone}`:
 - `dropped`: open subscribers whose mailbox was full, or whose `max_message`
   is smaller than the message. They miss this message and stay subscribed.
 - `gone`: subscribers that had already closed, whatever the message size. The
-  publication removes them from the registry.
+  publication removes them from the registry and forgets the token each one
+  joined under, so the hub's state shrinks back even if that connection's own
+  cleanup never ran.
 
 `Fail{Store.Unavailable{}}` or `Fail{Store.TimedOut{}}` means the registry
 couldn't be read, and nothing was sent.
@@ -145,6 +153,7 @@ exclusion, HTTP publication, unsubscribe, 1,000 connect-and-disconnect cycles
 that leave the registry empty, the slow-subscriber policy, per-publisher
 ordering, a kept `P.Peer` subscribing after its connection closed (once in
 order and 30 times racing the close), an oversized publication that still
-prunes a closed subscriber, a join that times out after the hub queued it,
-and the latency figures above. The registry laws
+prunes a closed subscriber and its claim, a join that times out after the hub
+queued it, a close while the hub's queue is held full (its release waits and
+lands once the queue drains), and the latency figures above. The registry laws
 live in `proof/ws-topics-laws.bend`; `bun run prove` checks them.
