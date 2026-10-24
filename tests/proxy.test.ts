@@ -857,6 +857,155 @@ describe("upstream names and IPv6", () => {
     );
   }
 
+  // BND-99: the JS resolver worker is killed through the effect's test-only
+  // probes. probe(name) reads a number back as the call's failure code.
+  const probe = (name: string, port = 1): Group => [1, `${name}.resolver.bendo.test`, port, 1];
+  const hooked = (env: Record<string, string>) => ({
+    LD_PRELOAD: fakeDns ?? "",
+    BENDO_RESOLVER_TEST_HOOKS: "1",
+    ...env,
+  });
+  const jsDial = [process.execPath, dialJs] as const;
+
+  // 32 timed-out lookups hold every slot when the worker is terminated. Once
+  // its beat is 2 s old, the next lookup replaces it and frees the slots, and
+  // the descriptor count is back where it was with the first worker.
+  test.skipIf(fakeDns === undefined)(
+    "JS: a terminated resolver worker is replaced and its slots and descriptors reclaimed",
+    async () => {
+      const lines = await dialWith(jsDial, hooked({ BENDO_FAKE_DNS_HOLD_MS: "1500" }), [
+        [1, "localhost", Number(bun.port), 2000],
+        probe("pending"),
+        probe("fds"),
+        [32, "a.slow.bendo.test", 80, 300],
+        probe("pending"),
+        probe("terminate"),
+        [0, "-", 0, 2500],
+        probe("pending"),
+        [4, "localhost", Number(bun.port), 2000],
+        probe("pending"),
+        probe("fds"),
+      ]);
+      const baseline = lines[2] ?? "";
+      expect(lines.slice(0, 2)).toEqual(["localhost ok", "pending.resolver.bendo.test fail 0"]);
+      expect(baseline).toMatch(/^fds\.resolver\.bendo\.test fail \d+$/);
+      expect(counted(lines.slice(3, 35))).toEqual(new Map([["a.slow.bendo.test fail 110", 32]]));
+      expect(lines.slice(35)).toEqual([
+        "pending.resolver.bendo.test fail 32",
+        "terminate.resolver.bendo.test fail 0",
+        "pending.resolver.bendo.test fail 32",
+        "localhost ok",
+        "localhost ok",
+        "localhost ok",
+        "localhost ok",
+        "pending.resolver.bendo.test fail 0",
+        baseline,
+      ]);
+    },
+    SLOW_TEST_TIMEOUT_MS,
+  );
+
+  // The worker exits 300 ms into two lookups held until 4 s. A parked lookup
+  // notices the stale beat, and the new worker takes both over: they end
+  // with the hold as 1001, not at their 8 s deadline as 110. Bun releases an
+  // exited worker's own descriptors shortly after it is replaced, hence the
+  // pause before the count.
+  test.skipIf(fakeDns === undefined)(
+    "JS: lookups in flight when the resolver worker exits move to its replacement",
+    async () => {
+      const started = performance.now();
+      const lines = await dialWith(jsDial, hooked({ BENDO_FAKE_DNS_HOLD_MS: "4000" }), [
+        [1, "localhost", Number(bun.port), 2000],
+        probe("fds"),
+        probe("exit", 300),
+        [2, "c.slow.bendo.test", 80, 8000],
+        [0, "-", 0, 500],
+        probe("pending"),
+        probe("fds"),
+      ]);
+      const elapsed = performance.now() - started;
+      const baseline = lines[1] ?? "";
+      expect(baseline).toMatch(/^fds\.resolver\.bendo\.test fail \d+$/);
+      expect(lines).toEqual([
+        "localhost ok",
+        baseline,
+        "exit.resolver.bendo.test fail 0",
+        "c.slow.bendo.test fail 1001",
+        "c.slow.bendo.test fail 1001",
+        "pending.resolver.bendo.test fail 0",
+        baseline,
+      ]);
+      expect(elapsed).toBeLessThan(7000);
+    },
+    SLOW_TEST_TIMEOUT_MS,
+  );
+
+  // The worker exits after claiming a lookup and before writing its answer.
+  // Once its beat is stale and its thread gone, the lookup goes to the new
+  // worker and connects well before its 8 s deadline.
+  test.skipIf(fakeDns === undefined)(
+    "JS: a lookup whose resolver worker dies mid-write is sent again",
+    async () => {
+      const started = performance.now();
+      const lines = await dialWith(jsDial, hooked({}), [
+        [1, "localhost", Number(bun.port), 2000],
+        probe("fds"),
+        probe("claimexit"),
+        [1, "localhost", Number(bun.port), 8000],
+        [0, "-", 0, 500],
+        probe("pending"),
+        probe("fds"),
+      ]);
+      const elapsed = performance.now() - started;
+      const baseline = lines[1] ?? "";
+      expect(baseline).toMatch(/^fds\.resolver\.bendo\.test fail \d+$/);
+      expect(lines).toEqual([
+        "localhost ok",
+        baseline,
+        "claimexit.resolver.bendo.test fail 0",
+        "localhost ok",
+        "pending.resolver.bendo.test fail 0",
+        baseline,
+      ]);
+      expect(elapsed).toBeLessThan(7000);
+    },
+    SLOW_TEST_TIMEOUT_MS,
+  );
+
+  // The worker blocks for 4 s after claiming a lookup, so the request times
+  // out at 1 s with the write end still the worker's. Nothing else runs, yet
+  // the janitor replaces the stalled worker, and once its thread is gone
+  // closes the write end and frees the slot.
+  test.skipIf(fakeDns === undefined)(
+    "JS: a stalled resolver worker's write end is closed once it is replaced",
+    async () => {
+      const lines = await dialWith(jsDial, hooked({}), [
+        [1, "localhost", Number(bun.port), 2000],
+        probe("fds"),
+        probe("claimstall", 4000),
+        [1, "localhost", Number(bun.port), 1000],
+        probe("pending"),
+        [0, "-", 0, 3000],
+        probe("pending"),
+        probe("fds"),
+        [1, "localhost", Number(bun.port), 2000],
+      ]);
+      const baseline = lines[1] ?? "";
+      expect(baseline).toMatch(/^fds\.resolver\.bendo\.test fail \d+$/);
+      expect(lines).toEqual([
+        "localhost ok",
+        baseline,
+        "claimstall.resolver.bendo.test fail 0",
+        "localhost fail 110",
+        "pending.resolver.bendo.test fail 1",
+        "pending.resolver.bendo.test fail 0",
+        baseline,
+        "localhost ok",
+      ]);
+    },
+    SLOW_TEST_TIMEOUT_MS,
+  );
+
   test.skipIf(fakeDns === undefined)(
     "native: the 33rd request during a slow lookup is a 502, the rest time out",
     async () => {
@@ -911,6 +1060,235 @@ describe("upstream names and IPv6", () => {
     // Malformed entries are skipped and do not choose the first family.
     expect(ordered([[5, "x"], [6, 1], "y", v4s[0], v6s[0]])).toEqual([v4s[0], v6s[0]]);
     expect(ordered([])).toEqual([]);
+  });
+
+  // BND-99: the resolver's recovery driven by hand. A fake Worker records
+  // what it is sent and stands for a thread the test names; a fake /proc
+  // says which of those threads still run; the test moves slot words as a
+  // worker would. sys.close records descriptors and io_park_on the janitor.
+  function resolverHarness() {
+    const closed: number[] = [];
+    const parks: (() => unknown)[] = [];
+    const running = new Set<number>();
+    type Message = { slot?: number; ticket?: number; host?: string; fd?: number };
+    class FakeWorker {
+      readonly sent: Message[] = [];
+      terminated = false;
+      readonly id: BigInt64Array;
+      constructor(_source: string, options: { workerData: { id: SharedArrayBuffer } }) {
+        this.id = new BigInt64Array(options.workerData.id);
+        workers.push(this);
+      }
+      postMessage(message: Message) {
+        this.sent.push(message);
+      }
+      terminate() {
+        this.terminated = true;
+      }
+      unref() {}
+    }
+    const workers: FakeWorker[] = [];
+    const fs = {
+      readFileSync(path: string) {
+        const tid = Number(/^\/proc\/self\/task\/(\d+)\/stat$/.exec(path)?.[1]);
+        if (!running.has(tid)) throw Object.assign(new Error(path), { code: "ENOENT" });
+        return `${tid} (bun) S ${"0 ".repeat(18)}7`;
+      },
+    };
+    const driver: unknown = runInNewContext(
+      `${readFileSync(resolve(import.meta.dir, "../src/effects/upstream_connect.js"), "utf8")}
+      const sys = { close: (fd) => closed.push(fd) };
+      const res = () => globalThis.BENDO_RESOLVER;
+      ({
+        ask(host, w) {
+          const r = bendo_upstream_resolver(sys);
+          const look = { slot: r.slots.indexOf(0), ticket: 0, host, w, gen: 0, waiting: true, resent: false };
+          r.lookups.add(look);
+          bendo_upstream_send(r, look, 0, false);
+          return look;
+        },
+        done: (look, fd, answered) => bendo_upstream_resolved(sys, res(), look, fd, answered),
+        maintain: () => void bendo_upstream_resolver(sys),
+        publish(tid) {
+          Atomics.store(res().id, 2, 7n);
+          Atomics.store(res().id, 1, BigInt(tid));
+        },
+        stale: () => void Atomics.store(res().id, 0, 0n),
+        claim: (look) =>
+          Atomics.compareExchange(res().slots, look.slot, look.ticket * 8 + 1, look.ticket * 8 + 2),
+        finish: (look) => Atomics.compareExchange(res().slots, look.slot, look.ticket * 8 + 2, 0),
+        word: (look) => Atomics.load(res().slots, look.slot),
+        ticket: (look) => look.ticket,
+        lookups: () => res().lookups.size,
+        retired: () => res().retired.length,
+      })`,
+      {
+        io_eff: () => undefined,
+        CID: () => 0,
+        upstream_connect: undefined,
+        process: { env: {}, platform: "linux" },
+        performance,
+        closed,
+        io_park_on: (_fd: unknown, _out: boolean, _k: unknown, more: () => unknown) =>
+          parks.push(more),
+        require: (name: string) => (name === "fs" ? fs : { Worker: FakeWorker }),
+      },
+    );
+    const method = (name: string) => {
+      const fn: unknown =
+        typeof driver === "object" && driver !== null ? Reflect.get(driver, name) : undefined;
+      if (typeof fn !== "function") throw new Error(`missing ${name}`);
+      return (...args: unknown[]): unknown => fn(...args);
+    };
+    const number = (name: string) => {
+      const fn = method(name);
+      return (...args: unknown[]) => {
+        const out = fn(...args);
+        if (typeof out !== "number") throw new Error(`${name} answered ${String(out)}`);
+        return out;
+      };
+    };
+    const word = number("word");
+    const ticket = number("ticket");
+    return {
+      closed,
+      parks,
+      running,
+      workers,
+      ask: method("ask"),
+      done: method("done"),
+      maintain: method("maintain"),
+      publish: method("publish"),
+      stale: method("stale"),
+      claim: method("claim"),
+      finish: method("finish"),
+      lookups: number("lookups"),
+      retired: number("retired"),
+      ticket,
+      asked: (look: unknown) => word(look) === ticket(look) * 8 + 1,
+      writing: (look: unknown) => word(look) === ticket(look) * 8 + 2,
+      free: (look: unknown) => word(look) === 0,
+      // Runs the janitors parked so far, as the loop would when they are due.
+      janitor: () => parks.splice(0).forEach((more) => more()),
+    };
+  }
+
+  test("JS resolver: a stalled writer keeps its write end until its thread is gone", () => {
+    const h = resolverHarness();
+    h.running.add(1001);
+    const a = h.ask("a", 50);
+    h.publish(1001);
+    h.claim(a);
+    // The request gives up while the worker writes: only the read end closes,
+    // and the janitor is parked to finish the job with no lookups running.
+    h.done(a, 40, false);
+    expect(h.closed).toEqual([40]);
+    expect(h.parks).toHaveLength(1);
+    // The beat stops. The janitor replaces the worker but its thread still
+    // runs, so the write end and the slot stay.
+    h.stale();
+    h.janitor();
+    expect(h.workers.map((w) => w.terminated)).toEqual([true, false]);
+    expect(h.writing(a)).toBe(true);
+    expect(h.closed).toEqual([40]);
+    expect(h.parks).toHaveLength(1);
+    // Once the thread is gone, the write end closes and the slot is free.
+    h.running.delete(1001);
+    h.janitor();
+    expect(h.closed).toEqual([40, 50]);
+    expect(h.free(a)).toBe(true);
+    expect(h.lookups()).toBe(0);
+    expect(h.parks).toHaveLength(0);
+  });
+
+  test("JS resolver: a retired worker that finishes its write frees the write end", () => {
+    const h = resolverHarness();
+    h.running.add(1001);
+    const a = h.ask("a", 50);
+    h.publish(1001);
+    h.claim(a);
+    h.done(a, 40, false);
+    h.stale();
+    h.janitor();
+    expect(h.closed).toEqual([40]);
+    h.finish(a);
+    h.janitor();
+    expect(h.closed).toEqual([40, 50]);
+    expect(h.lookups()).toBe(0);
+  });
+
+  test("JS resolver: retired workers holding no write are forgotten, even without a thread id", () => {
+    const h = resolverHarness();
+    // Each worker publishes -1, as where /proc is missing, so none can ever be
+    // shown gone. Recoveries that leave no WRITING slot keep nothing.
+    h.maintain();
+    for (let i = 0; i < 64; i += 1) {
+      h.publish(-1);
+      h.stale();
+      h.maintain();
+    }
+    expect(h.retired()).toBe(0);
+    expect(h.lookups()).toBe(0);
+  });
+
+  test("JS resolver: an older lookup ending never hides a newer one in its slot", () => {
+    const h = resolverHarness();
+    const a = h.ask("a", 50);
+    h.claim(a);
+    h.finish(a);
+    // The worker freed the slot before a's request read the answer; b takes it.
+    const b = h.ask("b", 60);
+    h.done(a, 40, true);
+    expect(h.closed).toEqual([40, 50]);
+    expect(h.asked(b)).toBe(true);
+    // The worker dies: b moves to the new worker under a new ticket.
+    const first = h.ticket(b);
+    h.stale();
+    h.maintain();
+    expect(h.ticket(b)).not.toBe(first);
+    expect(h.asked(b)).toBe(true);
+    expect(h.workers[1]?.sent).toEqual([{ slot: 0, ticket: h.ticket(b), host: "b", fd: 60 }]);
+  });
+
+  test("JS resolver: a lookup whose worker died mid-write is sent again", () => {
+    const h = resolverHarness();
+    h.running.add(1001);
+    const a = h.ask("a", 50);
+    h.publish(1001);
+    h.claim(a);
+    const first = h.ticket(a);
+    h.stale();
+    h.maintain();
+    // The old thread may still write, so a is not sent yet.
+    expect(h.workers[1]?.sent).toEqual([]);
+    expect(h.writing(a)).toBe(true);
+    h.running.delete(1001);
+    h.maintain();
+    expect(h.ticket(a)).not.toBe(first);
+    expect(h.workers[1]?.sent).toEqual([{ slot: 0, ticket: h.ticket(a), host: "a", fd: 50 }]);
+    expect(h.closed).toEqual([]);
+    // The line read may be the dead worker's, so it does not show that the
+    // new worker's write is over: the write end waits for the slot.
+    h.claim(a);
+    h.done(a, 40, true);
+    expect(h.closed).toEqual([40]);
+    h.finish(a);
+    h.janitor();
+    expect(h.closed).toEqual([40, 50]);
+    expect(h.lookups()).toBe(0);
+  });
+
+  test("JS resolver: the janitor closes a deferred write end with no traffic", () => {
+    const h = resolverHarness();
+    const a = h.ask("a", 50);
+    h.claim(a);
+    h.done(a, 40, false);
+    expect(h.closed).toEqual([40]);
+    h.finish(a);
+    h.janitor();
+    expect(h.closed).toEqual([40, 50]);
+    expect(h.lookups()).toBe(0);
+    expect(h.parks).toHaveLength(0);
   });
 });
 

@@ -11,3 +11,6 @@ dist/
 # vite-plugin-bendo writes these beside each imported .bend file.
 *.d.bend.ts
 packages/create-bendo/bend/
+
+# Docs site build output and cache.
+docs/.vitepress/cache/
