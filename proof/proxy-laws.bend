@@ -27,9 +27,10 @@ law proxy_forward_clean:
 
 # BND-93: the host and port of an upstream URL. UpstreamSpec
 # (proof/upstream-host-spec.bend) states the grammar on top of BND-85's
-# origin specification: a bracketed RFC 5952 IPv6 address, or a dotted-quad
-# IPv4 address or DNS name with RFC 1123 labels, then optionally ':' and a
-# port of one to five digits from 1 to 65535.
+# origin specification: a bracketed RFC 5952 IPv6 address that embeds no IPv4
+# address, or a dotted-quad IPv4 address or DNS name with RFC 1123 labels,
+# then optionally ':' and a port of one to five digits from 1 to 65535. It
+# splits the authority at every ']' or ':' where the parser cuts at the first.
 
 # LAW: the parser accepts exactly the authorities the grammar accepts, and
 # reads the same host and port from each.
@@ -54,8 +55,16 @@ law proxy_upstream_name_url:
 law proxy_upstream_rejects_ipv4_shorthand:
   {Upstream.read_authority("127.1") == None{} : Maybe<&2, Upstream.Endpoint>}
 
-law proxy_upstream_rejects_uncompressed_ipv6:
+law proxy_upstream_rejects_noncanonical_ipv6:
   {Upstream.read_authority("[0::1]") == None{} : Maybe<&2, Upstream.Endpoint>}
+
+# An IPv6 address that carries an IPv4 one, mapped or compatible, is refused:
+# a dual-stack socket would dial the IPv4 address.
+law proxy_upstream_rejects_ipv4_mapped:
+  {Upstream.read_authority("[::ffff:c000:201]") == None{} : Maybe<&2, Upstream.Endpoint>}
+
+law proxy_upstream_rejects_ipv4_compatible:
+  {Upstream.read_authority("[::c000:201]") == None{} : Maybe<&2, Upstream.Endpoint>}
 
 law proxy_upstream_rejects_empty_label:
   {Upstream.read_authority("a..b") == None{} : Maybe<&2, Upstream.Endpoint>}
@@ -66,5 +75,12 @@ law proxy_upstream_rejects_trailing_dot:
 law proxy_upstream_rejects_hyphen_edge:
   {Upstream.read_authority("-a.example") == None{} : Maybe<&2, Upstream.Endpoint>}
 
+law proxy_upstream_rejects_trailing_hyphen:
+  {Upstream.read_authority("a-.example") == None{} : Maybe<&2, Upstream.Endpoint>}
+
 law proxy_upstream_rejects_port_zero:
   {Upstream.read_authority("a.example:0") == None{} : Maybe<&2, Upstream.Endpoint>}
+
+# Leading zeros in a port are allowed and kept as written.
+law proxy_upstream_keeps_port_digits:
+  {Upstream.read_authority("a.example:080") == Some{Upstream.Endpoint{Upstream.HostName{"a.example"}, Some{"080"}}} : Maybe<&2, Upstream.Endpoint>}

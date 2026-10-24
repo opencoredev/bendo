@@ -937,6 +937,10 @@ describe("upstream URLs", () => {
       ["http://[::1]:8080", "::1", 8080, "[::1]:8080", ""],
       ["http://[2001:DB8::1]/x", "2001:db8::1", 80, "[2001:db8::1]", "/x"],
       ["http://a.example:080", "a.example", 80, "a.example:080", ""],
+      // Zero groups first, but no IPv4 address in the last 32 bits.
+      ["http://[::1:2:3]", "::1:2:3", 80, "[::1:2:3]", ""],
+      ["http://[::ffff:0:1:2]", "::ffff:0:1:2", 80, "[::ffff:0:1:2]", ""],
+      ["http://[::]", "::", 80, "[::]", ""],
     ];
     for (const [url, host, port, authority, base] of accepted)
       expect(pure("parse_url", url)).toEqual({
@@ -962,6 +966,11 @@ describe("upstream URLs", () => {
       "http://a%2e.example",
       "http://[0::1]",
       "http://[::ffff:1.2.3.4]",
+      "http://[::ffff:c000:201]",
+      "http://[::ffff:0:0]",
+      "http://[::c000:201]",
+      "http://[::ffff]",
+      "http://[::2]",
       "http://[fe80::1%25eth0]",
       "http://[::1",
       "http://[::1]x",

@@ -11,8 +11,12 @@ def Laws.proxy_upstream_host_round_trip(s): Host.round_trip(s)
 def Laws.proxy_upstream_ipv6_url(): {==}
 def Laws.proxy_upstream_name_url(): {==}
 def Laws.proxy_upstream_rejects_ipv4_shorthand(): {==}
-def Laws.proxy_upstream_rejects_uncompressed_ipv6(): {==}
+def Laws.proxy_upstream_rejects_noncanonical_ipv6(): {==}
+def Laws.proxy_upstream_rejects_ipv4_mapped(): {==}
+def Laws.proxy_upstream_rejects_ipv4_compatible(): {==}
 def Laws.proxy_upstream_rejects_empty_label(): {==}
 def Laws.proxy_upstream_rejects_trailing_dot(): {==}
 def Laws.proxy_upstream_rejects_hyphen_edge(): {==}
+def Laws.proxy_upstream_rejects_trailing_hyphen(): {==}
 def Laws.proxy_upstream_rejects_port_zero(): {==}
+def Laws.proxy_upstream_keeps_port_digits(): {==}

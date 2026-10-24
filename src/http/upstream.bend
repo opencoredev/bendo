@@ -63,7 +63,7 @@ type Upstream is Data:
 
 # An upstream host as the URL writes it, in lowercase. A HostName is a DNS
 # name or a dotted-quad IPv4 address; a HostV6 is IPv6 text in RFC 5952 form,
-# written in brackets.
+# written in brackets, that does not embed an IPv4 address (see embeds_v4).
 type Host is Data:
   HostName{text: String}
   HostV6{text: String}
@@ -101,9 +101,32 @@ def port_read(+p: String, short: Bool) -> Bool:
     case True{}: port_range(Nat.read(p))
     case False{}: False{}
 
-# One to five decimal digits with a value from 1 to 65535.
+# One to five decimal digits with a value from 1 to 65535. Leading zeros are
+# allowed ("080") and kept in the Host value.
 def port_ok(+p: String) -> Bool:
   port_read(p, Origin.digits(p) && Nat.is_lt(0n, String.length(p)) && Nat.is_le(String.length(p), 5n))
+
+def v4_groups(gs: List<&2, String>) -> Bool:
+  match gs:
+    case +g <> Nil{}: Bool.not(String.is_empty(g)) && Bool.not(String.eq(g, "1"))
+    case g <> (h <> Nil{}): True{}
+    case f <> (g <> (h <> Nil{})): String.eq(f, "ffff")
+    case _: False{}
+
+def v4_pieces(ps: List<&2, String>) -> Bool:
+  match ps:
+    case SNil{} <> (SNil{} <> rest): v4_groups(rest)
+    case _: False{}
+
+# IPv4-mapped (::ffff:0:0/96) and IPv4-compatible (::/96 except :: and ::1)
+# addresses, which a dual-stack socket would reach over IPv4. In RFC 5952 text
+# they are "::" followed by "ffff" and two groups, or by one or two groups
+# other than "1". Only text Origin.ipv6 accepts is asked.
+def embeds_v4(+t: String) -> Bool:
+  v4_pieces(String.split(t, ':'))
+
+def v6_ok(+t: String) -> Bool:
+  Origin.ipv6(t) && Bool.not(embeds_v4(t))
 
 def endpoint(+host: Host, +port: Maybe<&2, String>, ok: Bool) -> Maybe<&2, Endpoint>:
   match ok:
@@ -112,12 +135,12 @@ def endpoint(+host: Host, +port: Maybe<&2, String>, ok: Bool) -> Maybe<&2, Endpo
 
 def bracket_port(+inside: String, +p: String, colon: Bool) -> Maybe<&2, Endpoint>:
   match colon:
-    case True{}: endpoint(HostV6{inside}, Some{p}, Origin.ipv6(inside) && port_ok(p))
+    case True{}: endpoint(HostV6{inside}, Some{p}, v6_ok(inside) && port_ok(p))
     case False{}: None{}
 
 def bracket_rest(+inside: String, rest: String) -> Maybe<&2, Endpoint>:
   match rest:
-    case SNil{}: endpoint(HostV6{inside}, None{}, Origin.ipv6(inside))
+    case SNil{}: endpoint(HostV6{inside}, None{}, v6_ok(inside))
     case SCon{c, p}: bracket_port(inside, p, Char.is_eq(c, ':'))
 
 def bracketed(m: Maybe<&2, Origin.Cut>) -> Maybe<&2, Endpoint>:
@@ -218,8 +241,8 @@ def after_scheme(+s: String, http: Bool) -> Maybe<&2, Upstream>:
     case True{}: split_rest(String.split(String.drop(s, 7n), '/'))
 
 # http://host[:port][/base], the scheme and host in any case. The host is a
-# DNS name, a dotted-quad IPv4 address or a bracketed IPv6 address (see
-# read_authority). No userinfo, query, fragment or https (the path check refuses
+# DNS name, a dotted-quad IPv4 address or a bracketed IPv6 address without an
+# embedded IPv4 address (see read_authority). No userinfo, query, fragment or https (the path check refuses
 # '?' and '#').
 def parse_url(+s: String) -> Maybe<&2, Upstream>:
   after_scheme(s, String.eq(String.to_lower(String.take(s, 7n)), "http://"))

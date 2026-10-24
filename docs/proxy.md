@@ -54,11 +54,17 @@ in any case; Bendo lowercases them. `host` is one of:
   `0x7f.1`, is read as IPv4 and refused, because a resolver would rewrite it.
 - a dotted-quad IPv4 address without leading zeros, such as `10.0.0.5`.
 - an IPv6 address in brackets, in RFC 5952 form: lowercase (Bendo lowercases
-  it for you), compressed, with no zone ID and no embedded IPv4, such as
+  it for you), compressed, with no zone ID and no dotted IPv4 tail, such as
   `[::1]` or `[2001:db8::1]`. `[0::1]` and `[::ffff:1.2.3.4]` are refused.
+  Addresses that carry an IPv4 address are refused too, because a dual-stack
+  socket would reach the IPv4 host: IPv4-mapped addresses (`::ffff:0:0/96`,
+  such as `[::ffff:c000:201]`) and IPv4-compatible ones (`::/96` other than
+  `[::]` and `[::1]`, such as `[::c000:201]`). Other prefixes are ordinary
+  IPv6, including NAT64 (`64:ff9b::/96`) and `::ffff:0:0:0/96`.
 
 The port has one to five digits with a value from 1 to 65535 and defaults to
-80. `base` is prefixed to every forwarded path. Bendo refuses any other URL,
+80. Leading zeros are allowed and kept: `http://api:080` dials port 80 and
+sends `Host: api:080`. `base` is prefixed to every forwarded path. Bendo refuses any other URL,
 including `https`, userinfo, an empty port, a query or a fragment, and answers
 `500` `Proxy upstream misconfigured`. The host grammar is the origin host
 grammar of `src/http/origin.bend` plus the label rules, and two laws check the
@@ -220,7 +226,9 @@ resolved with `getaddrinfo` on a detached thread started for that lookup, so
 the event loop keeps serving other requests. The thread signals completion
 through a pipe, and the request waits on that pipe until the answer or the
 connect deadline arrives. At most 32 lookups run at once; another request
-fails with `502` until one finishes. The runtime's own helper threads can't be
+fails with `502` (`EAGAIN` from the effect) until one finishes. A lookup
+counts until `getaddrinfo` returns, even after its request has given up, so
+slow DNS can't pile up threads or descriptors. The runtime's own helper threads can't be
 abandoned at a deadline, and `getaddrinfo_a` exists only in glibc, which is
 why each lookup gets its own thread.
 
@@ -230,9 +238,10 @@ returns, so a late answer opens no socket. The C library's resolver settings
 (`/etc/hosts`, `/etc/resolv.conf`, `nsswitch.conf`) apply, and nothing is
 cached between requests.
 
-The resolved addresses are tried one at a time, at most 8 of them, in the
-resolver's order (RFC 6724). Families alternate starting with the first
-result's family, as RFC 8305 suggests. Each attempt except the last gets an
+The resolved addresses are tried one at a time, at most 8 of them. Bendo
+keeps the first 8 addresses of each family in the resolver's order (RFC 6724)
+and alternates families starting with the first result's family, as RFC 8305
+suggests, so a long list of one family can't hide the other. Each attempt except the last gets an
 equal share of the time left, and the last gets all of it. A refused or
 unreachable address moves on to the next one at once, and a slow attempt's
 socket is closed before the next one opens. Attempts never run in parallel,
@@ -245,8 +254,9 @@ attempt is refused at once and the IPv4 one connects.
 
 In the JS build, the IO loop blocks in `select`, so `dns.lookup` callbacks
 can't run on the main thread. One shared worker thread does the lookups and
-writes each answer to a pipe made for that request. The connect logic matches
-the C effect.
+writes each answer to a pipe made for that request. The same 32-lookup cap
+applies, counted in memory shared with the worker until it has answered and
+closed the pipe. Address order and the connect logic match the C effect.
 
 ## Connections and cleanup
 
@@ -289,7 +299,11 @@ upstream. It covers:
   effect alone in both the native and JS builds (a name, NXDOMAIN, a refused
   port, an unroutable address timing out at its deadline, and an IPv6
   literal). The IPv6 tests are skipped with a message when the machine has no
-  IPv6 loopback;
+  IPv6 loopback. On Linux, `tests/fixtures/proxy/fake_dns.c` replaces
+  `getaddrinfo` through `LD_PRELOAD` to check, in both builds, that the 33rd
+  concurrent lookup fails with `EAGAIN` (and gets `502` from the native
+  server) while 32 slow lookups are held, and that 16 IPv6 answers before an
+  IPv4 one still reach the IPv4 address;
 - cleanup: the upstream socket closes on client disconnect, HEAD and
   middleware replacement.
 
@@ -303,5 +317,9 @@ laws in [`proof/proxy-laws.bend`](../proof/proxy-laws.bend):
 - `proxy_upstream_host_round_trip`: the `Host` value sent upstream parses back
   to exactly the endpoint it came from.
 
-Closed examples cover an IPv6 URL, a name URL, IPv4 shorthand, uncompressed
-IPv6, an empty label, a trailing dot, a leading hyphen and port 0.
+The specification splits the authority at every `]` or `:` and states labels,
+ports and embedded IPv4 in its own terms, while the parser cuts at the first
+separator, so the two are independent formulations. Closed examples cover an
+IPv6 URL, a name URL, IPv4 shorthand, non-canonical IPv6, IPv4-mapped and
+IPv4-compatible IPv6, an empty label, a trailing dot, a leading and a trailing
+hyphen, port 0 and a port with a leading zero.
