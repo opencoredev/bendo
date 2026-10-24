@@ -857,6 +857,89 @@ describe("upstream names and IPv6", () => {
     );
   }
 
+  // BND-99: the JS resolver worker is killed through the effect's test-only
+  // probes. probe(name) reads a number back as the call's failure code.
+  const probe = (name: string, port = 1): Group => [1, `${name}.resolver.bendo.test`, port, 1];
+  const hooked = (env: Record<string, string>) => ({
+    LD_PRELOAD: fakeDns ?? "",
+    BENDO_RESOLVER_TEST_HOOKS: "1",
+    ...env,
+  });
+  const jsDial = [process.execPath, dialJs] as const;
+
+  // 32 timed-out lookups hold every slot when the worker is terminated. Once
+  // its beat is 2 s old, the next lookup replaces it and frees the slots, and
+  // the descriptor count is back where it was with the first worker.
+  test.skipIf(fakeDns === undefined)(
+    "JS: a terminated resolver worker is replaced and its slots and descriptors reclaimed",
+    async () => {
+      const lines = await dialWith(jsDial, hooked({ BENDO_FAKE_DNS_HOLD_MS: "1500" }), [
+        [1, "localhost", Number(bun.port), 2000],
+        probe("pending"),
+        probe("fds"),
+        [32, "a.slow.bendo.test", 80, 300],
+        probe("pending"),
+        probe("terminate"),
+        [0, "-", 0, 2500],
+        probe("pending"),
+        [4, "localhost", Number(bun.port), 2000],
+        probe("pending"),
+        probe("fds"),
+      ]);
+      const baseline = lines[2] ?? "";
+      expect(lines.slice(0, 2)).toEqual(["localhost ok", "pending.resolver.bendo.test fail 0"]);
+      expect(baseline).toMatch(/^fds\.resolver\.bendo\.test fail \d+$/);
+      expect(counted(lines.slice(3, 35))).toEqual(new Map([["a.slow.bendo.test fail 110", 32]]));
+      expect(lines.slice(35)).toEqual([
+        "pending.resolver.bendo.test fail 32",
+        "terminate.resolver.bendo.test fail 0",
+        "pending.resolver.bendo.test fail 32",
+        "localhost ok",
+        "localhost ok",
+        "localhost ok",
+        "localhost ok",
+        "pending.resolver.bendo.test fail 0",
+        baseline,
+      ]);
+    },
+    SLOW_TEST_TIMEOUT_MS,
+  );
+
+  // The worker exits 300 ms into two lookups held until 4 s. A parked lookup
+  // notices the stale beat, and the new worker takes both over: they end
+  // with the hold as 1001, not at their 8 s deadline as 110. Bun releases an
+  // exited worker's own descriptors shortly after it is replaced, hence the
+  // pause before the count.
+  test.skipIf(fakeDns === undefined)(
+    "JS: lookups in flight when the resolver worker exits move to its replacement",
+    async () => {
+      const started = performance.now();
+      const lines = await dialWith(jsDial, hooked({ BENDO_FAKE_DNS_HOLD_MS: "4000" }), [
+        [1, "localhost", Number(bun.port), 2000],
+        probe("fds"),
+        probe("exit", 300),
+        [2, "c.slow.bendo.test", 80, 8000],
+        [0, "-", 0, 500],
+        probe("pending"),
+        probe("fds"),
+      ]);
+      const elapsed = performance.now() - started;
+      const baseline = lines[1] ?? "";
+      expect(baseline).toMatch(/^fds\.resolver\.bendo\.test fail \d+$/);
+      expect(lines).toEqual([
+        "localhost ok",
+        baseline,
+        "exit.resolver.bendo.test fail 0",
+        "c.slow.bendo.test fail 1001",
+        "c.slow.bendo.test fail 1001",
+        "pending.resolver.bendo.test fail 0",
+        baseline,
+      ]);
+      expect(elapsed).toBeLessThan(7000);
+    },
+    SLOW_TEST_TIMEOUT_MS,
+  );
+
   test.skipIf(fakeDns === undefined)(
     "native: the 33rd request during a slow lookup is a 502, the rest time out",
     async () => {

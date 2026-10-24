@@ -256,8 +256,26 @@ attempt is refused at once and the IPv4 one connects.
 In the JS build, the IO loop blocks in `select`, so `dns.lookup` callbacks
 can't run on the main thread. One shared worker thread does the lookups and
 writes each answer to a pipe made for that request. The same 32-lookup cap
-applies, counted in memory shared with the worker until it has answered and
-closed the pipe. Address order and the connect logic match the C effect.
+applies, counted in 32 slots of memory shared with the worker. A slot stays
+taken until the worker has finished with the lookup, even after its request
+gives up. Address order and the connect logic match the C effect.
+
+The request owns both ends of its pipe and closes them itself when it gets
+the answer or reaches its deadline. The worker only writes, and only after
+claiming the slot with a compare-and-swap. A request that gives up marks its
+slot abandoned the same way before closing, so the worker never writes to a
+descriptor number that may have been reused. Each slot carries a ticket, so
+a late answer can't reach the next lookup that uses the slot.
+
+The worker can die without the main thread hearing about it: exit events
+never run while the loop is in `select`, and Bun accepts messages to a dead
+worker without an error. The worker therefore stamps the time into shared
+memory every 200 ms. A new lookup, or a waiting one that checks every
+500 ms, that finds the stamp more than 2 s old terminates the worker and
+starts another. Slots the dead worker held are freed, and lookups still
+waiting move to the new worker with their pipes. A request sent in those 2 s
+waits for the replacement. The C build starts a thread per lookup and has no
+shared worker to lose.
 
 ## Connections and cleanup
 
@@ -304,7 +322,11 @@ upstream. It covers:
   `getaddrinfo` through `LD_PRELOAD` to check, in both builds, that the 33rd
   concurrent lookup fails with `EAGAIN` (and gets `502` from the native
   server) while 32 slow lookups are held, and that 16 IPv6 answers before an
-  IPv4 one still reach the IPv4 address;
+  IPv4 one still reach the IPv4 address. In the JS build it also kills the
+  resolver worker through test-only probes, enabled by
+  `BENDO_RESOLVER_TEST_HOOKS=1`, and checks that named upstreams work again,
+  that waiting lookups move to the new worker, and that the slot count and
+  open descriptors return to where they started;
 - cleanup: the upstream socket closes on client disconnect, HEAD and
   middleware replacement.
 
