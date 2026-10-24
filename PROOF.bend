@@ -104,6 +104,8 @@ import ./proof/override.bend as OverrideProof
 import ./proof/trailing.bend as TrailingProof
 
 import ./proof/static-path.bend as StaticProof
+import ./proof/ws-frame.bend as WsFrameProof
+import ./proof/ws-frame-roundtrip.bend as WsFrameRoundtrip
 
 # Check the pure crypto implementations with the strict kernel as well.
 import ./src/crypto/sha1.bend as SHA1

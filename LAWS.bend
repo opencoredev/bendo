@@ -101,6 +101,9 @@ import ./proof/date-spec.bend as HttpDateSpec
 import ./src/static/path.bend as StaticPath
 import ./proof/static-spec.bend as StaticSpec
 
+# BND-51
+import ./proof/ws-frame-laws.bend as WsFrameLaws
+
 # LAW: a text response is a head with no blank line in it, then a blank
 # line, then the body. So the first blank line in the response is the one
 # that ends the head, and a client that cuts there reads the body back.
