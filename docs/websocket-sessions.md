@@ -60,7 +60,10 @@ accepted behind a close is discarded after that close; no data is written
 after closing begins. Check admission when delivery matters.
 
 Store the copyable handle in application state to send from another route or
-connection. Bendo polls it alongside timed socket reads. Do not wait inside a
+connection. Bendo polls it alongside timed socket reads. Queued commands go out
+back to back; a command sent to an idle connection waits at most `poll_max_ms`
+(below). When the connection ends, commands still queued are discarded, so a
+saved handle does not keep their payloads alive. Do not wait inside a
 handler for an enqueued frame to be delivered: delivery resumes when the handler
 returns. See [the concurrency decision](decisions/0013-websocket-mailbox.md)
 for BND-53's publication seam and the slow-recipient policy.
@@ -74,11 +77,18 @@ for BND-53's publication seam and the slow-recipient policy.
 | --- | --- | --- |
 | `max_message` | 1048576 | Maximum total bytes in a text or binary message, across fragments. Exceeding it closes with 1009. |
 | `mailbox_capacity` | 16 | Maximum queued outbound commands; zero is normalized to one. |
-| `poll_ms` | 10 | Maximum socket wait before polling outbound commands again; zero becomes one. |
+| `poll_ms` | 10 | Socket wait before polling outbound commands again, while the connection is active; zero becomes one. |
+| `poll_max_ms` | 100 | Cap for the idle backoff: each empty wait doubles toward it, and received bytes or a queued command reset it. Set it to `poll_ms` to disable backoff. |
 | `idle_ms` | 60000 | Time without received socket bytes before initiating close 1001, reason `idle timeout`. Zero disables it. |
 | `ping_ms` | 0 | Optional interval for automatic empty server pings. Zero disables it. |
 | `close_ms` | 1000 | Wait after sending a local close for the peer's close; zero becomes one. |
 | `write_ms` | 30000 | Absolute budget per frame write, including partial-send retries; zero becomes one. |
+
+An idle connection backs off its socket wait from `poll_ms` to `poll_max_ms`,
+trading up to `poll_max_ms` of latency on the first command after a quiet
+period for less CPU. With the defaults, 1,000 idle connections used about 10%
+of a core on our test server, against 83% for a fixed 5 ms poll. See
+[the concurrency decision](decisions/0013-websocket-mailbox.md) for details.
 
 Keepalive pings alone do not reset the idle timer. Received pong bytes do. This
 is an inbound-idle policy, not a matching-pong watchdog. Deadline checks run at

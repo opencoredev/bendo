@@ -318,6 +318,46 @@ test("another HTTP request can send through the connection mailbox", async () =>
   expect(await (await fetch(`${server.url}/push`)).text()).toBe("rejected");
 });
 
+test("a queued burst drains without one poll wait per command", async () => {
+  // /many polls every 250 ms with backoff off. When each queued send waited
+  // for a timed socket read, 100 sends took about 99 poll intervals.
+  const pollMs = 250;
+  using wire = await raw("/many");
+  const began = performance.now();
+  wire.socket.write(frame(1, Buffer.from("many")));
+  for (let i = 0; i < 100; i++) {
+    expect(await wire.next()).toEqual({ opcode: 1, payload: Buffer.from("m") });
+  }
+  expect((performance.now() - began) / pollMs).toBeLessThan(2);
+});
+
+test("disconnect discards commands still queued behind a saved handle", async () => {
+  using wire = await raw("/fill");
+  // The handler queues eight texts; the close is already buffered behind them.
+  wire.socket.write(Buffer.concat([frame(1, Buffer.from("fill")), frame(8, closePayload(1000))]));
+  let texts = 0;
+  let next = await wire.next();
+  while (next.opcode === 1) {
+    texts++;
+    next = await wire.next();
+  }
+  expect(next.opcode).toBe(8);
+  expect(texts).toBeLessThan(8);
+  await until(() => wire.ended);
+  await closedLog("1000:");
+  expect(await (await fetch(`${server.url}/pending`)).text()).toBe("0");
+});
+
+test("idle backoff still delivers a mailbox push within its cap", async () => {
+  // /backoff starts at 5 ms and doubles toward 200 ms while nothing happens.
+  using wire = await raw("/backoff");
+  await Bun.sleep(1500);
+  const began = performance.now();
+  expect(await (await fetch(`${server.url}/push`)).text()).toBe("sent");
+  expect(await wire.next()).toEqual({ opcode: 1, payload: Buffer.from("from HTTP") });
+  expect(performance.now() - began).toBeLessThan(1000);
+});
+
 test("idle timeout initiates close and bounded teardown", async () => {
   using wire = await raw("/idle");
   expect(await wire.next()).toEqual({ opcode: 8, payload: closePayload(1001, "idle timeout") });

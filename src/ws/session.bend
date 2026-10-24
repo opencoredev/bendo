@@ -36,6 +36,25 @@ def command_frame(command: Command) -> F.Frame:
     case SendPing{bytes}: wire(F.OpPing{}, bytes)
     case SendClose{code, reason}: wire(F.OpClose{}, M.close_payload(code, reason))
 
+# Largest frame payload the server sends: data up to `max_message`, and
+# control frames up to 125 bytes even when `max_message` is smaller.
+def cap(+n: U32) -> U32: U32.max(n, 125)
+
+def valid_close(command: Command) -> Bool:
+  match command:
+    case SendClose{code, reason}: M.code_ok(code)
+    case _: True{}
+
+def data_fits(max: U32, command: Command) -> Bool:
+  match command:
+    case SendText{text}: Nat.is_le(F.length(Utf8.encode(text)), U32.to_nat(max))
+    case SendBinary{bytes}: Nat.is_le(F.length(bytes), U32.to_nat(max))
+    case _: True{}
+
+# Whether a send helper admits a command into the mailbox.
+def admissible(+max: U32, +command: Command) -> Bool:
+  F.valid(cap(max), command_frame(command), None{}) && valid_close(command) && data_fits(max, command)
+
 def close_code(code: Maybe<&2, U32>) -> U32:
   match code:
     case None{}: 1005
@@ -102,3 +121,48 @@ def assembled(phase: Phase, result: M.Advance) -> Transition:
 
 def receive(max: U32, phase: Phase, state: M.State, frame: F.Frame) -> Transition:
   assembled(phase, M.step(max, state, frame))
+
+# The connection's whole pure state between socket events.
+type Session is Data:
+  Session{phase: Phase, assembly: M.State}
+
+# Everything the connection feeds the policy. `Rejected` is a decoder error;
+# `Dropped` is EOF, a transport or write failure, or an expired close wait.
+type WsEvent is Data:
+  Inbound{frame: F.Frame}
+  Outbound{command: Command}
+  Rejected{code: U32}
+  Dropped{}
+
+# The one reducer src/ws/connection.bend applies to every event. A frame in the
+# action is written before its notice is delivered and the phase advances only
+# after that write succeeds. A failed write is fed back as `Dropped` from the
+# session the action started in.
+def step(max: U32, session: Session, event: WsEvent) -> Transition:
+  match session event:
+    case Session{phase, assembly} Inbound{frame}: receive(max, phase, assembly, frame)
+    case Session{phase, assembly} Outbound{command}: Transition{assembly, outgoing(phase, command)}
+    case Session{phase, assembly} Rejected{code}: Transition{assembly, failure(phase, code)}
+    case Session{phase, assembly} Dropped{}: Transition{assembly, disconnected(phase)}
+
+def action_of(t: Transition) -> Action:
+  match t:
+    case Transition{assembly, action}: action
+
+def after(t: Transition) -> Session:
+  match t:
+    case Transition{assembly, Action{phase, frame, notice}}: Session{phase, assembly}
+
+# Folds of `step` over an event history, for the trace laws.
+def trace(+max: U32, events: List<&2, WsEvent>, +session: Session) -> List<&2, Action>:
+  match events:
+    case Nil{}: []
+    case +event <> rest: action_of(step(max, session, event)) <> trace(max, rest, after(step(max, session, event)))
+
+def settle(+max: U32, events: List<&2, WsEvent>, +session: Session) -> Session:
+  match events:
+    case Nil{}: session
+    case +event <> rest: settle(max, rest, after(step(max, session, event)))
+
+def opened() -> Session:
+  Session{WsOpen{}, M.Idle{}}
