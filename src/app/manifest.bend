@@ -6,10 +6,6 @@ import ../router/spec.bend as Spec
 import ../router/pattern.bend as Pattern
 import ../http/request.bend as Request
 
-# BND-37 hook: a route's schemas are Table.route_schemas(Tag, layers, route) for
-# its reversed ordinal (RouteSlot.identity), and SP.schema(checked) returns the
-# raw Schema of each prepared slot for JSON Schema export.
-
 def hex(n: U32) -> String:
   match n:
     case 0: "0"

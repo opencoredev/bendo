@@ -11,6 +11,7 @@ import ./observability.bend as Obs
 import ./errors.bend as Errors
 import ./validate.bend as V
 import ../data/schema.bend as Schema
+import ../net/conn_info.bend as Conn
 
 import ../data/cookie.bend as Cookie
 import ../data/signed-cookie.bend as SignedCookie
@@ -260,6 +261,11 @@ def with_observation(-Vars: Data, c: Ctx<Vars>, o: Obs.State) -> Ctx<Vars>:
 
 def request_id(-Vars: Data, c: Ctx<Vars>) -> Maybe<&2, String>:
   Obs.id(observation(Vars, c))
+
+# The socket peer (getpeername), never a client-supplied header. None when the
+# request did not arrive over a socket (B.handle_with) or the lookup failed.
+def conn_info(-Vars: Data, c: Ctx<Vars>) -> Maybe<&2, Conn.ConnInfo>:
+  Obs.peer(observation(Vars, c))
 
 # Cookie fields are parsed separately, in arrival order, without comma joining.
 def cookie_ascii_go(bytes: List<&2, U32>, acc: String) -> String:

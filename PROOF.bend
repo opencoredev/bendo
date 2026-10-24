@@ -1,11 +1,18 @@
 # Proofs of LAWS.bend. Run: bend PROOF.bend --verdict
 import Base
+import ./proof/manifest-schema-documents.bend as ManifestSchemaDocuments
 import ./proof/limits.bend as LimitsProof
 import ./proof/manifest.bend as ManifestProof
 import ./proof/manifest-built.bend as ManifestBuiltProof
+import ./proof/manifest-schema.bend as ManifestSchemaProof
+import ./proof/json-schema.bend as JsonSchemaProof
 import ./proof/compose.bend as ComposeProof
 import ./proof/validate.bend as ValidateProof
 import ./proof/plugin.bend as PluginProof
+
+# BND-44
+import ./proof/ip.bend as IpProof
+import ./proof/rate-limit.bend as RateLimitProof
 
 # BND-32
 import ./proof/signed-cookie.bend as SignedCookieProof
@@ -36,6 +43,7 @@ import ./src/http/write_response.bend as WriteResponse
 import ./src/http/chunked.bend as Chunked
 import ./proof/stream.bend as StreamProof
 import ./proof/stream-rfc.bend as StreamRfcProof
+import ./proof/sse.bend as SseProof
 import ./src/http/stream_framing.bend as StreamFraming
 import ./src/http.bend as Http
 import ./src/http/bytes.bend as Bytes
@@ -102,6 +110,8 @@ import ./proof/response-policy.bend as ResponsePolicyProof
 import ./proof/secure-headers.bend as SecureHeadersProof
 import ./proof/override.bend as OverrideProof
 import ./proof/trailing.bend as TrailingProof
+
+import ./proof/static-path.bend as StaticProof
 
 # Check the pure crypto implementations with the strict kernel as well.
 import ./src/crypto/sha1.bend as SHA1
@@ -648,7 +658,6 @@ def Laws.manifest_exact_routes(Tag, sources, compiled, layers, count):
 def Laws.manifest_built_routes(Tag, entries, table, built):
   ManifestBuiltProof.built_rows(Tag, entries, table, built)
 
-
 def Laws.stream_roundtrip(chunks, limit, suffix, valid):
   Equal.trans(Chunked.DecodeResult, Chunked.decode(Bytes.append(StreamFraming.wire(chunks), suffix), limit), Chunked.decode(Bytes.append(Chunked.encode(chunks), suffix), limit), Chunked.Decoded{List.concat(&2, U32, chunks), [], suffix}, Equal.cong(List<&2, U32>, Chunked.DecodeResult, wire => Chunked.decode(Bytes.append(wire, suffix), limit), StreamFraming.wire(chunks), Chunked.encode(chunks), StreamProof.canonical(chunks)), ChunkedRoundtrip.roundtrip(chunks, limit, suffix, valid))
 
@@ -670,6 +679,28 @@ def Laws.conditional_304_spec(res): LimitsProof.response(res)
 def Laws.body_limit_spec(length, limit): LimitsProof.within(length, limit)
 
 def Laws.etag_middleware_spec(method, field, res): LimitsProof.etag(method, field, res)
+
+# BND-49
+def Laws.sse_roundtrip(frames, valid):
+  SseProof.roundtrip(frames, valid)
+
+def Laws.sse_encode_rejects_unsafe(frame):
+  SseProof.encode_guard(frame)
+
+def Laws.sse_sent_frame_exact(frame, bytes, sent):
+  SseProof.sent_frame(frame, bytes, sent)
+
+def Laws.sse_heartbeat_ignored(buffers, text, rest, clean):
+  SseProof.comment_ignored(buffers, text, rest, clean)
+
+def Laws.sse_text_utf8(s, valid):
+  SseProof.text_utf8(s, valid)
+
+def Laws.sse_retry_decimal(ms):
+  SseProof.retry_digits(ms)
+
+def Laws.sse_retry_value(ms):
+  SseProof.retry_value(ms)
 
 # BND-40: CORS, method override and trailing-slash decisions.
 
@@ -750,3 +781,64 @@ def Laws.trailing_trim_target(base, q, m, r, ok):
 
 def Laws.trailing_append_target(path, q, m, r, ends, ok):
   TrailingProof.append_target(path, q, m, r, ends, ok)
+
+# BND-45: static path confinement.
+
+def Laws.static_path_confined(raw, index):
+  StaticProof.confined(raw, index)
+
+def Laws.static_path_target(root, raw, index):
+  StaticProof.target(root, raw, index)
+
+def Laws.static_path_segments(raw, index):
+  StaticProof.segments(raw, index)
+
+def Laws.static_path_no_dotfiles(raw, index):
+  StaticProof.no_dotfiles(raw, index)
+
+def Laws.static_path_complete(first, rest, index, servable):
+  StaticProof.complete(first, rest, index, servable)
+
+def Laws.static_path_index(xs, index, servable, named):
+  StaticProof.index_law(xs, index, servable, named)
+
+def Laws.json_schema_invalid_rejects_all(schema, bad): JsonSchemaProof.invalid_rejects_all(schema, bad)
+def Laws.json_schema_valid_exports_node(schema, ok): JsonSchemaProof.valid_export(schema, ok)
+def Laws.json_schema_type_keyword(schema): JsonSchemaProof.type_keyword(schema)
+def Laws.json_schema_required_keys(fields, unknown): JsonSchemaProof.required_keys(fields, unknown)
+def Laws.json_schema_unknown_keys(fields, unknown): JsonSchemaProof.unknown_keys(fields, unknown)
+def Laws.json_schema_string_pattern(min, max, pattern, format): JsonSchemaProof.string_pattern(min, max, pattern, format)
+def Laws.json_schema_string_max_length(min, max, pattern, format): JsonSchemaProof.string_lengths(min, max, pattern, format)
+def Laws.json_schema_string_wellformed(min, max, pattern, format): JsonSchemaProof.string_wellformed(min, max, pattern, format)
+def Laws.json_schema_empty_enum(): {==}
+def Laws.json_schema_empty_union(): {==}
+
+def Laws.json_schema_object_properties(fields, unknown): JsonSchemaProof.object_properties(fields, unknown)
+def Laws.json_schema_literal_const(value): JsonSchemaProof.literal_const(value)
+def Laws.json_schema_enum_values(values): JsonSchemaProof.enum_values(values)
+def Laws.json_schema_array_items_bounds(child, min, max): JsonSchemaProof.array_items_bounds(child, min, max)
+def Laws.json_schema_nullable_child(child): JsonSchemaProof.nullable_child(child)
+def Laws.json_schema_union_members(members): JsonSchemaProof.union_members(members)
+def Laws.json_schema_number_bounds(min, max): JsonSchemaProof.number_bounds(min, max)
+def Laws.json_schema_integer_bounds(min, max): JsonSchemaProof.integer_bounds(min, max)
+def Laws.json_schema_string_min_length(min, max, pattern, format): JsonSchemaProof.string_min_length(min, max, pattern, format)
+def Laws.json_schema_string_format(min, max, pattern, format): JsonSchemaProof.string_format(min, max, pattern, format)
+def Laws.json_schema_default_annotation(fields, presence): JsonSchemaProof.default_annotation(fields, presence)
+
+def Laws.json_schema_no_default(schema): JsonSchemaProof.no_default(schema)
+
+def Laws.json_schema_document_dialect(schema): JsonSchemaProof.document_dialect(schema)
+
+def Laws.manifest_schema_documents(route, row, bundle): ManifestSchemaDocuments.attached(route, row, bundle)
+
+# BND-37
+def Laws.manifest_schema_rows(Tag, sources, compiled, layers, count, schemas, attached, done):
+  ManifestSchemaProof.attached_rows(Tag, sources, compiled, layers, count, schemas, attached, done)
+def Laws.manifest_schema_positions(Tag, sources, compiled, layers, count, schemas, attached, done):
+  ManifestSchemaProof.attached_schemas(Tag, sources, compiled, layers, count, schemas, attached, done)
+def Laws.manifest_schema_accepted(Tag, sources, compiled, layers, count, schemas):
+  ManifestSchemaProof.accepted(Tag, sources, compiled, layers, count, schemas)
+
+def Laws.json_schema_object_node_exact(fields, unknown): JsonSchemaProof.object_node_exact(fields, unknown)
+def Laws.json_schema_string_node_exact(min, max, pattern, format): JsonSchemaProof.string_node_exact(min, max, pattern, format)
+def Laws.json_schema_boolean_node_exact(): {==}

@@ -7,7 +7,8 @@ import { findBend } from "../packages/bendo/src/bend.ts";
 const ROOT = resolve(import.meta.dir, "..");
 
 /** Wall-clock budget for one `bend` compile. CI runners are slower than ms-a2. */
-export const BEND_COMPILE_TIMEOUT = "180s";
+const BEND_COMPILE_TIMEOUT_MS = 180_000;
+export const BEND_COMPILE_TIMEOUT = `${BEND_COMPILE_TIMEOUT_MS / 1000}s`;
 /** Per-test timeout for a test whose body runs one `bend` compile. Above BEND_COMPILE_TIMEOUT. */
 export const COMPILE_TEST_TIMEOUT_MS = 200_000;
 /** Per-test timeout for tests that push megabyte inputs through `.mjs` builds. */
@@ -17,6 +18,7 @@ export type RunningServer = {
   url: string;
   /** Everything the server has written to stderr so far. */
   stderr: () => string;
+  pid: number;
   [Symbol.asyncDispose]: () => Promise<void>;
 };
 
@@ -83,7 +85,7 @@ export function compile(entry: string, target: Target): string {
       process.platform,
       process.arch,
       relative(base, source),
-      target === "native" ? nativeIdentity() : "",
+      target === "native" ? `${nativeIdentity()}\nsequential-c-v1` : "",
     ]),
   );
   for (const [path, contents] of [...graph]
@@ -99,22 +101,29 @@ export function compile(entry: string, target: Target): string {
   if (existsSync(output)) return output;
   const temporary = mkdtempSync(join(directory, ".compile-"));
   try {
-    const run = Bun.spawnSync(
-      [
-        "timeout",
-        "--foreground",
-        BEND_COMPILE_TIMEOUT,
-        compiler.path,
-        source,
-        "-o",
-        join(temporary, name),
-      ],
-      { stdout: "pipe", stderr: "pipe" },
-    );
-    if (run.exitCode !== 0)
-      throw new Error(
-        `bend build failed (${entry}, exit ${run.exitCode}, signal ${run.signalCode}):\n${run.stdout}${run.stderr}`,
-      );
+    // Bend otherwise retains its typechecker heap while clang runs. Emitting C
+    // first releases that heap before the native backend needs memory. These are
+    // the pinned Bend 2.0.38 native flags; both stages share the original budget.
+    const deadline = performance.now() + BEND_COMPILE_TIMEOUT_MS;
+    const run = (args: string[]): void => {
+      const remaining = deadline - performance.now();
+      if (remaining <= 0) throw new Error(`bend build timed out (${entry})`);
+      const result = Bun.spawnSync(["timeout", "--foreground", `${remaining / 1000}s`, ...args], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      if (result.exitCode !== 0)
+        throw new Error(
+          `bend build failed (${entry}, exit ${result.exitCode}, signal ${result.signalCode}):\n${result.stdout}${result.stderr}`,
+        );
+    };
+    if (target === "native") {
+      const cSource = join(temporary, "fixture.c");
+      run([compiler.path, source, "-o", cSource]);
+      run(["clang", "-std=c11", "-O3", cSource, "-lpthread", "-lm", "-o", join(temporary, name)]);
+    } else {
+      run([compiler.path, source, "-o", join(temporary, name)]);
+    }
     // Each writer publishes a complete file atomically. Another worker may have
     // published the same graph meanwhile; replacing it is safe on POSIX.
     if (!existsSync(output)) renameSync(join(temporary, name), output);
@@ -141,7 +150,7 @@ type StartAttempt =
 async function attempt(
   binary: string,
   hostname: string,
-  env: Record<string, string>,
+  env: Readonly<Record<string, string>>,
 ): Promise<StartAttempt> {
   // Stay below Linux's default ephemeral range (32768–60999): outbound test
   // traffic can leave those ports in TIME_WAIT and prevent a listener binding.
@@ -177,6 +186,7 @@ async function attempt(
         server: {
           url,
           stderr: () => stderr,
+          pid: proc.pid,
           [Symbol.asyncDispose]: async () => {
             proc.kill();
             await proc.exited;
@@ -194,11 +204,12 @@ async function attempt(
 /**
  * Starts a compiled server on a random port and waits until it answers.
  * A server that exits before answering (for example on a port collision) is retried on a new port.
+ * `env` adds variables to the inherited environment.
  */
 export async function start(
   binary: string,
   hostname = "127.0.0.1",
-  env: Record<string, string> = {},
+  env: Readonly<Record<string, string>> = {},
 ): Promise<RunningServer> {
   const failures: string[] = [];
   for (let i = 0; i < START_ATTEMPTS; i++) {

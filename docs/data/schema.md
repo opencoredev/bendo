@@ -64,7 +64,8 @@ Integer tokens follow `-?(0|[1-9][0-9]*)`. Thus `-0` is accepted, while `1.0`
 and `1e0` are rejected even though they are mathematically integral. Integer
 bounds may be fractional: `min="-3.5"` permits `-3` and rejects `-4`.
 This lexical integer policy is stricter than JSON Schema's mathematical
-`integer`; BND-37 must record it as decoder policy. Browser consumers must
+`integer`; the [JSON Schema export](json-schema.md#decoder-policy-and-validator-differences)
+records it as decoder policy. Browser consumers must
 preserve JSON numeric tokens, for example with the Bend JSON parser compiled to
 `.mjs`. Passing numbers through `JSON.parse` loses precision and token spelling.
 
@@ -195,8 +196,8 @@ may receive long input.
 
 ### ECMAScript rendering
 
-`P.source(p)` returns the ECMAScript source BND-37 should export as the JSON
-Schema `pattern`. It means the same thing with or without the `u` flag, since
+`P.source(p)` returns the ECMAScript source that the
+[JSON Schema export](json-schema.md) uses as `pattern`. It means the same thing with or without the `u` flag, since
 JSON Schema validators differ on that flag:
 
 | Pattern | Source |
@@ -248,8 +249,8 @@ for UTF-8. Userinfo, IPv6 brackets in the authority, backslashes, Unicode,
 controls, spaces, malformed percent escapes, empty ports and trailing host dots
 are rejected. This is a syntactic subset, not a WHATWG normalization algorithm;
 it does not perform DNS, restrict destinations, or guarantee fetchability.
-BND-37 should retain these precise restrictions as decoder policy rather than
-assuming generic JSON Schema `format` implementations agree.
+The [JSON Schema export](json-schema.md) writes these grammars as exact
+patterns rather than relying on generic JSON Schema `format` implementations.
 
 ## Compound schemas
 
@@ -357,7 +358,8 @@ def query() -> S.Schema:
 
 Decoding `{}` against `query()` gives
 `VObject{[VField{"limit", Some{VInteger{"10"}}}, VField{"tag", None{}}]}`.
-JSON Schema export (BND-37) should emit the value as `default`.
+The [JSON Schema export](json-schema.md) emits the value as a `default`
+annotation.
 
 ### Nullable and union
 
@@ -475,14 +477,11 @@ membership, or scalar validity.
 Even an otherwise matching enum rejects if another member is malformed.
 
 [Route validation](../validation.md) (BND-36) decodes params, query and headers
-with coercion and bodies without it. There is no JSON Schema export (BND-37)
-yet. BND-37 should export
-`Strict{}` as `additionalProperties: false`, `Optional{}` by omission from
-`required`, nullables and unions as `anyOf`, and must record the duplicate-key,
-first-match and lexical-integer rules as decoder policy, since JSON Schema
-validators do not share them. Defaults remain annotations until consumers
-explicitly call a decoder implementing that policy. Coercion is decoder policy
-too: JSON Schema validators do not coerce.
+with coercion and bodies without it. [JSON Schema export](json-schema.md)
+(BND-37) exports `Strict{}` as `additionalProperties: false`, `Optional{}` by
+omission from `required`, and nullables and unions as `anyOf`. It records the
+duplicate-key, first-match, lexical-integer, default and coercion rules as
+decoder policy, since JSON Schema validators do not share them.
 The prototype generator is unchanged; production record generation can call
 this generic scalar decoder per field without duplicating scalar checks.
 

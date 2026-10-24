@@ -75,3 +75,5 @@ Follow `~/.agents/skills/typescript-best-practices/SKILL.md` when it exists on y
 ## Testing
 
 Test real behavior. Integration tests compile a Bend server and talk to it with `fetch` or raw sockets. Keep runs bounded: `bun test --timeout 30000`. Heavy benchmarks and fuzzing run on Boat sandboxes, not the shared server.
+
+The full local `bun run check` was measured at 7.5 minutes warm on 16 GB and four CPUs. On smaller machines, or on a cold fixture cache, run one CI shard at a time with `BENDO_TEST_SHARD=1` through `4` and `bun run test:ci`, as described in `docs/test-runners.md`.

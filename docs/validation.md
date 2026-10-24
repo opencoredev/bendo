@@ -208,4 +208,9 @@ The lifecycle wiring is IO and is covered by `tests/validate.test.ts` instead:
 it checks that the handler does not run on a rejection, that transform hooks run
 before validation and `before_handle` hooks after it, both response modes, and
 that the plain entrypoints refuse schemas.
-JSON Schema export of route schemas is BND-37.
+
+[JSON Schema export](manifest.md#route-schemas) (BND-37) takes its own
+positional `RouteSchemas` list and does not read the table's schemas yet. A
+route's validation schemas are `Table.route_schemas(Tag, layers, route)` for
+its reversed ordinal, and `SP.schema(checked)` returns each prepared slot's raw
+schema, so the manifest list could be derived from the table later.
