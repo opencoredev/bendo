@@ -43,8 +43,8 @@ Every command supports `--help`.
   and shows law diagnostics and source locations without JavaScript stack traces.
   Proof checks have a ten-minute limit.
 - `bendo gen [entry]` uses the same cached build and manifest validation as `routes`.
-  It reports the number of routes. Type generation lands in BND-56; this command
-  currently writes no type files or placeholders.
+  It writes [TypeScript route types](route-types.md) to `.bendo/routes.ts` and
+  reports the number of routes.
 - `bendo openapi [entry]` builds the app like `routes` and writes an OpenAPI 3.1
   document from its manifest to `openapi.json`. `--bend <file>` also writes a
   Bend module that embeds it, `--config <file>` sets info, servers, tags and
@@ -142,8 +142,8 @@ limit. The app must exit without starting a server when passed `--bendo-routes`.
 
 [Decision 0003](decisions/0003-typed-values.md) specifies the precompile stage:
 evaluate schema metadata through `.mjs`, generate named Bend records and
-decoders, then compile handlers. BND-56 will use the validated manifest to write
-TypeScript route types. `build --shared` remains a separate step (BND-58).
+decoders, then compile handlers. The manifest phase now writes
+[TypeScript route types](route-types.md). `build --shared` remains a separate step (BND-58).
 Unsupported options fail explicitly.
 
 Run the CLI integration tests with `bun test packages/bendo --timeout 30000`
