@@ -25,6 +25,9 @@ import ./proof/trim-laws.bend as TrimLaws
 import ./proof/media-laws.bend as MediaLaws
 import ./proof/origin-laws.bend as OriginLaws
 
+# BND-68
+import ./proof/hot-path-laws.bend as HotPathLaws
+
 # BND-84
 import ./proof/review-tail-laws.bend as ReviewTailLaws
 import ./proof/tail-laws.bend as TailLaws

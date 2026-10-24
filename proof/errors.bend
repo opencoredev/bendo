@@ -1,5 +1,6 @@
 # BND-25: rendered error responses.
 import Base
+import ./hot-path.bend as HP
 import ../src/app/errors.bend as Errors
 import ../src/app/context.bend as C
 import ../src/http/response.bend as Response
@@ -215,6 +216,7 @@ def status_spec(+code: U32) -> {Errors.status(code) == Spec.status(code) : U32}:
 
 def utf8_octets(+s: String, +g: {good(s) == True{} : Bool}) -> {Response.octets(Response.utf8(s)) == True{} : Bool}:
   +v = Equal.trans(Bool, U.valid(s), U.valid_spec(s), True{}, Utf8Proof.valid_equiv(s), left(U.valid_spec(s), Response.octets(U.encode_spec(s)), g))
+  %HP.utf8_spec_equiv(s) : {Response.octets(_) == True{} : Bool}
   %Equal.sym(String, Response.scalars(s), s, ResponseRuntime.scalars(s, v)) : {Response.octets(U.encode(_)) == True{} : Bool}
   %Equal.sym(List<&2, U32>, U.encode(s), U.encode_spec(s), Utf8Proof.encode_equiv(s)) : {Response.octets(_) == True{} : Bool}
   right(U.valid_spec(s), Response.octets(U.encode_spec(s)), g)

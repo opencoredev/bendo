@@ -43,8 +43,129 @@ def ascii_go(xs: List<&2, U32>, acc: String) -> String:
 def ascii(xs: List<&2, U32>) -> String:
   ascii_go(List.reverse(&2, U32, xs), "")
 
-def tchar(+c: U32) -> Bool:
+# RFC 9110 tchar. Bool.or is eager, so this spec builds and searches the
+# punctuation string for every character, letters and digits included.
+def tchar_spec(+c: U32) -> Bool:
   ((c >= 48 : U32) && (c <= 57 : U32)) || ((c >= 65 : U32) && (c <= 90 : U32)) || ((c >= 97 : U32) && (c <= 122 : U32)) || String.contains("!#$%&'*+-.^_`|~", Char.show(Chr{c}))
+
+# The punctuation search as a chain of branches, one per character in the
+# spec's order; `hit` is the comparison with that character (BND-68).
+def tchar_punct_14(c: U32, hit: Bool) -> Bool:
+  match hit:
+    case True{}:
+      True{}
+    case False{}:
+      False{}
+
+def tchar_punct_13(+c: U32, hit: Bool) -> Bool:
+  match hit:
+    case True{}:
+      True{}
+    case False{}:
+      tchar_punct_14(c, U32.is_eq(126, c))
+
+def tchar_punct_12(+c: U32, hit: Bool) -> Bool:
+  match hit:
+    case True{}:
+      True{}
+    case False{}:
+      tchar_punct_13(c, U32.is_eq(124, c))
+
+def tchar_punct_11(+c: U32, hit: Bool) -> Bool:
+  match hit:
+    case True{}:
+      True{}
+    case False{}:
+      tchar_punct_12(c, U32.is_eq(96, c))
+
+def tchar_punct_10(+c: U32, hit: Bool) -> Bool:
+  match hit:
+    case True{}:
+      True{}
+    case False{}:
+      tchar_punct_11(c, U32.is_eq(95, c))
+
+def tchar_punct_9(+c: U32, hit: Bool) -> Bool:
+  match hit:
+    case True{}:
+      True{}
+    case False{}:
+      tchar_punct_10(c, U32.is_eq(94, c))
+
+def tchar_punct_8(+c: U32, hit: Bool) -> Bool:
+  match hit:
+    case True{}:
+      True{}
+    case False{}:
+      tchar_punct_9(c, U32.is_eq(46, c))
+
+def tchar_punct_7(+c: U32, hit: Bool) -> Bool:
+  match hit:
+    case True{}:
+      True{}
+    case False{}:
+      tchar_punct_8(c, U32.is_eq(45, c))
+
+def tchar_punct_6(+c: U32, hit: Bool) -> Bool:
+  match hit:
+    case True{}:
+      True{}
+    case False{}:
+      tchar_punct_7(c, U32.is_eq(43, c))
+
+def tchar_punct_5(+c: U32, hit: Bool) -> Bool:
+  match hit:
+    case True{}:
+      True{}
+    case False{}:
+      tchar_punct_6(c, U32.is_eq(42, c))
+
+def tchar_punct_4(+c: U32, hit: Bool) -> Bool:
+  match hit:
+    case True{}:
+      True{}
+    case False{}:
+      tchar_punct_5(c, U32.is_eq(39, c))
+
+def tchar_punct_3(+c: U32, hit: Bool) -> Bool:
+  match hit:
+    case True{}:
+      True{}
+    case False{}:
+      tchar_punct_4(c, U32.is_eq(38, c))
+
+def tchar_punct_2(+c: U32, hit: Bool) -> Bool:
+  match hit:
+    case True{}:
+      True{}
+    case False{}:
+      tchar_punct_3(c, U32.is_eq(37, c))
+
+def tchar_punct_1(+c: U32, hit: Bool) -> Bool:
+  match hit:
+    case True{}:
+      True{}
+    case False{}:
+      tchar_punct_2(c, U32.is_eq(36, c))
+
+def tchar_punct_0(+c: U32, hit: Bool) -> Bool:
+  match hit:
+    case True{}:
+      True{}
+    case False{}:
+      tchar_punct_1(c, U32.is_eq(35, c))
+
+def tchar_pick(+c: U32, alnum: Bool) -> Bool:
+  match alnum:
+    case True{}:
+      True{}
+    case False{}:
+      tchar_punct_0(c, U32.is_eq(33, c))
+
+# Equal to tchar_spec for every U32 (law hot_bytes_tchar), without the
+# allocation, and letters and digits skip the punctuation tests.
+def tchar(+c: U32) -> Bool:
+  tchar_pick(c, ((c >= 48 : U32) && (c <= 57 : U32)) || ((c >= 65 : U32) && (c <= 90 : U32)) || ((c >= 97 : U32) && (c <= 122 : U32)))
 
 def token_tail_spec(s: String) -> Bool:
   match s:
