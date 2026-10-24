@@ -8,6 +8,7 @@
 #ifdef __linux__
 #include <sched.h>
 #include <sys/prctl.h>
+#include <sys/syscall.h>
 #endif
 
 #define BENDO_WORKERS_MAX 256
@@ -106,6 +107,48 @@ static void bendo_workers_stop(pid_t* pids, u32 n) {
   }
 }
 
+// Child side of fork: async-signal-safe calls only. The ready pipe moves to
+// descriptor 3 and every other descriptor above stderr closes. It execs
+// /proc/self/exe, the inode this process runs, so a binary replaced on disk
+// since startup cannot slip in.
+static void bendo_workers_child(pid_t parent, int ready, long open_max,
+  char** argv, char** envp) {
+  prctl(PR_SET_PDEATHSIG, SIGTERM);
+  if (getppid() != parent) {
+    _exit(1);
+  }
+  if (ready == 3 ? fcntl(3, F_SETFD, 0) < 0 : dup2(ready, 3) < 0) {
+    _exit(127);
+  }
+  int closed = -1;
+#ifdef SYS_close_range
+  closed = (int)syscall(SYS_close_range, 4U, ~0U, 0U);
+#endif
+  for (long fd = 4; closed < 0 && fd < open_max; fd += 1) {
+    close((int)fd);
+  }
+  execve("/proc/self/exe", argv, envp);
+  _exit(127);
+}
+
+// Waits until every worker reports its listener bound. A worker that stops
+// first closes its end of the pipe; its watcher thread then stops this
+// process with the worker's status, which the bounded sleep gives it time to do.
+static int bendo_workers_barrier(int ready, u32 want) {
+  u32 seen = 0;
+  while (seen < want) {
+    char    buf[64];
+    ssize_t got = read(ready, buf, sizeof(buf));
+    if (got > 0) {
+      seen += (u32)got;
+    } else if (got == 0 || errno != EINTR) {
+      sleep(5);
+      return ECHILD;
+    }
+  }
+  return 0;
+}
+
 static Term bendo_workers_spawn(Env e, u32 want) {
   extern char** environ;
   char*  buf  = NULL;
@@ -117,38 +160,36 @@ static Term bendo_workers_spawn(Env e, u32 want) {
   while (environ[envc] != NULL) {
     envc += 1;
   }
-  char** envp  = calloc(envc + 2, sizeof(char*));
+  char** envp  = calloc(envc + 4, sizeof(char*));
   char*  slots = calloc(want, 32);
   pid_t* pids  = calloc(want, sizeof(pid_t));
-  if (envp == NULL || slots == NULL || pids == NULL) {
+  int    pipe_fds[2];
+  int    failed = envp == NULL || slots == NULL || pids == NULL ? ENOMEM
+    : pipe2(pipe_fds, O_CLOEXEC) < 0 ? errno : 0;
+  if (failed != 0) {
     free(envp), free(slots), free(pids), free(argv), free(buf);
-    return io_fail(e, ENOMEM, NULL);
+    return io_fail(e, (u32)failed, NULL);
   }
   memcpy(envp, environ, envc * sizeof(char*));
-  // Exec the resolved path so the workers keep the server's process name;
-  // /proc/self/exe (the same file) is the fallback.
-  char exe[4096];
-  ssize_t got = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
-  exe[got > 0 ? got : 0] = 0;
-  const char* path = got > 0 && access(exe, X_OK) == 0 ? exe : "/proc/self/exe";
-  pid_t parent  = getpid();
-  u32   started = 0;
-  int   code    = 0;
+  // Exec through /proc/self/exe names the process "exe"; each worker renames
+  // itself to this process's name at load (bendo_start_workers_use).
+  char name[16 + 18] = "BENDO_WORKER_NAME=";
+  prctl(PR_GET_NAME, name + 18);
+  name[sizeof(name) - 1] = 0;
+  envp[envc]     = name;
+  envp[envc + 1] = "BENDO_WORKER_READY=3";
+  long  open_max = sysconf(_SC_OPEN_MAX);
+  pid_t parent   = getpid();
+  u32   started  = 0;
+  int   code     = 0;
   for (u32 i = 1; i < want && code == 0; i += 1) {
     char* slot = slots + 32 * i;
     snprintf(slot, 32, "BENDO_WORKER_INDEX=%u", i);
-    envp[envc] = slot;
+    envp[envc + 2] = slot;
     pid_t pid = fork();
     if (pid == 0) {
-      prctl(PR_SET_PDEATHSIG, SIGTERM);
-      if (getppid() != parent) {
-        _exit(1);
-      }
-      for (int fd = 3; fd < 1024; fd += 1) {
-        close(fd);
-      }
-      execve(path, argv, envp);
-      _exit(127);
+      bendo_workers_child(parent, pipe_fds[1], open_max < 0 ? 65536 : open_max,
+        argv, envp);
     }
     if (pid < 0) {
       code = errno;
@@ -156,6 +197,7 @@ static Term bendo_workers_spawn(Env e, u32 want) {
     }
     pids[started++] = pid;
   }
+  close(pipe_fds[1]);
   for (u32 i = 0; i < started && code == 0; i += 1) {
     pthread_t tid;
     code = pthread_create(&tid, NULL, bendo_workers_watch,
@@ -166,17 +208,30 @@ static Term bendo_workers_spawn(Env e, u32 want) {
   }
   if (code != 0) {
     bendo_workers_stop(pids, started);
+  } else {
+    code = bendo_workers_barrier(pipe_fds[0], want - 1);
   }
+  close(pipe_fds[0]);
   free(envp), free(slots), free(pids), free(argv), free(buf);
   return code != 0 ? io_fail(e, (u32)code, NULL) : io_done(e, (Term)0);
 }
 
 #endif
 
+// Set in a worker at load: its index and the write end of the ready pipe.
+static const char* bendo_worker_index = NULL;
+static int         bendo_worker_ready = -1;
+
 static Term bendo_start_workers_run(Env e, Term* f, IoWork* w) {
-  const char* mine = getenv("BENDO_WORKER_INDEX");
-  if (mine != NULL) {
-    return io_done(e, (Term)(u32)strtoul(mine, NULL, 10));
+  if (bendo_worker_index != NULL) {
+    // The server listens before this effect runs, so the worker is bound.
+    if (bendo_worker_ready >= 0) {
+      ssize_t sent = write(bendo_worker_ready, "1", 1);
+      (void)sent;
+      close(bendo_worker_ready);
+      bendo_worker_ready = -1;
+    }
+    return io_done(e, (Term)(u32)strtoul(bendo_worker_index, NULL, 10));
   }
   u32 want = (u32)f[0];
   want = want == 0 ? bendo_workers_cpus() : want;
@@ -189,10 +244,25 @@ static Term bendo_start_workers_run(Env e, Term* f, IoWork* w) {
 #ifdef __linux__
   return bendo_workers_spawn(e, want);
 #else
-  return io_fail(e, ENOSYS, NULL);
+  // Linux's ENOSYS on every platform (macOS's is 78), as the JS twin does.
+  return io_fail(e, 38, "bendo: workers > 1 needs Linux");
 #endif
 }
 
 static void __attribute__((constructor)) bendo_start_workers_use(void) {
   io_eff(CID(start_workers), bendo_start_workers_run);
+  bendo_worker_index = getenv("BENDO_WORKER_INDEX");
+  const char* ready  = getenv("BENDO_WORKER_READY");
+  if (bendo_worker_index != NULL && ready != NULL && strcmp(ready, "3") == 0
+    && fcntl(3, F_SETFD, FD_CLOEXEC) == 0) {
+    bendo_worker_ready = 3;
+  }
+  unsetenv("BENDO_WORKER_READY");
+#ifdef __linux__
+  const char* name = getenv("BENDO_WORKER_NAME");
+  if (bendo_worker_index != NULL && name != NULL) {
+    prctl(PR_SET_NAME, name);
+  }
+  unsetenv("BENDO_WORKER_NAME");
+#endif
 }

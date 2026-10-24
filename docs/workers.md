@@ -37,11 +37,15 @@ worker. That is why one worker is the default.
 
 ## How it works
 
-At startup, the first process starts `n - 1` copies of its own binary with the
-same arguments, `+RTS` options included, and `BENDO_WORKER_INDEX` set to the
-copy's index (1 to `n - 1`). Every process, the first included, then binds its
-own listener with `SO_REUSEPORT`, and the kernel spreads new connections
-across them. A keep-alive connection stays on the worker that accepted it.
+At startup, the first process binds its listener with `SO_REUSEPORT` and
+starts `n - 1` copies of its own binary with the same arguments, `+RTS`
+options included, and `BENDO_WORKER_INDEX` set to the copy's index (1 to
+`n - 1`). Each copy binds its own listener the same way and reports back. The
+first process waits for every report before it accepts a connection or prints
+its listening line, so once that line appears the kernel spreads new
+connections across all workers. Connections that arrive earlier wait in the
+first process's queue. A keep-alive connection stays on the worker that
+accepted it. Every worker prints its own listening line.
 
 Because every listener sets `SO_REUSEPORT`, a second multi-worker server
 started by the same user on the same port joins the first one instead of
@@ -65,7 +69,9 @@ process manager sees the failure and can restart the whole group.
 ## Limits
 
 - Workers need the native build on Linux. On macOS, and in JavaScript builds,
-  any count other than 1 stops startup with ENOSYS (38).
+  any count other than 1 stops startup with exit status 38 (Linux's ENOSYS, on
+  every platform) and prints `bendo: workers > 1 needs Linux` (`needs the
+  native build` from JavaScript).
 - Each worker keeps the runtime's default thread count, which is the number
   of CPUs it may use. Those threads only share out pure evaluation inside one
   step; requests within a worker run on one event loop thread. Passing

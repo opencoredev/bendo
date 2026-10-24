@@ -100,14 +100,25 @@ means one worker per CPU in the affinity mask. A decimal `BENDO_WORKERS` from 0
 to 256 overrides the config at startup, like `PORT`. [The workers
 guide](../workers.md) is the user-facing description.
 
-**Startup.** `src/effects/workers` runs before the server listens. In the first
-process it starts `n - 1` copies of its own binary with `fork` and `execve`,
-passing the original arguments from `/proc/self/cmdline` (so `+RTS` options
-carry over) and `BENDO_WORKER_INDEX` set to 1 to `n - 1`. In a copy, the effect
-sees that variable and returns at once. Every process, the first included,
-then binds its own listener through `src/effects/listen_shared`, which is
-base's `TCP.listen` plus `SO_REUSEPORT`. The kernel spreads new connections
-over the listeners.
+**Startup.** Every process, the first included, binds its own listener through
+`src/effects/listen_shared`, which is base's `TCP.listen` plus `SO_REUSEPORT`,
+and then runs `src/effects/workers`. In the first process that effect starts
+`n - 1` copies of its own binary with `fork` and `execve`, passing the original
+arguments from `/proc/self/cmdline` (so `+RTS` options carry over) and
+`BENDO_WORKER_INDEX` set to 1 to `n - 1`. In a copy, the effect writes one
+byte to a pipe inherited as descriptor 3 and returns at once. The first
+process reads `n - 1` bytes before it returns, so it accepts and prints its
+listening line only once every worker is bound, and the kernel spreads
+connections over all listeners from then on. If a copy stops first, its end
+of the pipe closes and its watcher thread (below) stops the server.
+
+A child execs `/proc/self/exe` rather than the path it resolves to. The magic
+link names the inode the parent is running, so a binary replaced on disk after
+startup cannot start as a worker. The kernel then names the child `exe`, so
+the parent passes its own name in `BENDO_WORKER_NAME` and the child sets it
+with `PR_SET_NAME` when it loads, which keeps `ps -C <name>` and `pkill`
+working. Before `execve` the child closes every descriptor above the pipe with
+`close_range`, or a loop up to `_SC_OPEN_MAX` on kernels older than 5.9.
 
 Exec rather than plain `fork`: by the time `B.serve` runs, the runtime has
 started its thread pool and possibly IO helper threads. A forked child keeps
@@ -136,7 +147,8 @@ workers are an explicit choice whose caveats the guide states.
 
 **Platforms.** The effect needs Linux (`/proc/self/cmdline`,
 `PR_SET_PDEATHSIG`). On other platforms, and in JavaScript builds, any count
-other than 1 fails with ENOSYS (38). The JS twin of `listen_shared` sets
+other than 1 fails with status 38, Linux's ENOSYS, on every platform (macOS
+numbers ENOSYS 78), and prints that workers need Linux or the native build. The JS twin of `listen_shared` sets
 `SO_REUSEPORT` through the runtime's socket helpers in executable builds.
 
 **Threads.** Each worker keeps the runtime's default thread count. Session 2
@@ -157,7 +169,8 @@ measured no difference with `--threads 1`, so the effect does not change it.
 `B.workers(B.config(), 3)` and answers with the serving PID from a test-only
 `getpid` effect. It checks that requests on fresh connections reach all three
 PIDs and that they are exactly the first process and its two children, running
-the same command line; that stopping the first process leaves no worker
+the same command line under the same process name; that once the first process
+answers, each of the three holds exactly one listener on the port; that stopping the first process leaves no worker
 running and the port refusing connections; that killing one worker stops the
 others and prints the stderr line; and that `BENDO_WORKERS` set to `1` or `2`
 overrides the config while `many` keeps it. The JavaScript build of the same

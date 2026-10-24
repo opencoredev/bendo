@@ -343,7 +343,8 @@ def admitted_table(answer: Validate.Answer, declared: Bool) -> IO(Unit):
     case _ _: IO.pure(Unit, Unit{})
 
 # One worker keeps TCP.listen. Several workers each bind their own
-# SO_REUSEPORT listener, started before any of them listens (decision 0016).
+# SO_REUSEPORT listener before Workers.start_workers, and the first process
+# accepts only once every worker is bound (decision 0016).
 def listen(host: String, port: U32, single: Bool) -> IO(Result<&1, &1, U32 & String, Listener>):
   match single:
     case True{}: TCP.listen(host, port)
@@ -363,8 +364,8 @@ def startup_limits_with(~validator: Validate.Job -> Validate.Answer, ~Vars: Data
         mode_env : Result<&1, &1, U32 & String, String> <- IO.get_env("BENDO_ENV")
         workers_env : Result<&1, &1, U32 & String, String> <- IO.get_env("BENDO_WORKERS")
         +count : U32 = Config.workers_env(workers_env, workers)
-        index : U32 <- IO.try(U32, Workers.start_workers(count))
         listener : Listener <- IO.try(Listener, listen(host, port, U32.is_eq(count, 1)))
+        index : U32 <- IO.try(U32, Workers.start_workers(count))
         IO.print("bendo listening on http://" ++ host ++ ":" ++ U32.show(port))
         loop(~State<Tag, Env>, ~(req => state => selected_limit(~Tag, ~Env, ~select, req, state)), ~(req => body => state => close => peer => respond_with(~validator, ~Vars, ~Tag, ~Env, ~dispatch, ~middleware, req, body, state, close, peer)), listener, State{table, env, router, limit, Config.mode_env(mode_env, mode)}, config)
 

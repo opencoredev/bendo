@@ -11,7 +11,10 @@ function bendo_start_workers(count) {
   if (Number(count) === 1) {
     return { $: CID(Done), value: 0 };
   }
-  return { $: CID(Fail), error: { $: CID(Tuple), fst: 38, snd: "workers need the native build" } };
+  return {
+    $: CID(Fail),
+    error: { $: CID(Tuple), fst: 38, snd: "bendo: workers > 1 needs the native build" },
+  };
 }
 
 io_eff(CID(start_workers), bendo_start_workers);
