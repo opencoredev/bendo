@@ -198,8 +198,51 @@ export function parseRouteSchema(value: unknown, location: string, depth = 0): S
 
 export type Mode = "json" | "text" | "decoded" | "response";
 
+// A union is decoded against the original JString: coercion never descends
+// into it. Numeric/boolean literals and enum members likewise cannot match a
+// JString, even when its spelling looks like their JSON representation.
+function textScalar(schema: Schema, coerce: boolean): string {
+  const shape = schema.shape;
+  switch (shape.kind) {
+    case "unknown":
+    case "string":
+      return "string";
+    case "number":
+      return coerce ? "(number | string)" : "never";
+    case "boolean":
+      return coerce ? '(boolean | "true" | "false")' : "never";
+    case "literal":
+      return shape.text.startsWith('"') ? shape.text : "never";
+    case "nullable":
+      // Text "null" remains a string. Optional/defaulted fields can be omitted.
+      return textScalar(shape.inner, coerce);
+    case "union":
+      return `(${shape.members.map((member) => textScalar(member, false)).join(" | ")})`;
+    case "intersection":
+      return `(${shape.members.map((member) => textScalar(member, coerce)).join(" & ")})`;
+    case "null":
+    case "never":
+    case "array":
+    case "object":
+      return "never";
+    default: {
+      const exhaustive: never = shape;
+      return exhaustive;
+    }
+  }
+}
+
+function textField(schema: Schema): string {
+  // Only a direct ArraySchema field gathers repeated keys. A nullable or
+  // union wrapping an array receives a scalar string and cannot decode it.
+  return schema.shape.kind === "array"
+    ? `Array<${textScalar(schema.shape.items, true)}>`
+    : textScalar(schema, true);
+}
+
 export function schemaType(schema: Schema, mode: Mode): string {
   const shape = schema.shape;
+  if (mode === "text" && shape.kind !== "object") return textScalar(schema, true);
   switch (shape.kind) {
     case "unknown":
     case "never":
@@ -207,9 +250,9 @@ export function schemaType(schema: Schema, mode: Mode): string {
     case "null":
       return shape.kind;
     case "number":
-      return mode === "text" ? "(number | string)" : "number";
+      return "number";
     case "boolean":
-      return mode === "text" ? '(boolean | "true" | "false")' : "boolean";
+      return "boolean";
     case "literal":
       return shape.text;
     case "nullable":
@@ -217,14 +260,14 @@ export function schemaType(schema: Schema, mode: Mode): string {
     case "array":
       return `Array<${schemaType(shape.items, mode)}>`;
     case "union":
-      return `(${shape.members.map((member) => schemaType(member, mode === "text" ? "json" : mode)).join(" | ")})`;
+      return `(${shape.members.map((member) => schemaType(member, mode)).join(" | ")})`;
     case "intersection":
       return `(${shape.members.map((member) => schemaType(member, mode)).join(" & ")})`;
     case "object": {
       const open = shape.open && mode !== "decoded";
       const fields = shape.properties.map(
         ({ name, required, schema: property }) =>
-          `${JSON.stringify(name)}${required || (mode === "decoded" && property.defaulted) ? "" : "?"}: ${schemaType(property, mode)};`,
+          `${JSON.stringify(name)}${required || (mode === "decoded" && property.defaulted) ? "" : "?"}: ${mode === "text" ? textField(property) : schemaType(property, mode)};`,
       );
       if (open) fields.push("[key: string]: unknown;");
       if (fields.length === 0) return "Record<string, never>";

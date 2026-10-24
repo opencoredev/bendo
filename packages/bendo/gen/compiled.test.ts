@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { build } from "../../../tests/harness.ts";
 import { fetchManifest } from "../src/manifest.ts";
@@ -22,7 +21,7 @@ test("BND-37's compiled manifest produces the pinned route types", () => {
 });
 
 test("changing a real Bend schema and rerunning bendo gen changes the TypeScript type", () => {
-  const directory = mkdtempSync(join(tmpdir(), "bendo-gen-schema-"));
+  const directory = mkdtempSync(join(repo, "tests/fixtures/gen-schema-"));
   try {
     const entry = join(directory, "main.bend");
     const original = readFileSync(

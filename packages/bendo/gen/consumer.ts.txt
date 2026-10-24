@@ -16,10 +16,14 @@ type Checks = [
   Expect<Equal<Extract<Routes, { path: "/health" }>["input"]["query"], unknown>>,
   Expect<Equal<Extract<Routes, { path: "/status" }>["output"]["response"], "ok" | null | number>>,
   Expect<Equal<Extract<Routes, { path: "/flags" }>["output"]["response"], never>>,
+  Expect<Equal<Query["choice"], never>>,
+  Expect<Equal<Query["enum"], never>>,
+  Expect<Equal<Query["maybe"], number | string | undefined>>,
   Expect<Equal<Todo["captures"], ["id"]>>
 ];
 const input: Body = { title: "hello" };
 const decoded: Decoded = { title: "hello", done: false, priority: 2 };
+// @ts-expect-error required numeric-only unions and enums have no reachable text input
 const query: Query = { active: "true", choice: 10, enum: 1, count: "10", maybe: "12", tags: ["1", 2], extra: { allowed: true } };
 const response: Todo["output"]["response"] = { rows: [{ extra: true }], extra: 1 };
 const empty: NonNullable<Body["empty"]> = {};

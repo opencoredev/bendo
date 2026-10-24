@@ -51,10 +51,19 @@ can already select a route with
 `input.params`, `input.query` and `input.headers` accept coerced values for
 client serialization as well as text for numeric and boolean schemas. Numbers
 accept `number | string`; booleans accept `boolean | "true" | "false"`.
-Arrays retain their item type and represent repeated text keys. Numeric text
-syntax, bounds and integer spelling remain runtime checks. Nullable schemas
-coerce their inner node, but unions, literals and enums do not coerce their
-members, matching Bend's [text-source policy](data/schema.md#coercion-for-text-sources).
+Direct array fields represent repeated text keys and coerce each item. Numeric
+text syntax, bounds and integer spelling remain runtime checks. Nullable schemas
+coerce their inner node, but a text input cannot supply JSON null: omit an
+optional or defaulted field instead.
+
+Unions, literals and enums do not coerce their members. Their text input types
+retain only branches that accept strings. For example, an integer-or-boolean
+union and a numeric enum both project to `never`; adding a string literal
+`"one"` makes only `"one"` reachable. Neither `1` nor `"1"` can satisfy a
+numeric enum over HTTP text. The same restriction applies inside array items
+and in params and headers, matching Bend's [text-source policy](data/schema.md#coercion-for-text-sources).
+Nested objects and arrays wrapped in a nullable or union cannot arrive as text
+fields and project to `never`.
 BND-37 marks unions with its first-match `$comment`; generation uses that marker
 to distinguish a union of null and another node from a nullable schema.
 
@@ -101,8 +110,13 @@ object keys sorted by UTF-16 code unit order, and a generated-file header.
 Generation completes before replacing the previous file, so an invalid manifest
 leaves the last successful types intact.
 
-Run `bun test packages/bendo/gen --timeout 30000` for emitter goldens, strict
+Run `timeout 15m bun test --timeout 400000 packages/bendo/gen` for emitter goldens, strict
 TypeScript consumers with positive and negative assertions, and the compiled
 BND-37 fixture. The end-to-end test changes its Bend ID schema from integer to
 string, rebuilds through the fixture cache, reruns the real CLI, and checks the
 changed type with `tsc --noEmit`. Each compile and subprocess has a deadline.
+
+Run `timeout 30s bun scripts/route-types-bench.ts` to measure TypeScript time and
+memory for 100 generated routes. The consumer distributes over the union,
+builds an Eden-style path tree, and calls all 100 methods with checked inputs
+and response types. It prints `tsc --extendedDiagnostics` and process peak RSS.
