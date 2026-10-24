@@ -336,6 +336,34 @@ describe("streamed and upgraded responses", () => {
       `bendo: response schema violation: GET /secured/forged ${KIND_ERROR}`,
     );
   });
+  test("the response schema sees the media type a retained policy sets", async () => {
+    // Security headers retain content-type: text/plain; a map-response hook
+    // returns JSON the schema accepts. Finalization applies the policy before
+    // the check, so the check sees the text/plain response transport sends.
+    const response = await send("/typed/report");
+    expect(response.status).toBe(500);
+    expect(await response.text()).toBe("Internal Server Error");
+    expect(response.headers.get("x-frame-options")).toBe("SAMEORIGIN");
+    expect(response.headers.get("content-type")).toBe("text/plain");
+    const sent = await send("/typed/report", {}, production);
+    expect(sent.status).toBe(200);
+    expect(sent.headers.get("content-type")).toBe("text/plain");
+    expect(await sent.text()).toBe('{"count":3}');
+    expect(await logged("GET /typed/report ")).toBe(
+      'bendo: response schema violation: GET /typed/report [{"path":["body"],"code":"type_mismatch","message":"expected an application/json body"}]',
+    );
+  });
+  test("a retained policy that sets another field keeps a valid response", async () => {
+    for (const target of [server, production]) {
+      const response = await send("/tagged/report", {}, target);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("x-policy")).toBe("on");
+      expect(response.headers.get("x-frame-options")).toBe("SAMEORIGIN");
+      expect(response.headers.get("content-type")).toContain("application/json");
+      expect(await response.json()).toEqual({ count: 3 });
+    }
+    expect(production.stderr()).not.toContain("GET /tagged/report");
+  });
 });
 
 describe("error budget", () => {

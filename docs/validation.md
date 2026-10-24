@@ -167,8 +167,12 @@ def page_number(c: B.Ctx) -> String:
 
 A response schema checks the response the client would get: after middleware
 and `before_handle` hooks unwind and after `after_handle`, `map_response` and
-`on_error` hooks, and before the `Date` field, request ID and transport
-framing are added. So a `before_handle` hook that answers by itself, or a
+`on_error` hooks and the `Date` field, after the response policies that
+middleware such as CORS and security headers retain have set their final
+fields, and before the `X-Request-ID` and `Server-Timing` fields and transport
+framing are added. A
+policy that sets `content-type: text/plain` on a JSON response therefore fails
+the check, because that is what the client would receive. So a `before_handle` hook that answers by itself, or a
 `map_response` hook that replaces the handler's response, is checked like the
 handler's own response. The check uses the route the request resolved to. Only
 a 2xx response other than 204 is checked; it must have a JSON media type and a
@@ -180,8 +184,7 @@ upgraded only when the transport will actually hand it to the stream or
 WebSocket the request registered, by the same test transport selection uses.
 A response that merely carries the private stream marker header, or the marker
 of another registration, is buffered and checked. So is a response a hook put
-in place of a registered stream. Response policies that middleware such as CORS
-and security headers reapply after validation cannot set, replace or remove
+in place of a registered stream. Response policies cannot set, replace or remove
 the marker, so they cannot move a response between streamed and buffered.
 
 What a violation does depends on the server's mode:
@@ -189,7 +192,9 @@ What a violation does depends on the server's mode:
 - **Development** (the default) replaces the response with a 500 whose body is
   public [HTTP error](decisions/0011-crash.md) body: `Internal Server Error` as text, or
   `{"error":"Internal Server Error","status":500}` when the client accepts JSON.
-  Nothing from the failed response or its errors reaches the client.
+  Nothing from the failed response or its errors reaches the client. The
+  retained response policies apply to the 500 too, so it keeps headers such as
+  the security headers.
 - **Production** sends the handler's response unchanged and writes one line to
   stderr:
 
@@ -241,6 +246,12 @@ so the BND-33/34/35 schema laws describe what each slot accepts and reports.
 - `finalized_policies_keep_delivery`: retained response policies, applied
   after validation, leave delivery as validation saw it; if they make the
   response invalid, its replacement 500 is buffered.
+- `finalization_sends_checked_response`: the response is checked after the
+  retained policies, and the checked response is the one sent, unless
+  development replaces it with a 500 that gets the same policies.
+- `finalizers_only_stamp`: the finalizers that run after the check change
+  nothing but the `Server-Timing` and `X-Request-ID` fields, so the response
+  transport receives is the checked one apart from those fields.
 - `route_schemas_innermost`, `route_schemas_guard_innermost` and
   `route_schemas_group_innermost`: for every built table, route and slot, the
   schema used is the last declaration of that slot among the route's scopes,

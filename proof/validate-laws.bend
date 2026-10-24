@@ -17,6 +17,8 @@ import ./scoped-selection-spec.bend as ScopedSelectionSpec
 import ../src/http/stream_marker.bend as Marker
 import ../src/http/response.bend as Response
 import ../src/mw/response_policy.bend as Policy
+import ../src/app/finalize.bend as Final
+import ../src/app/observability.bend as Obs
 
 # These laws trust the parsers the implementation and the specification share:
 # J.parse, Bytes.fold and the raw query parser. Proving those independently
@@ -252,14 +254,37 @@ law table_schemas_in_source_order:
   for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers, count}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
   {TableSchemas.effective(Tag, Table.Table{routes, compiled, layers, count}) == Spec.manifest_schemas(Tag, entries) : List<&2, RS.RouteSchemas>}
 
-# BND-36: finalization reapplies retained response policies (CORS, secure
-# headers) after response validation has classified delivery. Those policies
-# cannot set, replace or remove the stream marker, so transport hands the
-# finalized response to the request's registration exactly when validation
-# saw it handed over; when the policies make the response invalid, the 500
-# that replaces it is buffered.
+# BND-36: finalization applies retained response policies (CORS, secure
+# headers) to the response every hook produced. Those policies cannot set,
+# replace or remove the stream marker, so the finalized response is handed to
+# the request's registration exactly when the hooks' response was; when the
+# policies make the response invalid, the 500 that replaces it is buffered.
 law finalized_policies_keep_delivery:
   for +claim: Marker.Claim
   for +policies: List<&2, Policy.Policy>
   for +res: Response.Res
   {Marker.delivers(claim, Policy.finalized(policies, res)) == (Response.valid(Marker.reserved(res, Policy.all(policies, res))) && Marker.delivers(claim, res)) : Bool}
+
+# BND-36: finalization applies the retained response policies (CORS, secure
+# headers) before it checks a buffered response, so the schema sees their
+# final fields, the media type included. It then sends the very response it
+# checked, unless development replaces it with a 500, which gets the same
+# policies. Spec.finalized checks and sends one response; Final.answered and
+# Final.action are what the runtime runs, with the validating decoder.
+law finalization_sends_checked_response:
+  for +mode: Config.Mode
+  for +claim: Marker.Claim
+  for +response: Maybe<&2, S.Schema>
+  for +policies: List<&2, Policy.Policy>
+  for +res: Response.Res
+  for +replacement: Response.Res
+  {Final.answered(policies, Policy.finalized(policies, res), Final.action(~V.run, mode, claim, V.checked(response), Policy.finalized(policies, res)), replacement) == Spec.finalized(mode, claim, response, Policy.finalized(policies, res), Policy.finalized(policies, replacement)) : Response.Res}
+
+# BND-36: the finalizers that run after response validation, request ID and
+# Server-Timing, add or replace only their own fields. With those fields
+# removed, the response transport receives is the one validation checked.
+law finalizers_only_stamp:
+  for +res: Response.Res
+  for +id: Maybe<&2, String>
+  for +timing: Maybe<&2, String>
+  {Final.unstamped(Obs.stamped(res, id, timing)) == Final.unstamped(res) : Response.Res}

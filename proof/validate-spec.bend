@@ -17,6 +17,7 @@ import ../src/data/schema-prepared.bend as SP
 import ./scoped-selection-spec.bend as Routes
 import ../src/http/stream_marker.bend as Marker
 import ../src/app/route-schemas.bend as RS
+import ../src/http/response.bend as Response
 
 # Each text slot is an object of strings: params and query pairs in order,
 # header names lowercased, header values UTF-8 or else ISO-8859-1.
@@ -364,3 +365,17 @@ def in_source_order(-Tag: Data, +all: List<&2, T.Entry<Tag>>, xs: List<&2, T.Ent
 
 def manifest_schemas(-Tag: Data, +xs: List<&2, T.Entry<Tag>>) -> List<&2, RS.RouteSchemas>:
   in_source_order(Tag, xs, xs)
+
+# What finalization sends for a buffered or streamed response, restated from
+# docs/validation.md: the response is checked as it stands after the retained
+# policies, and that same response is sent, unless development replaces it;
+# the replacement carries the same policies (`replaced`).
+def sent(action: V.Action, checked: Response.Res, replaced: Response.Res) -> Response.Res:
+  match action:
+    case V.Replace{}: replaced
+    case V.Send{}: checked
+    case V.Report{es}: checked
+
+def finalized(mode: Config.Mode, claim: Marker.Claim, m: Maybe<&2, S.Schema>, checked: Response.Res, replaced: Response.Res) -> Response.Res:
+  Response.Res{+code, +hs, +body, rep} = checked
+  sent(action(mode, delivery(claim, code, hs), m, code, hs, body), Response.Res{code, hs, body, rep}, replaced)

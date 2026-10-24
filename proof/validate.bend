@@ -28,6 +28,8 @@ import ./scoped-assembly-spec.bend as AssemblySpec
 import ../src/app/scopes.bend as RuntimeScopes
 import ../src/http/stream_marker.bend as Marker
 import ../src/http/response.bend as Response
+import ../src/app/finalize.bend as Final
+import ../src/app/observability.bend as Obs
 import ../src/mw/response_policy.bend as Policy
 
 def Res() -> Data:
@@ -759,3 +761,59 @@ def checked_delivers(+policies: List<&2, Policy.Policy>, +res: Response.Res, +cl
 
 def L.finalized_policies_keep_delivery(claim, policies, res):
   checked_delivers(policies, res, claim, Response.valid(Marker.reserved(res, Policy.all(policies, res))))
+
+def answered_sent(+policies: List<&2, Policy.Policy>, +x: Response.Res, +a: V.Action, +r: Response.Res) -> {Final.answered(policies, x, a, r) == Spec.sent(a, x, Policy.finalized(policies, r)) : Response.Res}:
+  match a:
+    case V.Replace{}: {==}
+    case V.Send{}: {==}
+    case V.Report{es}: {==}
+
+def finalization_sent(+mode: Config.Mode, +claim: Marker.Claim, +response: Maybe<&2, S.Schema>, +policies: List<&2, Policy.Policy>, +x: Response.Res, +r: Response.Res) -> {Final.answered(policies, x, Final.action(~V.run, mode, claim, V.checked(response), x), r) == Spec.finalized(mode, claim, response, x, Policy.finalized(policies, r)) : Response.Res}:
+  match x:
+    case Response.Res{+code, +hs, +body, +rep}:
+      Equal.trans(Response.Res, Final.answered(policies, Response.Res{code, hs, body, rep}, V.policy(mode, V.delivery(claim, code, hs), V.response(V.checked(response), code, hs, body)), r), Final.answered(policies, Response.Res{code, hs, body, rep}, Spec.action(mode, Spec.delivery(claim, code, hs), response, code, hs, body), r), Spec.sent(Spec.action(mode, Spec.delivery(claim, code, hs), response, code, hs, body), Response.Res{code, hs, body, rep}, Policy.finalized(policies, r)),
+        Equal.cong(V.Action, Response.Res, a => Final.answered(policies, Response.Res{code, hs, body, rep}, a, r), V.policy(mode, V.delivery(claim, code, hs), V.response(V.checked(response), code, hs, body)), Spec.action(mode, Spec.delivery(claim, code, hs), response, code, hs, body), L.route_response_claimed_policy(mode, claim, response, code, hs, body)),
+        answered_sent(policies, Response.Res{code, hs, body, rep}, Spec.action(mode, Spec.delivery(claim, code, hs), response, code, hs, body), r))
+
+def L.finalization_sends_checked_response(mode, claim, response, policies, res, replacement):
+  finalization_sent(mode, claim, response, policies, Policy.finalized(policies, res), replacement)
+
+def without_ids_step(+k: String, +v: List<&2, U32>, +t: List<&2, Request.Header>, same: Bool, e: {String.eq(Bytes.fold(k), "x-request-id") == same : Bool}, ih: {Final.unstamped_fields(Obs.without_ids(t)) == Final.unstamped_fields(t) : List<&2, Request.Header>}) -> {Final.unstamped_fields(Obs.keep_field(Request.Header{k, v}, Obs.without_ids(t), same)) == Final.unstamped_field(Request.Header{k, v}, Final.unstamped_fields(t), Final.stamp(Bytes.fold(k))) : List<&2, Request.Header>}:
+  match same:
+    case True{}:
+      %Equal.sym(Bool, String.eq(Bytes.fold(k), "x-request-id"), True{}, e) : {Final.unstamped_fields(Obs.without_ids(t)) == Final.unstamped_field(Request.Header{k, v}, Final.unstamped_fields(t), _ || String.eq(Bytes.fold(k), "server-timing")) : List<&2, Request.Header>}
+      ih
+    case False{}:
+      Equal.cong(List<&2, Request.Header>, List<&2, Request.Header>, z => Final.unstamped_field(Request.Header{k, v}, z, Final.stamp(Bytes.fold(k))), Final.unstamped_fields(Obs.without_ids(t)), Final.unstamped_fields(t), ih)
+
+# Dropping X-Request-ID fields drops nothing the unstamped view keeps.
+def without_ids_unstamped(+hs: List<&2, Request.Header>) -> {Final.unstamped_fields(Obs.without_ids(hs)) == Final.unstamped_fields(hs) : List<&2, Request.Header>}:
+  match hs:
+    case Nil{}: {==}
+    case Request.Header{+k, +v} <> +t: without_ids_step(k, v, t, String.eq(Bytes.fold(k), "x-request-id"), {==}, without_ids_unstamped(t))
+
+def missing_stamped(+b: Bool, +res: Response.Res, +name: String, +value: String, s: {Final.stamp(Bytes.fold(name)) == True{} : Bool}) -> {Final.unstamped(Obs.missing(b, res, name, value)) == Final.unstamped(res) : Response.Res}:
+  match b:
+    case True{}: {==}
+    case False{}:
+      match res:
+        case Response.Res{+c, +hs, +bd, +rp}:
+          %Equal.sym(Bool, Final.stamp(Bytes.fold(name)), True{}, s) : {Response.Res{c, Final.unstamped_field(Request.Header{name, Response.utf8(value)}, Final.unstamped_fields(hs), _), bd, rp} == Response.Res{c, Final.unstamped_fields(hs), bd, rp} : Response.Res}
+          {==}
+
+def header_stamped(+res: Response.Res, +name: String, +m: Maybe<&2, String>, s: {Final.stamp(Bytes.fold(name)) == True{} : Bool}) -> {Final.unstamped(Obs.header(res, name, m)) == Final.unstamped(res) : Response.Res}:
+  match res m:
+    case Response.Res{+c, +hs, +bd, +rp} None{}: {==}
+    case Response.Res{+c, +hs, +bd, +rp} Some{+text}: missing_stamped(Obs.has_header(hs, name), Response.Res{c, hs, bd, rp}, name, text, s)
+
+def request_id_stamped(+res: Response.Res, +id: Maybe<&2, String>) -> {Final.unstamped(Obs.request_id(res, id)) == Final.unstamped(res) : Response.Res}:
+  match res:
+    case Response.Res{+c, +hs, +bd, +rp}:
+      Equal.trans(Response.Res, Final.unstamped(Obs.header(Response.Res{c, Obs.without_ids(hs), bd, rp}, "x-request-id", Obs.explicit_id(hs, id))), Final.unstamped(Response.Res{c, Obs.without_ids(hs), bd, rp}), Final.unstamped(Response.Res{c, hs, bd, rp}),
+        header_stamped(Response.Res{c, Obs.without_ids(hs), bd, rp}, "x-request-id", Obs.explicit_id(hs, id), {==}),
+        Equal.cong(List<&2, Request.Header>, Response.Res, z => Response.Res{c, z, bd, rp}, Final.unstamped_fields(Obs.without_ids(hs)), Final.unstamped_fields(hs), without_ids_unstamped(hs)))
+
+def L.finalizers_only_stamp(res, id, timing):
+  Equal.trans(Response.Res, Final.unstamped(Obs.header(Obs.request_id(res, id), "server-timing", timing)), Final.unstamped(Obs.request_id(res, id)), Final.unstamped(res),
+    header_stamped(Obs.request_id(res, id), "server-timing", timing, {==}),
+    request_id_stamped(res, id))

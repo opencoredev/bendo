@@ -47,10 +47,10 @@ def checked(policies: List<&2, Policy>, res: Response.Res, valid: Bool) -> Respo
     case True{}: res
     case False{}: Marker.reserved(Response.body(500, [], []), safe_all(policies, Response.body(500, [], [])))
 
-# Finalization runs after response validation, so retained policies may not
-# change what transport delivers: the stream marker and status stay as
-# validation saw them (Marker.reserved), and a policy failure's 500 carries no
-# marker (law finalized_policies_keep_delivery).
+# Finalization applies retained policies before response validation, which then
+# checks the result; policies still may not change how transport delivers it:
+# the stream marker and status stay as they were (Marker.reserved), and a
+# policy failure's 500 carries no marker (law finalized_policies_keep_delivery).
 def finalized(+policies: List<&2, Policy>, +res: Response.Res) -> Response.Res:
   +decorated = Marker.reserved(res, all(policies, res))
   checked(policies, decorated, Response.valid(decorated))

@@ -96,22 +96,28 @@ def request_id(res: Response.Res, fallback: Maybe<&2, String>) -> Response.Res:
   Response.Res{code, +hs, body, rep} = res
   header(Response.Res{code, without_ids(hs), body, rep}, "x-request-id", explicit_id(hs, fallback))
 
-def timed(res: Response.Res, got: Poll<&1, &1, Maybe<&1, Maybe<&2, String>>, Unit>) -> Response.Res:
+# The fields finalization adds after response validation: request ID, then
+# Server-Timing. Neither touches the body, the status or other fields
+# (law finalizers_only_stamp).
+def stamped(res: Response.Res, id: Maybe<&2, String>, timing: Maybe<&2, String>) -> Response.Res:
+  header(request_id(res, id), "server-timing", timing)
+
+def polled(got: Poll<&1, &1, Maybe<&1, Maybe<&2, String>>, Unit>) -> Maybe<&2, String>:
   match got:
-    case Ready{Some{value}}: header(res, "server-timing", value)
-    case _: res
+    case Ready{Some{value}}: value
+    case _: None{}
 
 # The timing owner publishes once after next returns. Consume and close its
 # request-local mailbox after hooks and validation, before observers or transport.
 def finalized_timing(state: State, res: Response.Res) -> IO(Response.Res):
   State{id, timing, finalized, policies, stream, peer, access, valid} = state
   match finalized:
-    case None{}: IO.pure(Response.Res, request_id(res, id))
+    case None{}: IO.pure(Response.Res, stamped(res, id, None{}))
     case Some{+channel}:
       do IO<Response.Res>:
         got : Poll<&1, &1, Maybe<&1, Maybe<&2, String>>, Unit> <- Chan.try_recv(Maybe<&2, String>, channel, 0)
         Chan.close(Maybe<&2, String>, channel)
-        return timed(request_id(res, id), got)
+        return stamped(res, id, polled(got))
 
 # One request owns this mailbox. Immutable context copies share its policies,
 # so short-circuits and response hooks need not forward a new context.
@@ -136,25 +142,22 @@ def retain(state: State, policy: Policy.Policy) -> IO(Unit):
         got : Maybe<&1, List<&2, Policy.Policy>> <- Chan.recv(List<&2, Policy.Policy>, channel)
         recorded(channel, policy, got)
 
-def applied(got: Maybe<&1, List<&2, Policy.Policy>>, res: Response.Res) -> Response.Res:
+def taken(got: Maybe<&1, List<&2, Policy.Policy>>) -> List<&2, Policy.Policy>:
   match got:
-    case None{}: res
-    case Some{policies}: Policy.finalized(policies, res)
+    case None{}: []
+    case Some{policies}: policies
 
-def finalized_policies(policies: Maybe<&2, Chan(List<&2, Policy.Policy>)>, res: Response.Res) -> IO(Response.Res):
+# Take the retained policies once and close their mailbox. Finalization
+# applies them before response validation, and again to a replacement.
+def take_policies(state: State) -> IO(List<&2, Policy.Policy>):
+  State{id, timing, finalized, policies, stream, peer, access, valid} = state
   match policies:
-    case None{}: IO.pure(Response.Res, res)
+    case None{}: IO.pure(List<&2, Policy.Policy>, [])
     case Some{+channel}:
-      do IO<Response.Res>:
+      do IO<List<&2, Policy.Policy>>:
         got : Maybe<&1, List<&2, Policy.Policy>> <- Chan.recv(List<&2, Policy.Policy>, channel)
         Chan.close(List<&2, Policy.Policy>, channel)
-        return applied(got, res)
-
-def finalize(+state: State, res: Response.Res) -> IO(Response.Res):
-  State{id, timing, finalized, policies, stream, peer, access, valid} = state
-  do IO<Response.Res>:
-    decorated : Response.Res <- finalized_policies(policies, res)
-    finalized_timing(state, decorated)
+        return taken(got)
 
 # Transport metadata survives policy and timing updates.
 def stream(state: State) -> Maybe<&2, Chan(StreamTypes.Registration)>:

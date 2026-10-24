@@ -23,6 +23,7 @@ import ../http/write_response.bend as Write
 import ../http/bytes.bend as Bytes
 import ../http/date_response.bend as DateResponse
 import ./validate.bend as Validate
+import ./finalize.bend as Final
 import ../data/schema-prepared.bend as SP
 import ./config.bend as Config
 import ./errors.bend as Errors
@@ -56,28 +57,31 @@ def violation_line(-Vars: Data, +c: Context.Ctx<Vars>, +route: String, text: Res
     case Done{s}: "bendo: response schema violation: " ++ Request.method_text(Context.method(Vars, c)) ++ " " ++ route ++ " " ++ s
     case Fail{e}: "bendo: response schema violation: " ++ Request.method_text(Context.method(Vars, c)) ++ " " ++ route
 
-def acted(-Vars: Data, +c: Context.Ctx<Vars>, res: Response.Res, action: Validate.Action, route: String) -> IO(Response.Res):
+def replacement(-Vars: Data, +c: Context.Ctx<Vars>, action: Validate.Action) -> Response.Res:
   match action:
-    case Validate.Send{}: IO.pure(Response.Res, res)
-    case Validate.Replace{}: IO.pure(Response.Res, Context.error(Vars, c, Errors.HttpError{500, "response schema violation", False{}}))
-    case Validate.Report{errors}:
-      do IO<Response.Res>:
-        IO.print_err(violation_line(Vars, c, route, Json.stringify(Schema.errors_json(errors))))
-        return res
+    case Validate.Replace{}: Context.error(Vars, c, Errors.HttpError{500, "response schema violation", False{}})
+    case Validate.Send{}: Response.body(500, [], [])
+    case Validate.Report{errors}: Response.body(500, [], [])
 
-def inspected(-Vars: Data, c: Context.Ctx<Vars>, res: Response.Res, answer: Validate.Answer, mode: Config.Mode, delivery: Validate.Delivery, route: String) -> IO(Response.Res):
-  match answer:
-    case Validate.Inspected{check}: acted(Vars, c, res, Validate.policy(mode, delivery, check), route)
-    case _: IO.pure(Response.Res, res)
+def reported(-Vars: Data, +c: Context.Ctx<Vars>, action: Validate.Action, route: String) -> IO(Unit):
+  match action:
+    case Validate.Report{errors}: IO.print_err(violation_line(Vars, c, route, Json.stringify(Schema.errors_json(errors))))
+    case Validate.Send{}: IO.pure(Unit, Unit{})
+    case Validate.Replace{}: IO.pure(Unit, Unit{})
 
-# Delivery comes from the request's actual registration, through the same
-# eligibility test transport selection applies (Marker.eligible), so a forged
-# or stale marker header cannot exempt a buffered response. Response policies
-# and finalizers that run between this check and transport selection keep the
-# status, and drop or add the private marker only if a policy names it.
-def check_response(~validator: Validate.Job -> Validate.Answer, -Vars: Data, c: Context.Ctx<Vars>, schema: Maybe<&2, SP.Checked>, +res: Response.Res, mode: Config.Mode, route: String, claim: StreamMarker.Claim) -> IO(Response.Res):
-  Response.Res{+code, +hs, body, rep} = res
-  inspected(Vars, c, res, validator(Validate.ResponseJob{schema, code, hs, body}), mode, Validate.delivery(claim, code, hs), route)
+# The response is checked after the retained policies have produced its final
+# fields, and the checked response is the one sent (Final.answered); a 500
+# replacement gets the same policies. Delivery comes from the request's actual
+# registration, through the same eligibility test transport selection applies
+# (Marker.eligible), so a forged or stale marker header cannot exempt a
+# buffered response, and policies cannot set or remove the marker
+# (law finalized_policies_keep_delivery).
+def check_response(~validator: Validate.Job -> Validate.Answer, -Vars: Data, +c: Context.Ctx<Vars>, schema: Maybe<&2, SP.Checked>, +policies: List<&2, Policy.Policy>, res: Response.Res, mode: Config.Mode, route: String, claim: StreamMarker.Claim) -> IO(Response.Res):
+  +checked = Policy.finalized(policies, res)
+  +action = Final.action(~validator, mode, claim, schema, checked)
+  do IO<Response.Res>:
+    reported(Vars, c, action, route)
+    return Final.answered(policies, checked, action, replacement(Vars, c, action))
 
 # The registered pattern of the route with this reversed ordinal.
 def route_source(-Tag: Data, xs: List<&2, Methods.Registration(Tag)>, k: Nat) -> String:
@@ -188,14 +192,17 @@ def transport_selected(~Vars: Data, ~Tag: Data, ~Env: Data, ~middleware: Tag -> 
     return (res, (stream, Hooks.observe(~Vars, ~Tag, ~Env, ~middleware, ids, Context.with_observation(Vars, ctx, Obs.without_access(Context.observation(Vars, ctx))), env, res)))
 
 # BND-36: the response schema checks the response every hook produced or
-# replaced, for the route the request resolved to.
+# replaced, for the route the request resolved to, after the retained policies.
 def answered_transport(~validator: Validate.Job -> Validate.Answer, ~Vars: Data, ~Tag: Data, ~Env: Data, ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +req: Request.Req, entries: List<&2, Methods.Registration(Tag)>, layers: List<&2, Table.Middleware<Tag>>, +count: Nat, env: Env, network: Bool, mode: Config.Mode, +route: Maybe<&2, Nat>, plan: Table.Lifecycle<Tag>, +latest: Context.Ctx<Vars>, recovered: Response.Res, claimed: StreamMarker.Claim & Maybe<&1, StreamTypes.Registration>) -> IO(Response.Res & (StreamTypes.Transport & IO(Unit))):
   Request.Req{+method, path, query, version, headers} = req
   (claim, registration) = claimed
   do IO<Response.Res & (StreamTypes.Transport & IO(Unit))>:
-    +answered : Response.Res <- check_response(~validator, Vars, latest, Validate.response_schema(Table.route_schemas(Tag, layers, route)), recovered, mode, route_label(Tag, entries, count, route), claim)
-    dated : Response.Res <- DateResponse.ensure(validated(answered, Response.valid(answered)))
-    decorated : Response.Res <- Obs.finalize(Context.observation(Vars, latest), dated)
+    # A clock failure's 500 still gets the retained policies.
+    dated : Response.Res <- DateResponse.ensure(recovered)
+    +policies : List<&2, Policy.Policy> <- Obs.take_policies(Context.observation(Vars, latest))
+    answered : Response.Res <- check_response(~validator, Vars, latest, Validate.response_schema(Table.route_schemas(Tag, layers, route)), policies, dated, mode, route_label(Tag, entries, count, route), claim)
+    # Later finalizers only stamp Server-Timing and X-Request-ID.
+    decorated : Response.Res <- Obs.finalized_timing(Context.observation(Vars, latest), answered)
     +final : Response.Res = finish(method, decorated)
     selected : Response.Res & StreamTypes.Transport <- Transport.select(req, final, registration)
     supported : Response.Res & StreamTypes.Transport <- Transport.network(selected, network)
