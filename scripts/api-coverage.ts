@@ -274,9 +274,12 @@ export type Heading = { readonly level: number; readonly text: string; readonly 
 export function markdownOutline(markdown: string): {
   blocks: CodeBlock[];
   headings: Heading[];
+  /** Lines with a fence inside a blockquote, list item or indented code, which the check does not read. */
+  nested: number[];
 } {
   const blocks: CodeBlock[] = [];
   const headings: Heading[] = [];
+  const nested: number[] = [];
   const lines = markdown.split("\n");
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index] ?? "";
@@ -286,7 +289,11 @@ export function markdownOutline(markdown: string): {
       continue;
     }
     const open = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(line);
-    if (open === null) continue;
+    if (open === null) {
+      if (/^\s*(?:>\s*)*(?:(?:[-*+]|\d+[.)])\s+)?\s*(?:`{3,}|~{3,})/.test(line))
+        nested.push(index + 1);
+      continue;
+    }
     const [, indent = "", fence = "```", info = ""] = open;
     if (fence.startsWith("`") && info.includes("`")) continue;
     const [lang = "", ...meta] = info.trim().split(/\s+/);
@@ -297,7 +304,7 @@ export function markdownOutline(markdown: string): {
       body.push((lines[index] ?? "").replace(new RegExp(`^ {0,${indent.length}}`), ""));
     blocks.push({ lang, meta, code: body.join("\n"), line: start + 1 });
   }
-  return { blocks, headings };
+  return { blocks, headings, nested };
 }
 
 export function codeBlocks(markdown: string): CodeBlock[] {
@@ -344,16 +351,23 @@ export function referencePages(): Page[] {
 
 const entryHeading = /^(`[^`]+`(?:, `[^`]+`)*)$/;
 
-/** H3 headings that start with a code span but are not well-formed entries. */
+/**
+ * H3 headings that start with a code span but are not well-formed entries,
+ * and fences nested in other blocks, whose code the check would not see.
+ */
 export function malformedEntries(pages = referencePages()): Problem[] {
-  return pages.flatMap(({ page, text }) =>
-    markdownOutline(text)
+  return pages.flatMap(({ page, text }) => [
+    ...markdownOutline(text).nested.map(
+      (line) =>
+        `${page}:${line}: a fence inside a blockquote, list or indented block is not checked; move it to the top level`,
+    ),
+    ...markdownOutline(text)
       .headings.filter(
         (heading) =>
           heading.level === 3 && heading.text.startsWith("`") && !entryHeading.test(heading.text),
       )
       .map((heading) => `${page}:${heading.line}: malformed entry heading: ${heading.text}`),
-  );
+  ]);
 }
 
 export function entries(pages = referencePages()): Entry[] {
@@ -391,27 +405,51 @@ export function bendMentions(code: string, name: string): boolean {
 }
 
 /**
- * Whether a TypeScript example uses an export: an identifier with its name,
- * or for `default`, a default import from the page's module.
+ * Whether a TypeScript example imports an export from the page's module: by
+ * name (`import { name }`, also renamed or type-only), as the default import
+ * for `default`, or through a namespace import (`ns.name`).
  */
 export function tsMentions(code: string, name: string, module: string): boolean {
   const source = ts.createSourceFile("example.tsx", code, ts.ScriptTarget.Latest, false);
-  if (name === "default")
-    return source.statements.some(
-      (statement) =>
-        ts.isImportDeclaration(statement) &&
-        statement.importClause?.name !== undefined &&
-        ts.isStringLiteral(statement.moduleSpecifier) &&
-        statement.moduleSpecifier.text === module,
-    );
+  const namespaces: string[] = [];
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier))
+      continue;
+    if (statement.moduleSpecifier.text !== module) continue;
+    const clause = statement.importClause;
+    if (clause === undefined) continue;
+    if (name === "default" && clause.name !== undefined) return true;
+    const bindings = clause.namedBindings;
+    if (bindings === undefined) continue;
+    if (ts.isNamespaceImport(bindings)) namespaces.push(bindings.name.text);
+    else if (
+      bindings.elements.some((element) => (element.propertyName ?? element.name).text === name)
+    )
+      return true;
+  }
   let found = false;
   const visit = (node: ts.Node): void => {
     if (found) return;
-    if (ts.isIdentifier(node) && node.text === name) found = true;
+    if (
+      (ts.isPropertyAccessExpression(node) || ts.isQualifiedName(node)) &&
+      namespaceUse(node, namespaces, name)
+    )
+      found = true;
     else ts.forEachChild(node, visit);
   };
   visit(source);
   return found;
+}
+
+function namespaceUse(
+  node: ts.PropertyAccessExpression | ts.QualifiedName,
+  namespaces: readonly string[],
+  name: string,
+): boolean {
+  const [left, right] = ts.isPropertyAccessExpression(node)
+    ? [node.expression, node.name]
+    : [node.left, node.right];
+  return ts.isIdentifier(left) && namespaces.includes(left.text) && right.text === name;
 }
 
 export type Problem = string;

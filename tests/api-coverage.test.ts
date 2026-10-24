@@ -102,6 +102,48 @@ test("a TypeScript default export is used through a default import", () => {
   ).toEqual(["docs/api/ts/t.md:1: no example under this entry uses default"]);
 });
 
+test("a TypeScript use must import the export from the page's module", () => {
+  const api: PublicApi[] = [{ key: "bendo/client:createClient", language: "ts", source: "test" }];
+  const page = (code: string): Page => ({
+    page: "docs/api/ts/t.md",
+    language: "ts",
+    module: "bendo/client",
+    text: ["### `createClient`", "```ts", code, "```"].join("\n"),
+  });
+  const unused = ["docs/api/ts/t.md:1: no example under this entry uses createClient"];
+  expect(coverageProblems([page("const createClient = 1;")], api)).toEqual(unused);
+  expect(coverageProblems([page('import { createClient } from "bendo/query";')], api)).toEqual(
+    unused,
+  );
+  expect(
+    coverageProblems([page('import { createClient as make } from "bendo/client";')], api),
+  ).toEqual([]);
+  expect(
+    coverageProblems(
+      [page('import * as client from "bendo/client";\nclient.createClient("/");')],
+      api,
+    ),
+  ).toEqual([]);
+});
+
+test("a fence inside a blockquote or list is reported, not skipped", () => {
+  const api: PublicApi[] = [{ key: "B.text", language: "bend", source: "test" }];
+  const text = [
+    "### `B.text`",
+    "```bend",
+    'def ex(c: B.Ctx) -> B.Res: B.text(c, "")',
+    "```",
+    "> ```bend",
+    '> def broken() -> U32: "x"',
+    "> ```",
+  ].join("\n");
+  const page: Page = { page: "docs/api/bend/t.md", language: "bend", module: undefined, text };
+  expect(coverageProblems([page], api)).toEqual([
+    "docs/api/bend/t.md:5: a fence inside a blockquote, list or indented block is not checked; move it to the top level",
+    "docs/api/bend/t.md:7: a fence inside a blockquote, list or indented block is not checked; move it to the top level",
+  ]);
+});
+
 test("every public API has a reference entry with an example, and every entry names one", () => {
   expect(coverageProblems()).toEqual([]);
 });

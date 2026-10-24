@@ -99,9 +99,9 @@ def ex_startup() -> IO(Env):
 def store_with_timeout(-S: Data, initial: S, timeout_ms: U32) -> IO(B.Store(S))
 ```
 
-`B.store` with a different operation budget in milliseconds. The budget bounds
-the send to the actor's mailbox (128 queued requests) and, separately, the wait
-for the reply.
+`B.store` with a different operation budget in milliseconds. One budget covers
+each whole operation: sending to the actor's mailbox (128 queued requests) and
+then waiting for the reply, which gets only the time the send left.
 
 ```bend
 def ex_patient() -> IO(B.Store(U32)):

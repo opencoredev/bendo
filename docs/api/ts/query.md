@@ -20,9 +20,15 @@ signed-in user its own `QueryClient`.
 ```ts signature
 function queryOptions<E extends AnyEndpoint, TData = QueryData<E>>(
   endpoint: E,
-  input?: InputOf<E>,
-  options?: QueryExtras<E, TData>,
+  ...args: QueryArgs<E, TData>
 ): BendoQueryOptions<E, TData>;
+
+// Not exported. `Optional<E>` is true when the endpoint can be called
+// without input, so `input` is required exactly when the method requires it.
+type QueryArgs<E, TData> =
+  Optional<E> extends true
+    ? [input?: InputOf<E>, options?: QueryExtras<E, TData>]
+    : [input: InputOf<E>, options?: QueryExtras<E, TData>];
 ```
 
 Typed `useQuery` options for one call of `endpoint`, a client method such as
@@ -249,7 +255,7 @@ await invalidate(queryClient, api.todos, api.echo);
 ```ts signature
 function queryKey<E extends AnyEndpoint>(
   endpoint: E,
-  input?: InputOf<E>,
+  ...args: QueryArgs<E, QueryData<E>>
 ): BendoQueryOptions<E, QueryData<E>>["queryKey"];
 ```
 
