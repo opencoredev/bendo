@@ -224,3 +224,11 @@ def Laws.hot_context_json_result(Vars, c, result):
       {==}
     case C.Ctx{r, p, b, q, s, hs, v, o} Done{x}:
       {==}
+
+# ---- BND-68: CORS derives its policy once per request ----
+
+def Laws.hot_cors_actual(config, g, requested, res): {==}
+
+def Laws.hot_cors_policy(config, req): {==}
+
+def Laws.hot_secure_prepared(Vars, config, c, next): {==}

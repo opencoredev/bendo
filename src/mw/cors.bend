@@ -22,11 +22,26 @@ def respond(-Vars: Data, +config: P.Config, +c: C.Ctx<Vars>, next: C.Ctx<Vars> -
         res : Response.Res <- next(c)
         return actual(config, g, res)
 
+# respond, given the request's retained policy. An actual request's policy
+# ignores the requested headers, so applying it equals `actual` (law
+# hot_cors_actual).
+def respond_with(-Vars: Data, +config: P.Config, +c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res), +g: Maybe<&2, P.Grant>, +ready: Policy.Policy, preflight: Bool) -> IO(Response.Res):
+  match preflight:
+    case True{}: IO.pure(Response.Res, answer(config, g, RequestPolicy.requested(C.request(Vars, c))))
+    case False{}:
+      do IO<Response.Res>:
+        res : Response.Res <- next(c)
+        return Policy.apply(ready, res)
+
 # A preflight is answered here with 204 and never reaches the application.
-# Every other request, including other OPTIONS requests, calls next.
+# Every other request, including other OPTIONS requests, calls next. The
+# grant, preflight test and policy are each derived once per request.
 def middleware(-Vars: Data, +config: P.Config, +c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
   +req = C.request(Vars, c)
+  +g = RequestPolicy.grant(config, req)
+  +preflight = RequestPolicy.preflight(req)
+  +ready = RequestPolicy.chosen(config, g, RequestPolicy.requested(req), preflight)
   do IO<Response.Res>:
-    res : Response.Res <- respond(Vars, config, c, next, RequestPolicy.grant(config, req), RequestPolicy.preflight(req))
-    Obs.retain(C.observation(Vars, c), RequestPolicy.policy(config, req))
+    res : Response.Res <- respond_with(Vars, config, c, next, g, ready, preflight)
+    Obs.retain(C.observation(Vars, c), ready)
     return res

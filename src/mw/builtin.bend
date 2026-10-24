@@ -14,6 +14,7 @@ import ./csrf_policy.bend as CsrfPolicy
 import ./cors.bend as Cors
 import ./cors_policy.bend as CorsPolicy
 import ./secure_headers.bend as Secure
+import ./response_policy.bend as ResponsePolicy
 import ./method_override.bend as Override
 import ./method_override_policy.bend as OverridePolicy
 import ./trailing_slash.bend as Trailing
@@ -40,6 +41,8 @@ type Builtin is Data:
   Csrf{policy: CsrfPolicy.Policy}
   Cors{config: CorsPolicy.Config}
   SecureHeaders{config: Secure.Config}
+  # Secure.policy(config), computed once at registration.
+  SecurePrepared{policy: ResponsePolicy.Policy}
   MethodOverride{config: OverridePolicy.Config}
   TrailingSlash{config: Trailing.Config}
   IpRestriction{policy: IpRestriction.Policy}
@@ -61,6 +64,7 @@ def dispatch(-Vars: Data, id: Builtin, c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(R
     case Csrf{policy}: Csrf.middleware(Vars, policy, c, next)
     case Cors{config}: Cors.middleware(Vars, config, c, next)
     case SecureHeaders{config}: Secure.middleware(Vars, config, c, next)
+    case SecurePrepared{policy}: Secure.prepared(Vars, policy, c, next)
     case MethodOverride{config}: Override.middleware(Vars, config, c, next)
     case TrailingSlash{config}: Trailing.middleware(Vars, config, c, next)
     case IpRestriction{policy}: IpRestriction.middleware(Vars, policy, c, next)

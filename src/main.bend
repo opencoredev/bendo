@@ -290,8 +290,8 @@ def secure_defaults() -> Secure.Config: Secure.defaults()
 def secure_set(config: Secure.Config, name: String, value: String) -> Secure.Config: Secure.set(config, name, value)
 def secure_unset(config: Secure.Config, name: String) -> Secure.Config: Secure.unset(config, name)
 def secure_keep_powered_by(config: Secure.Config) -> Secure.Config: Secure.keep_powered_by(config)
-def secure_headers() -> Builtin.Builtin: Builtin.SecureHeaders{Secure.defaults()}
-def secure_headers_with(config: Secure.Config) -> Builtin.Builtin: Builtin.SecureHeaders{config}
+def secure_headers_with(config: Secure.Config) -> Builtin.Builtin: Builtin.SecurePrepared{Secure.policy(config)}
+def secure_headers() -> Builtin.Builtin: secure_headers_with(Secure.defaults())
 
 # Method override for POST requests. Register with B.on_request.
 def method_override() -> Builtin.Builtin: Builtin.MethodOverride{OverridePolicy.defaults()}
