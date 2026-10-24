@@ -1,6 +1,8 @@
 # BND-36 route validation: one route per slot, a guard, a mounted sub-app,
 # a route whose hooks show where validation runs in the lifecycle, and routes
 # whose hooks produce or replace the response the response schema checks.
+# The stream, forged-marker and socket routes show that only a response the
+# transport really streams or upgrades skips the response schema.
 import Base
 import ../../src/main.bend as B
 import ../../src/app/table.bend as T
@@ -10,6 +12,7 @@ import ../../src/router/methods.bend as M
 import ../../src/data/schema.bend as S
 import ../../src/data/schema-pattern.bend as P
 import ../../src/data/json.bend as J
+import ../../src/http/stream_types.bend as ST
 
 type Tag is Data:
   Item{}
@@ -32,6 +35,10 @@ type Tag is Data:
   BadBefore{}
   BadMap{}
   Leak{}
+  Streamed{}
+  Forged{}
+  ForgeMap{}
+  Socket{}
 
 def text() -> S.Schema:
   S.StringSchema{1n, Some{80n}, None{}, S.Plain{}}
@@ -109,6 +116,23 @@ def none(v: Maybe<&2, S.Value>) -> String:
     case None{}: "none"
     case Some{x}: "some"
 
+# One chunk of text that is not JSON, then the end.
+def pull(left: Nat) -> IO(ST.Step<Nat>):
+  match left:
+    case 0n: IO.pure(ST.Step<Nat>, ST.End{0n})
+    case 1n+n: IO.pure(ST.Step<Nat>, ST.Chunk{[110, 111, 116, 32, 106, 115, 111, 110], n})
+
+def released(left: Nat) -> IO(Unit):
+  IO.pure(Unit, Unit{})
+
+def opened(label: Unit, s: Socket, rest: List<&2, U32>) -> IO(Unit):
+  Socket.close(s)
+
+def closed(label: Unit) -> IO(Unit):
+  IO.pure(Unit, Unit{})
+
+def marker() -> String: "x-bendo-stream-internal"
+
 def answer(tag: Tag, +c: B.Ctx) -> IO(B.Res):
   match tag:
     case Item{}: IO.pure(B.Res, B.text(c, "id=" ++ integer(B.field(B.valid_params(c), "id"))))
@@ -126,6 +150,9 @@ def answer(tag: Tag, +c: B.Ctx) -> IO(B.Res):
     case Flood{}: IO.pure(B.Res, B.text(c, "flood"))
     case Hooked{}: IO.pure(B.Res, B.json(c, J.JObject{[J.Field{"count", J.JNumber{"3"}}]}))
     case Leak{}: IO.pure(B.Res, B.json(c, J.JObject{[J.Field{"count", J.JString{"three"}}]}))
+    case Streamed{}: B.stream(~Unit, ~Nat, ~pull, ~released, B.header(c, "content-type", "text/plain"), 1n, B.stream_config())
+    case Forged{}: IO.pure(B.Res, B.json(B.header(c, marker(), "anything"), J.JObject{[J.Field{"count", J.JString{"three"}}]}))
+    case Socket{}: B.websocket(~Unit, ~Unit, ~opened, ~closed, c, Unit{}, B.websocket_config())
     case Plain{}: IO.pure(B.Res, B.text(c, none(B.valid_params(c)) ++ "," ++ none(B.valid_query(c)) ++ "," ++ none(B.valid_headers(c)) ++ "," ++ none(B.valid_body(c))))
     case _: IO.pure(B.Res, B.not_found(c))
 
@@ -138,6 +165,7 @@ def hook(tag: Tag, +c: B.Ctx, next: B.Ctx -> IO(B.Res)) -> IO(B.Res):
     case Stop{}: IO.pure(B.Res, B.text(c, "before-handle:" ++ string(B.field(B.valid_body(c), "title"))))
     case BadBefore{}: IO.pure(B.Res, B.json(c, J.JObject{[J.Field{"count", J.JNumber{"-1"}}]}))
     case BadMap{}: IO.pure(B.Res, B.json(c, J.JObject{[J.Field{"count", J.JNumber{"3"}}, J.Field{"mapped", J.JBool{True{}}}]}))
+    case ForgeMap{}: IO.pure(B.Res, B.json(B.header(c, marker(), "forged"), J.JObject{[J.Field{"count", J.JString{"three"}}]}))
     case _: next(c)
 
 def handler(tag: Tag, c: B.Ctx, env: Unit) -> IO(B.Res):
@@ -166,7 +194,12 @@ def entries() -> List<&2, B.Registration(Tag)>:
      B.with_schemas(Tag, B.get(Tag, "/flood", Flood{}), B.schemas([B.query_schema(flood("k")), B.headers_schema(flood("h"))])),
      B.route_schemas(Tag, M.get(Tag, "/hooked/before", Hooked{}), [B.hook(Tag, T.BeforeHandle{}, BadBefore{})], one(B.response_schema(report_response()))),
      B.route_schemas(Tag, M.get(Tag, "/hooked/map", Hooked{}), [B.hook(Tag, T.MapResponse{}, BadMap{})], one(B.response_schema(report_response()))),
-     B.with_schemas(Tag, B.get(Tag, "/leak/:token", Leak{}), one(B.response_schema(report_response())))],
+     B.with_schemas(Tag, B.get(Tag, "/leak/:token", Leak{}), one(B.response_schema(report_response()))),
+     B.with_schemas(Tag, B.get(Tag, "/stream/report", Streamed{}), one(B.response_schema(report_response()))),
+     B.with_schemas(Tag, B.get(Tag, "/forged", Forged{}), one(B.response_schema(report_response()))),
+     B.route_schemas(Tag, M.get(Tag, "/stream/forged", Streamed{}), [B.hook(Tag, T.MapResponse{}, ForgeMap{})], one(B.response_schema(report_response()))),
+     B.route_schemas(Tag, M.get(Tag, "/stream/mapped", Streamed{}), [B.hook(Tag, T.MapResponse{}, BadMap{})], one(B.response_schema(report_response()))),
+     B.with_schemas(Tag, B.get(Tag, "/socket", Socket{}), one(B.response_schema(report_response())))],
     B.guard(Tag, B.guard_schemas(Tag, [], one(B.query_schema(token(text())))), [
       B.get(Tag, "/guarded/a", Member{}),
       B.with_schemas(Tag, B.get(Tag, "/guarded/b", Member{}), one(B.query_schema(token(S.IntegerSchema{None{}, None{}}))))]),

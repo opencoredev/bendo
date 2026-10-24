@@ -10,6 +10,7 @@ import ../data/utf8.bend as Utf8
 import ../data/urlencoded.bend as Query
 import ../http/bytes.bend as Bytes
 import ../http/request.bend as Request
+import ../http/stream_marker.bend as Marker
 import ../router/pattern.bend as Pattern
 import ./config.bend as Config
 
@@ -256,6 +257,12 @@ def status_of(text: Bool, b: Body) -> U32:
 
 # One reporting budget for the whole request: the first `S.error_cap()` errors
 # of the slots in order. Every slot still decides admission and the status.
+# Each slot collects with its own full budget and the cut happens here, so a
+# request failing in every slot builds at most 4 * error_cap() errors and
+# drops up to 300 of them, path prefixes included. That cost is bounded and
+# small next to decoding. Threading the remaining budget into later slots
+# would need a new budget-prefix theorem over the BND-35 collectors (plain
+# and prepared) to keep route_validation_matches_spec, so it is not done.
 def verdict(+p: Outcome, +q: Outcome, +h: Outcome, +b: Body) -> Verdict:
   match p q h b:
     case Passed{vp} Passed{vq} Passed{vh} BodyPassed{vb}: Valid{Values{vp, vq, vh, vb}}
@@ -316,6 +323,17 @@ def response(c: Maybe<&2, SP.Checked>, +status: U32, +hs: List<&2, Request.Heade
 type Delivery is Data:
   Buffered{}
   Streamed{}
+
+def delivered(streamed: Bool) -> Delivery:
+  match streamed:
+    case True{}: Streamed{}
+    case False{}: Buffered{}
+
+# A response is streamed or upgraded exactly when transport will hand it to
+# the request's registration (Marker.eligible). A marker header alone, with no
+# registration or another registration's id, leaves it buffered and checked.
+def delivery(claim: Marker.Claim, +code: U32, hs: List<&2, Request.Header>) -> Delivery:
+  delivered(Marker.eligible(claim, code, hs))
 
 # What the runtime does with a checked response: send it, replace it with a
 # 500, or send it and write the violation to stderr.

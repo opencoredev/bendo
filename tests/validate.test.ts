@@ -249,6 +249,68 @@ describe("response after hooks", () => {
   });
 });
 
+describe("streamed and upgraded responses", () => {
+  const MARKER = "x-bendo-stream-internal";
+  const KIND_ERROR =
+    '[{"path":["body","count"],"code":"type_mismatch","message":"expected schema scalar kind"}]';
+
+  test("a registered stream skips the response schema", async () => {
+    const response = await send("/stream/report");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("transfer-encoding")).toBe("chunked");
+    expect(await response.text()).toBe("not json");
+    expect(response.headers.has(MARKER)).toBe(false);
+  });
+  test("a marker header without a registration is checked as buffered", async () => {
+    const response = await send("/forged");
+    expect(response.status).toBe(500);
+    expect(await response.text()).toBe("Internal Server Error");
+    expect(response.headers.has(MARKER)).toBe(false);
+    const sent = await send("/forged", {}, production);
+    expect(sent.status).toBe(200);
+    expect(await sent.json()).toEqual({ count: "three" });
+    expect(sent.headers.has(MARKER)).toBe(false);
+    expect(await logged("GET /forged ")).toBe(
+      `bendo: response schema violation: GET /forged ${KIND_ERROR}`,
+    );
+  });
+  test("a hook that replaces a registered stream with a forged marker is checked", async () => {
+    const response = await send("/stream/forged");
+    expect(response.status).toBe(500);
+    expect(await response.text()).toBe("Internal Server Error");
+    const sent = await send("/stream/forged", {}, production);
+    expect(sent.status).toBe(200);
+    expect(await sent.json()).toEqual({ count: "three" });
+    expect(await logged("GET /stream/forged ")).toBe(
+      `bendo: response schema violation: GET /stream/forged ${KIND_ERROR}`,
+    );
+  });
+  test("a hook that replaces a registered stream with a buffered response is checked", async () => {
+    const response = await send("/stream/mapped");
+    expect(response.status).toBe(500);
+    expect(await response.text()).not.toContain("mapped");
+  });
+  test("a WebSocket upgrade on a route with a response schema still opens", async () => {
+    const opened = await new Promise<boolean>((resolve) => {
+      const socket = new WebSocket(`${server.url.replace(/^http/, "ws")}/socket`);
+      const timer = setTimeout(() => {
+        socket.close();
+        resolve(false);
+      }, 5000);
+      socket.addEventListener("open", () => {
+        clearTimeout(timer);
+        socket.close();
+        resolve(true);
+      });
+      socket.addEventListener("error", () => {
+        clearTimeout(timer);
+        resolve(false);
+      });
+    });
+    expect(opened).toBe(true);
+  });
+});
+
 describe("error budget", () => {
   test("a request reports at most 100 errors across all its slots", async () => {
     // 60 missing query keys and 60 missing headers: 120 failures, 100 reported.

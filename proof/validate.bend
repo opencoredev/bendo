@@ -26,6 +26,7 @@ import ./scoped-selection-spec.bend as ScopedSpec
 import ./scoped-assembly.bend as Assembly
 import ./scoped-assembly-spec.bend as AssemblySpec
 import ../src/app/scopes.bend as RuntimeScopes
+import ../src/http/stream_marker.bend as Marker
 
 def Res() -> Data:
   Result<&2, &2, S.Errors(), S.Value>
@@ -568,3 +569,91 @@ def effective_length(-Tag: Data, +layers: List<&2, Table.Middleware<Tag>>, k: Na
 
 def L.table_schemas_one_per_route(Tag, entries, routes, compiled, layers, count, built):
   Equal.trans(Nat, List.length(&2, RS.RouteSchemas, TableSchemas.effective_go(Tag, layers, count)), count, ScopedSpec.route_count(Tag, entries), effective_length(Tag, layers, count), Sel.successful_count(Tag, entries, routes, compiled, layers, count, built))
+
+# Delivery: the transport's marker scan is the spec's, so validation and
+# transport classify alike.
+def marked_carries(hs: List<&2, Request.Header>, +id: String) -> {Marker.marked(hs, id) == Spec.carries(hs, id) : Bool}:
+  match hs:
+    case Nil{}: {==}
+    case Request.Header{n, v} <> t: Equal.cong(Bool, Bool, z => (String.eq(Bytes.fold(n), "x-bendo-stream-internal") && String.eq(Bytes.ascii(v), id)) || z, Marker.marked(t, id), Spec.carries(t, id), marked_carries(t, id))
+
+def L.transport_eligibility_matches_spec(claim, code, headers):
+  match claim:
+    case Marker.Unclaimed{}: {==}
+    case Marker.BodyClaim{id}: marked_carries(headers, id)
+    case Marker.UpgradeClaim{id}: Equal.cong(Bool, Bool, z => z && U32.is_eq(code, 101), Marker.marked(headers, id), Spec.carries(headers, id), marked_carries(headers, id))
+
+def delivered_when(b: Bool) -> {V.delivered(b) == Spec.delivery_when(b) : V.Delivery}:
+  match b:
+    case True{}: {==}
+    case False{}: {==}
+
+def L.route_response_delivery_matches_transport(claim, code, headers):
+  Equal.trans(V.Delivery, V.delivered(Marker.eligible(claim, code, headers)), V.delivered(Spec.handed_over(claim, code, headers)), Spec.delivery_when(Spec.handed_over(claim, code, headers)),
+    Equal.cong(Bool, V.Delivery, b => V.delivered(b), Marker.eligible(claim, code, headers), Spec.handed_over(claim, code, headers), L.transport_eligibility_matches_spec(claim, code, headers)),
+    delivered_when(Spec.handed_over(claim, code, headers)))
+
+def L.unclaimed_response_is_buffered(code, headers): {==}
+
+def L.route_response_claimed_policy(mode, claim, response, code, headers, bytes):
+  Equal.trans(V.Action, V.policy(mode, V.delivery(claim, code, headers), V.response(V.checked(response), code, headers, bytes)), V.policy(mode, Spec.delivery(claim, code, headers), V.response(V.checked(response), code, headers, bytes)), Spec.action(mode, Spec.delivery(claim, code, headers), response, code, headers, bytes),
+    Equal.cong(V.Delivery, V.Action, d => V.policy(mode, d, V.response(V.checked(response), code, headers, bytes)), V.delivery(claim, code, headers), Spec.delivery(claim, code, headers), L.route_response_delivery_matches_transport(claim, code, headers)),
+    L.route_response_policy(mode, Spec.delivery(claim, code, headers), response, code, headers, bytes))
+
+# The manifest list in source order. `down` counts identities from k - 1 to
+# 0, as TableSchemas.effective_go does, over the spec's bundles.
+def down(-Tag: Data, +xs: List<&2, Table.Entry<Tag>>, k: Nat) -> List<&2, RS.RouteSchemas>:
+  match k:
+    case 0n: []
+    case 1n+(+j): Spec.bundle(Tag, xs, j) <> down(Tag, xs, j)
+
+def raw_eq(m: Maybe<&2, SP.Checked>) -> {TableSchemas.raw(m) == Spec.raw(m) : Maybe<&2, S.Schema>}:
+  match m:
+    case None{}: {==}
+    case Some{SP.Checked{s, ok, t}}: {==}
+
+def bundle_slots(+set: V.Schemas) -> {TableSchemas.route_schemas(set) == RS.RouteSchemas{Spec.raw(Spec.slot(Spec.InParams{}, set)), Spec.raw(Spec.slot(Spec.InQuery{}, set)), Spec.raw(Spec.slot(Spec.InHeaders{}, set)), Spec.raw(Spec.slot(Spec.InBody{}, set)), Spec.raw(Spec.slot(Spec.InResponse{}, set))} : RS.RouteSchemas}:
+  match set:
+    case V.Schemas{+p, +q, +h, +b, +r}:
+      %raw_eq(p) : {RS.RouteSchemas{TableSchemas.raw(p), TableSchemas.raw(q), TableSchemas.raw(h), TableSchemas.raw(b), TableSchemas.raw(r)} == RS.RouteSchemas{_, Spec.raw(q), Spec.raw(h), Spec.raw(b), Spec.raw(r)} : RS.RouteSchemas}
+      %raw_eq(q) : {RS.RouteSchemas{TableSchemas.raw(p), TableSchemas.raw(q), TableSchemas.raw(h), TableSchemas.raw(b), TableSchemas.raw(r)} == RS.RouteSchemas{TableSchemas.raw(p), _, Spec.raw(h), Spec.raw(b), Spec.raw(r)} : RS.RouteSchemas}
+      %raw_eq(h) : {RS.RouteSchemas{TableSchemas.raw(p), TableSchemas.raw(q), TableSchemas.raw(h), TableSchemas.raw(b), TableSchemas.raw(r)} == RS.RouteSchemas{TableSchemas.raw(p), TableSchemas.raw(q), _, Spec.raw(b), Spec.raw(r)} : RS.RouteSchemas}
+      %raw_eq(b) : {RS.RouteSchemas{TableSchemas.raw(p), TableSchemas.raw(q), TableSchemas.raw(h), TableSchemas.raw(b), TableSchemas.raw(r)} == RS.RouteSchemas{TableSchemas.raw(p), TableSchemas.raw(q), TableSchemas.raw(h), _, Spec.raw(r)} : RS.RouteSchemas}
+      %raw_eq(r) : {RS.RouteSchemas{TableSchemas.raw(p), TableSchemas.raw(q), TableSchemas.raw(h), TableSchemas.raw(b), TableSchemas.raw(r)} == RS.RouteSchemas{TableSchemas.raw(p), TableSchemas.raw(q), TableSchemas.raw(h), TableSchemas.raw(b), _} : RS.RouteSchemas}
+      {==}
+
+# Each bundle the table lists is the spec's, slot by slot (route_schemas_innermost).
+def slots_effective(-Tag: Data, +entries: List<&2, Table.Entry<Tag>>, +routes: List<&2, Methods.Registration(Tag)>, +compiled: Methods.Index<Tag>, +layers: List<&2, Table.Middleware<Tag>>, +count: Nat, +j: Nat, +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers, count}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}) -> {RS.RouteSchemas{Spec.raw(Spec.slot(Spec.InParams{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InQuery{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InHeaders{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InBody{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InResponse{}, Table.route_schemas(Tag, layers, Some{j})))} == Spec.bundle(Tag, entries, j) : RS.RouteSchemas}:
+  %Scopes.innermost(Tag, entries, routes, compiled, layers, count, Some{j}, Spec.InParams{}, built) : {RS.RouteSchemas{Spec.raw(Spec.slot(Spec.InParams{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InQuery{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InHeaders{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InBody{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InResponse{}, Table.route_schemas(Tag, layers, Some{j})))} == RS.RouteSchemas{Spec.raw(_), Spec.raw(Spec.effective(Tag, Spec.InQuery{}, entries, Some{j})), Spec.raw(Spec.effective(Tag, Spec.InHeaders{}, entries, Some{j})), Spec.raw(Spec.effective(Tag, Spec.InBody{}, entries, Some{j})), Spec.raw(Spec.effective(Tag, Spec.InResponse{}, entries, Some{j}))} : RS.RouteSchemas}
+  %Scopes.innermost(Tag, entries, routes, compiled, layers, count, Some{j}, Spec.InQuery{}, built) : {RS.RouteSchemas{Spec.raw(Spec.slot(Spec.InParams{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InQuery{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InHeaders{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InBody{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InResponse{}, Table.route_schemas(Tag, layers, Some{j})))} == RS.RouteSchemas{Spec.raw(Spec.slot(Spec.InParams{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(_), Spec.raw(Spec.effective(Tag, Spec.InHeaders{}, entries, Some{j})), Spec.raw(Spec.effective(Tag, Spec.InBody{}, entries, Some{j})), Spec.raw(Spec.effective(Tag, Spec.InResponse{}, entries, Some{j}))} : RS.RouteSchemas}
+  %Scopes.innermost(Tag, entries, routes, compiled, layers, count, Some{j}, Spec.InHeaders{}, built) : {RS.RouteSchemas{Spec.raw(Spec.slot(Spec.InParams{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InQuery{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InHeaders{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InBody{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InResponse{}, Table.route_schemas(Tag, layers, Some{j})))} == RS.RouteSchemas{Spec.raw(Spec.slot(Spec.InParams{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InQuery{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(_), Spec.raw(Spec.effective(Tag, Spec.InBody{}, entries, Some{j})), Spec.raw(Spec.effective(Tag, Spec.InResponse{}, entries, Some{j}))} : RS.RouteSchemas}
+  %Scopes.innermost(Tag, entries, routes, compiled, layers, count, Some{j}, Spec.InBody{}, built) : {RS.RouteSchemas{Spec.raw(Spec.slot(Spec.InParams{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InQuery{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InHeaders{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InBody{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InResponse{}, Table.route_schemas(Tag, layers, Some{j})))} == RS.RouteSchemas{Spec.raw(Spec.slot(Spec.InParams{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InQuery{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InHeaders{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(_), Spec.raw(Spec.effective(Tag, Spec.InResponse{}, entries, Some{j}))} : RS.RouteSchemas}
+  %Scopes.innermost(Tag, entries, routes, compiled, layers, count, Some{j}, Spec.InResponse{}, built) : {RS.RouteSchemas{Spec.raw(Spec.slot(Spec.InParams{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InQuery{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InHeaders{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InBody{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InResponse{}, Table.route_schemas(Tag, layers, Some{j})))} == RS.RouteSchemas{Spec.raw(Spec.slot(Spec.InParams{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InQuery{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InHeaders{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InBody{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(_)} : RS.RouteSchemas}
+  {==}
+
+def bundle_eq(-Tag: Data, +entries: List<&2, Table.Entry<Tag>>, +routes: List<&2, Methods.Registration(Tag)>, +compiled: Methods.Index<Tag>, +layers: List<&2, Table.Middleware<Tag>>, +count: Nat, +j: Nat, +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers, count}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}) -> {TableSchemas.route_schemas(Table.route_schemas(Tag, layers, Some{j})) == Spec.bundle(Tag, entries, j) : RS.RouteSchemas}:
+  Equal.trans(RS.RouteSchemas, TableSchemas.route_schemas(Table.route_schemas(Tag, layers, Some{j})), RS.RouteSchemas{Spec.raw(Spec.slot(Spec.InParams{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InQuery{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InHeaders{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InBody{}, Table.route_schemas(Tag, layers, Some{j}))), Spec.raw(Spec.slot(Spec.InResponse{}, Table.route_schemas(Tag, layers, Some{j})))}, Spec.bundle(Tag, entries, j), bundle_slots(Table.route_schemas(Tag, layers, Some{j})), slots_effective(Tag, entries, routes, compiled, layers, count, j, built))
+
+def go_down(-Tag: Data, +entries: List<&2, Table.Entry<Tag>>, +routes: List<&2, Methods.Registration(Tag)>, +compiled: Methods.Index<Tag>, +layers: List<&2, Table.Middleware<Tag>>, +count: Nat, k: Nat, +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers, count}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}) -> {TableSchemas.effective_go(Tag, layers, k) == down(Tag, entries, k) : List<&2, RS.RouteSchemas>}:
+  match k:
+    case 0n: {==}
+    case 1n+(+j):
+      %go_down(Tag, entries, routes, compiled, layers, count, j, built) : {TableSchemas.route_schemas(Table.route_schemas(Tag, layers, Some{j})) <> TableSchemas.effective_go(Tag, layers, j) == Spec.bundle(Tag, entries, j) <> _ : List<&2, RS.RouteSchemas>}
+      %bundle_eq(Tag, entries, routes, compiled, layers, count, j, built) : {TableSchemas.route_schemas(Table.route_schemas(Tag, layers, Some{j})) <> TableSchemas.effective_go(Tag, layers, j) == _ <> TableSchemas.effective_go(Tag, layers, j) : List<&2, RS.RouteSchemas>}
+      {==}
+
+def down_source(-Tag: Data, +all: List<&2, Table.Entry<Tag>>, xs: List<&2, Table.Entry<Tag>>) -> {down(Tag, all, ScopedSpec.route_count(Tag, xs)) == Spec.in_source_order(Tag, all, xs) : List<&2, RS.RouteSchemas>}:
+  match xs:
+    case Nil{}: {==}
+    case Table.Route{r} <> +tail: Equal.cong(List<&2, RS.RouteSchemas>, List<&2, RS.RouteSchemas>, z => Spec.bundle(Tag, all, ScopedSpec.route_count(Tag, tail)) <> z, down(Tag, all, ScopedSpec.route_count(Tag, tail)), Spec.in_source_order(Tag, all, tail), down_source(Tag, all, tail))
+    case Table.ScopedRoute{r, ps} <> +tail: Equal.cong(List<&2, RS.RouteSchemas>, List<&2, RS.RouteSchemas>, z => Spec.bundle(Tag, all, ScopedSpec.route_count(Tag, tail)) <> z, down(Tag, all, ScopedSpec.route_count(Tag, tail)), Spec.in_source_order(Tag, all, tail), down_source(Tag, all, tail))
+    case Table.Hook{st, tg} <> tail: down_source(Tag, all, tail)
+    case Table.Use{src, tg} <> tail: down_source(Tag, all, tail)
+    case Table.PrefixedUse{src, tg} <> tail: down_source(Tag, all, tail)
+
+def L.table_schemas_in_source_order(Tag, entries, routes, compiled, layers, count, built):
+  Equal.trans(List<&2, RS.RouteSchemas>, TableSchemas.effective_go(Tag, layers, count), down(Tag, entries, count), Spec.in_source_order(Tag, entries, entries),
+    go_down(Tag, entries, routes, compiled, layers, count, count, built),
+    Equal.trans(List<&2, RS.RouteSchemas>, down(Tag, entries, count), down(Tag, entries, ScopedSpec.route_count(Tag, entries)), Spec.in_source_order(Tag, entries, entries),
+      Equal.cong(Nat, List<&2, RS.RouteSchemas>, n => down(Tag, entries, n), count, ScopedSpec.route_count(Tag, entries), Sel.successful_count(Tag, entries, routes, compiled, layers, count, built)),
+      down_source(Tag, entries, entries)))

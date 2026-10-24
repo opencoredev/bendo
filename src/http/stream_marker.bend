@@ -24,3 +24,20 @@ def mark(res: Response.Res, id: String) -> Response.Res:
   Response.Res{code, hs, body, rep} = res
   Response.Res{code, Request.Header{marker(), Bytes.encode(id)} <> hs, [], None{}}
 
+
+# What the request registered for its response, without the affine plan or
+# session: nothing, a body stream, or a WebSocket upgrade, each under its id.
+type Claim is Data:
+  Unclaimed{}
+  BodyClaim{id: String}
+  UpgradeClaim{id: String}
+
+# Whether transport hands the response to its registration. A body stream
+# needs its own marker; an upgrade needs its own marker and a 101. A marker
+# with no registration, or another registration's id, claims nothing.
+# Transport selection and response validation both decide with this.
+def eligible(claim: Claim, +code: U32, hs: List<&2, Request.Header>) -> Bool:
+  match claim:
+    case Unclaimed{}: False{}
+    case BodyClaim{id}: marked(hs, id)
+    case UpgradeClaim{id}: marked(hs, id) && U32.is_eq(code, 101)

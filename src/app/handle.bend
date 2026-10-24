@@ -70,20 +70,14 @@ def inspected(-Vars: Data, c: Context.Ctx<Vars>, res: Response.Res, answer: Vali
     case Validate.Inspected{check}: acted(Vars, c, res, Validate.policy(mode, delivery, check), route)
     case _: IO.pure(Response.Res, res)
 
-# A response that registered a stream still carries the private marker field.
-def stream_marked(hs: List<&2, Request.Header>) -> Bool:
-  match hs:
-    case Nil{}: False{}
-    case Request.Header{name, value} <> t: String.eq(Bytes.fold(name), StreamMarker.marker()) || stream_marked(t)
-
-def delivered(streamed: Bool) -> Validate.Delivery:
-  match streamed:
-    case True{}: Validate.Streamed{}
-    case False{}: Validate.Buffered{}
-
-def check_response(~validator: Validate.Job -> Validate.Answer, -Vars: Data, c: Context.Ctx<Vars>, schema: Maybe<&2, SP.Checked>, +res: Response.Res, mode: Config.Mode, route: String) -> IO(Response.Res):
+# Delivery comes from the request's actual registration, through the same
+# eligibility test transport selection applies (Marker.eligible), so a forged
+# or stale marker header cannot exempt a buffered response. Response policies
+# and finalizers that run between this check and transport selection keep the
+# status, and drop or add the private marker only if a policy names it.
+def check_response(~validator: Validate.Job -> Validate.Answer, -Vars: Data, c: Context.Ctx<Vars>, schema: Maybe<&2, SP.Checked>, +res: Response.Res, mode: Config.Mode, route: String, claim: StreamMarker.Claim) -> IO(Response.Res):
   Response.Res{+code, +hs, body, rep} = res
-  inspected(Vars, c, res, validator(Validate.ResponseJob{schema, code, hs, body}), mode, delivered(stream_marked(hs)), route)
+  inspected(Vars, c, res, validator(Validate.ResponseJob{schema, code, hs, body}), mode, Validate.delivery(claim, code, hs), route)
 
 # The registered pattern of the route with this reversed ordinal.
 def route_source(-Tag: Data, xs: List<&2, Methods.Registration(Tag)>, k: Nat) -> String:
@@ -193,6 +187,20 @@ def transport_selected(~Vars: Data, ~Tag: Data, ~Env: Data, ~middleware: Tag -> 
     Logger.flush(Obs.access(Context.observation(Vars, ctx)), res)
     return (res, (stream, Hooks.observe(~Vars, ~Tag, ~Env, ~middleware, ids, Context.with_observation(Vars, ctx, Obs.without_access(Context.observation(Vars, ctx))), env, res)))
 
+# BND-36: the response schema checks the response every hook produced or
+# replaced, for the route the request resolved to.
+def answered_transport(~validator: Validate.Job -> Validate.Answer, ~Vars: Data, ~Tag: Data, ~Env: Data, ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +req: Request.Req, entries: List<&2, Methods.Registration(Tag)>, layers: List<&2, Table.Middleware<Tag>>, +count: Nat, env: Env, network: Bool, mode: Config.Mode, +route: Maybe<&2, Nat>, plan: Table.Lifecycle<Tag>, +latest: Context.Ctx<Vars>, recovered: Response.Res, claimed: StreamMarker.Claim & Maybe<&1, StreamTypes.Registration>) -> IO(Response.Res & (StreamTypes.Transport & IO(Unit))):
+  Request.Req{+method, path, query, version, headers} = req
+  (claim, registration) = claimed
+  do IO<Response.Res & (StreamTypes.Transport & IO(Unit))>:
+    +answered : Response.Res <- check_response(~validator, Vars, latest, Validate.response_schema(Table.route_schemas(Tag, layers, route)), recovered, mode, route_label(Tag, entries, count, route), claim)
+    dated : Response.Res <- DateResponse.ensure(validated(answered, Response.valid(answered)))
+    decorated : Response.Res <- Obs.finalize(Context.observation(Vars, latest), dated)
+    +final : Response.Res = finish(method, decorated)
+    selected : Response.Res & StreamTypes.Transport <- Transport.select(req, final, registration)
+    supported : Response.Res & StreamTypes.Transport <- Transport.network(selected, network)
+    transport_selected(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_observers(Tag, plan), latest, env, supported)
+
 def parsed_transport(~validator: Validate.Job -> Validate.Answer, ~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +kind: Router.RouterKind, +table: Table.Table<Tag>, +env: Env, +req: Request.Req, body: List<&2, U32>, network: Bool, +mode: Config.Mode, peer: Maybe<&2, Conn.ConnInfo>, parsed_query: Result<&2, &2, Query.Error, List<&2, Query.Entry>>) -> IO(Response.Res & (StreamTypes.Transport & IO(Unit))):
   Table.Table{+entries, +compiled, +layers, +count} = table
   Request.Req{+method, path, query, version, headers} = req
@@ -224,16 +232,9 @@ def parsed_transport(~validator: Validate.Job -> Validate.Answer, ~Vars: Data, ~
         +mapped : Response.Res <- Hooks.post(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_map(Tag, plan), latest, env, after)
         +checked : Response.Res = validated(mapped, Response.valid(mapped))
         +recovered : Response.Res <- recover(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_errors(Tag, plan), latest, env, checked, error_response(checked))
-        # BND-36: the response schema checks the response every hook produced
-        # or replaced, for the route the request resolved to.
-        +answered : Response.Res <- check_response(~validator, Vars, latest, Validate.response_schema(Table.route_schemas(Tag, layers, route)), validated(recovered, Response.valid(recovered)), mode, route_label(Tag, entries, count, route))
-        dated : Response.Res <- DateResponse.ensure(validated(answered, Response.valid(answered)))
-        decorated : Response.Res <- Obs.finalize(Context.observation(Vars, latest), dated)
-        +final : Response.Res = finish(method, decorated)
+        # Every hook has run, so the registration is final; close its slot now.
         registration : Maybe<&1, StreamTypes.Registration> <- Stream.take(stream_slot)
-        selected : Response.Res & StreamTypes.Transport <- Transport.select(req, final, registration)
-        supported : Response.Res & StreamTypes.Transport <- Transport.network(selected, network)
-        transport_selected(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_observers(Tag, plan), latest, env, supported)
+        answered_transport(~validator, ~Vars, ~Tag, ~Env, ~middleware, req, entries, layers, count, env, network, mode, route, plan, latest, validated(recovered, Response.valid(recovered)), Transport.claimed(registration))
 
 def buffered_pending(result: Response.Res & (StreamTypes.Transport & IO(Unit))) -> IO(Response.Res & IO(Unit)):
   (res, (stream, after)) = result

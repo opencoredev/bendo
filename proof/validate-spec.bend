@@ -15,6 +15,8 @@ import ../src/app/table.bend as T
 import ../src/app/config.bend as Config
 import ../src/data/schema-prepared.bend as SP
 import ./scoped-selection-spec.bend as Routes
+import ../src/http/stream_marker.bend as Marker
+import ../src/app/route-schemas.bend as RS
 
 # Each text slot is an object of strings: params and query pairs in order,
 # header names lowercased, header values UTF-8 or else ISO-8859-1.
@@ -245,6 +247,33 @@ def act(mode: Config.Mode, delivery: V.Delivery, c: V.Check) -> V.Action:
 def action(mode: Config.Mode, delivery: V.Delivery, m: Maybe<&2, S.Schema>, +code: U32, hs: List<&2, Request.Header>, bytes: List<&2, U32>) -> V.Action:
   act(mode, delivery, response(m, code, hs, bytes))
 
+# When transport hands a response to the request's registration, restated
+# from docs/streaming.md and docs/websocket.md. A registration marks its
+# response with a private header, x-bendo-stream-internal, whose value is the
+# registration's id. A body stream takes the response only while it carries
+# that header with that id, under any name case; an upgrade also needs status
+# 101. Without a registration nothing is handed over, whatever the headers say.
+def carries(hs: List<&2, Request.Header>, +id: String) -> Bool:
+  match hs:
+    case Nil{}: False{}
+    case Request.Header{n, v} <> t: (String.eq(Bytes.fold(n), "x-bendo-stream-internal") && String.eq(Bytes.ascii(v), id)) || carries(t, id)
+
+def handed_over(claim: Marker.Claim, +code: U32, hs: List<&2, Request.Header>) -> Bool:
+  match claim:
+    case Marker.Unclaimed{}: False{}
+    case Marker.BodyClaim{id}: carries(hs, id)
+    case Marker.UpgradeClaim{id}: carries(hs, id) && U32.is_eq(code, 101)
+
+# A response transport hands over is streamed or upgraded; any other is
+# buffered, and its body is checked.
+def delivery_when(handed: Bool) -> V.Delivery:
+  match handed:
+    case True{}: V.Streamed{}
+    case False{}: V.Buffered{}
+
+def delivery(claim: Marker.Claim, +code: U32, hs: List<&2, Request.Header>) -> V.Delivery:
+  delivery_when(handed_over(claim, code, hs))
+
 # Entrypoints without a decoder: a route that declares a schema in any slot,
 # the response slot included, is rejected with a 500; any other route is
 # admitted with no decoded values.
@@ -314,3 +343,24 @@ def effective(-Tag: Data, w: Which, xs: List<&2, T.Entry<Tag>>, route: Maybe<&2,
   match route:
     case None{}: None{}
     case Some{n}: find(Tag, w, xs, n)
+
+# The manifest's schemas (BND-36/37): one bundle per route registration, in
+# source order, each holding the raw schema of every slot of that route's
+# effective set. A route's identity is the number of routes after it.
+def raw(m: Maybe<&2, SP.Checked>) -> Maybe<&2, S.Schema>:
+  match m:
+    case None{}: None{}
+    case Some{SP.Checked{s, ok, t}}: Some{s}
+
+def bundle(-Tag: Data, +xs: List<&2, T.Entry<Tag>>, +n: Nat) -> RS.RouteSchemas:
+  RS.RouteSchemas{raw(effective(Tag, InParams{}, xs, Some{n})), raw(effective(Tag, InQuery{}, xs, Some{n})), raw(effective(Tag, InHeaders{}, xs, Some{n})), raw(effective(Tag, InBody{}, xs, Some{n})), raw(effective(Tag, InResponse{}, xs, Some{n}))}
+
+def in_source_order(-Tag: Data, +all: List<&2, T.Entry<Tag>>, xs: List<&2, T.Entry<Tag>>) -> List<&2, RS.RouteSchemas>:
+  match xs:
+    case Nil{}: []
+    case T.Route{r} <> +tail: bundle(Tag, all, Routes.route_count(Tag, tail)) <> in_source_order(Tag, all, tail)
+    case T.ScopedRoute{r, ps} <> +tail: bundle(Tag, all, Routes.route_count(Tag, tail)) <> in_source_order(Tag, all, tail)
+    case _ <> tail: in_source_order(Tag, all, tail)
+
+def manifest_schemas(-Tag: Data, +xs: List<&2, T.Entry<Tag>>) -> List<&2, RS.RouteSchemas>:
+  in_source_order(Tag, xs, xs)

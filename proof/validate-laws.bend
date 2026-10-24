@@ -14,6 +14,7 @@ import ../src/app/scopes.bend as Scopes
 import ../src/router/methods.bend as Methods
 import ./scoped-assembly-spec.bend as AssemblySpec
 import ./scoped-selection-spec.bend as ScopedSelectionSpec
+import ../src/http/stream_marker.bend as Marker
 
 # These laws trust the parsers the implementation and the specification share:
 # J.parse, Bytes.fold and the raw query parser. Proving those independently
@@ -196,3 +197,55 @@ law table_schemas_one_per_route:
   for +count: Nat
   for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers, count}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
   {List.length(&2, RS.RouteSchemas, TableSchemas.effective(Tag, Table.Table{routes, compiled, layers, count})) == ScopedSelectionSpec.route_count(Tag, entries) : Nat}
+
+# BND-36: transport selection hands a response to the request's registration
+# exactly when Spec.handed_over says: a body stream needs its own marker, an
+# upgrade its own marker and a 101, and with no registration nothing is
+# handed over whatever headers the response carries. Transport.select and
+# StreamResponse.select decide with Marker.eligible.
+law transport_eligibility_matches_spec:
+  for +claim: Marker.Claim
+  for +code: U32
+  for +headers: List<&2, Request.Header>
+  {Marker.eligible(claim, code, headers) == Spec.handed_over(claim, code, headers) : Bool}
+
+# BND-36: response validation treats a response as streamed or upgraded
+# exactly when transport hands it over by that same eligibility; every other
+# response is buffered and checked.
+law route_response_delivery_matches_transport:
+  for +claim: Marker.Claim
+  for +code: U32
+  for +headers: List<&2, Request.Header>
+  {V.delivery(claim, code, headers) == Spec.delivery(claim, code, headers) : V.Delivery}
+
+# BND-36: a marker header with no registration behind it never exempts a
+# response from its schema.
+law unclaimed_response_is_buffered:
+  for +code: U32
+  for +headers: List<&2, Request.Header>
+  {V.delivery(Marker.Unclaimed{}, code, headers) == V.Buffered{} : V.Delivery}
+
+# BND-36: route_response_policy with delivery decided from the registration:
+# for every registration claim, status, headers and body, the runtime's action
+# is Spec.action at the delivery transport eligibility gives.
+law route_response_claimed_policy:
+  for +mode: Config.Mode
+  for +claim: Marker.Claim
+  for +response: Maybe<&2, S.Schema>
+  for +code: U32
+  for +headers: List<&2, Request.Header>
+  for +bytes: List<&2, U32>
+  {V.policy(mode, V.delivery(claim, code, headers), V.response(V.checked(response), code, headers, bytes)) == Spec.action(mode, Spec.delivery(claim, code, headers), response, code, headers, bytes) : V.Action}
+
+# BND-36/37: the manifest's schema list is, entry for entry, the routes in
+# source order, each with the raw schemas of its effective set slot by slot
+# (Spec.manifest_schemas). table_schemas_one_per_route is its length.
+law table_schemas_in_source_order:
+  for -Tag: Data
+  for +entries: List<&2, Table.Entry<Tag>>
+  for +routes: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Index<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
+  for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers, count}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
+  {TableSchemas.effective(Tag, Table.Table{routes, compiled, layers, count}) == Spec.manifest_schemas(Tag, entries) : List<&2, RS.RouteSchemas>}

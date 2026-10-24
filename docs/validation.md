@@ -175,7 +175,12 @@ a 2xx response other than 204 is checked; it must have a JSON media type and a
 body its schema decodes, without coercion. Error responses, 304s and routes
 without a response schema are not checked. A streamed or upgraded response has
 no buffered body, so it is never checked and is sent as it is; do not rely on a
-response schema for a streaming route.
+response schema for a streaming route. A response counts as streamed or
+upgraded only when the transport will actually hand it to the stream or
+WebSocket the request registered, by the same test transport selection uses.
+A response that merely carries the private stream marker header, or the marker
+of another registration, is buffered and checked. So is a response a hook put
+in place of a registered stream.
 
 What a violation does depends on the server's mode:
 
@@ -226,12 +231,18 @@ so the BND-33/34/35 schema laws describe what each slot accepts and reports.
   response is sent as is, a violating buffered response is replaced in
   development and sent with a log line in production, and every other response
   is sent.
+- `transport_eligibility_matches_spec`, `route_response_delivery_matches_transport`,
+  `unclaimed_response_is_buffered` and `route_response_claimed_policy`: a
+  response is treated as streamed or upgraded exactly when transport hands it
+  to the request's registration (its own marker, and a 101 for an upgrade); a
+  marker header with no registration behind it never skips the check.
 - `route_schemas_innermost`, `route_schemas_guard_innermost` and
   `route_schemas_group_innermost`: for every built table, route and slot, the
   schema used is the last declaration of that slot among the route's scopes,
   outer to inner; undeclared slots keep the outer schema.
-- `table_schemas_one_per_route`: the manifest's schema list has one entry per
-  registration.
+- `table_schemas_in_source_order`: the manifest's schema list is the routes in
+  source order, each with the raw schemas of its effective set, slot by slot.
+  `table_schemas_one_per_route` states its length.
 
 These laws rely on the JSON parser, `Bytes.fold` and the raw query parser
 that the implementation and the specification share; BND-92 tracks proving
@@ -240,7 +251,8 @@ those independently.
 The lifecycle wiring is IO and is covered by `tests/validate.test.ts` instead:
 it checks that the handler does not run on a rejection, that transform hooks run
 before validation and `before_handle` hooks after it, both response modes,
-responses produced or replaced by hooks, the request-wide error budget, the
+responses produced or replaced by hooks, that only real streams and upgrades
+skip the response check, the request-wide error budget, the
 manifest, and that the plain entrypoints refuse schemas.
 
 ## Export the schemas
