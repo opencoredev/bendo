@@ -136,10 +136,12 @@ const isIdent = (text: string | undefined): text is string =>
 // ---- type expressions ----
 
 function parseType(c: Cursor): TypeExpr {
-  // Dependent forms bind a name: `@x: A -> B`, `@-x: A -> B`, `&x: A -> B`.
+  // Dependent forms bind a name: `@x: A -> B`, `@-x: A -> B`, `@+x: A -> B`,
+  // `&x: A -> B`. A `+` (reusable) binder has the same type as a plain one.
   if (c.peek() === "@") {
     c.next();
     const erased = c.eat("-");
+    if (!erased) c.eat("+");
     c.next();
     c.expect(":");
     const from = parseSum(c);

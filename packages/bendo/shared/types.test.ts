@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import {
   parseModule,
+  parseTypeText,
   renderSignature,
   renderTypes,
   type Module,
@@ -189,6 +190,13 @@ test("imported names resolve through their alias and namespace", () => {
     'export type Shape = { $: "Dot" };',
     "export type Shapes = List<lib.Shape>;",
   ]);
+});
+
+test("dependent function binders may be plain, erased or reusable", () => {
+  const plain = parseTypeText("@-V: Data -> String -> U32");
+  expect(parseTypeText("@-V: Data -> @x: String -> U32")).toEqual(plain);
+  expect(parseTypeText("@-V: Data -> @+x: String -> U32")).toEqual(plain);
+  expect(parseTypeText("@-V:Data -> @+x:String -> U32")).toEqual(plain);
 });
 
 test("every Bend file in the repository parses", () => {

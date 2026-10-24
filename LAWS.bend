@@ -20,6 +20,9 @@ import ./proof/compose-laws.bend as ComposeLaws
 import ./proof/validate-laws.bend as ValidateLaws
 import ./proof/plugin-laws.bend as PluginLaws
 
+# BND-68
+import ./proof/hot-path-laws.bend as HotPathLaws
+
 # BND-84
 import ./proof/review-tail-laws.bend as ReviewTailLaws
 import ./proof/tail-laws.bend as TailLaws
