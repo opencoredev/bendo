@@ -153,6 +153,7 @@ import ./proof/static-path.bend as StaticProof
 import ./proof/ws-frame.bend as WsFrameProof
 import ./proof/ws-frame-roundtrip.bend as WsFrameRoundtrip
 import ./proof/ws-frame-decode.bend as WsFrameDecode
+import ./proof/ws-frame-incremental.bend as WsFrameIncremental
 
 # Check the pure crypto implementations with the strict kernel as well.
 import ./src/crypto/sha1.bend as SHA1

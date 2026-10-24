@@ -122,3 +122,24 @@ law ws_decode_valid:
   for +rest: List<&2, U32>
   for +e: {F.decode(F.Config{role, max}, xs) == F.Got{f, k, rest} : F.Decoded}
   {S.valid(max, f, k) && S.peer_key(role, k) == True{} : Bool}
+
+# BND-95: decoding as bytes arrive gives the same result as decoding them all
+# at once. From any decoder state (no frame yet, or any frame in progress) and
+# for every way the input is split into chunks, the connection's read loop
+# ends with exactly the result of one decode of the buffered bytes followed by
+# every chunk: the same frame, key and remaining bytes, the same rejection
+# code, or the same progress (including the mask position) or shortfall.
+law ws_decode_incremental:
+  for +cfg: F.Config
+  for +body: Maybe<&2, F.Body>
+  for +pending: List<&2, U32>
+  for +chunks: List<&2, List<&2, U32>>
+  {F.feed(cfg, body, pending, chunks) == F.next(cfg, body, List.append(&2, U32, pending, List.concat(&2, U32, chunks))) : F.Decoded}
+
+# So a fresh connection reading any split of a buffer reaches exactly what
+# F.decode gives for the whole buffer, the decoder that ws_decode_sound and
+# ws_decode_valid describe.
+law ws_decode_chunks:
+  for +cfg: F.Config
+  for +chunks: List<&2, List<&2, U32>>
+  {F.settle(F.feed(cfg, None{}, [], chunks)) == F.decode(cfg, List.concat(&2, U32, chunks)) : F.Decoded}
