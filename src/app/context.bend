@@ -402,6 +402,20 @@ def entry(-Vars: Data, +c: Ctx<Vars>, verdict: V.Verdict) -> Entry<Vars>:
     case V.Valid{values}: EnterHandler{with_values(Vars, c, values)}
     case V.Invalid{code, errors}: RejectRequest{rejected(Vars, c, code, errors)}
 
+# How the request step enters after the validator's answer: a verdict decides
+# as `entry` does, and any other answer passes the context through.
+def answered(-Vars: Data, +c: Ctx<Vars>, answer: V.Answer) -> Entry<Vars>:
+  match answer:
+    case V.Judged{verdict}: entry(Vars, c, verdict)
+    case _: EnterHandler{c}
+
+# BND-96: the context a route that skips the request step enters with, the one
+# admitting it with no decoded values gives (law
+# request_free_route_enters_cleared_run): values a hook stored earlier are
+# cleared, as the step would.
+def without_values(-Vars: Data, c: Ctx<Vars>) -> Ctx<Vars>:
+  with_values(Vars, c, V.no_values())
+
 def enters(-Vars: Data, e: Entry<Vars>) -> Bool:
   match e:
     case EnterHandler{c}: True{}

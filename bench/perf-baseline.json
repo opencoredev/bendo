@@ -1,5 +1,5 @@
 {
-  "commit": "853687edaa0d93de60cf80b7060314f943e37d4c",
+  "commit": "08a5212bb67aadd5bc89566b83f2a9602678a7c9",
   "fixture": "bench/servers/hello.bend",
   "threshold": 0.75,
   "pairs": 3,
