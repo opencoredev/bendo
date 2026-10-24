@@ -2,8 +2,8 @@ import type { Routes } from "./routes";
 type Input = Routes["input"];
 type Query = Input["query"];
 export const cases: { params: Input["params"]; query: Query; headers: Input["headers"] }[] = [
-  { params: { id: "word" }, query: { choice: "word", enum: "one", literal: "yes", integer: 10, number: 1.5, boolean: true, nullable: 12, tags: ["word", "word"] }, headers: { "x-choice": "word", "x-enum": "one", "x-literal": "yes" } },
-  { params: { id: "word" }, query: { choice: "word", enum: "one", literal: "yes", integer: "10", number: "1.5", boolean: "false" }, headers: { "x-choice": "word", "x-enum": "one", "x-literal": "yes" } },
+  { params: { id: "word" }, query: { choice: "word", enum: "one", literal: "yes", integer: 10, number: 1.5, boolean: true, nullable: 12, tags: ["word", "word"], ids: [1, "2", 3], limits: [8, "9"] }, headers: { "x-choice": "word", "x-enum": "one", "x-literal": "yes" } },
+  { params: { id: "word" }, query: { choice: "word", enum: "one", literal: "yes", integer: "10", number: "1.5", boolean: "false", ids: ["4"] }, headers: { "x-choice": "word", "x-enum": "one", "x-literal": "yes" } },
 ];
 // @ts-expect-error unions never coerce their numeric branches
 const numericUnion: Query["choice"] = 10;
@@ -27,6 +27,10 @@ const booleanLiteral: Query["boolean-literal"] = true;
 const onlyNumericUnion: Query["numeric-union"] = 10;
 // @ts-expect-error null serializes to text and cannot decode as nullable integer
 const nullable: Query["nullable"] = null;
+// @ts-expect-error a required text array needs an item: [] serializes to no key
+const emptyIds: Query["ids"] = [];
+// @ts-expect-error required text arrays cannot be omitted
+const missingIds: Query = { choice: "word", enum: "one", literal: "yes", integer: 10, number: 1.5, boolean: true };
 // @ts-expect-error array item unions do not coerce
 const array: Query["tags"] = [10];
 // @ts-expect-error params must also survive serialization

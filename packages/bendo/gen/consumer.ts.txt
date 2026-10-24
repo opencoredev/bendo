@@ -16,15 +16,19 @@ type Checks = [
   Expect<Equal<Extract<Routes, { path: "/health" }>["input"]["query"], unknown>>,
   Expect<Equal<Extract<Routes, { path: "/status" }>["output"]["response"], "ok" | null | number>>,
   Expect<Equal<Extract<Routes, { path: "/flags" }>["output"]["response"], never>>,
-  Expect<Equal<Query["choice"], never>>,
-  Expect<Equal<Query["enum"], never>>,
+  Expect<Equal<NonNullable<Query["choice"]>, never>>,
+  Expect<Equal<NonNullable<Query["enum"]>, never>>,
+  Expect<Equal<NonNullable<Query["tags"]>, [number | string, ...(number | string)[]]>>,
   Expect<Equal<Query["maybe"], number | string | undefined>>,
   Expect<Equal<Todo["captures"], ["id"]>>
 ];
 const input: Body = { title: "hello" };
 const decoded: Decoded = { title: "hello", done: false, priority: 2 };
-// @ts-expect-error required numeric-only unions and enums have no reachable text input
-const query: Query = { active: "true", choice: 10, enum: 1, count: "10", maybe: "12", tags: ["1", 2], extra: { allowed: true } };
+const query: Query = { active: "true", count: "10", maybe: "12", tags: ["1", 2], extra: { allowed: true } };
+// @ts-expect-error numeric-only unions and enums have no reachable text input
+const unreachable: Query = { active: "true", choice: 10, enum: 1 };
+// @ts-expect-error an empty array serializes to no key, so present arrays need an item
+const emptyTags: Query = { active: "true", tags: [] };
 const response: Todo["output"]["response"] = { rows: [{ extra: true }], extra: 1 };
 const empty: NonNullable<Body["empty"]> = {};
 // @ts-expect-error missing required title
@@ -40,11 +44,11 @@ const stripped: Todo["output"]["query"] = { active: true, choice: 1, enum: 1, co
 // @ts-expect-error decoded numeric param is not raw text
 const param: Todo["output"]["params"] = { id: "1" };
 // @ts-expect-error coercion does not descend through unions
-const union: Query = { active: true, choice: "10", enum: 1 };
+const union: Query = { active: true, choice: "10" };
 // @ts-expect-error enums are not coerced
-const enumQuery: Query = { active: true, choice: 1, enum: "1" };
+const enumQuery: Query = { active: true, enum: "1" };
 // @ts-expect-error boolean coercion accepts only true/false text
-const booleanQuery: Query = { active: "yes", choice: 1, enum: 1 };
+const booleanQuery: Query = { active: "yes" };
 // @ts-expect-error impossible schema rejects every present value
 const impossible: Body = { title: "x", impossible: null };
 // @ts-expect-error empty strict objects reject primitives

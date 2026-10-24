@@ -41,6 +41,7 @@ test("generated text inputs survive client serialization and native route valida
     // the serialization boundary rather than duplicating it in the test.
     const consumer = await import(join(directory, "consumer.ts"));
     await using server = await start(binary);
+    expect(consumer.requests).toHaveLength(2);
     for (const input of consumer.requests) {
       const query = new URLSearchParams(input.query);
       const response = await fetch(`${server.url}${input.path}?${query}`, {
@@ -58,6 +59,8 @@ test("generated text inputs survive client serialization and native route valida
           boolean: query.get("boolean") === "true",
           ...(query.has("nullable") ? { nullable: 12 } : {}),
           ...(query.has("tags") ? { tags: query.getAll("tags") } : {}),
+          ids: query.getAll("ids").map(Number),
+          limits: query.has("limits") ? query.getAll("limits").map(Number) : [7],
         },
         headers: { "x-choice": "word", "x-enum": "one", "x-literal": "yes" },
       });
@@ -72,6 +75,7 @@ test("generated text inputs survive client serialization and native route valida
         ["numeric-union", "10"],
         ["nullable", "null"],
         ["tags", "10"],
+        ["ids", "x"],
       ] satisfies [string, string][]) {
         const invalid = new URLSearchParams(query);
         invalid.delete(key);
@@ -82,6 +86,14 @@ test("generated text inputs survive client serialization and native route valida
         expect(rejected.status).toBe(422);
         await rejected.arrayBuffer();
       }
+      // An empty array would serialize to no key; the required field then fails.
+      const missing = new URLSearchParams(query);
+      missing.delete("ids");
+      const absent = await fetch(`${server.url}/text/word?${missing}`, {
+        headers: input.headers,
+      });
+      expect(absent.status).toBe(422);
+      await absent.arrayBuffer();
     }
   } finally {
     rmSync(directory, { recursive: true, force: true });

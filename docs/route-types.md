@@ -51,10 +51,13 @@ can already select a route with
 `input.params`, `input.query` and `input.headers` accept coerced values for
 client serialization as well as text for numeric and boolean schemas. Numbers
 accept `number | string`; booleans accept `boolean | "true" | "false"`.
-Direct array fields represent repeated text keys and coerce each item. Numeric
-text syntax, bounds and integer spelling remain runtime checks. Nullable schemas
-coerce their inner node, but a text input cannot supply JSON null: omit an
-optional or defaulted field instead.
+Direct array fields represent repeated text keys and coerce each item. They
+generate non-empty tuples such as `[number | string, ...(number | string)[]]`:
+an empty array serializes to no key, which the server reads as an absent field.
+Omit an optional or defaulted array instead; a defaulted one gets its default.
+Numeric text syntax, bounds and integer spelling remain runtime checks. Nullable
+schemas coerce their inner node, but a text input cannot supply JSON null: omit
+an optional or defaulted field instead.
 
 Unions, literals and enums do not coerce their members. Their text input types
 retain only branches that accept strings. For example, an integer-or-boolean
@@ -64,6 +67,12 @@ numeric enum over HTTP text. The same restriction applies inside array items
 and in params and headers, matching Bend's [text-source policy](data/schema.md#coercion-for-text-sources).
 Nested objects and arrays wrapped in a nullable or union cannot arrive as text
 fields and project to `never`.
+
+An optional or defaulted text field that projects to `never` can only be
+omitted. A required one would make the route uncallable, so `bendo gen` fails
+instead and names the route, slot and property. Give the schema a string member,
+or make the field optional or defaulted.
+
 BND-37 marks unions with its first-match `$comment`; generation uses that marker
 to distinguish a union of null and another node from a nullable schema.
 
@@ -91,7 +100,8 @@ promise that main validates responses at runtime. Route validation is BND-36.
 - `additionalProperties: true` accepts undeclared input and response keys through
   `[key: string]: unknown`. Decoded request types remove that index signature,
   matching strip behavior.
-- Arrays become `Array<Item>`. Integers and numbers both become `number`.
+- Arrays become `Array<Item>`, except the non-empty text arrays above.
+  Integers and numbers both become `number`.
   JavaScript doubles cannot preserve all Bend integers or exact decimals; numeric
   literals parsed from the manifest can round. A literal whose valid JSON token
   overflows a double (for example `1e400`) widens to `number`; numeric bounds

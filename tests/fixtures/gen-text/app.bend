@@ -32,6 +32,8 @@ def query() -> S.Schema:
     S.Field{"boolean", S.BooleanSchema{}, S.Required{}},
     S.Field{"nullable", S.NullableSchema{S.IntegerSchema{None{}, None{}}}, S.Optional{}},
     S.Field{"tags", S.ArraySchema{choice(), 0n, None{}}, S.Optional{}},
+    S.Field{"ids", S.ArraySchema{S.IntegerSchema{None{}, None{}}, 0n, None{}}, S.Required{}},
+    S.Field{"limits", S.ArraySchema{S.IntegerSchema{None{}, None{}}, 0n, None{}}, S.Default{J.JArray{[J.JNumber{"7"}]}}},
     S.Field{"numeric-enum", S.EnumSchema{[J.JNumber{"1"}]}, S.Optional{}},
     S.Field{"numeric-literal", S.LiteralSchema{J.JNumber{"1"}}, S.Optional{}},
     S.Field{"boolean-literal", S.LiteralSchema{J.JBool{True{}}}, S.Optional{}},

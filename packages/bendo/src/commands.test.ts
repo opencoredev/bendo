@@ -335,5 +335,40 @@ else { await Bun.write(process.argv[4], '#!${process.execPath}\\nconsole.log(pro
   });
   expect(extension.code).toBe(0);
   expect(extension.out).toContain("get     /extension");
+  const field = (required: string[]) =>
+    JSON.stringify({
+      bendo: 1,
+      routes: [
+        {
+          method: "GET",
+          path: "/flags",
+          schemas: {
+            query: {
+              type: "object",
+              properties: { level: { enum: [1, 2] } },
+              required,
+              additionalProperties: false,
+            },
+          },
+        },
+      ],
+    });
+  const gen = (manifest: string) =>
+    run(["gen"], project, {
+      ...process.env,
+      PATH: `${project}:${process.env.PATH}`,
+      MANIFEST: manifest,
+    });
+  const uncallable = gen(field(["level"]));
+  expect(uncallable.code).toBe(1);
+  expect(uncallable.err).toContain(
+    'route 1 GET /flags query: required property "level" accepts no text input',
+  );
+  expect(existsSync(join(project, ".bendo/routes.ts"))).toBe(false);
+  const omissionOnly = gen(field([]));
+  expect(omissionOnly.code).toBe(0);
+  expect(readFileSync(join(project, ".bendo/routes.ts"), "utf8")).toContain(
+    'query: { "level"?: never; };',
+  );
   expect(readFileSync(join(project, "main.bend"), "utf8")).toContain("def main");
 });

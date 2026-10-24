@@ -9,7 +9,7 @@ export type Routes =
     captures: [];
     input: {
       params: unknown;
-      query: { "limit"?: (number | string); "tag"?: Array<string>; [key: string]: unknown; };
+      query: { "limit"?: (number | string); "tag"?: [string, ...string[]]; [key: string]: unknown; };
       headers: unknown;
       body: unknown;
       response: Array<{ "done": boolean; "id": number; "link"?: (null | (string & (unknown))); "owner"?: (string & (unknown)); "title": string; }>;

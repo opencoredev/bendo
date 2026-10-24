@@ -76,6 +76,80 @@ for (const schema of [
   });
 }
 
+const unreachable = [
+  { anyOf: [{ type: "integer" }, { type: "boolean" }] },
+  { enum: [1, true] },
+  { const: 1 },
+  { type: "array", items: { enum: [1] } },
+  { type: "object", properties: {}, required: [], additionalProperties: true },
+];
+for (const slot of ["params", "query", "headers"]) {
+  for (const schema of unreachable) {
+    const route = (required: string[], value: unknown) =>
+      parseManifest(
+        JSON.stringify({
+          bendo: 1,
+          routes: [
+            { method: "GET", path: "/ok", schemas: {} },
+            {
+              method: "GET",
+              path: "/text",
+              schemas: {
+                [slot]: {
+                  type: "object",
+                  properties: { field: value },
+                  required,
+                  additionalProperties: false,
+                },
+              },
+            },
+          ],
+        }),
+      );
+    test(`a required ${slot} property with no text input fails: ${JSON.stringify(schema)}`, () => {
+      expect(() => emitRouteTypes(route(["field"], schema))).toThrow(
+        `route 2 GET /text ${slot}: required property "field" accepts no text input`,
+      );
+      expect(() => emitRouteTypes(route(["field"], schema))).toThrow(
+        "make the property optional or give it a default",
+      );
+    });
+    test(`an optional or defaulted ${slot} property with no text input is omission-only: ${JSON.stringify(schema)}`, () => {
+      expect(emitRouteTypes(route([], schema))).toContain(`${slot}: { "field"?: never; };`);
+      expect(emitRouteTypes(route([], { ...schema, default: 1 }))).toContain(
+        `${slot}: { "field"?: never; };`,
+      );
+    });
+  }
+}
+
+test("present text arrays need an item because an empty array serializes to no key", () => {
+  const input = parseManifest(
+    JSON.stringify({
+      bendo: 1,
+      routes: [
+        {
+          method: "GET",
+          path: "/ids",
+          schemas: {
+            query: {
+              type: "object",
+              properties: {
+                ids: { type: "array", items: { type: "integer" } },
+              },
+              required: ["ids"],
+              additionalProperties: false,
+            },
+          },
+        },
+      ],
+    }),
+  );
+  const result = emitRouteTypes(input);
+  expect(result).toContain('query: { "ids": [(number | string), ...(number | string)[]]; };');
+  expect(result).toContain('query: { "ids": Array<number>; };');
+});
+
 test("failed generation preserves the last complete output", () => {
   const directory = mkdtempSync(join(tmpdir(), "bendo-types-"));
   try {

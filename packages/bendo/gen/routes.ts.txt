@@ -9,14 +9,14 @@ export type Routes =
     captures: ["id"];
     input: {
       params: { "id": (number | string); };
-      query: { "active": (boolean | "true" | "false"); "choice": (never | never); "count"?: (number | string); "enum": (never | never); "maybe"?: (number | string); "tags"?: Array<(number | string)>; [key: string]: unknown; };
+      query: { "active": (boolean | "true" | "false"); "choice"?: never; "count"?: (number | string); "enum"?: never; "maybe"?: (number | string); "tags"?: [(number | string), ...(number | string)[]]; [key: string]: unknown; };
       headers: { "x-api-key": string; [key: string]: unknown; };
       body: { "__proto__"?: string; "a\"b"?: string; "done"?: boolean; "empty"?: Record<string, never>; "impossible"?: never; "literal"?: "todo"; "nested"?: Array<{ "value"?: number; [key: string]: unknown; }>; "nullable"?: (null | string); "priority"?: (1 | 2 | 3); "title": (string & (unknown)); };
       response: { "done"?: boolean; "rows"?: Array<{ "count"?: number; [key: string]: unknown; }>; [key: string]: unknown; };
     };
     output: {
       params: { "id": number; };
-      query: { "active": boolean; "choice": (number | boolean); "count": number; "enum": (1 | 2); "maybe"?: (null | number); "tags"?: Array<number>; };
+      query: { "active": boolean; "choice"?: (number | boolean); "count": number; "enum"?: (1 | 2); "maybe"?: (null | number); "tags"?: Array<number>; };
       headers: { "x-api-key": string; };
       body: { "__proto__"?: string; "a\"b"?: string; "done": boolean; "empty"?: Record<string, never>; "impossible"?: never; "literal"?: "todo"; "nested"?: Array<{ "value": number; }>; "nullable"?: (null | string); "priority": (1 | 2 | 3); "title": (string & (unknown)); };
       response: { "done"?: boolean; "rows"?: Array<{ "count"?: number; [key: string]: unknown; }>; [key: string]: unknown; };

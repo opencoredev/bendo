@@ -1,34 +1,31 @@
 import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { SCHEMA_SLOTS, type Manifest } from "./manifest.ts";
-import { parseRouteSchema, schemaType, type Mode } from "./route-schema.ts";
+import { SCHEMA_SLOTS, type Manifest, type SchemaSlot } from "./manifest.ts";
+import { parseRouteSchema, schemaType, textType, type Schema } from "./route-schema.ts";
 
 /** Registration order and duplicate rows are part of the manifest contract. */
 export function emitRouteTypes(manifest: Manifest): string {
   const rows = manifest.routes.map((route, index) => {
     const schemas = SCHEMA_SLOTS.map((slot) => {
       const value = route.schemas[slot];
+      const location = `route ${index + 1} ${route.method} ${route.path} ${slot}`;
       return {
         slot,
-        schema:
-          value === undefined
-            ? undefined
-            : parseRouteSchema(value, `route ${index + 1} ${route.method} ${route.path} ${slot}`),
+        location,
+        schema: value === undefined ? undefined : parseRouteSchema(value, location),
       };
     });
+    const type = (slot: SchemaSlot, schema: Schema, location: string, output: boolean): string => {
+      if (slot === "response") return schemaType(schema, "response");
+      if (output) return schemaType(schema, "decoded");
+      return slot === "body" ? schemaType(schema, "json") : textType(schema, location);
+    };
     const slots = (output: boolean): string =>
       schemas
-        .map(({ slot, schema }) => {
-          const mode: Mode =
-            slot === "response"
-              ? "response"
-              : output
-                ? "decoded"
-                : slot === "body"
-                  ? "json"
-                  : "text";
-          return `      ${slot}: ${schema === undefined ? "unknown" : schemaType(schema, mode)};`;
-        })
+        .map(
+          ({ slot, schema, location }) =>
+            `      ${slot}: ${schema === undefined ? "unknown" : type(slot, schema, location, output)};`,
+        )
         .join("\n");
     return `  | {\n    method: ${JSON.stringify(route.method)};\n    path: ${JSON.stringify(route.path)};\n    all: ${route.all};\n    captures: [${route.params.map((name) => JSON.stringify(name)).join(", ")}];\n    input: {\n${slots(false)}\n    };\n    output: {\n${slots(true)}\n    };\n  }`;
   });

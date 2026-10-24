@@ -25,7 +25,7 @@
             "enum": { "enum": [1, 2] },
             "tags": { "type": "array", "items": { "type": "number" } }
           },
-          "required": ["active", "choice", "enum"],
+          "required": ["active"],
           "additionalProperties": true
         },
         "headers": {

@@ -196,35 +196,40 @@ export function parseRouteSchema(value: unknown, location: string, depth = 0): S
   return node({ kind: "intersection", members: parts });
 }
 
-export type Mode = "json" | "text" | "decoded" | "response";
+export type Mode = "json" | "decoded" | "response";
 
-// A union is decoded against the original JString: coercion never descends
-// into it. Numeric/boolean literals and enum members likewise cannot match a
-// JString, even when its spelling looks like their JSON representation.
-function textScalar(schema: Schema, coerce: boolean): string {
+// The TypeScript branches a text value can take; an empty list means no text
+// value decodes. A union is decoded against the original JString: coercion
+// never descends into it. Numeric/boolean literals and enum members likewise
+// cannot match a JString, even when its spelling looks like their JSON form.
+function textBranches(schema: Schema, coerce: boolean): string[] {
   const shape = schema.shape;
   switch (shape.kind) {
     case "unknown":
     case "string":
-      return "string";
+      return ["string"];
     case "number":
-      return coerce ? "(number | string)" : "never";
+      return coerce ? ["number", "string"] : [];
     case "boolean":
-      return coerce ? '(boolean | "true" | "false")' : "never";
+      return coerce ? ["boolean", '"true"', '"false"'] : [];
     case "literal":
-      return shape.text.startsWith('"') ? shape.text : "never";
+      return shape.text.startsWith('"') ? [shape.text] : [];
     case "nullable":
       // Text "null" remains a string. Optional/defaulted fields can be omitted.
-      return textScalar(shape.inner, coerce);
+      return textBranches(shape.inner, coerce);
     case "union":
-      return `(${shape.members.map((member) => textScalar(member, false)).join(" | ")})`;
-    case "intersection":
-      return `(${shape.members.map((member) => textScalar(member, coerce)).join(" & ")})`;
+      return shape.members.flatMap((member) => textBranches(member, false));
+    case "intersection": {
+      const members = shape.members.map((member) => textBranches(member, coerce));
+      return members.some((branches) => branches.length === 0)
+        ? []
+        : [`(${members.map(branchType).join(" & ")})`];
+    }
     case "null":
     case "never":
     case "array":
     case "object":
-      return "never";
+      return [];
     default: {
       const exhaustive: never = shape;
       return exhaustive;
@@ -232,17 +237,45 @@ function textScalar(schema: Schema, coerce: boolean): string {
   }
 }
 
-function textField(schema: Schema): string {
+function branchType(branches: string[]): string {
+  if (branches.length === 0) return "never";
+  return branches.length === 1 && branches[0] !== undefined
+    ? branches[0]
+    : `(${branches.join(" | ")})`;
+}
+
+function textField(schema: Schema): string[] {
   // Only a direct ArraySchema field gathers repeated keys. A nullable or
   // union wrapping an array receives a scalar string and cannot decode it.
-  return schema.shape.kind === "array"
-    ? `Array<${textScalar(schema.shape.items, true)}>`
-    : textScalar(schema, true);
+  if (schema.shape.kind !== "array") return textBranches(schema, true);
+  // An empty array serializes to no key at all, which decodes as an absent
+  // field, so present arrays need at least one item.
+  const item = branchType(textBranches(schema.shape.items, true));
+  return item === "never" ? [] : [`[${item}, ...${item}[]]`];
+}
+
+/** Params, query and headers: the values a client can serialize as text. */
+export function textType(schema: Schema, location: string): string {
+  const shape = schema.shape;
+  if (shape.kind !== "object") return branchType(textBranches(schema, true));
+  const fields = shape.properties.map(({ name, required, schema: property }) => {
+    const branches = textField(property);
+    if (required && branches.length === 0)
+      throw new Error(
+        `Route types: ${location}: required property ${JSON.stringify(name)} accepts no text input, so no request can reach this route. ` +
+          "Params, query and headers arrive as text: only direct number, integer and boolean schemas (and direct array items) coerce, " +
+          "while union, enum and const members must accept strings and nested objects never arrive. " +
+          "Accept a string member, or make the property optional or give it a default.",
+      );
+    return `${JSON.stringify(name)}${required ? "" : "?"}: ${branchType(branches)};`;
+  });
+  if (shape.open) fields.push("[key: string]: unknown;");
+  if (fields.length === 0) return "Record<string, never>";
+  return `{ ${fields.join(" ")} }`;
 }
 
 export function schemaType(schema: Schema, mode: Mode): string {
   const shape = schema.shape;
-  if (mode === "text" && shape.kind !== "object") return textScalar(schema, true);
   switch (shape.kind) {
     case "unknown":
     case "never":
@@ -267,7 +300,7 @@ export function schemaType(schema: Schema, mode: Mode): string {
       const open = shape.open && mode !== "decoded";
       const fields = shape.properties.map(
         ({ name, required, schema: property }) =>
-          `${JSON.stringify(name)}${required || (mode === "decoded" && property.defaulted) ? "" : "?"}: ${mode === "text" ? textField(property) : schemaType(property, mode)};`,
+          `${JSON.stringify(name)}${required || (mode === "decoded" && property.defaulted) ? "" : "?"}: ${schemaType(property, mode)};`,
       );
       if (open) fields.push("[key: string]: unknown;");
       if (fields.length === 0) return "Record<string, never>";
