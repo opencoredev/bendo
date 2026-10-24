@@ -30,6 +30,7 @@ def hooks(-Tag: Data, +xs: List<&2, T.Placement<Tag>>, +stage: T.Stage) -> {T.ho
       %Equal.sym(Bool, U32.is_eq(T.stage_number(kind), T.stage_number(stage)), Global.same_stage(kind, stage), Legacy.same(kind, stage)) : {T.include(Tag, tag, T.hook_ids(Tag, tail, stage), _) == Global.keep(Tag, tag, S.hooks(Tag, tail, stage), Global.same_stage(kind, stage)) : List<&2, Tag>}
       %Equal.sym(List<&2, Tag>, T.hook_ids(Tag, tail, stage), S.hooks(Tag, tail, stage), hooks(Tag, tail, stage)) : {T.include(Tag, tag, _, Global.same_stage(kind, stage)) == Global.keep(Tag, tag, S.hooks(Tag, tail, stage), Global.same_stage(kind, stage)) : List<&2, Tag>}
       Legacy.keep(Tag, tag, S.hooks(Tag, tail, stage), Global.same_stage(kind, stage))
+    case T.Checks{scope, schemas} <> tail: hooks(Tag, tail, stage)
 
 def at(-Tag: Data, +xs: List<&2, T.Placement<Tag>>, +stage: T.Stage, yes: Bool) -> {T.include_hooks(Tag, xs, stage, yes) == S.at(Tag, xs, stage, yes) : List<&2, Tag>}:
   match yes:

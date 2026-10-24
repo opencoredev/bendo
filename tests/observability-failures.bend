@@ -27,8 +27,8 @@ def empty_500(res: B.Res, label: String) -> IO(Unit):
 
 def closed(state: Obs.State, +c: B.Ctx) -> IO(B.Res):
   match state:
-    case Obs.State{id, None{}, finalized, policies, stream, peer, access}: IO.die(B.Res, 1, "timing collector missing")
-    case Obs.State{id, Some{store}, finalized, policies, stream, peer, access}:
+    case Obs.State{id, None{}, finalized, policies, stream, peer, access, valid}: IO.die(B.Res, 1, "timing collector missing")
+    case Obs.State{id, Some{store}, finalized, policies, stream, peer, access, valid}:
       do IO<B.Res>:
         Timing.close(store)
         late : Bool <- B.timing_mark(Unit, c, "late", 1n)
@@ -52,7 +52,7 @@ def single_id(res: B.Res) -> Bool:
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    mixed : B.Res <- Obs.finalize(Obs.with_id(Obs.empty(), "retained"), Response.body(200, [Request.Header{"X-Request-ID", Response.utf8("explicit")}, Request.Header{"x-request-id", Response.utf8("duplicate")}], []))
+    mixed : B.Res <- Obs.finalized_timing(Obs.with_id(Obs.empty(), "retained"), Response.body(200, [Request.Header{"X-Request-ID", Response.utf8("explicit")}, Request.Header{"x-request-id", Response.utf8("duplicate")}], []))
     assert(single_id(mixed), "mixed-case explicit ID wins without duplicates")
     entropy : B.Res <- RequestId.generated(Unit, context(), unreachable, Fail{(5, "injected entropy error")})
     empty_500(entropy, "entropy failure returns empty 500")

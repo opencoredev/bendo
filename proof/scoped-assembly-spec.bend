@@ -47,9 +47,15 @@ def assemble(-Tag: Data, entries: List<&2, T.Entry<Tag>>, +prefix: String, +inhe
     case T.Use{source, tag} <> tail: T.Use{source, tag} <> assemble(Tag, tail, prefix, inherited)
     case T.PrefixedUse{source, tag} <> tail: T.PrefixedUse{path(prefix, source), tag} <> assemble(Tag, tail, prefix, inherited)
 
+# BND-36: a guard's schemas become one Checks placement after its hooks.
+def checks(-Tag: Data, slot: T.SchemaSlot, +scope: T.Scope) -> List<&2, T.Placement<Tag>>:
+  match slot:
+    case T.NoSchemas{}: []
+    case T.WithSchemas{schemas}: [T.Checks{scope, schemas}]
+
 def guard(-Tag: Data, options: T.GuardOptions<Tag>, +entries: List<&2, T.Entry<Tag>>) -> List<&2, T.Entry<Tag>>:
   T.GuardOptions{explicit, schemas} = options
-  assemble(Tag, entries, "", located(Tag, List.append(&2, T.HookSpec<Tag>, explicit, declarations(Tag, entries)), T.GuardScope{}))
+  assemble(Tag, entries, "", List.append(&2, T.Placement<Tag>, located(Tag, List.append(&2, T.HookSpec<Tag>, explicit, declarations(Tag, entries)), T.GuardScope{}), checks(Tag, schemas, T.GuardScope{})))
 
 def group(-Tag: Data, +prefix: String, explicit: List<&2, T.HookSpec<Tag>>, +entries: List<&2, T.Entry<Tag>>) -> List<&2, T.Entry<Tag>>:
   assemble(Tag, entries, prefix, located(Tag, List.append(&2, T.HookSpec<Tag>, explicit, declarations(Tag, entries)), T.GroupScope{prefix}))

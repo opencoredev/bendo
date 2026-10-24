@@ -111,12 +111,18 @@ def assembled(-Tag: Data, +xs: List<&2, T.Entry<Tag>>, +prefix: String, +inherit
       %Equal.sym(String, A.prefix_path(prefix, source), S.path(prefix, source), path(prefix, source)) : {T.PrefixedUse{_, tag} <> A.attach(Tag, A.prefix_entries(Tag, tail, prefix), inherited) == S.assemble(Tag, T.PrefixedUse{source, tag} <> tail, prefix, inherited) : List<&2, T.Entry<Tag>>}
       Equal.cong(List<&2, T.Entry<Tag>>, List<&2, T.Entry<Tag>>, rest => T.PrefixedUse{S.path(prefix, source), tag} <> rest, A.attach(Tag, A.prefix_entries(Tag, tail, prefix), inherited), S.assemble(Tag, tail, prefix, inherited), assembled(Tag, tail, prefix, inherited))
 
+def checks(-Tag: Data, +slot: T.SchemaSlot, +scope: T.Scope) -> {A.checks(Tag, slot, scope) == S.checks(Tag, slot, scope) : List<&2, T.Placement<Tag>>}:
+  match slot:
+    case T.NoSchemas{}: {==}
+    case T.WithSchemas{schemas}: {==}
+
 def guard(-Tag: Data, +options: T.GuardOptions<Tag>, +xs: List<&2, T.Entry<Tag>>) -> {A.guard(Tag, options, xs) == S.guard(Tag, options, xs) : List<&2, T.Entry<Tag>>}:
   match options:
     case T.GuardOptions{explicit, schemas}:
-      %Equal.sym(List<&2, T.HookSpec<Tag>>, A.declared(Tag, xs), S.declarations(Tag, xs), declarations(Tag, xs)) : {A.attach(Tag, xs, A.placements(Tag, List.append(&2, T.HookSpec<Tag>, explicit, _), T.GuardScope{})) == S.guard(Tag, T.GuardOptions{explicit, schemas}, xs) : List<&2, T.Entry<Tag>>}
-      %Equal.sym(List<&2, T.Placement<Tag>>, A.placements(Tag, List.append(&2, T.HookSpec<Tag>, explicit, S.declarations(Tag, xs)), T.GuardScope{}), S.located(Tag, List.append(&2, T.HookSpec<Tag>, explicit, S.declarations(Tag, xs)), T.GuardScope{}), located(Tag, List.append(&2, T.HookSpec<Tag>, explicit, S.declarations(Tag, xs)), T.GuardScope{})) : {A.attach(Tag, xs, _) == S.guard(Tag, T.GuardOptions{explicit, schemas}, xs) : List<&2, T.Entry<Tag>>}
-      attached(Tag, xs, S.located(Tag, List.append(&2, T.HookSpec<Tag>, explicit, S.declarations(Tag, xs)), T.GuardScope{}))
+      %Equal.sym(List<&2, T.HookSpec<Tag>>, A.declared(Tag, xs), S.declarations(Tag, xs), declarations(Tag, xs)) : {A.attach(Tag, xs, List.append(&2, T.Placement<Tag>, A.placements(Tag, List.append(&2, T.HookSpec<Tag>, explicit, _), T.GuardScope{}), A.checks(Tag, schemas, T.GuardScope{}))) == S.guard(Tag, T.GuardOptions{explicit, schemas}, xs) : List<&2, T.Entry<Tag>>}
+      %Equal.sym(List<&2, T.Placement<Tag>>, A.placements(Tag, List.append(&2, T.HookSpec<Tag>, explicit, S.declarations(Tag, xs)), T.GuardScope{}), S.located(Tag, List.append(&2, T.HookSpec<Tag>, explicit, S.declarations(Tag, xs)), T.GuardScope{}), located(Tag, List.append(&2, T.HookSpec<Tag>, explicit, S.declarations(Tag, xs)), T.GuardScope{})) : {A.attach(Tag, xs, List.append(&2, T.Placement<Tag>, _, A.checks(Tag, schemas, T.GuardScope{}))) == S.guard(Tag, T.GuardOptions{explicit, schemas}, xs) : List<&2, T.Entry<Tag>>}
+      %Equal.sym(List<&2, T.Placement<Tag>>, A.checks(Tag, schemas, T.GuardScope{}), S.checks(Tag, schemas, T.GuardScope{}), checks(Tag, schemas, T.GuardScope{})) : {A.attach(Tag, xs, List.append(&2, T.Placement<Tag>, S.located(Tag, List.append(&2, T.HookSpec<Tag>, explicit, S.declarations(Tag, xs)), T.GuardScope{}), _)) == S.guard(Tag, T.GuardOptions{explicit, schemas}, xs) : List<&2, T.Entry<Tag>>}
+      attached(Tag, xs, List.append(&2, T.Placement<Tag>, S.located(Tag, List.append(&2, T.HookSpec<Tag>, explicit, S.declarations(Tag, xs)), T.GuardScope{}), S.checks(Tag, schemas, T.GuardScope{})))
 
 def group(-Tag: Data, +prefix: String, +explicit: List<&2, T.HookSpec<Tag>>, +xs: List<&2, T.Entry<Tag>>) -> {A.group(Tag, prefix, explicit, xs) == S.group(Tag, prefix, explicit, xs) : List<&2, T.Entry<Tag>>}:
   %Equal.sym(List<&2, T.HookSpec<Tag>>, A.declared(Tag, xs), S.declarations(Tag, xs), declarations(Tag, xs)) : {A.attach(Tag, A.prefix_entries(Tag, xs, prefix), A.placements(Tag, List.append(&2, T.HookSpec<Tag>, explicit, _), T.GroupScope{prefix})) == S.group(Tag, prefix, explicit, xs) : List<&2, T.Entry<Tag>>}

@@ -1,4 +1,4 @@
-# Per-route schemas for the manifest (BND-37) and route validation (BND-36).
+# Per-route schemas for the manifest (BND-37).
 # An app passes one RouteSchemas per route registration, in registration
 # order: the order of B.routes' table and of the manifest. See docs/manifest.md.
 import Base

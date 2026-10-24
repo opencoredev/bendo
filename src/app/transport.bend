@@ -9,6 +9,7 @@ import ../http/stream_response.bend as StreamResponse
 import ../http/websocket.bend as WebSocket
 import ../http/request.bend as Request
 import ../http/response.bend as Response
+import ../http/stream_marker.bend as Marker
 
 def streamed(selected: Response.Res & Maybe<&1, T.Plan>) -> Response.Res & T.Transport:
   match selected:
@@ -24,23 +25,37 @@ def decided(+req: Request.Req, res: Response.Res, session: T.Session, decision: 
         return (Opening.wire_refusal(req, res, status), T.Buffered{})
 
 # Upgrade only when the response still carries this registration's marker and
-# is still a 101; then re-decide against the request as it arrived.
-def upgrade(+req: Request.Req, res: Response.Res, config: WebSocket.Config, session: T.Session, marked: Bool, switching: Bool) -> IO(Response.Res & T.Transport):
-  match marked switching:
-    case True{} True{}: decided(req, res, session, WebSocket.decide(config, req))
-    case marked _:
+# is still a 101 (Marker.eligible); then re-decide against the request as it
+# arrived.
+def upgrade(+req: Request.Req, res: Response.Res, config: WebSocket.Config, session: T.Session, marked: Bool, eligible: Bool) -> IO(Response.Res & T.Transport):
+  match eligible:
+    case True{}: decided(req, res, session, WebSocket.decide(config, req))
+    case False{}:
       do IO<Response.Res & T.Transport>:
         Stream.abort(session)
         return (Opening.kept_response(res, marked), T.Buffered{})
 
 def upgrade_marked(+req: Request.Req, +res: Response.Res, +id: String, config: WebSocket.Config, session: T.Session) -> IO(Response.Res & T.Transport):
   match res:
-    case Response.Res{+code, hs, body, rep}: upgrade(req, res, config, session, Stream.marked(hs, id), U32.is_eq(code, 101))
+    case Response.Res{+code, +hs, body, rep}: upgrade(req, res, config, session, Stream.marked(hs, id), Marker.eligible(Marker.UpgradeClaim{id}, code, hs))
 
 def stream_selected(+req: Request.Req, +res: Response.Res, id: String, plan: T.Plan) -> IO(Response.Res & T.Transport):
   do IO<Response.Res & T.Transport>:
     selected : Response.Res & Maybe<&1, T.Plan> <- StreamResponse.select(req, res, Some{T.Registration{id, plan}})
     return streamed(selected)
+
+# The registration's claim, handed back with the registration itself so
+# response validation can classify delivery before transport selects.
+def claim_pair(+id: String, registration: T.Registration, upgrade: Bool) -> Marker.Claim & Maybe<&1, T.Registration>:
+  match upgrade:
+    case False{}: (Marker.BodyClaim{id}, Some{registration})
+    case True{}: (Marker.UpgradeClaim{id}, Some{registration})
+
+def claimed(registration: Maybe<&1, T.Registration>) -> Marker.Claim & Maybe<&1, T.Registration>:
+  match registration:
+    case None{}: (Marker.Unclaimed{}, None{})
+    case Some{T.Registration{+id, plan}}: claim_pair(id, T.Registration{id, plan}, False{})
+    case Some{T.Upgrade{+id, config, session}}: claim_pair(id, T.Upgrade{id, config, session}, True{})
 
 def select(+req: Request.Req, +res: Response.Res, registration: Maybe<&1, T.Registration>) -> IO(Response.Res & T.Transport):
   match registration:

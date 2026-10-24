@@ -17,6 +17,7 @@ import ./src/app/manifest.bend as Manifest
 import ./proof/manifest-spec.bend as ManifestSpec
 import ./proof/manifest-built-spec.bend as ManifestBuiltSpec
 import ./proof/compose-laws.bend as ComposeLaws
+import ./proof/validate-laws.bend as ValidateLaws
 import ./proof/plugin-laws.bend as PluginLaws
 
 # BND-84
@@ -2359,3 +2360,16 @@ law websocket_response_refuse_400:
 
 law websocket_response_refuse_403:
   {WebSocket.response(WebSocket.Refuse{403}) == Response.Res{403, [], [], None{}} : Response.Res}
+
+# BND-28: every scalar-string, lexical-number JSON tree with at most 512
+# nested containers serializes successfully and survives strict byte parsing.
+# Pretty printing and ASCII Unicode escaping are independently quantified.
+
+law json_roundtrip:
+  for +value: Json.Json
+  for +pretty: Bool
+  for +ascii: Bool
+  for +valid: {Json.admissible(value) == True{} : Bool}
+  exs output: String
+  {Json.write(value, pretty, ascii) == Done{output} : Result<&2, &2, Json.Error, String>} &
+  {Json.parse(Utf8.encode(output)) == Done{value} : Result<&2, &2, Json.Error, Json.Json>}

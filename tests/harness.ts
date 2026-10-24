@@ -21,6 +21,8 @@ export const SLOW_TEST_TIMEOUT_MS = 120_000;
 
 export type RunningServer = {
   url: string;
+  /** Everything the server has written to stderr so far. */
+  stderr: () => string;
   pid: number;
   [Symbol.asyncDispose]: () => Promise<void>;
 };
@@ -164,13 +166,21 @@ async function attempt(
     stderr: "pipe",
   });
   const url = `http://${hostname}:${port}`;
+  let stderr = "";
+  const captured = (async () => {
+    const decoder = new TextDecoder();
+    for await (const chunk of proc.stderr) stderr += decoder.decode(chunk, { stream: true });
+  })();
   let exited = false;
   void proc.exited.then(() => {
     exited = true;
   });
   const deadline = Date.now() + SERVER_START_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    if (exited) return { kind: "exited", url, stderr: await new Response(proc.stderr).text() };
+    if (exited) {
+      await captured;
+      return { kind: "exited", url, stderr };
+    }
     const up = await fetch(url).then(
       () => true,
       () => false,
@@ -180,10 +190,12 @@ async function attempt(
         kind: "up",
         server: {
           url,
+          stderr: () => stderr,
           pid: proc.pid,
           [Symbol.asyncDispose]: async () => {
             proc.kill();
             await proc.exited;
+            await captured;
           },
         },
       };
