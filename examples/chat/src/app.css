@@ -200,7 +200,7 @@ textarea {
   border: 0;
   border-radius: 8px;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-ink);
   font-weight: 600;
   cursor: pointer;
   transition:
