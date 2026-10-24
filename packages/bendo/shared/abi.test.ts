@@ -3,12 +3,12 @@
 // the same file's checks compare every declared shape with the runtime value.
 import { expect, test } from "bun:test";
 import { deepStrictEqual } from "node:assert";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { COMPILE_TEST_TIMEOUT_MS } from "../../../tests/harness.ts";
-import { declarations, parseExportTable } from "../src/shared.ts";
+import { BendCompileError, compileShared, declarations, parseExportTable } from "../src/shared.ts";
 
 const here = import.meta.dir;
 const root = resolve(here, "../../..");
@@ -163,4 +163,131 @@ test("bendo build --shared reports a missing directory and bad arguments", () =>
   const extra = bendo(["build", "--shared", "a", "b"], abi);
   expect(extra.code).toBe(1);
   expect(extra.output).toContain("Unexpected arguments");
+});
+
+// A stand-in `bend` script: the compile wrapper's handling of its output does
+// not depend on what the real compiler prints.
+function fakeBend(dir: string, script: string): string {
+  const path = join(dir, "bend");
+  writeFileSync(path, `#!/bin/sh\n${script}\n`);
+  chmodSync(path, 0o755);
+  return path;
+}
+
+test("a Bend diagnostic over 64 MiB reaches the error whole", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bendo-shared-big-"));
+  try {
+    const entry = join(dir, "x.bend");
+    writeFileSync(entry, "def x() -> Nat:\n  1n\n");
+    // 70 MiB of "a" on stderr, then a failing exit.
+    const bend = fakeBend(dir, "head -c 73400320 /dev/zero | tr '\\0' a >&2; exit 1");
+    const failure: unknown = await compileShared(entry, bend).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(BendCompileError);
+    expect(failure instanceof BendCompileError && failure.output.length).toBe(73400320);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a Bend run that exits 0 without writing its output rejects instead of throwing", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bendo-shared-empty-"));
+  try {
+    const entry = join(dir, "x.bend");
+    writeFileSync(entry, "def x() -> Nat:\n  1n\n");
+    const failure: unknown = await compileShared(entry, fakeBend(dir, "exit 0")).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toMatchObject({ code: "ENOENT" });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/** Whether `pid` runs; a zombie waiting for its reaper counts as gone. */
+function running(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+  } catch {
+    return false;
+  }
+  try {
+    return !/^\d+ \(.*\) Z /.test(readFileSync(`/proc/${pid}/stat`, "utf8"));
+  } catch {
+    return true;
+  }
+}
+
+async function exited(pids: number[]): Promise<number[]> {
+  for (let i = 0; i < 100 && pids.some(running); i++) await Bun.sleep(50);
+  return pids.filter(running);
+}
+
+/** A `bend` that records its pid and a child's, which keeps its stdout open. */
+function lingeringBend(dir: string, trap: string): { bend: string; pids: () => number[] } {
+  const file = join(dir, "pids");
+  const bend = fakeBend(
+    dir,
+    `${trap}\necho $$ >> "${file}"\nsleep 60 &\necho $! >> "${file}"\nwait`,
+  );
+  const pids = () =>
+    existsSync(file)
+      ? readFileSync(file, "utf8").trim().split("\n").filter(Boolean).map(Number)
+      : [];
+  return { bend, pids };
+}
+
+test("a timed-out Bend that ignores SIGTERM is killed with its children, and the compile rejects", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bendo-shared-timeout-"));
+  try {
+    const entry = join(dir, "x.bend");
+    writeFileSync(entry, "def x() -> Nat:\n  1n\n");
+    const { bend, pids } = lingeringBend(dir, "trap '' TERM");
+    const started = Date.now();
+    const failure: unknown = await compileShared(entry, bend, {
+      timeoutMs: 1000,
+      graceMs: 300,
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect(String(failure)).toContain("bend ran past 1s and was stopped");
+    expect(pids()).toHaveLength(2);
+    expect(await exited(pids())).toEqual([]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("aborting a compile kills Bend and its children", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bendo-shared-abort-"));
+  try {
+    const entry = join(dir, "x.bend");
+    writeFileSync(entry, "def x() -> Nat:\n  1n\n");
+    const { bend, pids } = lingeringBend(dir, "");
+    const stop = new AbortController();
+    const compile = compileShared(entry, bend, { signal: stop.signal }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    for (let i = 0; pids().length < 2; i++) {
+      if (i === 200) throw new Error("fake bend never started");
+      await Bun.sleep(10);
+    }
+    stop.abort();
+    expect(String(await compile)).toContain("compile cancelled");
+    expect(await exited(pids())).toEqual([]);
+    // An already-aborted signal never starts Bend.
+    rmSync(join(dir, "pids"));
+    expect(
+      String(await compileShared(entry, bend, { signal: stop.signal }).catch(String)),
+    ).toContain("compile cancelled");
+    expect(pids()).toEqual([]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

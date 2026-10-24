@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 // Use committed costs only: restored, partially updated timings must never move
 // a file between matrix jobs. Bun can still use its local timings within a job.
 export const SHARD_COUNT = 4;
-const roots = ["tests", "bench", "packages/bendo"];
+const roots = ["tests", "bench", "packages/bendo", "packages/vite-plugin-bendo"];
 
 export function testFiles(): string[] {
   return roots
