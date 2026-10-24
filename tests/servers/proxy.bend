@@ -1,5 +1,6 @@
 # BND-47 fixture: upstream URLs come from the environment at startup.
-# BND-93 adds a named upstream, a name that never resolves and an IPv6 one.
+# BND-93 adds a named upstream, a name that never resolves, an IPv6 one and a
+# name whose lookup tests/fixtures/proxy/fake_dns.c holds.
 import Base
 import ../../src/main.bend as B
 import ../../src/http/response.bend as Response
@@ -19,6 +20,7 @@ type Tag is Data:
   Misconfigured{}
   Named{}
   Unresolved{}
+  SlowName{}
   V6{}
   BadRewrite{}
   Replaced{}
@@ -57,6 +59,7 @@ def options(tag: Tag, env: Env) -> B.ProxyOptions:
     case Misconfigured{}: B.proxy_options("http://example.com:0")
     case Named{}: B.proxy_rewrite(B.proxy_options(named_url(env)), "/named", "")
     case Unresolved{}: B.proxy_options("http://bendo-upstream.invalid")
+    case SlowName{}: B.proxy_timeouts(B.proxy_options("http://a.slow.bendo.test"), 500, 1000, 1000, 1000)
     case V6{}: B.proxy_rewrite(B.proxy_options(v6_url(env)), "/v6", "")
     case BadRewrite{}: B.proxy_rewrite(B.proxy_options(up_url(env)), "/bad", "nope")
     case _: B.proxy_options(up_url(env))
@@ -110,6 +113,7 @@ def main() -> IO(Unit):
       B.get(Tag, "/misconfigured", Misconfigured{}),
       B.all(Tag, "/named/*", Named{}),
       B.get(Tag, "/unresolved", Unresolved{}),
+      B.get(Tag, "/slowname", SlowName{}),
       B.all(Tag, "/v6/*", V6{}),
       B.get(Tag, "/bad/*", BadRewrite{}),
       B.all(Tag, "/*", Up{})

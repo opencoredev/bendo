@@ -10,10 +10,17 @@
 // made for that lookup; the computation parks on the pipe's read end with the
 // deadline. The worker owns the write end and closes it after answering, so a
 // lookup abandoned at the deadline only leaves the worker a write that fails.
-// Addresses are tried as in the C effect: in the resolver's order, alternating
-// families, each attempt but the last getting an equal share of the time left.
+// As in the C effect, at most BENDO_RESOLVERS lookups are outstanding at once
+// and one more fails with EAGAIN. A lookup counts until the worker has
+// answered it and closed its pipe, not until its request gives up, so slow
+// DNS cannot pile up descriptors. Addresses are tried as in the C effect: at
+// most BENDO_ADDRS of each family in the resolver's order, alternating
+// families from the first answer's, and at most BENDO_ADDRS in all, each
+// attempt but the last getting an equal share of the time left.
 const BENDO_ADDRS = 8;
+const BENDO_RESOLVERS = 32;
 const BENDO_NO_ADDRESS = 1001;
+const BENDO_EAGAIN = 11;
 
 function bendo_upstream_connect_failure(code) {
   return { $: CID(Fail), error: { $: CID(Tuple), fst: code >>> 0, snd: "connect failed" } };
@@ -30,29 +37,34 @@ function bendo_upstream_pipe() {
   return globalThis.BENDO_PIPE;
 }
 
+// The resolver worker and the count of lookups it has not finished, shared
+// with the worker so it can drop a lookup the moment its pipe is closed.
 function bendo_upstream_resolver() {
   if (globalThis.BENDO_RESOLVER === undefined) {
     const { Worker } = require("worker_threads");
     const source = `
-      const { parentPort } = require("worker_threads");
+      const { parentPort, workerData } = require("worker_threads");
       const dns = require("dns");
       const fs = require("fs");
+      const pending = new Int32Array(workerData);
       parentPort.on("message", ({ host, fd }) => {
         dns.lookup(host, { all: true, verbatim: true }, (error, list) => {
           const answer = error
             ? { error: String(error.code) }
-            : { list: list.slice(0, ${BENDO_ADDRS * 2}).map((a) => [a.family, a.address]) };
+            : { list: list.map((a) => [a.family, a.address]) };
           try {
             fs.writeSync(fd, JSON.stringify(answer) + "\\n");
           } catch {}
           try {
             fs.closeSync(fd);
           } catch {}
+          Atomics.sub(pending, 0, 1);
         });
       });`;
-    const worker = new Worker(source, { eval: true });
+    const pending = new SharedArrayBuffer(4);
+    const worker = new Worker(source, { eval: true, workerData: pending });
     worker.unref();
-    globalThis.BENDO_RESOLVER = worker;
+    globalThis.BENDO_RESOLVER = { worker, pending: new Int32Array(pending) };
   }
   return globalThis.BENDO_RESOLVER;
 }
@@ -100,15 +112,27 @@ function bendo_upstream_sockaddr(sys, family, address, port) {
   return b;
 }
 
-// Alternates families starting with the first address's family.
+// The addresses to try, as bendo_dial_order picks them in the C effect: the
+// first BENDO_ADDRS of each family in the resolver's order, then alternating
+// families from the first answer's, BENDO_ADDRS in all. Entries that are not
+// [4 or 6, address text] are skipped. A family's later addresses never push
+// out the other family.
 function bendo_upstream_order(list) {
-  const first = list[0]?.[0];
-  const same = list.filter((a) => a[0] === first);
-  const other = list.filter((a) => a[0] !== first);
+  const fam = { 4: [], 6: [] };
+  let first;
+  for (const a of list) {
+    if (!Array.isArray(a) || (a[0] !== 4 && a[0] !== 6) || typeof a[1] !== "string") continue;
+    if (fam[a[0]].length === BENDO_ADDRS) continue;
+    first ??= a[0];
+    fam[a[0]].push([a[0], a[1]]);
+  }
+  if (first === undefined) return [];
+  const same = fam[first];
+  const other = fam[first === 4 ? 6 : 4];
   const out = [];
-  for (let i = 0; out.length < BENDO_ADDRS && i < Math.max(same.length, other.length); i += 1) {
-    if (i < same.length) out.push(same[i]);
-    if (i < other.length && out.length < BENDO_ADDRS) out.push(other[i]);
+  for (let j = 0; j < BENDO_ADDRS; j += 1) {
+    if (j < same.length && out.length < BENDO_ADDRS) out.push(same[j]);
+    if (j < other.length && out.length < BENDO_ADDRS) out.push(other[j]);
   }
   return out;
 }
@@ -208,15 +232,32 @@ function bendo_upstream_connect(host, port, ms, k) {
   let resolver;
   try {
     resolver = bendo_upstream_resolver();
+  } catch {
+    return bendo_upstream_connect_failure(38);
+  }
+  if (Atomics.add(resolver.pending, 0, 1) >= BENDO_RESOLVERS) {
+    Atomics.sub(resolver.pending, 0, 1);
+    return bendo_upstream_connect_failure(BENDO_EAGAIN);
+  }
+  try {
     if (bendo_upstream_pipe()(fds) !== 0) {
+      Atomics.sub(resolver.pending, 0, 1);
       return bendo_upstream_connect_failure(sys.errno());
     }
   } catch {
+    Atomics.sub(resolver.pending, 0, 1);
     return bendo_upstream_connect_failure(38);
   }
   const [r, w] = fds;
   sys.fcntl(r, 4, sys.fcntl(r, 3, 0) | (sys.mac ? 4 : 0x800));
-  resolver.postMessage({ host, fd: w });
+  try {
+    resolver.worker.postMessage({ host, fd: w });
+  } catch {
+    Atomics.sub(resolver.pending, 0, 1);
+    sys.close(r);
+    sys.close(w);
+    return bendo_upstream_connect_failure(38);
+  }
   let text = "";
   const buf = new Uint8Array(4096);
   const read = () => {
@@ -244,12 +285,11 @@ function bendo_upstream_connect(host, port, ms, k) {
     } catch {
       return bendo_upstream_connect_failure(BENDO_NO_ADDRESS);
     }
-    const list = Array.isArray(answer.list) ? answer.list : [];
-    const usable = list.filter((a) => (a[0] === 4 || a[0] === 6) && typeof a[1] === "string");
+    const usable = bendo_upstream_order(Array.isArray(answer.list) ? answer.list : []);
     if (usable.length === 0) {
       return bendo_upstream_connect_failure(BENDO_NO_ADDRESS);
     }
-    return bendo_upstream_dial(sys, bendo_upstream_order(usable), p, deadline, k);
+    return bendo_upstream_dial(sys, usable, p, deadline, k);
   };
   io_park_on(r, false, k, read, deadline);
   return undefined;

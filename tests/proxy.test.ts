@@ -1,8 +1,11 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { connect, createServer, type Server, type Socket } from "node:net";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { runInNewContext } from "node:vm";
 import { build, compile, start, SLOW_TEST_TIMEOUT_MS } from "./harness.ts";
 
 // Compilation stays at module scope, so the harness's compile budget applies.
@@ -10,6 +13,18 @@ const binary = build("tests/servers/proxy.bend");
 const pureOutput = compile("tests/fixtures/proxy/pure.bend", "mjs");
 const dialNative = build("tests/fixtures/proxy/dial.bend");
 const dialJs = compile("tests/fixtures/proxy/dial.bend", "js");
+
+// The getaddrinfo stand-in of tests/fixtures/proxy/fake_dns.c, for
+// LD_PRELOAD. Linux only: other systems skip the tests that need it.
+function buildFakeDns(): string | undefined {
+  if (process.platform !== "linux") return undefined;
+  const out = join(mkdtempSync(join(tmpdir(), "bendo-fake-dns-")), "fake_dns.so");
+  const source = resolve(import.meta.dir, "fixtures/proxy/fake_dns.c");
+  const cc = Bun.spawnSync(["cc", "-shared", "-fPIC", "-O1", "-o", out, source, "-ldl"]);
+  if (cc.exitCode !== 0) throw new Error(`fake_dns.c did not build: ${cc.stderr.toString()}`);
+  return out;
+}
+const fakeDns = buildFakeDns();
 
 const sha = (data: Uint8Array) => createHash("sha256").update(data).digest("hex");
 // Deterministic octets, every value distinct from its neighbours.
@@ -237,12 +252,13 @@ afterAll(
 const rawAddress = raw.address();
 if (rawAddress === null || typeof rawAddress === "string") throw new Error("raw upstream address");
 
-const server = await start(binary, "127.0.0.1", {
+const serverEnv = {
   BENDO_UPSTREAM: `http://127.0.0.1:${bun.port}`,
   BENDO_RAW_UPSTREAM: `http://127.0.0.1:${rawAddress.port}`,
   BENDO_NAMED_UPSTREAM: `http://localhost:${bun.port}`,
   BENDO_V6_UPSTREAM: v6 === undefined ? "http://[::1]:1" : `http://[::1]:${v6.port}`,
-});
+};
+const server = await start(binary, "127.0.0.1", serverEnv);
 afterAll(() => server[Symbol.asyncDispose]());
 const port = Number(new URL(server.url).port);
 
@@ -739,9 +755,17 @@ describe("upstream names and IPv6", () => {
     },
   );
 
-  // The connect effect alone, in both twins: each triple prints one line.
-  async function dial(command: string[], ...triples: [string, number, number][]) {
-    const proc = Bun.spawn([...command, ...triples.flat().map(String)], {
+  // The connect effect alone, in both twins. Each [count, host, port, ms]
+  // group starts count calls at once and prints one line per call; count 0
+  // sleeps ms.
+  type Group = [number, string, number, number];
+  async function dialWith(
+    command: readonly string[],
+    env: Record<string, string>,
+    groups: Group[],
+  ) {
+    const proc = Bun.spawn([...command, ...groups.flat().map(String)], {
+      env: { ...process.env, ...env },
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -751,6 +775,16 @@ describe("upstream names and IPv6", () => {
     expect(await proc.exited).toBe(0);
     return out.trim().split("\n");
   }
+  const dial = (command: readonly string[], ...groups: Group[]) => dialWith(command, {}, groups);
+  const counted = (lines: string[]) => {
+    const out = new Map<string, number>();
+    for (const line of lines) out.set(line, (out.get(line) ?? 0) + 1);
+    return out;
+  };
+
+  // Accepts connections on 127.0.0.1 only, so the same port on ::1 refuses.
+  const v4Only = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+  afterAll(() => v4Only.stop(true));
 
   for (const [twin, command] of [
     ["native", [dialNative]],
@@ -758,10 +792,10 @@ describe("upstream names and IPv6", () => {
   ] as const) {
     test(`${twin}: names resolve, .invalid fails with 1001, refusal is not a timeout`, async () => {
       const lines = await dial(
-        [...command],
-        ["localhost", Number(bun.port), 2000],
-        ["bendo-upstream.invalid", 80, 2000],
-        ["127.0.0.1", 1, 1000],
+        command,
+        [1, "localhost", Number(bun.port), 2000],
+        [1, "bendo-upstream.invalid", 80, 2000],
+        [1, "127.0.0.1", 1, 1000],
       );
       expect(lines[0]).toBe("localhost ok");
       expect(lines[1]).toBe("bendo-upstream.invalid fail 1001");
@@ -771,7 +805,7 @@ describe("upstream names and IPv6", () => {
 
     test(`${twin}: an unroutable address fails with 110 at the deadline`, async () => {
       const started = performance.now();
-      const lines = await dial([...command], ["10.255.255.1", 80, 300]);
+      const lines = await dial(command, [1, "10.255.255.1", 80, 300]);
       const elapsed = performance.now() - started;
       expect(lines).toEqual(["10.255.255.1 fail 110"]);
       expect(elapsed).toBeGreaterThanOrEqual(300);
@@ -779,9 +813,105 @@ describe("upstream names and IPv6", () => {
     });
 
     test.skipIf(v6 === undefined)(`${twin}: an IPv6 literal connects`, async () => {
-      expect(await dial([...command], ["::1", Number(v6?.port), 2000])).toEqual(["::1 ok"]);
+      expect(await dial(command, [1, "::1", Number(v6?.port), 2000])).toEqual(["::1 ok"]);
     });
+
+    // fake_dns.c holds every slow lookup until 2 s after the first. The 32
+    // held lookups still count after their calls time out at 500 ms, so a
+    // call at that point is refused too; once they end, lookups run again.
+    test.skipIf(fakeDns === undefined)(
+      `${twin}: at most 32 lookups run at once and the 33rd fails with EAGAIN`,
+      async () => {
+        const lines = await dialWith(
+          command,
+          { LD_PRELOAD: fakeDns ?? "", BENDO_FAKE_DNS_HOLD_MS: "2000" },
+          [
+            [33, "a.slow.bendo.test", 80, 500],
+            [1, "b.slow.bendo.test", 80, 300],
+            [0, "-", 0, 2500],
+            [1, "localhost", Number(bun.port), 2000],
+          ],
+        );
+        expect(counted(lines.slice(0, 33))).toEqual(
+          new Map([
+            ["a.slow.bendo.test fail 110", 32],
+            ["a.slow.bendo.test fail 11", 1],
+          ]),
+        );
+        expect(lines.slice(33)).toEqual(["b.slow.bendo.test fail 11", "localhost ok"]);
+      },
+      SLOW_TEST_TIMEOUT_MS,
+    );
+
+    // 16 IPv6 answers that refuse, then the IPv4 one that accepts: keeping
+    // eight of each family and alternating reaches IPv4 second.
+    test.skipIf(fakeDns === undefined)(
+      `${twin}: many answers of one family do not crowd out the other`,
+      async () => {
+        expect(
+          await dialWith(command, { LD_PRELOAD: fakeDns ?? "" }, [
+            [1, "mixed.bendo.test", v4Only.port, 2000],
+          ]),
+        ).toEqual(["mixed.bendo.test ok"]);
+      },
+    );
   }
+
+  test.skipIf(fakeDns === undefined)(
+    "native: the 33rd request during a slow lookup is a 502, the rest time out",
+    async () => {
+      await using slow = await start(binary, "127.0.0.1", {
+        ...serverEnv,
+        LD_PRELOAD: fakeDns ?? "",
+        BENDO_FAKE_DNS_HOLD_MS: "2000",
+      });
+      const answers = await Promise.all(
+        Array.from({ length: 33 }, async () => {
+          const res = await fetch(`${slow.url}/slowname`);
+          return `${res.status} ${await res.text()}`;
+        }),
+      );
+      expect(counted(answers)).toEqual(
+        new Map([
+          ["504 Gateway Timeout: upstream did not answer in time", 32],
+          ["502 Bad Gateway: upstream connection failed", 1],
+        ]),
+      );
+    },
+    SLOW_TEST_TIMEOUT_MS,
+  );
+
+  // bendo_upstream_order from the JS effect, outside the runtime.
+  const order: unknown = runInNewContext(
+    `${readFileSync(resolve(import.meta.dir, "../src/effects/upstream_connect.js"), "utf8")}
+    bendo_upstream_order;`,
+    { io_eff: () => undefined, CID: () => 0, upstream_connect: undefined },
+  );
+  const ordered = (list: unknown[]): unknown => {
+    if (typeof order !== "function") throw new Error("missing bendo_upstream_order");
+    return JSON.parse(JSON.stringify(order(list)));
+  };
+
+  test("JS: addresses are ordered as the C effect orders them", () => {
+    const v6s = Array.from({ length: 16 }, (_, i) => [6, `2001:db8::${i}`]);
+    const v4s = Array.from({ length: 3 }, (_, i) => [4, `192.0.2.${i}`]);
+    // Eight of each family, alternating from the first answer's family.
+    expect(ordered([...v6s, ...v4s])).toEqual([
+      v6s[0],
+      v4s[0],
+      v6s[1],
+      v4s[1],
+      v6s[2],
+      v4s[2],
+      v6s[3],
+      v6s[4],
+    ]);
+    expect(ordered([v4s[0], ...v6s.slice(0, 2), v4s[1]])).toEqual([v4s[0], v6s[0], v4s[1], v6s[1]]);
+    expect(ordered(v6s)).toEqual(v6s.slice(0, 8));
+    // Malformed entries are skipped and do not choose the first family.
+    expect(ordered([[5, "x"], [6, 1], "y", v4s[0], v6s[0]])).toEqual([v4s[0], v6s[0]]);
+    expect(ordered([])).toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------- pure helpers
