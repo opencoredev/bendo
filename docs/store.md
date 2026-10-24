@@ -5,6 +5,12 @@ actor owns the state and processes get, set, and update messages in order. Every
 handler and keep-alive connection receives a copy of the handle pointing to that
 same actor. State lasts until the server process exits; it is not persisted to disk.
 
+A store lives in one process. A server with more than one worker
+([workers](workers.md)) runs one copy of `main` per worker, so each worker
+creates and holds its own store, and a request sees only the state of the
+worker that serves it. Keep state that must be global (counters, sessions,
+caches that must agree) in an external service, or serve with one worker.
+
 ## Atomic updates
 
 An update sends a pure `S -> S` function to the actor, which consumes it once

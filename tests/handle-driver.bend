@@ -74,7 +74,7 @@ def trie_kind(kind: B.RouterKind) -> Bool:
     case Router.Spec{}: False{}
 
 def defaults(config: B.ServerConfig) -> IO(Unit):
-  Config.Config{host, port, body, header, idle, head, read_body, max_requests, alive, router, mode} = config
+  Config.Config{host, port, body, header, idle, head, read_body, max_requests, alive, router, mode, workers} = config
   assert(String.eq(host, "127.0.0.1") && U32.is_eq(port, 8787) && U32.is_eq(body, 1048576) && U32.is_eq(header, 65536) && U32.is_eq(idle, 5000) && U32.is_eq(head, 10000) && U32.is_eq(read_body, 30000) && U32.is_eq(max_requests, 100) && alive && trie_kind(router), "config defaults")
 
 def main() -> IO(Unit):

@@ -3,6 +3,8 @@
 import Base
 import ./effects/peer.bend as Peer
 import ./effects/shutdown_write.bend as Shutdown
+import ./effects/listen_shared.bend as Shared
+import ./effects/workers.bend as Workers
 import ./net/conn_info.bend as Conn
 import ./stream.bend as Stream
 import ./http/stream_types.bend as StreamTypes
@@ -286,7 +288,7 @@ def serve_config(~app: R.Req -> List<&2, U32> -> List<&2, U32>, config: Config) 
     +port : U32 = port_or(env, fallback)
     l : Listener <- IO.try(Listener, TCP.listen("127.0.0.1", port))
     IO.print("bendo listening on http://127.0.0.1:" ++ U32.show(port))
-    loop(~U32, ~(req => env => env), ~(req => body => env => close => peer => legacy(~app, req, body, env, close, peer)), l, limit, Config.Config{"127.0.0.1", port, limit, 65536, 5000, 10000, 30000, 1, False{}, Router.Spec{}, Config.Development{}})
+    loop(~U32, ~(req => env => env), ~(req => body => env => close => peer => legacy(~app, req, body, env, close, peer)), l, limit, Config.Config{"127.0.0.1", port, limit, 65536, 5000, 10000, 30000, 1, False{}, Router.Spec{}, Config.Development{}, 1})
 
 def serve(~app: R.Req -> List<&2, U32> -> List<&2, U32>, port: U32) -> IO(Unit):
   serve_config(~app, defaults(port))
@@ -340,19 +342,38 @@ def admitted_table(answer: Validate.Answer, declared: Bool) -> IO(Unit):
     case Validate.Enabled{False{}} True{}: IO.die(Unit, 1, "bendo: this table declares route schemas; serve it with the entrypoints in src/validated.bend (docs/validation.md)")
     case _ _: IO.pure(Unit, Unit{})
 
+# One worker keeps TCP.listen. Several workers each bind their own
+# SO_REUSEPORT listener before Workers.start_workers, and the first process
+# accepts only once every worker is bound (decision 0017).
+def listen(host: String, port: U32, single: Bool) -> IO(Result<&1, &1, U32 & String, Listener>):
+  match single:
+    case True{}: TCP.listen(host, port)
+    case False{}: Shared.listen_shared(host, port)
+
+# Port 0 asks the kernel for any free port, and every worker would get a
+# different one, so several workers need a fixed port (decision 0017).
+def shared_port(zero: Bool, single: Bool) -> IO(Unit):
+  match zero single:
+    case True{} False{}: IO.die(Unit, 22, "bendo: several workers cannot share port 0; set a fixed port or serve with one worker")
+    case _ _: IO.pure(Unit, Unit{})
+
 def startup_limits_with(~validator: Validate.Job -> Validate.Answer, ~Vars: Data, ~Tag: Data, ~select: Tag -> Maybe<&2, U32>, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +table: Table.Table<Tag>, env: Env, +config: Config.Config, manifest: Bool) -> IO(Unit):
   match config manifest:
     case _ True{}:
       do IO<Unit>:
         IO.print(Manifest.json(Tag, table))
         IO.exit(0)
-    case Config.Config{+host, +fallback, +limit, header_limit, idle, head, body, max_requests, keep_alive, router, mode} False{}:
+    case Config.Config{+host, +fallback, +limit, header_limit, idle, head, body, max_requests, keep_alive, router, mode, workers} False{}:
       do IO<Unit>:
         admitted_table(validator(Validate.Probe{}), Table.declares_schemas(Tag, Table.layers(Tag, table)))
         port_env : Result<&1, &1, U32 & String, String> <- IO.get_env("PORT")
         +port : U32 = Config.port_env(port_env, fallback)
         mode_env : Result<&1, &1, U32 & String, String> <- IO.get_env("BENDO_ENV")
-        listener : Listener <- IO.try(Listener, TCP.listen(host, port))
+        workers_env : Result<&1, &1, U32 & String, String> <- IO.get_env("BENDO_WORKERS")
+        +count : U32 = Config.workers_env(workers_env, workers)
+        shared_port(U32.is_eq(port, 0), U32.is_eq(count, 1))
+        listener : Listener <- IO.try(Listener, listen(host, port, U32.is_eq(count, 1)))
+        index : U32 <- IO.try(U32, Workers.start_workers(count))
         IO.print("bendo listening on http://" ++ host ++ ":" ++ U32.show(port))
         loop(~State<Tag, Env>, ~(req => state => selected_limit(~Tag, ~Env, ~select, req, state)), ~(req => body => state => close => peer => respond_with(~validator, ~Vars, ~Tag, ~Env, ~dispatch, ~middleware, req, body, state, close, peer)), listener, State{table, env, router, limit, Config.mode_env(mode_env, mode)}, config)
 

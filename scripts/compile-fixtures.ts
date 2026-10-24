@@ -8,6 +8,7 @@ import { selectedTestFiles } from "./test-shards.ts";
 const selected = new Set(selectedTestFiles());
 const heavyFixtures = [
   { test: "tests/ws-session.test.ts", entry: "tests/servers/ws-session.bend", target: "native" },
+  { test: "tests/ws-pubsub.test.ts", entry: "tests/servers/ws-pubsub.bend", target: "native" },
   { test: "tests/websocket.test.ts", entry: "tests/servers/websocket.bend", target: "native" },
   { test: "tests/multipart.test.ts", entry: "tests/servers/multipart.bend", target: "native" },
   {

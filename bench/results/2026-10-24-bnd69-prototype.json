@@ -1,0 +1,2189 @@
+{
+  "issue": "BND-69",
+  "date": "2026-10-24",
+  "harness": "bench/cores.py",
+  "machine": "Boat large sandbox, AMD Ryzen 9 9950X, 8 vCPUs; server on CPUs 0-3, oha 1.16.0 on CPUs 4-7",
+  "method": "64 keep-alive connections, two oha workers, 3 s discarded warmup, 10 s sample, three samples per variant, rounds alternate forward and reverse order",
+  "note": "Main at 39158b9; reuseport-N patches SO_REUSEPORT into TCP.listen's generated C",
+  "summary": {
+    "default": {
+      "hello": {
+        "rps": {
+          "median": 18295.672344068586,
+          "min": 17893.379469185653,
+          "max": 18404.8532165815
+        },
+        "p50Ms": {
+          "median": 3.3933269999999998,
+          "min": 3.353569,
+          "max": 3.441402
+        },
+        "p99Ms": {
+          "median": 6.1421410000000005,
+          "min": 5.749336,
+          "max": 7.174830999999999
+        },
+        "cpuUsPerResponse": {
+          "median": 54.631673258888576,
+          "min": 54.30001846200628,
+          "max": 55.85593636891729
+        },
+        "errors": 0
+      },
+      "json": {
+        "rps": {
+          "median": 16705.099840682444,
+          "min": 16619.64070886674,
+          "max": 17120.288597547
+        },
+        "p50Ms": {
+          "median": 3.716156,
+          "min": 3.669072,
+          "max": 3.7306850000000003
+        },
+        "p99Ms": {
+          "median": 6.715832,
+          "min": 6.500279,
+          "max": 7.179513
+        },
+        "cpuUsPerResponse": {
+          "median": 59.83258841760753,
+          "min": 58.318058166279435,
+          "max": 60.13880035121059
+        },
+        "errors": 0
+      },
+      "middleware": {
+        "rps": {
+          "median": 1961.4866609734738,
+          "min": 1913.8492833463283,
+          "max": 2016.3715768034167
+        },
+        "p50Ms": {
+          "median": 32.147537,
+          "min": 31.351679999999998,
+          "max": 32.766043
+        },
+        "p99Ms": {
+          "median": 40.624666,
+          "min": 38.923442,
+          "max": 44.773742
+        },
+        "cpuUsPerResponse": {
+          "median": 609.4647486402683,
+          "min": 583.9885279137616,
+          "max": 621.7751602647626
+        },
+        "errors": 0
+      }
+    },
+    "threads-1": {
+      "hello": {
+        "rps": {
+          "median": 19150.447435499587,
+          "min": 18923.098787811705,
+          "max": 19258.90682276993
+        },
+        "p50Ms": {
+          "median": 3.302065,
+          "min": 3.292388,
+          "max": 3.314043
+        },
+        "p99Ms": {
+          "median": 5.797057000000001,
+          "min": 5.301721,
+          "max": 5.928718
+        },
+        "cpuUsPerResponse": {
+          "median": 52.18879819635514,
+          "min": 51.89763710058281,
+          "max": 52.761948019710466
+        },
+        "errors": 0
+      },
+      "json": {
+        "rps": {
+          "median": 16358.627530451133,
+          "min": 15886.166791842223,
+          "max": 16631.100872839987
+        },
+        "p50Ms": {
+          "median": 3.813327,
+          "min": 3.751036,
+          "max": 3.837486
+        },
+        "p99Ms": {
+          "median": 7.383909999999999,
+          "min": 6.140668,
+          "max": 7.853257000000001
+        },
+        "cpuUsPerResponse": {
+          "median": 61.08847443752787,
+          "min": 60.093625869104066,
+          "max": 62.846394353260905
+        },
+        "errors": 0
+      },
+      "middleware": {
+        "rps": {
+          "median": 1938.0032245830346,
+          "min": 1838.14823187652,
+          "max": 2114.296941262009
+        },
+        "p50Ms": {
+          "median": 32.569888999999996,
+          "min": 29.620158,
+          "max": 34.458355000000005
+        },
+        "p99Ms": {
+          "median": 41.904387,
+          "min": 37.481598999999996,
+          "max": 43.679494
+        },
+        "cpuUsPerResponse": {
+          "median": 607.791673099686,
+          "min": 548.901254361973,
+          "max": 650.4638420224597
+        },
+        "errors": 0
+      }
+    },
+    "threads-2": {
+      "hello": {
+        "rps": {
+          "median": 19074.559971181578,
+          "min": 19036.559215387682,
+          "max": 20328.973344272694
+        },
+        "p50Ms": {
+          "median": 3.26671,
+          "min": 3.143358,
+          "max": 3.3135310000000002
+        },
+        "p99Ms": {
+          "median": 5.6913789999999995,
+          "min": 5.047566,
+          "max": 5.966788
+        },
+        "cpuUsPerResponse": {
+          "median": 52.38673986840451,
+          "min": 49.167109170649205,
+          "max": 52.50253324722918
+        },
+        "errors": 0
+      },
+      "json": {
+        "rps": {
+          "median": 16609.472466884665,
+          "min": 16239.380057869444,
+          "max": 18072.01364753425
+        },
+        "p50Ms": {
+          "median": 3.7478390000000004,
+          "min": 3.5564329999999997,
+          "max": 3.798086
+        },
+        "p99Ms": {
+          "median": 7.753748000000001,
+          "min": 5.684869,
+          "max": 8.366835
+        },
+        "cpuUsPerResponse": {
+          "median": 60.16883374749547,
+          "min": 55.24648004158694,
+          "max": 61.543763770417144
+        },
+        "errors": 0
+      },
+      "middleware": {
+        "rps": {
+          "median": 1986.3379561743993,
+          "min": 1962.2834502469161,
+          "max": 2102.3084712752207
+        },
+        "p50Ms": {
+          "median": 31.792568,
+          "min": 29.577913000000002,
+          "max": 31.845724
+        },
+        "p99Ms": {
+          "median": 40.575289,
+          "min": 39.938194,
+          "max": 44.366318
+        },
+        "cpuUsPerResponse": {
+          "median": 591.6298675230831,
+          "min": 549.7841658365353,
+          "max": 598.6989225452328
+        },
+        "errors": 0
+      }
+    },
+    "threads-4": {
+      "hello": {
+        "rps": {
+          "median": 18364.65940334036,
+          "min": 16965.878640894152,
+          "max": 19618.493207669664
+        },
+        "p50Ms": {
+          "median": 3.418299,
+          "min": 3.242608,
+          "max": 3.489547
+        },
+        "p99Ms": {
+          "median": 6.753654,
+          "min": 5.589366,
+          "max": 7.478687000000001
+        },
+        "cpuUsPerResponse": {
+          "median": 54.424138193771704,
+          "min": 50.89590030720949,
+          "max": 58.84847842222458
+        },
+        "errors": 0
+      },
+      "json": {
+        "rps": {
+          "median": 16700.844460375483,
+          "min": 15300.167225856909,
+          "max": 17703.337375063657
+        },
+        "p50Ms": {
+          "median": 3.703868,
+          "min": 3.5980529999999997,
+          "max": 4.040398
+        },
+        "p99Ms": {
+          "median": 6.8742220000000005,
+          "min": 6.222211,
+          "max": 7.391615
+        },
+        "cpuUsPerResponse": {
+          "median": 59.84583712356969,
+          "min": 56.455710495116584,
+          "max": 65.25232204209068
+        },
+        "errors": 0
+      },
+      "middleware": {
+        "rps": {
+          "median": 2079.9933354847476,
+          "min": 1651.2140748937272,
+          "max": 2191.403490742942
+        },
+        "p50Ms": {
+          "median": 30.369121999999997,
+          "min": 28.725352,
+          "max": 37.976709
+        },
+        "p99Ms": {
+          "median": 37.810483999999995,
+          "min": 35.642849999999996,
+          "max": 56.682893
+        },
+        "cpuUsPerResponse": {
+          "median": 549.4558181905355,
+          "min": 524.3991260014567,
+          "max": 739.8236501992994
+        },
+        "errors": 0
+      }
+    },
+    "reuseport-1": {
+      "hello": {
+        "rps": {
+          "median": 18486.042663934037,
+          "min": 18106.132860452584,
+          "max": 19627.81619892081
+        },
+        "p50Ms": {
+          "median": 3.3292080000000004,
+          "min": 3.269461,
+          "max": 3.419115
+        },
+        "p99Ms": {
+          "median": 6.458033,
+          "min": 6.425423,
+          "max": 8.313141
+        },
+        "cpuUsPerResponse": {
+          "median": 54.01255426937072,
+          "min": 50.91779322284172,
+          "max": 55.200432771392926
+        },
+        "errors": 0
+      },
+      "json": {
+        "rps": {
+          "median": 17520.951107765646,
+          "min": 16162.305381421253,
+          "max": 17547.449215241722
+        },
+        "p50Ms": {
+          "median": 3.672625,
+          "min": 3.619196,
+          "max": 3.78811
+        },
+        "p99Ms": {
+          "median": 7.1462,
+          "min": 7.029149,
+          "max": 7.696426
+        },
+        "cpuUsPerResponse": {
+          "median": 57.03855806525211,
+          "min": 56.95798778820742,
+          "max": 61.83680031660442
+        },
+        "errors": 0
+      },
+      "middleware": {
+        "rps": {
+          "median": 2082.2041293548273,
+          "min": 2000.644940382825,
+          "max": 2122.664777367215
+        },
+        "p50Ms": {
+          "median": 30.138214,
+          "min": 29.672548,
+          "max": 31.236974
+        },
+        "p99Ms": {
+          "median": 37.781175,
+          "min": 37.012983999999996,
+          "max": 42.088627
+        },
+        "cpuUsPerResponse": {
+          "median": 565.1611667225442,
+          "min": 543.6519124142468,
+          "max": 588.2939475520989
+        },
+        "errors": 0
+      }
+    },
+    "reuseport-2": {
+      "hello": {
+        "rps": {
+          "median": 36997.485176354356,
+          "min": 36064.30103835416,
+          "max": 38809.17781970707
+        },
+        "p50Ms": {
+          "median": 1.661082,
+          "min": 1.646291,
+          "max": 1.6715149999999999
+        },
+        "p99Ms": {
+          "median": 4.481432,
+          "min": 3.9510150000000004,
+          "max": 5.153153
+        },
+        "cpuUsPerResponse": {
+          "median": 53.14707988273598,
+          "min": 50.888750392739595,
+          "max": 53.55093714139998
+        },
+        "errors": 0
+      },
+      "json": {
+        "rps": {
+          "median": 34400.386575736,
+          "min": 31752.604217924723,
+          "max": 34959.89178072582
+        },
+        "p50Ms": {
+          "median": 1.715755,
+          "min": 1.623888,
+          "max": 1.978309
+        },
+        "p99Ms": {
+          "median": 5.209841,
+          "min": 4.462092,
+          "max": 5.802746999999999
+        },
+        "cpuUsPerResponse": {
+          "median": 57.50199034175766,
+          "min": 56.4359577673775,
+          "max": 61.980414314988934
+        },
+        "errors": 0
+      },
+      "middleware": {
+        "rps": {
+          "median": 4155.7599053865315,
+          "min": 3704.7692819216913,
+          "max": 4197.153872706781
+        },
+        "p50Ms": {
+          "median": 15.093669,
+          "min": 14.959484999999999,
+          "max": 17.003154
+        },
+        "p99Ms": {
+          "median": 28.770482,
+          "min": 28.464237,
+          "max": 32.402086
+        },
+        "cpuUsPerResponse": {
+          "median": 539.1838989360425,
+          "min": 527.0167427701674,
+          "max": 615.6249158430506
+        },
+        "errors": 0
+      }
+    },
+    "reuseport-4": {
+      "hello": {
+        "rps": {
+          "median": 71230.55699428933,
+          "min": 67861.04607390043,
+          "max": 74129.79986823091
+        },
+        "p50Ms": {
+          "median": 0.750324,
+          "min": 0.631839,
+          "max": 0.792601
+        },
+        "p99Ms": {
+          "median": 3.046134,
+          "min": 2.757322,
+          "max": 3.143674
+        },
+        "cpuUsPerResponse": {
+          "median": 53.978285210763666,
+          "min": 51.45679638292163,
+          "max": 56.19458793826991
+        },
+        "errors": 0
+      },
+      "json": {
+        "rps": {
+          "median": 66055.66824543172,
+          "min": 58021.03096709533,
+          "max": 66176.06202061026
+        },
+        "p50Ms": {
+          "median": 0.8695740000000001,
+          "min": 0.77549,
+          "max": 0.956652
+        },
+        "p99Ms": {
+          "median": 3.2055320000000003,
+          "min": 3.0251409999999996,
+          "max": 3.770751
+        },
+        "cpuUsPerResponse": {
+          "median": 58.59814509686062,
+          "min": 58.23050685358538,
+          "max": 66.17064517240192
+        },
+        "errors": 0
+      },
+      "middleware": {
+        "rps": {
+          "median": 6791.734545146185,
+          "min": 6452.568517657698,
+          "max": 6837.292550639178
+        },
+        "p50Ms": {
+          "median": 8.591114000000001,
+          "min": 8.15695,
+          "max": 10.013575
+        },
+        "p99Ms": {
+          "median": 24.425746,
+          "min": 20.822841,
+          "max": 24.997736
+        },
+        "cpuUsPerResponse": {
+          "median": 537.1584860159397,
+          "min": 534.2351686558661,
+          "max": 569.1812213551344
+        },
+        "errors": 0
+      }
+    }
+  },
+  "samples": [
+    {
+      "variant": "default",
+      "scenario": "hello",
+      "sample": 1,
+      "processes": 1,
+      "rps": 18295.672344068586,
+      "p50Ms": 3.3933269999999998,
+      "p99Ms": 6.1421410000000005,
+      "responses": 183044,
+      "errors": 0,
+      "cpuUsPerResponse": 54.631673258888576,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 13:09:30 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "default",
+      "scenario": "json",
+      "sample": 1,
+      "processes": 1,
+      "rps": 17120.288597547,
+      "p50Ms": 3.669072,
+      "p99Ms": 6.500279,
+      "responses": 171302,
+      "errors": 0,
+      "cpuUsPerResponse": 58.318058166279435,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 13:09:43 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "default",
+      "scenario": "middleware",
+      "sample": 1,
+      "processes": 1,
+      "rps": 2016.3715768034167,
+      "p50Ms": 31.351679999999998,
+      "p99Ms": 38.923442,
+      "responses": 20223,
+      "errors": 0,
+      "cpuUsPerResponse": 583.9885279137616,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "41f9f10eab18d67ae8c2fc252fb15edf",
+          "date": "Sat, 24 Oct 2026 13:09:57 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "threads-1",
+      "scenario": "hello",
+      "sample": 1,
+      "processes": 1,
+      "rps": 19258.90682276993,
+      "p50Ms": 3.302065,
+      "p99Ms": 5.301721,
+      "responses": 192687,
+      "errors": 0,
+      "cpuUsPerResponse": 51.89763710058281,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 13:10:10 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "threads-1",
+      "scenario": "json",
+      "sample": 1,
+      "processes": 1,
+      "rps": 16631.100872839987,
+      "p50Ms": 3.751036,
+      "p99Ms": 6.140668,
+      "responses": 166407,
+      "errors": 0,
+      "cpuUsPerResponse": 60.093625869104066,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 13:10:23 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "threads-1",
+      "scenario": "middleware",
+      "sample": 1,
+      "processes": 1,
+      "rps": 2114.296941262009,
+      "p50Ms": 29.620158,
+      "p99Ms": 37.481598999999996,
+      "responses": 21206,
+      "errors": 0,
+      "cpuUsPerResponse": 548.901254361973,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "6d7e5eed48b7ff638e2d7bd3bac48d38",
+          "date": "Sat, 24 Oct 2026 13:10:36 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "threads-2",
+      "scenario": "hello",
+      "sample": 1,
+      "processes": 1,
+      "rps": 19074.559971181578,
+      "p50Ms": 3.26671,
+      "p99Ms": 5.6913789999999995,
+      "responses": 190888,
+      "errors": 0,
+      "cpuUsPerResponse": 52.38673986840451,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 13:10:49 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "threads-2",
+      "scenario": "json",
+      "sample": 1,
+      "processes": 1,
+      "rps": 16239.380057869444,
+      "p50Ms": 3.7478390000000004,
+      "p99Ms": 8.366835,
+      "responses": 162486,
+      "errors": 0,
+      "cpuUsPerResponse": 61.543763770417144,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 13:11:02 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "threads-2",
+      "scenario": "middleware",
+      "sample": 1,
+      "processes": 1,
+      "rps": 1962.2834502469161,
+      "p50Ms": 31.845724,
+      "p99Ms": 44.366318,
+      "responses": 19676,
+      "errors": 0,
+      "cpuUsPerResponse": 598.6989225452328,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "562ab7c5727ddd641bc01b7ac9215914",
+          "date": "Sat, 24 Oct 2026 13:11:16 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "threads-4",
+      "scenario": "hello",
+      "sample": 1,
+      "processes": 1,
+      "rps": 16965.878640894152,
+      "p50Ms": 3.489547,
+      "p99Ms": 7.478687000000001,
+      "responses": 169758,
+      "errors": 0,
+      "cpuUsPerResponse": 58.84847842222458,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 13:11:29 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "threads-4",
+      "scenario": "json",
+      "sample": 1,
+      "processes": 1,
+      "rps": 15300.167225856909,
+      "p50Ms": 4.040398,
+      "p99Ms": 6.8742220000000005,
+      "responses": 153098,
+      "errors": 0,
+      "cpuUsPerResponse": 65.25232204209068,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 13:11:42 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "threads-4",
+      "scenario": "middleware",
+      "sample": 1,
+      "processes": 1,
+      "rps": 1651.2140748937272,
+      "p50Ms": 37.976709,
+      "p99Ms": 56.682893,
+      "responses": 16558,
+      "errors": 0,
+      "cpuUsPerResponse": 739.8236501992994,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "9b09ea21f3810c2c86ba338b593ef45f",
+          "date": "Sat, 24 Oct 2026 13:11:55 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "reuseport-1",
+      "scenario": "hello",
+      "sample": 1,
+      "processes": 1,
+      "rps": 18486.042663934037,
+      "p50Ms": 3.3292080000000004,
+      "p99Ms": 8.313141,
+      "responses": 184957,
+      "errors": 0,
+      "cpuUsPerResponse": 54.01255426937072,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 13:12:08 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "reuseport-1",
+      "scenario": "json",
+      "sample": 1,
+      "processes": 1,
+      "rps": 17520.951107765646,
+      "p50Ms": 3.672625,
+      "p99Ms": 7.029149,
+      "responses": 175320,
+      "errors": 0,
+      "cpuUsPerResponse": 57.03855806525211,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 13:12:21 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "reuseport-1",
+      "scenario": "middleware",
+      "sample": 1,
+      "processes": 1,
+      "rps": 2082.2041293548273,
+      "p50Ms": 30.138214,
+      "p99Ms": 37.781175,
+      "responses": 20879,
+      "errors": 0,
+      "cpuUsPerResponse": 565.1611667225442,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "4417617526bd6013a7e89d7aee083210",
+          "date": "Sat, 24 Oct 2026 13:12:35 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "reuseport-2",
+      "scenario": "hello",
+      "sample": 1,
+      "processes": 2,
+      "rps": 36064.30103835416,
+      "p50Ms": 1.6715149999999999,
+      "p99Ms": 5.153153,
+      "responses": 360778,
+      "errors": 0,
+      "cpuUsPerResponse": 53.55093714139998,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 13:12:48 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "reuseport-2",
+      "scenario": "json",
+      "sample": 1,
+      "processes": 2,
+      "rps": 34400.386575736,
+      "p50Ms": 1.715755,
+      "p99Ms": 5.802746999999999,
+      "responses": 344162,
+      "errors": 0,
+      "cpuUsPerResponse": 57.50199034175766,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 13:13:01 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "reuseport-2",
+      "scenario": "middleware",
+      "sample": 1,
+      "processes": 2,
+      "rps": 4155.7599053865315,
+      "p50Ms": 15.093669,
+      "p99Ms": 28.464237,
+      "responses": 41637,
+      "errors": 0,
+      "cpuUsPerResponse": 539.1838989360425,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "a39126c78b8006b63f63a16fb78583bb",
+          "date": "Sat, 24 Oct 2026 13:13:14 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "reuseport-4",
+      "scenario": "hello",
+      "sample": 1,
+      "processes": 4,
+      "rps": 74129.79986823091,
+      "p50Ms": 0.631839,
+      "p99Ms": 3.046134,
+      "responses": 741593,
+      "errors": 0,
+      "cpuUsPerResponse": 51.45679638292163,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 13:13:27 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "reuseport-4",
+      "scenario": "json",
+      "sample": 1,
+      "processes": 4,
+      "rps": 66055.66824543172,
+      "p50Ms": 0.77549,
+      "p99Ms": 3.0251409999999996,
+      "responses": 660822,
+      "errors": 0,
+      "cpuUsPerResponse": 58.23050685358538,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 13:13:41 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "reuseport-4",
+      "scenario": "middleware",
+      "sample": 1,
+      "processes": 4,
+      "rps": 6791.734545146185,
+      "p50Ms": 8.591114000000001,
+      "p99Ms": 24.997736,
+      "responses": 68006,
+      "errors": 0,
+      "cpuUsPerResponse": 537.1584860159397,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "cd23777e7fdd5c296e9458bab701c1f9",
+          "date": "Sat, 24 Oct 2026 13:13:54 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "reuseport-4",
+      "scenario": "hello",
+      "sample": 2,
+      "processes": 4,
+      "rps": 71230.55699428933,
+      "p50Ms": 0.792601,
+      "p99Ms": 2.757322,
+      "responses": 712694,
+      "errors": 0,
+      "cpuUsPerResponse": 53.978285210763666,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 13:14:07 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "reuseport-4",
+      "scenario": "json",
+      "sample": 2,
+      "processes": 4,
+      "rps": 66176.06202061026,
+      "p50Ms": 0.8695740000000001,
+      "p99Ms": 3.2055320000000003,
+      "responses": 662137,
+      "errors": 0,
+      "cpuUsPerResponse": 58.59814509686062,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 13:14:20 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "reuseport-4",
+      "scenario": "middleware",
+      "sample": 2,
+      "processes": 4,
+      "rps": 6837.292550639178,
+      "p50Ms": 8.15695,
+      "p99Ms": 24.425746,
+      "responses": 68453,
+      "errors": 0,
+      "cpuUsPerResponse": 534.2351686558661,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "dff7416b177fb21a9ac996ef015fa9fb",
+          "date": "Sat, 24 Oct 2026 13:14:34 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "reuseport-2",
+      "scenario": "hello",
+      "sample": 2,
+      "processes": 2,
+      "rps": 38809.17781970707,
+      "p50Ms": 1.646291,
+      "p99Ms": 3.9510150000000004,
+      "responses": 388298,
+      "errors": 0,
+      "cpuUsPerResponse": 50.888750392739595,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 13:14:47 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "reuseport-2",
+      "scenario": "json",
+      "sample": 2,
+      "processes": 2,
+      "rps": 34959.89178072582,
+      "p50Ms": 1.623888,
+      "p99Ms": 4.462092,
+      "responses": 349777,
+      "errors": 0,
+      "cpuUsPerResponse": 56.4359577673775,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 13:15:00 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "reuseport-2",
+      "scenario": "middleware",
+      "sample": 2,
+      "processes": 2,
+      "rps": 4197.153872706781,
+      "p50Ms": 14.959484999999999,
+      "p99Ms": 28.770482,
+      "responses": 42048,
+      "errors": 0,
+      "cpuUsPerResponse": 527.0167427701674,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "e44868be8bc82321d95f5ddee3eb50bc",
+          "date": "Sat, 24 Oct 2026 13:15:13 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "reuseport-1",
+      "scenario": "hello",
+      "sample": 2,
+      "processes": 1,
+      "rps": 19627.81619892081,
+      "p50Ms": 3.269461,
+      "p99Ms": 6.425423,
+      "responses": 196395,
+      "errors": 0,
+      "cpuUsPerResponse": 50.91779322284172,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 13:15:26 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "reuseport-1",
+      "scenario": "json",
+      "sample": 2,
+      "processes": 1,
+      "rps": 17547.449215241722,
+      "p50Ms": 3.619196,
+      "p99Ms": 7.1462,
+      "responses": 175568,
+      "errors": 0,
+      "cpuUsPerResponse": 56.95798778820742,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 13:15:39 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "reuseport-1",
+      "scenario": "middleware",
+      "sample": 2,
+      "processes": 1,
+      "rps": 2122.664777367215,
+      "p50Ms": 29.672548,
+      "p99Ms": 37.012983999999996,
+      "responses": 21282,
+      "errors": 0,
+      "cpuUsPerResponse": 543.6519124142468,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "81098c57be62d4c6f9c812037e93e1f6",
+          "date": "Sat, 24 Oct 2026 13:15:53 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "threads-4",
+      "scenario": "hello",
+      "sample": 2,
+      "processes": 1,
+      "rps": 19618.493207669664,
+      "p50Ms": 3.242608,
+      "p99Ms": 5.589366,
+      "responses": 196283,
+      "errors": 0,
+      "cpuUsPerResponse": 50.89590030720949,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 13:16:06 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "threads-4",
+      "scenario": "json",
+      "sample": 2,
+      "processes": 1,
+      "rps": 17703.337375063657,
+      "p50Ms": 3.5980529999999997,
+      "p99Ms": 6.222211,
+      "responses": 177130,
+      "errors": 0,
+      "cpuUsPerResponse": 56.455710495116584,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 13:16:19 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "threads-4",
+      "scenario": "middleware",
+      "sample": 2,
+      "processes": 1,
+      "rps": 2191.403490742942,
+      "p50Ms": 28.725352,
+      "p99Ms": 35.642849999999996,
+      "responses": 21968,
+      "errors": 0,
+      "cpuUsPerResponse": 524.3991260014567,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "9fa64de7dae25d5bf90a25b6d27325da",
+          "date": "Sat, 24 Oct 2026 13:16:32 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "threads-2",
+      "scenario": "hello",
+      "sample": 2,
+      "processes": 1,
+      "rps": 20328.973344272694,
+      "p50Ms": 3.143358,
+      "p99Ms": 5.047566,
+      "responses": 203388,
+      "errors": 0,
+      "cpuUsPerResponse": 49.167109170649205,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 13:16:45 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "threads-2",
+      "scenario": "json",
+      "sample": 2,
+      "processes": 1,
+      "rps": 18072.01364753425,
+      "p50Ms": 3.5564329999999997,
+      "p99Ms": 5.684869,
+      "responses": 180826,
+      "errors": 0,
+      "cpuUsPerResponse": 55.24648004158694,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 13:16:58 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "threads-2",
+      "scenario": "middleware",
+      "sample": 2,
+      "processes": 1,
+      "rps": 2102.3084712752207,
+      "p50Ms": 29.577913000000002,
+      "p99Ms": 39.938194,
+      "responses": 21081,
+      "errors": 0,
+      "cpuUsPerResponse": 549.7841658365353,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "b547b6feaa22ff0c512007b224a66934",
+          "date": "Sat, 24 Oct 2026 13:17:12 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "threads-1",
+      "scenario": "hello",
+      "sample": 2,
+      "processes": 1,
+      "rps": 19150.447435499587,
+      "p50Ms": 3.292388,
+      "p99Ms": 5.797057000000001,
+      "responses": 191612,
+      "errors": 0,
+      "cpuUsPerResponse": 52.18879819635514,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 13:17:25 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "threads-1",
+      "scenario": "json",
+      "sample": 2,
+      "processes": 1,
+      "rps": 15886.166791842223,
+      "p50Ms": 3.837486,
+      "p99Ms": 7.853257000000001,
+      "responses": 158959,
+      "errors": 0,
+      "cpuUsPerResponse": 62.846394353260905,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 13:17:38 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "threads-1",
+      "scenario": "middleware",
+      "sample": 2,
+      "processes": 1,
+      "rps": 1938.0032245830346,
+      "p50Ms": 32.569888999999996,
+      "p99Ms": 41.904387,
+      "responses": 19431,
+      "errors": 0,
+      "cpuUsPerResponse": 607.791673099686,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "694a526376c869dfc6e6f60b87a8f2a7",
+          "date": "Sat, 24 Oct 2026 13:17:51 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "default",
+      "scenario": "hello",
+      "sample": 2,
+      "processes": 1,
+      "rps": 18404.8532165815,
+      "p50Ms": 3.353569,
+      "p99Ms": 5.749336,
+      "responses": 184162,
+      "errors": 0,
+      "cpuUsPerResponse": 54.30001846200628,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 13:18:04 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "default",
+      "scenario": "json",
+      "sample": 2,
+      "processes": 1,
+      "rps": 16705.099840682444,
+      "p50Ms": 3.7306850000000003,
+      "p99Ms": 7.179513,
+      "responses": 167133,
+      "errors": 0,
+      "cpuUsPerResponse": 59.83258841760753,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 13:18:17 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "default",
+      "scenario": "middleware",
+      "sample": 2,
+      "processes": 1,
+      "rps": 1913.8492833463283,
+      "p50Ms": 32.766043,
+      "p99Ms": 44.773742,
+      "responses": 19187,
+      "errors": 0,
+      "cpuUsPerResponse": 621.7751602647626,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "cdfba4c9fcb2dee78c95c733dcfb755a",
+          "date": "Sat, 24 Oct 2026 13:18:31 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "default",
+      "scenario": "hello",
+      "sample": 3,
+      "processes": 1,
+      "rps": 17893.379469185653,
+      "p50Ms": 3.441402,
+      "p99Ms": 7.174830999999999,
+      "responses": 179032,
+      "errors": 0,
+      "cpuUsPerResponse": 55.85593636891729,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 13:18:44 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "default",
+      "scenario": "json",
+      "sample": 3,
+      "processes": 1,
+      "rps": 16619.64070886674,
+      "p50Ms": 3.716156,
+      "p99Ms": 6.715832,
+      "responses": 166282,
+      "errors": 0,
+      "cpuUsPerResponse": 60.13880035121059,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 13:18:57 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "default",
+      "scenario": "middleware",
+      "sample": 3,
+      "processes": 1,
+      "rps": 1961.4866609734738,
+      "p50Ms": 32.147537,
+      "p99Ms": 40.624666,
+      "responses": 19673,
+      "errors": 0,
+      "cpuUsPerResponse": 609.4647486402683,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "0c5699335c399de22feb935db844e46e",
+          "date": "Sat, 24 Oct 2026 13:19:10 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "threads-1",
+      "scenario": "hello",
+      "sample": 3,
+      "processes": 1,
+      "rps": 18923.098787811705,
+      "p50Ms": 3.314043,
+      "p99Ms": 5.928718,
+      "responses": 189341,
+      "errors": 0,
+      "cpuUsPerResponse": 52.761948019710466,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 13:19:23 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "threads-1",
+      "scenario": "json",
+      "sample": 3,
+      "processes": 1,
+      "rps": 16358.627530451133,
+      "p50Ms": 3.813327,
+      "p99Ms": 7.383909999999999,
+      "responses": 163697,
+      "errors": 0,
+      "cpuUsPerResponse": 61.08847443752787,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 13:19:36 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "threads-1",
+      "scenario": "middleware",
+      "sample": 3,
+      "processes": 1,
+      "rps": 1838.14823187652,
+      "p50Ms": 34.458355000000005,
+      "p99Ms": 43.679494,
+      "responses": 18433,
+      "errors": 0,
+      "cpuUsPerResponse": 650.4638420224597,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "8edf2b2868a1d4deebe1cf3e40413763",
+          "date": "Sat, 24 Oct 2026 13:19:50 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "threads-2",
+      "scenario": "hello",
+      "sample": 3,
+      "processes": 1,
+      "rps": 19036.559215387682,
+      "p50Ms": 3.3135310000000002,
+      "p99Ms": 5.966788,
+      "responses": 190467,
+      "errors": 0,
+      "cpuUsPerResponse": 52.50253324722918,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 13:20:03 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "threads-2",
+      "scenario": "json",
+      "sample": 3,
+      "processes": 1,
+      "rps": 16609.472466884665,
+      "p50Ms": 3.798086,
+      "p99Ms": 7.753748000000001,
+      "responses": 166199,
+      "errors": 0,
+      "cpuUsPerResponse": 60.16883374749547,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 13:20:16 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "threads-2",
+      "scenario": "middleware",
+      "sample": 3,
+      "processes": 1,
+      "rps": 1986.3379561743993,
+      "p50Ms": 31.792568,
+      "p99Ms": 40.575289,
+      "responses": 19928,
+      "errors": 0,
+      "cpuUsPerResponse": 591.6298675230831,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "277289927730bfba035265675464a31f",
+          "date": "Sat, 24 Oct 2026 13:20:29 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "threads-4",
+      "scenario": "hello",
+      "sample": 3,
+      "processes": 1,
+      "rps": 18364.65940334036,
+      "p50Ms": 3.418299,
+      "p99Ms": 6.753654,
+      "responses": 183742,
+      "errors": 0,
+      "cpuUsPerResponse": 54.424138193771704,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 13:20:42 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "threads-4",
+      "scenario": "json",
+      "sample": 3,
+      "processes": 1,
+      "rps": 16700.844460375483,
+      "p50Ms": 3.703868,
+      "p99Ms": 7.391615,
+      "responses": 167096,
+      "errors": 0,
+      "cpuUsPerResponse": 59.84583712356969,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 13:20:55 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "threads-4",
+      "scenario": "middleware",
+      "sample": 3,
+      "processes": 1,
+      "rps": 2079.9933354847476,
+      "p50Ms": 30.369121999999997,
+      "p99Ms": 37.810483999999995,
+      "responses": 20857,
+      "errors": 0,
+      "cpuUsPerResponse": 549.4558181905355,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "f598f9ffb23a22bc671aa3a81ed88aa6",
+          "date": "Sat, 24 Oct 2026 13:21:09 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "reuseport-1",
+      "scenario": "hello",
+      "sample": 3,
+      "processes": 1,
+      "rps": 18106.132860452584,
+      "p50Ms": 3.419115,
+      "p99Ms": 6.458033,
+      "responses": 181158,
+      "errors": 0,
+      "cpuUsPerResponse": 55.200432771392926,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 13:21:22 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "reuseport-1",
+      "scenario": "json",
+      "sample": 3,
+      "processes": 1,
+      "rps": 16162.305381421253,
+      "p50Ms": 3.78811,
+      "p99Ms": 7.696426,
+      "responses": 161716,
+      "errors": 0,
+      "cpuUsPerResponse": 61.83680031660442,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 13:21:35 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "reuseport-1",
+      "scenario": "middleware",
+      "sample": 3,
+      "processes": 1,
+      "rps": 2000.644940382825,
+      "p50Ms": 31.236974,
+      "p99Ms": 42.088627,
+      "responses": 20058,
+      "errors": 0,
+      "cpuUsPerResponse": 588.2939475520989,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "1598fdf6258ee34e1b2333613d5a2dcd",
+          "date": "Sat, 24 Oct 2026 13:21:48 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "reuseport-2",
+      "scenario": "hello",
+      "sample": 3,
+      "processes": 2,
+      "rps": 36997.485176354356,
+      "p50Ms": 1.661082,
+      "p99Ms": 4.481432,
+      "responses": 370105,
+      "errors": 0,
+      "cpuUsPerResponse": 53.14707988273598,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 13:22:01 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "reuseport-2",
+      "scenario": "json",
+      "sample": 3,
+      "processes": 2,
+      "rps": 31752.604217924723,
+      "p50Ms": 1.978309,
+      "p99Ms": 5.209841,
+      "responses": 317681,
+      "errors": 0,
+      "cpuUsPerResponse": 61.980414314988934,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 13:22:14 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "reuseport-2",
+      "scenario": "middleware",
+      "sample": 3,
+      "processes": 2,
+      "rps": 3704.7692819216913,
+      "p50Ms": 17.003154,
+      "p99Ms": 32.402086,
+      "responses": 37133,
+      "errors": 0,
+      "cpuUsPerResponse": 615.6249158430506,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "b56b8ee7177b624dbf61bea28b0a21ec",
+          "date": "Sat, 24 Oct 2026 13:22:28 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "reuseport-4",
+      "scenario": "hello",
+      "sample": 3,
+      "processes": 4,
+      "rps": 67861.04607390043,
+      "p50Ms": 0.750324,
+      "p99Ms": 3.143674,
+      "responses": 678891,
+      "errors": 0,
+      "cpuUsPerResponse": 56.19458793826991,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 13:22:41 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "reuseport-4",
+      "scenario": "json",
+      "sample": 3,
+      "processes": 4,
+      "rps": 58021.03096709533,
+      "p50Ms": 0.956652,
+      "p99Ms": 3.770751,
+      "responses": 580620,
+      "errors": 0,
+      "cpuUsPerResponse": 66.17064517240192,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 13:22:54 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "reuseport-4",
+      "scenario": "middleware",
+      "sample": 3,
+      "processes": 4,
+      "rps": 6452.568517657698,
+      "p50Ms": 10.013575,
+      "p99Ms": 20.822841,
+      "responses": 64584,
+      "errors": 0,
+      "cpuUsPerResponse": 569.1812213551344,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "e3eb6846c56737172c757252c3492cdb",
+          "date": "Sat, 24 Oct 2026 13:23:07 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    }
+  ]
+}
