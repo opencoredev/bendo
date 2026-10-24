@@ -23,6 +23,34 @@ law ws_encode_valid:
   for +k: Maybe<&2, F.Key>
   {F.valid(max, f, k) == S.valid(max, f, k) : Bool}
 
+# The encoder sends exactly the valid frames, as encode_raw writes them, and
+# refuses every other frame.
+law ws_encode_accepts:
+  for +max: U32
+  for +f: F.Frame
+  for +k: Maybe<&2, F.Key>
+  for +ok: {S.valid(max, f, k) == True{} : Bool}
+  {F.encode(max, f, k) == Some{F.encode_raw(f, k)} : Maybe<&2, List<&2, U32>>}
+
+law ws_encode_refuses:
+  for +max: U32
+  for +f: F.Frame
+  for +k: Maybe<&2, F.Key>
+  for +bad: {S.valid(max, f, k) == False{} : Bool}
+  {F.encode(max, f, k) == None{} : Maybe<&2, List<&2, U32>>}
+
+# The bytes of every encoding under a U32 cap, written out from RFC 6455
+# section 5.2: FIN and opcode, MASK and the 7-bit length, the shortest
+# big-endian extended length, the key, then the payload, masked when keyed.
+law ws_encode_bytes:
+  for +max: U32
+  for +fin: Bool
+  for +op: F.Opcode
+  for +payload: List<&2, U32>
+  for +k: Maybe<&2, F.Key>
+  for +fits: {Nat.is_le(List.length(&2, U32, payload), U32.to_nat(max)) == True{} : Bool}
+  {F.encode_raw(F.Frame{fin, op, payload}, k) == List.append(&2, U32, S.header(fin, op, List.length(&2, U32, payload), k), S.payload_bytes(payload, k)) : List<&2, U32>}
+
 # Every encoding of a payload that fits a U32 cap uses the minimal length
 # form: its size is the two fixed bytes, the shortest extended length for the
 # payload, the key and the payload.
@@ -70,3 +98,27 @@ law ws_roundtrip_plain:
   for +rest: List<&2, U32>
   for +ok: {S.valid(max, F.Frame{fin, op, payload}, None{}) == True{} : Bool}
   {F.decode(F.Config{F.Client{}, max}, List.append(&2, U32, F.encode_raw(F.Frame{fin, op, payload}, None{}), rest)) == F.Got{F.Frame{fin, op, payload}, None{}, rest} : F.Decoded}
+
+# Whatever the decoder accepts, from any bytes, re-encodes to exactly the bytes
+# it consumed: no byte is reinterpreted, so non-minimal lengths, reserved bits
+# and the like cannot pass.
+law ws_decode_sound:
+  for +cfg: F.Config
+  for +xs: List<&2, U32>
+  for +f: F.Frame
+  for +k: Maybe<&2, F.Key>
+  for +rest: List<&2, U32>
+  for +e: {F.decode(cfg, xs) == F.Got{f, k, rest} : F.Decoded}
+  {List.append(&2, U32, F.encode_raw(f, k), rest) == xs : List<&2, U32>}
+
+# Every accepted frame is one the RFC lets the peer send under the receiver's
+# cap, masked exactly when the peer is a client (section 5.1).
+law ws_decode_valid:
+  for +role: F.Role
+  for +max: U32
+  for +xs: List<&2, U32>
+  for +f: F.Frame
+  for +k: Maybe<&2, F.Key>
+  for +rest: List<&2, U32>
+  for +e: {F.decode(F.Config{role, max}, xs) == F.Got{f, k, rest} : F.Decoded}
+  {S.valid(max, f, k) && S.peer_key(role, k) == True{} : Bool}

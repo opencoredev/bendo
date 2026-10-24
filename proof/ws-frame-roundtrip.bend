@@ -324,24 +324,3 @@ def WL.ws_roundtrip_masked(max, fin, op, payload, key, rest, ok):
         Equal.trans(F.Decoded, F.settle(F.read_second(F.Server{}, max, fin, op, List.append(&2, U32, List.append(&2, U32, F.header_with(Some{F.MaskKey{a, b, c, d}}, U32.from_nat(F.length(payload))), a <> b <> c <> d <> F.mask(F.MaskKey{a, b, c, d}, payload)), rest))), F.settle(F.read_second(F.Server{}, max, fin, op, List.append(&2, U32, List.append(&2, U32, F.header_with(Some{F.MaskKey{a, b, c, d}}, U32.from_nat(F.length(payload))), a <> b <> c <> d <> S.mask(payload, F.MaskKey{a, b, c, d})), rest))), F.Got{F.Frame{fin, op, payload}, Some{F.MaskKey{a, b, c, d}}, rest},
           Equal.cong(List<&2, U32>, F.Decoded, x => F.settle(F.read_second(F.Server{}, max, fin, op, List.append(&2, U32, List.append(&2, U32, F.header_with(Some{F.MaskKey{a, b, c, d}}, U32.from_nat(F.length(payload))), a <> b <> c <> d <> x), rest))), F.mask(F.MaskKey{a, b, c, d}, payload), S.mask(payload, F.MaskKey{a, b, c, d}), WL.ws_mask_spec(F.MaskKey{a, b, c, d}, payload)),
           Equal.cong(F.Decoded, F.Decoded, d => F.settle(d), F.read_second(F.Server{}, max, fin, op, List.append(&2, U32, List.append(&2, U32, F.header_with(Some{F.MaskKey{a, b, c, d}}, U32.from_nat(F.length(payload))), a <> b <> c <> d <> S.mask(payload, F.MaskKey{a, b, c, d})), rest)), F.Got{F.Frame{fin, op, payload}, Some{F.MaskKey{a, b, c, d}}, rest}, header_u_m(fin, op, max, payload, rest, a, b, c, d, U32.from_nat(F.length(payload)), fits, len, UP.and_right((S.control_valid(op, fin, List.length(&2, U32, payload)) && Nat.is_le(List.length(&2, U32, payload), U32.to_nat(max))) && ((((a <= 255 : U32) && (b <= 255 : U32)) && (c <= 255 : U32)) && (d <= 255 : U32)), S.octets(payload), ok), cv, UP.and_left((a <= 255 : U32), (b <= 255 : U32), k3), UP.and_right((a <= 255 : U32), (b <= 255 : U32), k3), UP.and_right((a <= 255 : U32) && (b <= 255 : U32), (c <= 255 : U32), k2), UP.and_right(((a <= 255 : U32) && (b <= 255 : U32)) && (c <= 255 : U32), (d <= 255 : U32), k1)))))
-
-# Groundwork for ws_decode_sound (proof/ws-frame-pending-laws.bend): the
-# payload stage never reinterprets a byte. Whatever it takes, reversed back
-# onto the rest, is the input it was given.
-def taken_back(t: F.Taken, other: List<&2, U32>) -> List<&2, U32>:
-  match t:
-    case F.Took{_, acc, rest}:
-      List.reverse.go(&2, U32, acc, rest)
-    case F.Short{_, _, _, _}:
-      other
-
-def take_plain_sound(+n: Nat, +xs: List<&2, U32>, +acc: List<&2, U32>, +ok: Bool) -> {taken_back(F.take_plain(n, xs, acc, ok), List.reverse.go(&2, U32, acc, xs)) == List.reverse.go(&2, U32, acc, xs) : List<&2, U32>}:
-  match n:
-    case 0n:
-      {==}
-    case 1n+p:
-      match xs:
-        case Nil{}:
-          {==}
-        case x <> t:
-          take_plain_sound(p, t, x <> acc, ok && F.is_octet(x))

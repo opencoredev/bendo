@@ -126,16 +126,22 @@ the frame when the reason makes it longer than 125 bytes.
 
 - `ws_mask_spec` and `ws_mask_involution`: masking is the RFC's octet-by-octet
   XOR with key octet `i mod 4`, and masking twice restores any payload.
-- `ws_encode_valid`: `F.encode` accepts exactly the frames that satisfy the
-  independent RFC predicate `S.valid` in `proof/ws-frame-spec.bend`.
+- `ws_encode_valid`, `ws_encode_accepts` and `ws_encode_refuses`: the codec's
+  validity check is the independent RFC predicate `S.valid` in
+  `proof/ws-frame-spec.bend`, and `F.encode` returns `Some` of the encoding for
+  every frame that satisfies it and `None` for every other frame.
+- `ws_encode_bytes`: every encoding under a U32 cap is, byte for byte, what
+  `S.header` and `S.payload_bytes` write from section 5.2: FIN and opcode,
+  MASK and the 7-bit length, the shortest big-endian extended length, the key,
+  then the payload, masked when keyed.
 - `ws_encode_minimal`, `ws_length_threshold_exact` and `ws_length_exact`: every
   encoding has the minimal size for its payload length.
 - `ws_roundtrip_masked` and `ws_roundtrip_plain`: a server decodes every valid
   masked frame, and a client every valid unmasked frame, back to the same frame
   and key, followed by whatever bytes came after it.
-
-Two further claims are stated in `proof/ws-frame-pending-laws.bend` but not
-proven yet: `ws_decode_sound` (every accepted frame re-encodes to exactly the
-bytes it consumed) and `ws_decode_valid` (every accepted frame satisfies
-`S.valid`). The fuzz tests in `tests/ws-frame.test.ts` check both on random and
-mutated input.
+- `ws_decode_sound`: whatever the decoder accepts, from any bytes, re-encodes
+  to exactly the bytes it consumed, so non-minimal lengths, reserved bits and
+  other alternative spellings never pass.
+- `ws_decode_valid`: every accepted frame satisfies `S.valid` under the
+  receiver's cap, and is masked exactly when the receiver is a server
+  (`S.peer_key`).

@@ -191,3 +191,124 @@ def L.ws_encode_valid(max, f, k):
       %Equal.sym(Bool, F.control_ok(F.is_control(op), fin, List.length(&2, U32, payload)), S.control_valid(op, fin, List.length(&2, U32, payload)), control_same(op, fin, List.length(&2, U32, payload))) : {_ && Nat.is_le(List.length(&2, U32, payload), U32.to_nat(max)) && F.key_ok(k) && S.octets(payload) == S.valid(max, F.Frame{fin, op, payload}, k) : Bool}
       %Equal.sym(Bool, F.key_ok(k), S.key_valid(k), key_same(k)) : {S.control_valid(op, fin, List.length(&2, U32, payload)) && Nat.is_le(List.length(&2, U32, payload), U32.to_nat(max)) && _ && S.octets(payload) == S.valid(max, F.Frame{fin, op, payload}, k) : Bool}
       {==}
+
+# The encoder.
+
+def L.ws_encode_accepts(max, f, k, ok):
+  %Equal.sym(Bool, F.valid(max, f, k), S.valid(max, f, k), L.ws_encode_valid(max, f, k)) : {F.encode_if(_, f, k) == Some{F.encode_raw(f, k)} : Maybe<&2, List<&2, U32>>}
+  %Equal.sym(Bool, S.valid(max, f, k), True{}, ok) : {F.encode_if(_, f, k) == Some{F.encode_raw(f, k)} : Maybe<&2, List<&2, U32>>}
+  {==}
+
+def L.ws_encode_refuses(max, f, k, bad):
+  %Equal.sym(Bool, F.valid(max, f, k), S.valid(max, f, k), L.ws_encode_valid(max, f, k)) : {F.encode_if(_, f, k) == None{} : Maybe<&2, List<&2, U32>>}
+  %Equal.sym(Bool, S.valid(max, f, k), False{}, bad) : {F.encode_if(_, f, k) == None{} : Maybe<&2, List<&2, U32>>}
+  {==}
+
+# Header bytes, against the spec's shifts and masks.
+
+def first_eq(+fin: Bool, +op: F.Opcode) -> {F.first_byte(fin, op) == U32.or(U32.shln(Bool.to_u32(fin), 7n), S.opcode_value(op)) : U32}:
+  match fin op:
+    case False{} F.OpContinue{}:
+      {==}
+    case False{} F.OpText{}:
+      {==}
+    case False{} F.OpBinary{}:
+      {==}
+    case False{} F.OpClose{}:
+      {==}
+    case False{} F.OpPing{}:
+      {==}
+    case False{} F.OpPong{}:
+      {==}
+    case True{} F.OpContinue{}:
+      {==}
+    case True{} F.OpText{}:
+      {==}
+    case True{} F.OpBinary{}:
+      {==}
+    case True{} F.OpClose{}:
+      {==}
+    case True{} F.OpPing{}:
+      {==}
+    case True{} F.OpPong{}:
+      {==}
+
+def short_m(+m: Bool, +l0: Bool, +l1: Bool, +l2: Bool, +l3: Bool, +l4: Bool, +l5: Bool, +l6: Bool) -> {[F.second_byte(WCon{l0, WCon{l1, WCon{l2, WCon{l3, WCon{l4, WCon{l5, WCon{l6, WNil{}}}}}}}}, m)] == [U32.or(U32.shln(Bool.to_u32(m), 7n), U32{WCon{l0, WCon{l1, WCon{l2, WCon{l3, WCon{l4, WCon{l5, WCon{l6, Word.zero(25n)}}}}}}}})] : List<&2, U32>}:
+  match m:
+    case False{}:
+      {==}
+    case True{}:
+      {==}
+
+def short_bits(+m: Bool, +l0: Bool, +l1: Bool, +l2: Bool, +l3: Bool, +l4: Bool, +l5: Bool, +l6: Bool, +hi: Word(25n), hz: {hi == Word.zero(25n) : Word(25n)}) -> {[F.second_byte(WCon{l0, WCon{l1, WCon{l2, WCon{l3, WCon{l4, WCon{l5, WCon{l6, WNil{}}}}}}}}, m)] == [U32.or(U32.shln(Bool.to_u32(m), 7n), U32{WCon{l0, WCon{l1, WCon{l2, WCon{l3, WCon{l4, WCon{l5, WCon{l6, hi}}}}}}}})] : List<&2, U32>}:
+  %Equal.sym(Word(25n), hi, Word.zero(25n), hz) : {[F.second_byte(WCon{l0, WCon{l1, WCon{l2, WCon{l3, WCon{l4, WCon{l5, WCon{l6, WNil{}}}}}}}}, m)] == [U32.or(U32.shln(Bool.to_u32(m), 7n), U32{WCon{l0, WCon{l1, WCon{l2, WCon{l3, WCon{l4, WCon{l5, WCon{l6, _}}}}}}}})] : List<&2, U32>}
+  short_m(m, l0, l1, l2, l3, l4, l5, l6)
+
+def medium_bytes(+m: Bool, +w: Word(32n)) -> {F.length_bytes(m, w, False{}, True{}) == S.length_field(U32.shln(Bool.to_u32(m), 7n), U32{w}, False{}, True{}) : List<&2, U32>}:
+  match m:
+    case False{}:
+      match w:
+        case WCon{n0, WCon{n1, WCon{n2, WCon{n3, WCon{n4, WCon{n5, WCon{n6, WCon{n7, WCon{n8, WCon{n9, WCon{n10, WCon{n11, WCon{n12, WCon{n13, WCon{n14, WCon{n15, WCon{n16, WCon{n17, WCon{n18, WCon{n19, WCon{n20, WCon{n21, WCon{n22, WCon{n23, WCon{n24, WCon{n25, WCon{n26, WCon{n27, WCon{n28, WCon{n29, WCon{n30, WCon{n31, WNil{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}:
+          {==}
+    case True{}:
+      match w:
+        case WCon{n0, WCon{n1, WCon{n2, WCon{n3, WCon{n4, WCon{n5, WCon{n6, WCon{n7, WCon{n8, WCon{n9, WCon{n10, WCon{n11, WCon{n12, WCon{n13, WCon{n14, WCon{n15, WCon{n16, WCon{n17, WCon{n18, WCon{n19, WCon{n20, WCon{n21, WCon{n22, WCon{n23, WCon{n24, WCon{n25, WCon{n26, WCon{n27, WCon{n28, WCon{n29, WCon{n30, WCon{n31, WNil{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}:
+          {==}
+
+def long_bytes(+m: Bool, +w: Word(32n)) -> {F.length_bytes(m, w, False{}, False{}) == S.length_field(U32.shln(Bool.to_u32(m), 7n), U32{w}, False{}, False{}) : List<&2, U32>}:
+  match m:
+    case False{}:
+      match w:
+        case WCon{n0, WCon{n1, WCon{n2, WCon{n3, WCon{n4, WCon{n5, WCon{n6, WCon{n7, WCon{n8, WCon{n9, WCon{n10, WCon{n11, WCon{n12, WCon{n13, WCon{n14, WCon{n15, WCon{n16, WCon{n17, WCon{n18, WCon{n19, WCon{n20, WCon{n21, WCon{n22, WCon{n23, WCon{n24, WCon{n25, WCon{n26, WCon{n27, WCon{n28, WCon{n29, WCon{n30, WCon{n31, WNil{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}:
+          {==}
+    case True{}:
+      match w:
+        case WCon{n0, WCon{n1, WCon{n2, WCon{n3, WCon{n4, WCon{n5, WCon{n6, WCon{n7, WCon{n8, WCon{n9, WCon{n10, WCon{n11, WCon{n12, WCon{n13, WCon{n14, WCon{n15, WCon{n16, WCon{n17, WCon{n18, WCon{n19, WCon{n20, WCon{n21, WCon{n22, WCon{n23, WCon{n24, WCon{n25, WCon{n26, WCon{n27, WCon{n28, WCon{n29, WCon{n30, WCon{n31, WNil{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}:
+          {==}
+
+def short_lb(+m: Bool, +w: Word(32n), es: {U32.is_le(U32{w}, 125) == True{} : Bool}, md: Bool) -> {F.length_bytes(m, w, True{}, md) == S.length_field(U32.shln(Bool.to_u32(m), 7n), U32{w}, True{}, md) : List<&2, U32>}:
+  match w:
+    case WCon{l0, WCon{l1, WCon{l2, WCon{l3, WCon{l4, WCon{l5, WCon{l6, hi}}}}}}}:
+      short_bits(m, l0, l1, l2, l3, l4, l5, l6, hi, UP.cmp_le_zero(25n, hi, UP.high_le(7n, 25n, WCon{l0, WCon{l1, WCon{l2, WCon{l3, WCon{l4, WCon{l5, WCon{l6, hi}}}}}}}, UP.bits(125), es)))
+
+def lb_go(+m: Bool, +w: Word(32n), s: Bool, es: {U32.is_le(U32{w}, 125) == s : Bool}, md: Bool) -> {F.length_bytes(m, w, s, md) == S.length_field(U32.shln(Bool.to_u32(m), 7n), U32{w}, s, md) : List<&2, U32>}:
+  match s:
+    case True{}:
+      short_lb(m, w, es, md)
+    case False{}:
+      match md:
+        case True{}:
+          medium_bytes(m, w)
+        case False{}:
+          long_bytes(m, w)
+
+def hdr_eq(+k: Maybe<&2, F.Key>, +u: U32) -> {F.header_with(k, u) == S.length_field(U32.shln(Bool.to_u32(S.has_key(k)), 7n), u, U32.is_le(u, 125), U32.is_le(u, 65535)) : List<&2, U32>}:
+  match k:
+    case None{}:
+      match u:
+        case U32{w}:
+          lb_go(False{}, w, U32.is_le(U32{w}, 125), {==}, U32.is_le(U32{w}, 65535))
+    case Some{key}:
+      match u:
+        case U32{w}:
+          lb_go(True{}, w, U32.is_le(U32{w}, 125), {==}, U32.is_le(U32{w}, 65535))
+
+def body_eq(+k: Maybe<&2, F.Key>, +p: List<&2, U32>) -> {F.body_bytes(k, p) == List.append(&2, U32, S.key_bytes(k), S.payload_bytes(p, k)) : List<&2, U32>}:
+  match k:
+    case None{}:
+      {==}
+    case Some{F.MaskKey{+a, +b, +c, +d}}:
+      Equal.cong(List<&2, U32>, List<&2, U32>, x => a <> b <> c <> d <> x, F.mask(F.MaskKey{a, b, c, d}, p), S.mask(p, F.MaskKey{a, b, c, d}), L.ws_mask_spec(F.MaskKey{a, b, c, d}, p))
+
+def bytes_u(+fin: Bool, +op: F.Opcode, +payload: List<&2, U32>, +k: Maybe<&2, F.Key>, +u: U32) -> {F.first_byte(fin, op) <> List.append(&2, U32, F.header_with(k, u), F.body_bytes(k, payload)) == U32.or(U32.shln(Bool.to_u32(fin), 7n), S.opcode_value(op)) <> List.append(&2, U32, List.append(&2, U32, S.length_field(U32.shln(Bool.to_u32(S.has_key(k)), 7n), u, U32.is_le(u, 125), U32.is_le(u, 65535)), S.key_bytes(k)), S.payload_bytes(payload, k)) : List<&2, U32>}:
+  %Equal.sym(List<&2, U32>, List.append(&2, U32, List.append(&2, U32, S.length_field(U32.shln(Bool.to_u32(S.has_key(k)), 7n), u, U32.is_le(u, 125), U32.is_le(u, 65535)), S.key_bytes(k)), S.payload_bytes(payload, k)), List.append(&2, U32, S.length_field(U32.shln(Bool.to_u32(S.has_key(k)), 7n), u, U32.is_le(u, 125), U32.is_le(u, 65535)), List.append(&2, U32, S.key_bytes(k), S.payload_bytes(payload, k))), UP.append_assoc(U32, S.length_field(U32.shln(Bool.to_u32(S.has_key(k)), 7n), u, U32.is_le(u, 125), U32.is_le(u, 65535)), S.key_bytes(k), S.payload_bytes(payload, k))) : {F.first_byte(fin, op) <> List.append(&2, U32, F.header_with(k, u), F.body_bytes(k, payload)) == U32.or(U32.shln(Bool.to_u32(fin), 7n), S.opcode_value(op)) <> _ : List<&2, U32>}
+  %Equal.sym(U32, F.first_byte(fin, op), U32.or(U32.shln(Bool.to_u32(fin), 7n), S.opcode_value(op)), first_eq(fin, op)) : {_ <> List.append(&2, U32, F.header_with(k, u), F.body_bytes(k, payload)) == U32.or(U32.shln(Bool.to_u32(fin), 7n), S.opcode_value(op)) <> List.append(&2, U32, S.length_field(U32.shln(Bool.to_u32(S.has_key(k)), 7n), u, U32.is_le(u, 125), U32.is_le(u, 65535)), List.append(&2, U32, S.key_bytes(k), S.payload_bytes(payload, k))) : List<&2, U32>}
+  %Equal.sym(List<&2, U32>, F.header_with(k, u), S.length_field(U32.shln(Bool.to_u32(S.has_key(k)), 7n), u, U32.is_le(u, 125), U32.is_le(u, 65535)), hdr_eq(k, u)) : {U32.or(U32.shln(Bool.to_u32(fin), 7n), S.opcode_value(op)) <> List.append(&2, U32, _, F.body_bytes(k, payload)) == U32.or(U32.shln(Bool.to_u32(fin), 7n), S.opcode_value(op)) <> List.append(&2, U32, S.length_field(U32.shln(Bool.to_u32(S.has_key(k)), 7n), u, U32.is_le(u, 125), U32.is_le(u, 65535)), List.append(&2, U32, S.key_bytes(k), S.payload_bytes(payload, k))) : List<&2, U32>}
+  %Equal.sym(List<&2, U32>, F.body_bytes(k, payload), List.append(&2, U32, S.key_bytes(k), S.payload_bytes(payload, k)), body_eq(k, payload)) : {U32.or(U32.shln(Bool.to_u32(fin), 7n), S.opcode_value(op)) <> List.append(&2, U32, S.length_field(U32.shln(Bool.to_u32(S.has_key(k)), 7n), u, U32.is_le(u, 125), U32.is_le(u, 65535)), _) == U32.or(U32.shln(Bool.to_u32(fin), 7n), S.opcode_value(op)) <> List.append(&2, U32, S.length_field(U32.shln(Bool.to_u32(S.has_key(k)), 7n), u, U32.is_le(u, 125), U32.is_le(u, 65535)), List.append(&2, U32, S.key_bytes(k), S.payload_bytes(payload, k))) : List<&2, U32>}
+  {==}
+
+def L.ws_encode_bytes(max, fin, op, payload, k, fits):
+  %bridge(List.length(&2, U32, payload), max, fits, 125) : {F.encode_raw(F.Frame{fin, op, payload}, k) == U32.or(U32.shln(Bool.to_u32(fin), 7n), S.opcode_value(op)) <> List.append(&2, U32, List.append(&2, U32, S.length_field(U32.shln(Bool.to_u32(S.has_key(k)), 7n), U32.from_nat(List.length(&2, U32, payload)), _, U32.is_le(U32.from_nat(List.length(&2, U32, payload)), 65535)), S.key_bytes(k)), S.payload_bytes(payload, k)) : List<&2, U32>}
+  %Equal.sym(Nat, F.length(payload), List.length(&2, U32, payload), length_eq(payload)) : {F.first_byte(fin, op) <> List.append(&2, U32, F.header_with(k, U32.from_nat(_)), F.body_bytes(k, payload)) == U32.or(U32.shln(Bool.to_u32(fin), 7n), S.opcode_value(op)) <> List.append(&2, U32, List.append(&2, U32, S.length_field(U32.shln(Bool.to_u32(S.has_key(k)), 7n), U32.from_nat(List.length(&2, U32, payload)), U32.is_le(U32.from_nat(List.length(&2, U32, payload)), 125), U32.is_le(U32.from_nat(List.length(&2, U32, payload)), 65535)), S.key_bytes(k)), S.payload_bytes(payload, k)) : List<&2, U32>}
+  bytes_u(fin, op, payload, k, U32.from_nat(List.length(&2, U32, payload)))
+

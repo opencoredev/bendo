@@ -84,3 +84,79 @@ def key_size(masked: Bool) -> Nat:
 # Two fixed header bytes, the extended length, the key and the payload.
 def wire_size(+n: Nat, masked: Bool) -> Nat:
   Nat.add(2n, Nat.add(extra(n), Nat.add(key_size(masked), n)))
+
+# Section 5.1: a client masks every frame it sends and a server masks none, so
+# a server accepts only masked frames and a client only unmasked ones.
+def peer_key(role: F.Role, k: Maybe<&2, F.Key>) -> Bool:
+  match role:
+    case F.Server{}:
+      match k:
+        case None{}:
+          False{}
+        case Some{_}:
+          True{}
+    case F.Client{}:
+      match k:
+        case None{}:
+          True{}
+        case Some{_}:
+          False{}
+
+# Section 5.2 header bytes. The opcode values are those of section 11.8.
+def opcode_value(op: F.Opcode) -> U32:
+  match op:
+    case F.OpContinue{}:
+      0
+    case F.OpText{}:
+      1
+    case F.OpBinary{}:
+      2
+    case F.OpClose{}:
+      8
+    case F.OpPing{}:
+      9
+    case F.OpPong{}:
+      10
+
+def has_key(k: Maybe<&2, F.Key>) -> Bool:
+  match k:
+    case None{}:
+      False{}
+    case Some{_}:
+      True{}
+
+def key_bytes(k: Maybe<&2, F.Key>) -> List<&2, U32>:
+  match k:
+    case None{}:
+      []
+    case Some{F.MaskKey{a, b, c, d}}:
+      [a, b, c, d]
+
+# Byte 1 is MASK << 7 | len7. A length up to 125 is len7 itself; up to 65535,
+# len7 is 126 and two big-endian bytes follow; otherwise len7 is 127 and eight
+# big-endian bytes follow. `u` is the length; under a U32 cap it is exact
+# (ws_length_exact), so the top four of the eight bytes are zero.
+def length_field(+mask: U32, +u: U32, short: Bool, medium: Bool) -> List<&2, U32>:
+  match short:
+    case True{}:
+      [U32.or(mask, u)]
+    case False{}:
+      match medium:
+        case True{}:
+          [U32.or(mask, 126), U32.and(255, U32.shrn(u, 8n)), U32.and(255, u)]
+        case False{}:
+          [U32.or(mask, 127), 0, 0, 0, 0, U32.and(255, U32.shrn(u, 24n)), U32.and(255, U32.shrn(u, 16n)), U32.and(255, U32.shrn(u, 8n)), U32.and(255, u)]
+
+# Byte 0 is FIN << 7 | opcode with the RSV bits clear; then byte 1 and the
+# extended length; then the masking key, if any. The 65535 threshold is
+# compared on U32 for the reason given at `extra`.
+def header(fin: Bool, op: F.Opcode, +n: Nat, +k: Maybe<&2, F.Key>) -> List<&2, U32>:
+  U32.or(U32.shln(Bool.to_u32(fin), 7n), opcode_value(op)) <> List.append(&2, U32, length_field(U32.shln(Bool.to_u32(has_key(k)), 7n), U32.from_nat(n), Nat.is_le(n, 125n), U32.is_le(U32.from_nat(n), 65535)), key_bytes(k))
+
+# Section 5.3: the payload follows the header, masked when there is a key.
+def payload_bytes(payload: List<&2, U32>, k: Maybe<&2, F.Key>) -> List<&2, U32>:
+  match k:
+    case None{}:
+      payload
+    case Some{key}:
+      mask(payload, key)
