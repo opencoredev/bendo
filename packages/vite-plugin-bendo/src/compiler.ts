@@ -8,7 +8,7 @@ import {
   realpathSync,
   statSync,
 } from "node:fs";
-import { writeFile, rename } from "node:fs/promises";
+import { rename, rm, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { delimiter, join, resolve } from "node:path";
 import {
@@ -28,7 +28,9 @@ const ATTEMPTS = 3;
 
 export type Outcome =
   | { kind: "compiled"; compiled: CompiledShared; files: string[]; fresh: boolean }
-  | { kind: "failed"; diagnostic: Diagnostic; files: string[] };
+  | { kind: "failed"; diagnostic: Diagnostic; files: string[] }
+  /** The compiler was disposed first; nothing was cached. */
+  | { kind: "cancelled" };
 
 /** One compile attempt; `stale` means a file changed while Bend read it. */
 type Attempt = Outcome | { kind: "stale" };
@@ -107,7 +109,7 @@ export type CompilerOptions = {
   cacheDir: string | undefined;
   concurrency: number;
   /** Replaces the Bend compile, for tests of the queue and cache. */
-  compile?: (entry: string) => Promise<CompiledShared>;
+  compile?: (entry: string, signal: AbortSignal) => Promise<CompiledShared>;
 };
 
 /**
@@ -127,6 +129,8 @@ export class Compiler {
   private readonly wanted = new Map<string, string>();
   /** `bend version`, rerun when the binary's mtime or size changes. */
   private bendVersion: { stamp: string; version: string } | undefined;
+  /** Aborted by `dispose`, which kills the running Bend process. */
+  private readonly lifetime = new AbortController();
   compiles = 0;
 
   constructor(options: CompilerOptions) {
@@ -136,6 +140,20 @@ export class Compiler {
 
   get peakConcurrency(): number {
     return this.gate.peak;
+  }
+
+  get disposed(): boolean {
+    return this.lifetime.signal.aborted;
+  }
+
+  /**
+   * Stops for good: queued compiles never start, the running Bend process and
+   * its children are killed, and nothing more is written to the cache.
+   * Resolves once every compile in flight has settled.
+   */
+  async dispose(): Promise<void> {
+    this.lifetime.abort();
+    await Promise.allSettled(this.pending.values());
   }
 
   /** Entries whose import graph contains `file`. */
@@ -186,6 +204,7 @@ export class Compiler {
   async compile(file: string): Promise<Outcome> {
     const entry = canonical(file);
     for (let attempt = 1; ; attempt++) {
+      if (this.disposed) return { kind: "cancelled" };
       const outcome = await this.attempt(entry);
       if (outcome.kind !== "stale") return outcome;
       if (attempt === ATTEMPTS)
@@ -239,6 +258,8 @@ export class Compiler {
   }
 
   private async build(entry: string, snapshot: Snapshot): Promise<Attempt> {
+    // Queued behind a compile that `dispose` stopped.
+    if (this.disposed) return { kind: "cancelled" };
     const cached = this.readDisk(snapshot.hash);
     if (cached !== undefined) {
       const outcome: Outcome = {
@@ -252,12 +273,16 @@ export class Compiler {
     }
     this.compiles++;
     let outcome: Outcome;
+    const signal = this.lifetime.signal;
     try {
       const compiled = await (
-        this.options.compile ?? ((path) => compileShared(path, this.options.bend, GENERATOR))
-      )(entry);
+        this.options.compile ??
+        ((path, stop) =>
+          compileShared(path, this.options.bend, { generator: GENERATOR, signal: stop }))
+      )(entry, signal);
       outcome = { kind: "compiled", compiled, files: snapshot.files, fresh: true };
     } catch (error) {
+      if (signal.aborted) return { kind: "cancelled" };
       if (error instanceof BendCompileError)
         outcome = {
           kind: "failed",
@@ -272,10 +297,12 @@ export class Compiler {
         };
       else throw error;
     }
+    if (signal.aborted) return { kind: "cancelled" };
     // Bend read the files after the snapshot. If one changed meanwhile, this
     // result may belong to newer text than `snapshot.hash` names: drop it.
     if (!this.unchanged(entry, snapshot.hash)) return { kind: "stale" };
     if (outcome.kind === "compiled") await this.writeDisk(snapshot.hash, outcome.compiled);
+    if (signal.aborted) return { kind: "cancelled" };
     this.remember(entry, snapshot.hash, outcome);
     return outcome;
   }
@@ -298,11 +325,12 @@ export class Compiler {
 
   private async writeDisk(hash: string, compiled: CompiledShared): Promise<void> {
     const dir = this.options.cacheDir;
-    if (dir === undefined) return;
+    if (dir === undefined || this.disposed) return;
     mkdirSync(dir, { recursive: true });
     const target = join(dir, `${hash}.json`);
     const temporary = `${target}.${process.pid}.tmp`;
     await writeFile(temporary, JSON.stringify(compiled));
-    await rename(temporary, target);
+    if (this.disposed) await rm(temporary, { force: true });
+    else await rename(temporary, target);
   }
 }

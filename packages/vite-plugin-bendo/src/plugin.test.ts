@@ -321,7 +321,7 @@ test("a missing import keeps the partial graph so creating it recompiles", async
   });
   const failed = await compiler.compile(main);
   expect(failed.kind).toBe("failed");
-  expect(failed.files).toEqual([main, lib]);
+  expect(failed.kind === "failed" && failed.files).toEqual([main, lib]);
   expect(compiler.importersOf(lib)).toEqual([main]);
   writeFileSync(lib, "def one() -> Nat:\n  1n\n");
   expect((await compiler.compile(main)).kind).toBe("compiled");

@@ -211,32 +211,132 @@ export function declarations(
 }
 
 const COMPILE_TIMEOUT_MS = 180_000;
+/** How long a stopped `bend` gets to exit on SIGTERM before SIGKILL. */
+const KILL_GRACE_MS = 2_000;
+
+export type CompileOptions = {
+  /** Named in the generated `.d.mts` header. */
+  generator?: string;
+  /** Stops the compile: `bend` and everything it started are killed. */
+  signal?: AbortSignal;
+  /** Wall-clock limit for one `bend` run. Default 180 s. */
+  timeoutMs?: number;
+  /** Time between SIGTERM and SIGKILL once a run is stopped. Default 2 s. */
+  graceMs?: number;
+};
+
+// On POSIX each `bend` leads its own process group, so stopping it also stops
+// whatever it spawned. A group outside ours misses the terminal's Ctrl-C, so
+// the groups still running are killed when this process exits or is signalled.
+const GROUPS = process.platform !== "win32";
+const groups = new Set<number>();
+const FORWARDED = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
+
+function killGroup(pid: number, signal: NodeJS.Signals): void {
+  try {
+    process.kill(-pid, signal);
+  } catch {
+    // The group is already gone.
+  }
+}
+
+function killAllGroups(): void {
+  for (const pid of groups) killGroup(pid, "SIGKILL");
+}
+
+function onParentSignal(signal: NodeJS.Signals): void {
+  killAllGroups();
+  // With no other handler, re-raise so the signal still ends this process.
+  if (process.listenerCount(signal) > 1) return;
+  untrackAll();
+  process.kill(process.pid, signal);
+}
+
+function untrackAll(): void {
+  process.off("exit", killAllGroups);
+  for (const signal of FORWARDED) process.off(signal, onParentSignal);
+}
+
+function track(pid: number): void {
+  if (groups.size === 0) {
+    process.on("exit", killAllGroups);
+    for (const signal of FORWARDED) process.on(signal, onParentSignal);
+  }
+  groups.add(pid);
+}
+
+function untrack(pid: number): void {
+  if (groups.delete(pid) && groups.size === 0) untrackAll();
+}
 
 // node:child_process rather than Bun.spawn, so vite-plugin-bendo runs under Node.
 // Output is streamed into memory with no cap, so a long diagnostic arrives whole.
-function compileModule(bend: string, entry: string, output: string): Promise<string> {
+function compileModule(
+  bend: string,
+  entry: string,
+  output: string,
+  options: CompileOptions,
+): Promise<string> {
+  const timeoutMs = options.timeoutMs ?? COMPILE_TIMEOUT_MS;
+  const graceMs = options.graceMs ?? KILL_GRACE_MS;
+  const signal = options.signal;
   return new Promise((done, fail) => {
+    if (signal?.aborted) {
+      fail(new Error(`${entry}: compile cancelled`));
+      return;
+    }
     const child = spawn(bend, [entry, "-o", output], {
       env: { ...process.env, BEND_NO_TELEMETRY: "1" },
       stdio: ["ignore", "pipe", "pipe"],
+      detached: GROUPS,
     });
+    const pid = child.pid;
+    if (GROUPS && pid !== undefined) track(pid);
+    const kill = (sig: NodeJS.Signals) => {
+      if (GROUPS && pid !== undefined) killGroup(pid, sig);
+      else child.kill(sig);
+    };
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
     child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
     let settled = false;
+    let stopped: Error | undefined;
+    let escalation: ReturnType<typeof setTimeout> | undefined;
     const settle = (finish: () => void) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      clearTimeout(escalation);
+      signal?.removeEventListener("abort", onAbort);
+      // A stopped run may leave descendants behind; nothing of its group survives.
+      if (stopped !== undefined) kill("SIGKILL");
+      if (pid !== undefined) untrack(pid);
       finish();
     };
-    const timer = setTimeout(() => child.kill("SIGTERM"), COMPILE_TIMEOUT_MS);
+    // SIGTERM first, SIGKILL after the grace period, and reject by then even
+    // if a descendant still holds the pipes and `close` never comes.
+    const stop = (reason: Error) => {
+      if (settled || stopped !== undefined) return;
+      stopped = reason;
+      kill("SIGTERM");
+      escalation = setTimeout(() => settle(() => fail(reason)), graceMs);
+    };
+    const onAbort = () => stop(new Error(`${entry}: compile cancelled`));
+    signal?.addEventListener("abort", onAbort, { once: true });
+    const timer = setTimeout(
+      () => stop(new Error(`${entry}: bend ran past ${timeoutMs / 1000}s and was stopped`)),
+      timeoutMs,
+    );
     child.on("error", (error) => settle(() => fail(error)));
-    child.on("close", (code, signal) =>
+    child.on("close", (code, exitSignal) =>
       settle(() => {
-        if (signal !== null) {
-          fail(new Error(`${entry}: bend stopped (${signal}) after at most 180s`));
+        if (stopped !== undefined) {
+          fail(stopped);
+          return;
+        }
+        if (exitSignal !== null) {
+          fail(new Error(`${entry}: bend stopped (${exitSignal})`));
           return;
         }
         if (code !== 0) {
@@ -289,13 +389,15 @@ export type CompiledShared = {
 export async function compileShared(
   entry: string,
   bend: string,
-  generator?: string,
+  options: CompileOptions = {},
 ): Promise<CompiledShared> {
   const source = resolve(entry);
   const temporary = mkdtempSync(join(tmpdir(), "bendo-shared-"));
   try {
-    const table = parseExportTable(await compileModule(bend, source, join(temporary, "bend.mjs")));
-    const typed = declarations(source, table, generator);
+    const table = parseExportTable(
+      await compileModule(bend, source, join(temporary, "bend.mjs"), options),
+    );
+    const typed = declarations(source, table, options.generator);
     if (typed.io.length > 0) throw new SharedIoError(entry, typed.io);
     return {
       source,

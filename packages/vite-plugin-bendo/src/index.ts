@@ -116,6 +116,7 @@ function thrown(diagnostic: Diagnostic): Error {
  * the last good build.
  */
 export default function bendo(options: BendoPluginOptions = {}): Plugin {
+  let settings: CompilerOptions | undefined;
   let compiler: Compiler | undefined;
   let server: ViteDevServer | undefined;
   let root = process.cwd();
@@ -126,13 +127,50 @@ export default function bendo(options: BendoPluginOptions = {}): Plugin {
     return compiler;
   };
 
+  const dispose = async (): Promise<void> => {
+    await compiler?.dispose();
+  };
+
+  /** Writes declarations unless Vite closed while the compile ran. */
+  const declare = (file: string, text: string): void => {
+    if (writeDeclarations && !ready().disposed) writeIfChanged(declarationPath(file), text);
+  };
+
   // Vite watches the root, and `addWatchFile` skips files that do not exist.
-  // A missing import outside the root still needs a watch, or creating it
-  // would never recompile the broken entry.
-  const watchOutsideRoot = (files: readonly string[]): void => {
+  // A dependency outside the root, missing or not, gets a watch the plugin
+  // owns, counted per entry so it is dropped once no graph reaches it.
+  const external = new Map<string, Set<string>>();
+  const owned = new Map<string, number>();
+  const outsideRoot = (file: string) => !file.startsWith(`${root}/`);
+
+  const watchedByOthers = (dev: ViteDevServer, file: string): boolean =>
+    dev.watcher.getWatched()[dirname(file)]?.includes(basename(file)) ?? false;
+
+  const watchExternal = (entry: string, files: readonly string[]): void => {
     if (server === undefined) return;
-    const outside = files.filter((file) => !file.startsWith(`${root}/`));
-    if (outside.length > 0) server.watcher.add(outside);
+    // Vite watches the entry itself, as a module it loaded.
+    const next = new Set(files.filter((file) => file !== entry && outsideRoot(file)));
+    const previous = external.get(entry) ?? new Set<string>();
+    external.set(entry, next);
+    for (const file of next) {
+      if (previous.has(file)) continue;
+      const count = owned.get(file);
+      if (count !== undefined) owned.set(file, count + 1);
+      else if (!watchedByOthers(server, file)) {
+        owned.set(file, 1);
+        server.watcher.add(file);
+      }
+    }
+    for (const file of previous) {
+      if (next.has(file)) continue;
+      const count = owned.get(file);
+      if (count === undefined) continue;
+      if (count > 1) owned.set(file, count - 1);
+      else {
+        owned.delete(file);
+        server.watcher.unwatch(file);
+      }
+    }
   };
 
   return {
@@ -144,16 +182,37 @@ export default function bendo(options: BendoPluginOptions = {}): Plugin {
       const bend = options.bend ?? findBendPath();
       if (bend === undefined)
         throw new Error(`${NAME}: bend not found. Install Bend from https://bend-lang.com`);
-      compiler = new Compiler({
+      // A restarted dev server resolves its config again; stop the old compiler.
+      void dispose();
+      settings = {
         bend,
         cacheDir: (options.diskCache ?? true) ? join(config.cacheDir, "bendo") : undefined,
         concurrency: options.concurrency ?? 1,
         ...(options.compile === undefined ? {} : { compile: options.compile }),
-      });
+      };
+      compiler = new Compiler(settings);
     },
 
     configureServer(dev) {
       server = dev;
+      external.clear();
+      owned.clear();
+      // Stop Bend before Vite's close, which also waits for requests in flight.
+      const close = dev.close.bind(dev);
+      dev.close = async () => {
+        await dispose();
+        await close();
+      };
+      dev.httpServer?.once("close", () => void dispose());
+    },
+
+    // A watch-mode build closes its bundle after every run; start afresh.
+    buildStart() {
+      if (settings !== undefined && compiler?.disposed === true) compiler = new Compiler(settings);
+    },
+
+    async closeBundle() {
+      await dispose();
     },
 
     resolveId(source, importer) {
@@ -164,11 +223,15 @@ export default function bendo(options: BendoPluginOptions = {}): Plugin {
       const file = bendFile(id);
       if (file === undefined || !existsSync(file)) return null;
       const outcome = await ready().compile(file);
-      for (const dependency of outcome.files) this.addWatchFile(dependency);
-      watchOutsideRoot(outcome.files);
+      if (outcome.kind === "cancelled")
+        throw new Error(`${NAME}: Vite closed while ${file} compiled`);
+      // In dev, `addWatchFile` would watch a file outside the root for good.
+      for (const dependency of outcome.files)
+        if (server === undefined || !outsideRoot(dependency)) this.addWatchFile(dependency);
+      watchExternal(canonical(file), outcome.files);
       if (outcome.kind === "failed") throw thrown(outcome.diagnostic);
       if (outcome.fresh) for (const warning of outcome.compiled.warnings) this.warn(warning);
-      if (writeDeclarations) writeIfChanged(declarationPath(file), outcome.compiled.declarations);
+      declare(file, outcome.compiled.declarations);
       // Bend emits no source map; an empty one stops Vite inventing one from the JS.
       return { code: outcome.compiled.module, map: { mappings: "" } };
     },
@@ -183,7 +246,8 @@ export default function bendo(options: BendoPluginOptions = {}): Plugin {
       let failure: Diagnostic | undefined;
       for (const entry of entries) {
         const outcome = await ready().compile(entry);
-        watchOutsideRoot(outcome.files);
+        if (outcome.kind === "cancelled") return [];
+        watchExternal(entry, outcome.files);
         const modules = moduleGraph.getModulesByFile(entry) ?? new Set<EnvironmentModuleNode>();
         // A reload must recompile, not reuse the last transform, even after a failure.
         for (const module of modules) moduleGraph.invalidateModule(module);
@@ -192,8 +256,7 @@ export default function bendo(options: BendoPluginOptions = {}): Plugin {
           if (modules.size > 0) failure ??= outcome.diagnostic;
           continue;
         }
-        if (writeDeclarations)
-          writeIfChanged(declarationPath(entry), outcome.compiled.declarations);
+        declare(entry, outcome.compiled.declarations);
         for (const module of modules) updated.add(module);
       }
       if (failure !== undefined) {
