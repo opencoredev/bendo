@@ -88,12 +88,13 @@ drops, and decides which frames to write and which notices (message, finish)
 to deliver. These laws check it against `proof/ws-session-spec.bend`. Together
 they say pings get exactly one identical pong, fragmented messages arrive
 whole and in order, each protocol error closes with its code, at most one close
-frame is written, and the app is told the session finished exactly once. See
+frame is written, and the app is told the session finished at most once (a
+history of only pings, for example, has no finish notice yet). See
 [run WebSocket handlers](../websocket-sessions.md).
 
 Whole-history laws:
 
-- `ws_session_trace_safe`: for every history of events, the reducer writes only pongs after its first close frame, delivers no message after it, and writes and delivers nothing after the finish notice. So it writes at most one close and finishes once.
+- `ws_session_trace_safe`: for every history of events, the reducer writes only pongs after its first close frame, delivers no message after it, and writes and delivers nothing after the finish notice. So it writes at most one close and delivers at most one finish notice.
 - `ws_session_trace_strict`: the same, and the action that writes the first close delivers no message either, because the connection writes that close before delivering the action's notice.
 - `ws_session_trace_ping`: after any history, a valid ping (final, at most 125 bytes) gets exactly one identical pong unless the session is done, and changes nothing else.
 - `ws_session_trace_close`, `ws_session_close_empty`: after any history, a valid close from the peer ends message assembly, even mid-message; while open it writes one close echoing the code and reason, while closing it writes nothing, and either way it delivers the finish notice with that code (1005 for an empty payload). Once done it is ignored.

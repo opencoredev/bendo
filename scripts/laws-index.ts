@@ -44,8 +44,8 @@ export function lawFiles(): string[] {
       const lawModule = path.endsWith("-laws.bend");
       if (!lawModule && !top) continue;
       seen.add(path);
-      if (lawsIn(path).length === 0) continue;
-      files.push(path);
+      if (lawsIn(path).length > 0) files.push(path);
+      // A law module that only imports other law modules still passes them on.
       if (lawModule) visit(path, false);
     }
   };

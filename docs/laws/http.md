@@ -66,8 +66,9 @@ input that meets its condition.
 output against an independent response-head parser (`proof/response-spec.bend`)
 that splits at the first blank line. Together they say a client always finds
 the body where the head says it is: one `Content-Length` and no
-`Transfer-Encoding` when a body is allowed, no body or length for 1xx, 204 and
-HEAD, and a HEAD head identical to the GET head. See
+`Transfer-Encoding` when a body is allowed, no body or length for 1xx and 204,
+and for HEAD no body but a head identical to the GET head, `Content-Length`
+included. See
 [decision 0006](../decisions/0006-response-framing.md).
 
 - `response_body_after_first_blank`: for any valid response with a body-bearing status to a method other than HEAD (and not a 2xx answer to CONNECT, which opens a tunnel), the bytes after the first blank line are exactly the body, and the head has exactly one `content-length` (the body's length) and no `transfer-encoding`, whatever the body contains.

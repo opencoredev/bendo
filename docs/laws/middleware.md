@@ -161,7 +161,7 @@ The store and clock are IO and are tested separately. See
 [connection info, IP restriction and rate limiting](../connection.md).
 
 - `rate_fixed_allow`, `rate_fixed_deny`: in the counter's window (or an earlier one that reached the store late) a request is allowed exactly when fewer than `limit` were counted; an allowed request is counted and a denied one is not.
-- `rate_fixed_new_window`: a request in a later window starts a fresh count of one.
+- `rate_fixed_new_window`: with a positive limit, a request in a later window is allowed and starts a fresh count of one.
 - `rate_fixed_zero_limit`: a zero limit refuses every request.
 - `rate_fixed_quota`: for any run of requests inside one window, the first `limit - count` are allowed and every later one is denied. From an empty counter with limit 100, the 101st request is the first refused.
 - `rate_bucket_capacity`: the bucket level never exceeds its full level, for every input, even a stored level above it.
