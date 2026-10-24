@@ -10,6 +10,7 @@ import ../src/http/connection.bend as Connection
 import ../src/http/body.bend as Body
 import ../src/http/parse.bend as Parse
 import ../src/data/json.bend as Json
+import ../src/http/stream_marker.bend as Marker
 import ../src/mw/cors.bend as Cors
 import ../src/mw/secure_headers.bend as SecureHeaders
 import ../src/mw/cors_policy.bend as CorsPolicy
@@ -140,3 +141,11 @@ law hot_body_head_feed_policy:
   for +limit: U32
   for +headers: U32
   {Body.head_feed_policy(~Policy, ~select, policy, xs, s, bytes, limit, headers) == Body.head_feed_policy_spec(~Policy, ~select, policy, xs, s, bytes, limit, headers) : Body.State & Bool}
+
+# BND-96: the stream-marker name test lowers one character at a time and
+# stops at the first difference, instead of lowering the whole field name.
+# For every name it answers what the lowered comparison did, so the marker
+# laws (transport eligibility, finalized delivery, WebSocket fields) carry over.
+law hot_marker_named:
+  for +name: String
+  {Marker.named(name) == Marker.named_spec(name) : Bool}

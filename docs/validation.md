@@ -56,6 +56,14 @@ message naming `src/validated.bend` when any route declares a schema, and
 single error says the same, before the handler runs. That includes a route
 whose only schema is a response schema.
 
+Apps without schemas pay nothing for validation at request time. The server
+works out once, at startup, whether the table declares any schema. When it
+declares none, which is always the case under the `B.` entrypoints, requests
+skip the schema lookup, the validation step and the response check, and the
+binary does not contain the validating request pipeline at all. In a table that
+does declare schemas, a route with no request schema skips the validation step,
+and a route with no response schema skips the response check.
+
 ## Declare schemas
 
 Build each slot with `B.params_schema`, `B.query_schema`, `B.headers_schema`,
@@ -113,7 +121,8 @@ hook can therefore set response headers or variables first, and a
 `before_handle` hook already sees the decoded values. A rejection skips the
 `before_handle` hooks and the handler. Like any response, it then passes through
 `after_handle`, `map_response` and, being a 4xx, `on_error` hooks. A route that
-declares no schema at all skips this stage.
+declares no schema at all skips this stage, and so does every route of a table
+that declares none.
 
 ## Rejections
 
@@ -259,6 +268,11 @@ so the BND-33/34/35 schema laws describe what each slot accepts and reports.
 - `table_schemas_in_source_order`: the manifest's schema list is the routes in
   source order, each with the raw schemas of its effective set, slot by slot.
   `table_schemas_one_per_route` states its length.
+- `undeclared_table_checks_nothing`: in a table that declares no schema, every
+  route's schema set is empty, so skipping its lookup changes nothing.
+- `response_without_schema_is_sent_run` and `response_without_schema_is_sent_skip`:
+  with or without the decoder, a route without a response schema sends the
+  response the retained policies produced, so finalization skips the check.
 
 These laws rely on the JSON parser, `Bytes.fold` and the raw query parser
 that the implementation and the specification share; BND-92 tracks proving

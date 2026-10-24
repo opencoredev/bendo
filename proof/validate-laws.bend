@@ -288,3 +288,30 @@ law finalizers_only_stamp:
   for +id: Maybe<&2, String>
   for +timing: Maybe<&2, String>
   {Final.unstamped(Obs.stamped(res, id, timing)) == Final.unstamped(res) : Response.Res}
+
+# BND-96: a route without a response schema needs no response check. For
+# every mode, registration claim and response, the check answers Send, with
+# the validating decoder and without it, so finalization sends the response
+# the retained policies produced without building the check.
+law response_without_schema_is_sent_run:
+  for +mode: Config.Mode
+  for +claim: Marker.Claim
+  for +res: Response.Res
+  {Final.action(~V.run, mode, claim, None{}, res) == V.Send{} : V.Action}
+
+law response_without_schema_is_sent_skip:
+  for +mode: Config.Mode
+  for +claim: Marker.Claim
+  for +res: Response.Res
+  {Final.action(~V.skip, mode, claim, None{}, res) == V.Send{} : V.Action}
+
+# BND-96: a table that declares no route schema validates nothing. Every
+# route's effective schema set is empty, so serving such a table (which the
+# plain entrypoints guarantee at startup) can skip the per-route schema
+# lookup, the request check and the response check.
+law undeclared_table_checks_nothing:
+  for -Tag: Data
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +route: Maybe<&2, Nat>
+  for +undeclared: {Table.declares_schemas(Tag, layers) == False{} : Bool}
+  {Table.route_schemas(Tag, layers, route) == V.none() : V.Schemas}
