@@ -15,6 +15,8 @@ import ../src/router/methods.bend as Methods
 import ./scoped-assembly-spec.bend as AssemblySpec
 import ./scoped-selection-spec.bend as ScopedSelectionSpec
 import ../src/http/stream_marker.bend as Marker
+import ../src/http/response.bend as Response
+import ../src/mw/response_policy.bend as Policy
 
 # These laws trust the parsers the implementation and the specification share:
 # J.parse, Bytes.fold and the raw query parser. Proving those independently
@@ -249,3 +251,15 @@ law table_schemas_in_source_order:
   for +count: Nat
   for +built: {Table.build(Tag, entries) == Done{Table.Table{routes, compiled, layers, count}} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
   {TableSchemas.effective(Tag, Table.Table{routes, compiled, layers, count}) == Spec.manifest_schemas(Tag, entries) : List<&2, RS.RouteSchemas>}
+
+# BND-36: finalization reapplies retained response policies (CORS, secure
+# headers) after response validation has classified delivery. Those policies
+# cannot set, replace or remove the stream marker, so transport hands the
+# finalized response to the request's registration exactly when validation
+# saw it handed over; when the policies make the response invalid, the 500
+# that replaces it is buffered.
+law finalized_policies_keep_delivery:
+  for +claim: Marker.Claim
+  for +policies: List<&2, Policy.Policy>
+  for +res: Response.Res
+  {Marker.delivers(claim, Policy.finalized(policies, res)) == (Response.valid(Marker.reserved(res, Policy.all(policies, res))) && Marker.delivers(claim, res)) : Bool}

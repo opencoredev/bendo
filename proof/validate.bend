@@ -27,6 +27,8 @@ import ./scoped-assembly.bend as Assembly
 import ./scoped-assembly-spec.bend as AssemblySpec
 import ../src/app/scopes.bend as RuntimeScopes
 import ../src/http/stream_marker.bend as Marker
+import ../src/http/response.bend as Response
+import ../src/mw/response_policy.bend as Policy
 
 def Res() -> Data:
   Result<&2, &2, S.Errors(), S.Value>
@@ -657,3 +659,103 @@ def L.table_schemas_in_source_order(Tag, entries, routes, compiled, layers, coun
     Equal.trans(List<&2, RS.RouteSchemas>, down(Tag, entries, count), down(Tag, entries, ScopedSpec.route_count(Tag, entries)), Spec.in_source_order(Tag, entries, entries),
       Equal.cong(Nat, List<&2, RS.RouteSchemas>, n => down(Tag, entries, n), count, ScopedSpec.route_count(Tag, entries), Sel.successful_count(Tag, entries, routes, compiled, layers, count, built)),
       down_source(Tag, entries, entries)))
+
+# Finalization keeps delivery. `claims` keeps a header list's marker fields and
+# `unclaimed` the rest; `marked` only ever finds a marker field, so a list and
+# its claims mark the same ids. Each step decides the field-name test with a
+# Bool parameter and its equation.
+def claims_append_step(+n: String, +v: List<&2, U32>, +a: List<&2, Request.Header>, +b: List<&2, Request.Header>, +c: List<&2, Request.Header>, same: Bool, ih: {a == List.append(&2, Request.Header, b, c) : List<&2, Request.Header>}) -> {Marker.claim_field(Request.Header{n, v}, a, same) == List.append(&2, Request.Header, Marker.claim_field(Request.Header{n, v}, b, same), c) : List<&2, Request.Header>}:
+  match same:
+    case True{}: Equal.cong(List<&2, Request.Header>, List<&2, Request.Header>, l => Request.Header{n, v} <> l, a, List.append(&2, Request.Header, b, c), ih)
+    case False{}: ih
+
+def claims_append(+xs: List<&2, Request.Header>, +ys: List<&2, Request.Header>) -> {Marker.claims(List.append(&2, Request.Header, xs, ys)) == List.append(&2, Request.Header, Marker.claims(xs), Marker.claims(ys)) : List<&2, Request.Header>}:
+  match xs:
+    case Nil{}: {==}
+    case Request.Header{+n, +v} <> +t: claims_append_step(n, v, Marker.claims(List.append(&2, Request.Header, t, ys)), Marker.claims(t), Marker.claims(ys), String.eq(Bytes.fold(n), Marker.marker()), claims_append(t, ys))
+
+def claims_twice_step(+n: String, +v: List<&2, U32>, +t: List<&2, Request.Header>, same: Bool, e: {String.eq(Bytes.fold(n), Marker.marker()) == same : Bool}, ih: {Marker.claims(Marker.claims(t)) == Marker.claims(t) : List<&2, Request.Header>}) -> {Marker.claims(Marker.claim_field(Request.Header{n, v}, Marker.claims(t), same)) == Marker.claim_field(Request.Header{n, v}, Marker.claims(t), same) : List<&2, Request.Header>}:
+  match same:
+    case True{}:
+      %Equal.sym(Bool, String.eq(Bytes.fold(n), Marker.marker()), True{}, e) : {Marker.claim_field(Request.Header{n, v}, Marker.claims(Marker.claims(t)), _) == Request.Header{n, v} <> Marker.claims(t) : List<&2, Request.Header>}
+      Equal.cong(List<&2, Request.Header>, List<&2, Request.Header>, l => Request.Header{n, v} <> l, Marker.claims(Marker.claims(t)), Marker.claims(t), ih)
+    case False{}: ih
+
+def claims_twice(+hs: List<&2, Request.Header>) -> {Marker.claims(Marker.claims(hs)) == Marker.claims(hs) : List<&2, Request.Header>}:
+  match hs:
+    case Nil{}: {==}
+    case Request.Header{+n, +v} <> +t: claims_twice_step(n, v, t, String.eq(Bytes.fold(n), Marker.marker()), {==}, claims_twice(t))
+
+def claims_unclaimed_step(+n: String, +v: List<&2, U32>, +t: List<&2, Request.Header>, same: Bool, e: {String.eq(Bytes.fold(n), Marker.marker()) == same : Bool}, ih: {Marker.claims(Marker.unclaimed(t)) == [] : List<&2, Request.Header>}) -> {Marker.claims(Marker.other_field(Request.Header{n, v}, Marker.unclaimed(t), same)) == [] : List<&2, Request.Header>}:
+  match same:
+    case True{}: ih
+    case False{}:
+      %Equal.sym(Bool, String.eq(Bytes.fold(n), Marker.marker()), False{}, e) : {Marker.claim_field(Request.Header{n, v}, Marker.claims(Marker.unclaimed(t)), _) == [] : List<&2, Request.Header>}
+      ih
+
+def claims_unclaimed(+hs: List<&2, Request.Header>) -> {Marker.claims(Marker.unclaimed(hs)) == [] : List<&2, Request.Header>}:
+  match hs:
+    case Nil{}: {==}
+    case Request.Header{+n, +v} <> +t: claims_unclaimed_step(n, v, t, String.eq(Bytes.fold(n), Marker.marker()), {==}, claims_unclaimed(t))
+
+def marked_claims_step(+n: String, +v: List<&2, U32>, +t: List<&2, Request.Header>, +id: String, same: Bool, e: {String.eq(Bytes.fold(n), Marker.marker()) == same : Bool}, ih: {Marker.marked(t, id) == Marker.marked(Marker.claims(t), id) : Bool}) -> {(same && String.eq(Bytes.ascii(v), id)) || Marker.marked(t, id) == Marker.marked(Marker.claim_field(Request.Header{n, v}, Marker.claims(t), same), id) : Bool}:
+  match same:
+    case True{}:
+      %Equal.sym(Bool, String.eq(Bytes.fold(n), Marker.marker()), True{}, e) : {(True{} && String.eq(Bytes.ascii(v), id)) || Marker.marked(t, id) == (_ && String.eq(Bytes.ascii(v), id)) || Marker.marked(Marker.claims(t), id) : Bool}
+      Equal.cong(Bool, Bool, z => (True{} && String.eq(Bytes.ascii(v), id)) || z, Marker.marked(t, id), Marker.marked(Marker.claims(t), id), ih)
+    case False{}: ih
+
+def marked_claims(+hs: List<&2, Request.Header>, +id: String) -> {Marker.marked(hs, id) == Marker.marked(Marker.claims(hs), id) : Bool}:
+  match hs:
+    case Nil{}: {==}
+    case Request.Header{+n, +v} <> +t: marked_claims_step(n, v, t, id, String.eq(Bytes.fold(n), Marker.marker()), {==}, marked_claims(t, id))
+
+def header_append_nil(+xs: List<&2, Request.Header>) -> {List.append(&2, Request.Header, xs, []) == xs : List<&2, Request.Header>}:
+  match xs:
+    case Nil{}: {==}
+    case +h <> +t: Equal.cong(List<&2, Request.Header>, List<&2, Request.Header>, l => h <> l, List.append(&2, Request.Header, t, []), t, header_append_nil(t))
+
+def reserved_parts(+hs: List<&2, Request.Header>, +fields: List<&2, Request.Header>) -> {List.append(&2, Request.Header, Marker.claims(Marker.claims(hs)), Marker.claims(Marker.unclaimed(fields))) == Marker.claims(hs) : List<&2, Request.Header>}:
+  %Equal.sym(List<&2, Request.Header>, Marker.claims(Marker.claims(hs)), Marker.claims(hs), claims_twice(hs)) : {List.append(&2, Request.Header, _, Marker.claims(Marker.unclaimed(fields))) == Marker.claims(hs) : List<&2, Request.Header>}
+  %Equal.sym(List<&2, Request.Header>, Marker.claims(Marker.unclaimed(fields)), [], claims_unclaimed(fields)) : {List.append(&2, Request.Header, Marker.claims(hs), _) == Marker.claims(hs) : List<&2, Request.Header>}
+  header_append_nil(Marker.claims(hs))
+
+# A reserved header list claims exactly what the original claimed.
+def reserved_claims(+hs: List<&2, Request.Header>, +fields: List<&2, Request.Header>) -> {Marker.claims(List.append(&2, Request.Header, Marker.claims(hs), Marker.unclaimed(fields))) == Marker.claims(hs) : List<&2, Request.Header>}:
+  Equal.trans(List<&2, Request.Header>, Marker.claims(List.append(&2, Request.Header, Marker.claims(hs), Marker.unclaimed(fields))), List.append(&2, Request.Header, Marker.claims(Marker.claims(hs)), Marker.claims(Marker.unclaimed(fields))), Marker.claims(hs),
+    claims_append(Marker.claims(hs), Marker.unclaimed(fields)),
+    reserved_parts(hs, fields))
+
+def reserved_marked(+hs: List<&2, Request.Header>, +fields: List<&2, Request.Header>, +id: String) -> {Marker.marked(List.append(&2, Request.Header, Marker.claims(hs), Marker.unclaimed(fields)), id) == Marker.marked(hs, id) : Bool}:
+  Equal.trans(Bool, Marker.marked(List.append(&2, Request.Header, Marker.claims(hs), Marker.unclaimed(fields)), id), Marker.marked(Marker.claims(hs), id), Marker.marked(hs, id),
+    Equal.trans(Bool, Marker.marked(List.append(&2, Request.Header, Marker.claims(hs), Marker.unclaimed(fields)), id), Marker.marked(Marker.claims(List.append(&2, Request.Header, Marker.claims(hs), Marker.unclaimed(fields))), id), Marker.marked(Marker.claims(hs), id),
+      marked_claims(List.append(&2, Request.Header, Marker.claims(hs), Marker.unclaimed(fields)), id),
+      Equal.cong(List<&2, Request.Header>, Bool, z => Marker.marked(z, id), Marker.claims(List.append(&2, Request.Header, Marker.claims(hs), Marker.unclaimed(fields))), Marker.claims(hs), reserved_claims(hs, fields))),
+    Equal.sym(Bool, Marker.marked(hs, id), Marker.marked(Marker.claims(hs), id), marked_claims(hs, id)))
+
+def reserved_eligible(+claim: Marker.Claim, +code: U32, +hs: List<&2, Request.Header>, +fields: List<&2, Request.Header>) -> {Marker.eligible(claim, code, List.append(&2, Request.Header, Marker.claims(hs), Marker.unclaimed(fields))) == Marker.eligible(claim, code, hs) : Bool}:
+  match claim:
+    case Marker.Unclaimed{}: {==}
+    case Marker.BodyClaim{id}: reserved_marked(hs, fields, id)
+    case Marker.UpgradeClaim{id}: Equal.cong(Bool, Bool, z => z && U32.is_eq(code, 101), Marker.marked(List.append(&2, Request.Header, Marker.claims(hs), Marker.unclaimed(fields)), id), Marker.marked(hs, id), reserved_marked(hs, fields, id))
+
+def reserved_delivers(+original: Response.Res, +changed: Response.Res, +claim: Marker.Claim) -> {Marker.delivers(claim, Marker.reserved(original, changed)) == Marker.delivers(claim, original) : Bool}:
+  match original changed:
+    case Response.Res{code, hs, b, r} Response.Res{old, fields, body, rep}: reserved_eligible(claim, code, hs, fields)
+
+def failure_delivers(+claim: Marker.Claim) -> {Marker.delivers(claim, Response.body(500, [], [])) == False{} : Bool}:
+  match claim:
+    case Marker.Unclaimed{}: {==}
+    case Marker.BodyClaim{id}: {==}
+    case Marker.UpgradeClaim{id}: {==}
+
+def checked_delivers(+policies: List<&2, Policy.Policy>, +res: Response.Res, +claim: Marker.Claim, v: Bool) -> {Marker.delivers(claim, Policy.checked(policies, Marker.reserved(res, Policy.all(policies, res)), v)) == (v && Marker.delivers(claim, res)) : Bool}:
+  match v:
+    case True{}: reserved_delivers(res, Policy.all(policies, res), claim)
+    case False{}:
+      Equal.trans(Bool, Marker.delivers(claim, Marker.reserved(Response.body(500, [], []), Policy.safe_all(policies, Response.body(500, [], [])))), Marker.delivers(claim, Response.body(500, [], [])), False{},
+        reserved_delivers(Response.body(500, [], []), Policy.safe_all(policies, Response.body(500, [], [])), claim),
+        failure_delivers(claim))
+
+def L.finalized_policies_keep_delivery(claim, policies, res):
+  checked_delivers(policies, res, claim, Response.valid(Marker.reserved(res, Policy.all(policies, res))))

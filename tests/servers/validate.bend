@@ -2,7 +2,9 @@
 # a route whose hooks show where validation runs in the lifecycle, and routes
 # whose hooks produce or replace the response the response schema checks.
 # The stream, forged-marker and socket routes show that only a response the
-# transport really streams or upgrades skips the response schema.
+# transport really streams or upgrades skips the response schema, and the
+# secured routes show that a retained response policy cannot move a response
+# between streamed and buffered after validation.
 import Base
 import ../../src/main.bend as B
 import ../../src/app/table.bend as T
@@ -13,6 +15,7 @@ import ../../src/data/schema.bend as S
 import ../../src/data/schema-pattern.bend as P
 import ../../src/data/json.bend as J
 import ../../src/http/stream_types.bend as ST
+import ../../src/mw/secure_headers.bend as Secure
 
 type Tag is Data:
   Item{}
@@ -39,6 +42,8 @@ type Tag is Data:
   Forged{}
   ForgeMap{}
   Socket{}
+  Secured{}
+  StreamMap{}
 
 def text() -> S.Schema:
   S.StringSchema{1n, Some{80n}, None{}, S.Plain{}}
@@ -133,6 +138,10 @@ def closed(label: Unit) -> IO(Unit):
 
 def marker() -> String: "x-bendo-stream-internal"
 
+# Security headers whose retained policy tries to replace the stream marker.
+def forging() -> Secure.Config:
+  Secure.set(Secure.defaults(), marker(), "forged")
+
 def answer(tag: Tag, +c: B.Ctx) -> IO(B.Res):
   match tag:
     case Item{}: IO.pure(B.Res, B.text(c, "id=" ++ integer(B.field(B.valid_params(c), "id"))))
@@ -166,6 +175,8 @@ def hook(tag: Tag, +c: B.Ctx, next: B.Ctx -> IO(B.Res)) -> IO(B.Res):
     case BadBefore{}: IO.pure(B.Res, B.json(c, J.JObject{[J.Field{"count", J.JNumber{"-1"}}]}))
     case BadMap{}: IO.pure(B.Res, B.json(c, J.JObject{[J.Field{"count", J.JNumber{"3"}}, J.Field{"mapped", J.JBool{True{}}}]}))
     case ForgeMap{}: IO.pure(B.Res, B.json(B.header(c, marker(), "forged"), J.JObject{[J.Field{"count", J.JString{"three"}}]}))
+    case Secured{}: Secure.middleware(Unit, forging(), c, next)
+    case StreamMap{}: B.stream(~Unit, ~Nat, ~pull, ~released, B.header(c, "content-type", "text/plain"), 1n, B.stream_config())
     case _: next(c)
 
 def handler(tag: Tag, c: B.Ctx, env: Unit) -> IO(B.Res):
@@ -199,7 +210,10 @@ def entries() -> List<&2, B.Registration(Tag)>:
      B.with_schemas(Tag, B.get(Tag, "/forged", Forged{}), one(B.response_schema(report_response()))),
      B.route_schemas(Tag, M.get(Tag, "/stream/forged", Streamed{}), [B.hook(Tag, T.MapResponse{}, ForgeMap{})], one(B.response_schema(report_response()))),
      B.route_schemas(Tag, M.get(Tag, "/stream/mapped", Streamed{}), [B.hook(Tag, T.MapResponse{}, BadMap{})], one(B.response_schema(report_response()))),
-     B.with_schemas(Tag, B.get(Tag, "/socket", Socket{}), one(B.response_schema(report_response())))],
+     B.with_schemas(Tag, B.get(Tag, "/socket", Socket{}), one(B.response_schema(report_response()))),
+     B.use_path(Tag, "/secured/*", Secured{}),
+     B.route_schemas(Tag, M.get(Tag, "/secured/stream", Leak{}), [B.hook(Tag, T.MapResponse{}, StreamMap{})], one(B.response_schema(report_response()))),
+     B.with_schemas(Tag, B.get(Tag, "/secured/forged", Leak{}), one(B.response_schema(report_response())))],
     B.guard(Tag, B.guard_schemas(Tag, [], one(B.query_schema(token(text())))), [
       B.get(Tag, "/guarded/a", Member{}),
       B.with_schemas(Tag, B.get(Tag, "/guarded/b", Member{}), one(B.query_schema(token(S.IntegerSchema{None{}, None{}}))))]),

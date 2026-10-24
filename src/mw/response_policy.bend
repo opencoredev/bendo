@@ -4,6 +4,7 @@ import ../http/request.bend as Request
 import ../http/response.bend as Response
 import ./response_fields.bend as Fields
 import ./vary.bend as Vary
+import ../http/stream_marker.bend as Marker
 
 type Policy is Data:
   Policy{remove: List<&2, String>, fields: List<&2, Request.Header>, vary: List<&2, String>}
@@ -44,8 +45,12 @@ def safe_all(policies: List<&2, Policy>, res: Response.Res) -> Response.Res:
 def checked(policies: List<&2, Policy>, res: Response.Res, valid: Bool) -> Response.Res:
   match valid:
     case True{}: res
-    case False{}: safe_all(policies, Response.body(500, [], []))
+    case False{}: Marker.reserved(Response.body(500, [], []), safe_all(policies, Response.body(500, [], [])))
 
-def finalized(+policies: List<&2, Policy>, res: Response.Res) -> Response.Res:
-  +decorated = all(policies, res)
+# Finalization runs after response validation, so retained policies may not
+# change what transport delivers: the stream marker and status stay as
+# validation saw them (Marker.reserved), and a policy failure's 500 carries no
+# marker (law finalized_policies_keep_delivery).
+def finalized(+policies: List<&2, Policy>, +res: Response.Res) -> Response.Res:
+  +decorated = Marker.reserved(res, all(policies, res))
   checked(policies, decorated, Response.valid(decorated))

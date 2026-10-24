@@ -309,6 +309,33 @@ describe("streamed and upgraded responses", () => {
     });
     expect(opened).toBe(true);
   });
+  test("a retained policy that replaces the marker cannot cancel a registered stream", async () => {
+    // Security headers retain a policy that sets the marker; a later
+    // map-response hook registers a real stream. Validation exempts the
+    // stream, so finalization must keep its marker for transport to agree.
+    for (const target of [server, production]) {
+      const response = await send("/secured/stream", {}, target);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("transfer-encoding")).toBe("chunked");
+      expect(response.headers.get("x-frame-options")).toBe("SAMEORIGIN");
+      expect(response.headers.has(MARKER)).toBe(false);
+      expect(await response.text()).toBe("not json");
+    }
+  });
+  test("a retained policy that sets the marker on a buffered response is checked", async () => {
+    const response = await send("/secured/forged");
+    expect(response.status).toBe(500);
+    expect(await response.text()).toBe("Internal Server Error");
+    expect(response.headers.get("x-frame-options")).toBe("SAMEORIGIN");
+    expect(response.headers.has(MARKER)).toBe(false);
+    const sent = await send("/secured/forged", {}, production);
+    expect(sent.status).toBe(200);
+    expect(await sent.json()).toEqual({ count: "three" });
+    expect(sent.headers.has(MARKER)).toBe(false);
+    expect(await logged("GET /secured/forged ")).toBe(
+      `bendo: response schema violation: GET /secured/forged ${KIND_ERROR}`,
+    );
+  });
 });
 
 describe("error budget", () => {
