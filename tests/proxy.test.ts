@@ -1120,6 +1120,7 @@ describe("upstream names and IPv6", () => {
         word: (look) => Atomics.load(res().slots, look.slot),
         ticket: (look) => look.ticket,
         lookups: () => res().lookups.size,
+        retired: () => res().retired.length,
       })`,
       {
         io_eff: () => undefined,
@@ -1162,6 +1163,7 @@ describe("upstream names and IPv6", () => {
       claim: method("claim"),
       finish: method("finish"),
       lookups: number("lookups"),
+      retired: number("retired"),
       ticket,
       asked: (look: unknown) => word(look) === ticket(look) * 8 + 1,
       writing: (look: unknown) => word(look) === ticket(look) * 8 + 2,
@@ -1212,6 +1214,20 @@ describe("upstream names and IPv6", () => {
     h.finish(a);
     h.janitor();
     expect(h.closed).toEqual([40, 50]);
+    expect(h.lookups()).toBe(0);
+  });
+
+  test("JS resolver: retired workers holding no write are forgotten, even without a thread id", () => {
+    const h = resolverHarness();
+    // Each worker publishes -1, as where /proc is missing, so none can ever be
+    // shown gone. Recoveries that leave no WRITING slot keep nothing.
+    h.maintain();
+    for (let i = 0; i < 64; i += 1) {
+      h.publish(-1);
+      h.stale();
+      h.maintain();
+    }
+    expect(h.retired()).toBe(0);
     expect(h.lookups()).toBe(0);
   });
 

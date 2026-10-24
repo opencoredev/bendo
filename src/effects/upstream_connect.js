@@ -199,7 +199,16 @@ function bendo_upstream_recover(res) {
 // waits. Keeps the janitor running while a write end waits on a worker that
 // can still finish.
 function bendo_upstream_reap(sys, res) {
-  res.retired = res.retired.filter(({ id }) => !bendo_upstream_gone(id));
+  // A retired worker matters only while it holds a WRITING slot: recovery gave
+  // every lookup it had not claimed a new ticket, so it can claim nothing new.
+  // Without /proc it never counts as gone, so this is what keeps the list from
+  // growing with each recovery.
+  const holding = new Set();
+  for (const look of res.lookups) {
+    if (Atomics.load(res.slots, look.slot) === look.ticket * 8 + BENDO_WRITING)
+      holding.add(look.gen);
+  }
+  res.retired = res.retired.filter(({ gen, id }) => holding.has(gen) && !bendo_upstream_gone(id));
   const retired = new Map(res.retired.map(({ gen, id }) => [gen, id]));
   let parked = false;
   for (const look of res.lookups) {
