@@ -17,6 +17,7 @@ import { main, parseArgs, UsageError, type Io } from "./cli.ts";
 import {
   demote,
   locateToolkit,
+  type Made,
   manifest,
   packageName,
   promote,
@@ -262,10 +263,23 @@ describe("promote", () => {
     mkdirSync(join(root, "target"));
     // Someone else wrote z.txt after the emptiness check.
     writeFileSync(join(root, "target/z.txt"), "theirs");
-    const made: string[] = [];
+    const made: Made[] = [];
     expect(() => promote(join(root, "staged"), join(root, "target"), made)).toThrow();
     expect(readFileSync(join(root, "target/z.txt"), "utf8")).toBe("theirs");
     demote(made);
     expect(readdirSync(join(root, "target"))).toEqual(["z.txt"]);
+  });
+
+  test("demote keeps what another process wrote into a directory promote made", () => {
+    const root = mkdtempSync(join(tmpdir(), "create-bendo-promote-"));
+    dirs.push(root);
+    mkdirSync(join(root, "staged/src"), { recursive: true });
+    writeFileSync(join(root, "staged/src/b.txt"), "app");
+    mkdirSync(join(root, "target"));
+    const made: Made[] = [];
+    promote(join(root, "staged"), join(root, "target"), made);
+    writeFileSync(join(root, "target/src/foreign.txt"), "theirs");
+    demote(made);
+    expect(readdirSync(join(root, "target/src"))).toEqual(["foreign.txt"]);
   });
 });

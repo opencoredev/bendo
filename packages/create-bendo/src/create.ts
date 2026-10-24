@@ -1,7 +1,7 @@
 import {
+  constants,
   copyFileSync,
   existsSync,
-  linkSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -11,6 +11,7 @@ import {
   rmdirSync,
   rmSync,
   statSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { basename, join, resolve } from "node:path";
@@ -189,30 +190,44 @@ function copyTree(from: string, to: string): void {
   }
 }
 
+/** A path promote made, so a failure can remove exactly that. */
+export type Made = { kind: "file" | "directory"; path: string };
+
 /**
- * Moves a staged tree into place without replacing anything: each directory is
- * made with an exclusive mkdir and each file is hard-linked, and both fail if
- * the name already exists. Every path made is recorded in `made`, deepest
- * last, so a failure can remove exactly what this call created.
+ * Copies a staged tree into place without replacing anything: each directory
+ * is made with an exclusive mkdir and each file is copied with COPYFILE_EXCL,
+ * and both fail if the name already exists. Every path made is recorded in
+ * `made`, parents before children.
  */
-export function promote(from: string, to: string, made: string[]): void {
+export function promote(from: string, to: string, made: Made[]): void {
   for (const entry of readdirSync(from, { withFileTypes: true })) {
     const source = join(from, entry.name);
     const destination = join(to, entry.name);
     if (entry.isDirectory()) {
       mkdirSync(destination);
-      made.push(destination);
+      made.push({ kind: "directory", path: destination });
       promote(source, destination, made);
     } else {
-      linkSync(source, destination);
-      made.push(destination);
+      copyFileSync(source, destination, constants.COPYFILE_EXCL);
+      made.push({ kind: "file", path: destination });
     }
   }
 }
 
-/** Removes what promote made, deepest first. */
-export function demote(made: readonly string[]): void {
-  for (const path of [...made].reverse()) rmSync(path, { recursive: true, force: true });
+/**
+ * Removes what promote made, children first. Only the files it wrote are
+ * unlinked, and a directory goes only once it is empty, so anything another
+ * process wrote meanwhile stays.
+ */
+export function demote(made: readonly Made[]): void {
+  for (const { kind, path } of [...made].reverse()) {
+    try {
+      if (kind === "file") unlinkSync(path);
+      else rmdirSync(path);
+    } catch {
+      // Already gone, or a directory someone else has written into.
+    }
+  }
 }
 
 /**
@@ -228,7 +243,7 @@ export function create(directory: string, template: Template, toolkit = locateTo
   const made = !existsSync(target);
   mkdirSync(target, { recursive: true });
   const staging = mkdtempSync(join(target, ".create-"));
-  const promoted: string[] = [];
+  const promoted: Made[] = [];
   try {
     copyTree(join(PACKAGE_DIR, "templates", template), staging);
     renameSync(join(staging, "gitignore"), join(staging, ".gitignore"));
