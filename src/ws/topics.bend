@@ -9,16 +9,25 @@ type Sub<-A: Data> is Data:
   Sub{topic: String, id: Nat, target: A}
 
 # `next` is the next connection ID to hand out. IDs start at 1; 0 means a
-# connection that never joined.
+# connection that never joined. `live` holds the IDs that joined and have not
+# closed: only they may subscribe.
 type Registry<-A: Data> is Data:
-  Registry{next: Nat, subs: List<&2, Sub<A>>}
+  Registry{next: Nat, live: List<&2, Nat>, subs: List<&2, Sub<A>>}
 
 def empty(-A: Data) -> Registry<A>:
-  Registry{1n, []}
+  Registry{1n, [], []}
 
 def subs(-A: Data, r: Registry<A>) -> List<&2, Sub<A>>:
-  Registry{next, s} = r
+  Registry{next, live, s} = r
   s
+
+def live(-A: Data, r: Registry<A>) -> List<&2, Nat>:
+  Registry{next, live, s} = r
+  live
+
+def next(-A: Data, r: Registry<A>) -> Nat:
+  Registry{next, live, s} = r
+  next
 
 def keep(-A: Data, s: Sub<A>, rest: List<&2, Sub<A>>, drop: Bool) -> List<&2, Sub<A>>:
   match drop:
@@ -48,37 +57,70 @@ def dropped(-A: Data, xs: List<&2, Sub<A>>, +c: Nat) -> List<&2, Sub<A>>:
 def subscribe_subs(-A: Data, xs: List<&2, Sub<A>>, +c: Nat, +t: String, x: A) -> List<&2, Sub<A>>:
   Sub{t, c, x} <> without(A, xs, c, t)
 
+def pick(id: Nat, rest: List<&2, Nat>, take: Bool) -> List<&2, Nat>:
+  match take:
+    case True{}: id <> rest
+    case False{}: rest
+
+def holds(ids: List<&2, Nat>, +c: Nat) -> Bool:
+  match ids:
+    case Nil{}: False{}
+    case h <> t: Nat.is_eq(h, c) || holds(t, c)
+
+def revoked(ids: List<&2, Nat>, +c: Nat) -> List<&2, Nat>:
+  match ids:
+    case Nil{}: []
+    case +h <> t: pick(h, revoked(t, c), Bool.not(Nat.is_eq(h, c)))
+
+# Whether connection `c` has joined and not yet closed.
+def active(-A: Data, r: Registry<A>, +c: Nat) -> Bool:
+  Registry{next, live, s} = r
+  holds(live, c)
+
+# Records the subscription unconditionally. The shell goes through `admit`.
 def subscribe(-A: Data, r: Registry<A>, +c: Nat, +t: String, x: A) -> Registry<A>:
-  Registry{next, s} = r
-  Registry{next, subscribe_subs(A, s, c, t, x)}
+  Registry{next, live, s} = r
+  Registry{next, live, subscribe_subs(A, s, c, t, x)}
+
+def admit_if(-A: Data, r: Registry<A>, +c: Nat, +t: String, x: A, ok: Bool) -> Registry<A>:
+  match ok:
+    case True{}: subscribe(A, r, c, t, x)
+    case False{}: r
+
+# Subscribes an active connection and leaves the registry unchanged for one
+# that closed or never joined, so a retained Peer cannot re-register a dead ID.
+def admit(-A: Data, +r: Registry<A>, +c: Nat, +t: String, x: A) -> Registry<A>:
+  admit_if(A, r, c, t, x, active(A, r, c))
 
 def unsubscribe(-A: Data, r: Registry<A>, +c: Nat, +t: String) -> Registry<A>:
-  Registry{next, s} = r
-  Registry{next, without(A, s, c, t)}
+  Registry{next, live, s} = r
+  Registry{next, live, without(A, s, c, t)}
 
-# Leaves every topic: the close path of each connection.
+# Leaves every topic and revokes the ID in one step: the close path of each
+# connection.
 def remove(-A: Data, r: Registry<A>, +c: Nat) -> Registry<A>:
-  Registry{next, s} = r
-  Registry{next, dropped(A, s, c)}
+  Registry{next, live, s} = r
+  Registry{next, revoked(live, c), dropped(A, s, c)}
 
 def remove_all(-A: Data, ids: List<&2, Nat>, r: Registry<A>) -> Registry<A>:
   match ids:
     case Nil{}: r
     case +c <> rest: remove_all(A, rest, remove(A, r, c))
 
-# Hands out `next`. Read the new ID back as `joined(updated)`.
+# Hands out `next` and marks it active. Read the new ID back as
+# `joined(updated)`.
 def join(-A: Data, r: Registry<A>) -> Registry<A>:
-  Registry{next, s} = r
-  Registry{1n+next, s}
+  Registry{+next, live, s} = r
+  Registry{1n+next, next <> live, s}
+
+def previous(n: Nat) -> Nat:
+  match n:
+    case 0n: 0n
+    case 1n+m: m
 
 def joined(-A: Data, r: Registry<A>) -> Nat:
-  Registry{next, s} = r
-  Nat.sub(next, 1n)
-
-def pick(id: Nat, rest: List<&2, Nat>, take: Bool) -> List<&2, Nat>:
-  match take:
-    case True{}: id <> rest
-    case False{}: rest
+  Registry{next, live, s} = r
+  previous(next)
 
 def members_of(-A: Data, xs: List<&2, Sub<A>>, +t: String) -> List<&2, Nat>:
   match xs:
@@ -87,7 +129,7 @@ def members_of(-A: Data, xs: List<&2, Sub<A>>, +t: String) -> List<&2, Nat>:
 
 # Connection IDs subscribed to `t`.
 def members(-A: Data, r: Registry<A>, +t: String) -> List<&2, Nat>:
-  Registry{next, s} = r
+  Registry{next, live, s} = r
   members_of(A, s, t)
 
 def excluded(id: Nat, sender: Maybe<&2, Nat>) -> Bool:
@@ -106,7 +148,7 @@ def targets_of(-A: Data, xs: List<&2, Sub<A>>, +t: String, +sender: Maybe<&2, Na
 
 # Who a publication to `t` reaches: its members, minus `sender` when given.
 def targets(-A: Data, r: Registry<A>, +t: String, +sender: Maybe<&2, Nat>) -> List<&2, Sub<A>>:
-  Registry{next, s} = r
+  Registry{next, live, s} = r
   targets_of(A, s, t, sender)
 
 def target_ids(-A: Data, xs: List<&2, Sub<A>>) -> List<&2, Nat>:
@@ -115,5 +157,10 @@ def target_ids(-A: Data, xs: List<&2, Sub<A>>) -> List<&2, Nat>:
     case Sub{topic, id, x} <> rest: id <> target_ids(A, rest)
 
 def size(-A: Data, r: Registry<A>) -> Nat:
-  Registry{next, s} = r
+  Registry{next, live, s} = r
   List.length(&2, Sub<A>, s)
+
+# Connections that joined and have not closed.
+def connections(-A: Data, r: Registry<A>) -> Nat:
+  Registry{next, live, s} = r
+  List.length(&2, Nat, live)

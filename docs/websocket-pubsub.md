@@ -46,10 +46,12 @@ def room(c: B.Context(Unit), hub: P.Hub) -> IO(B.Res):
 
 Create the hub in `main` with `hub : P.Hub <- P.hub()`, or with
 `P.hub_with_timeout(ms)` to change the 5,000 ms registry budget. Every
-connection joins the hub when it opens and gets a registry ID (`P.id(peer)`).
-It leaves every topic when it closes, on any path: a peer close, a server
-close, a protocol error, an idle timeout, or a dropped TCP connection (1006).
-You don't need to unsubscribe in `close`.
+connection joins the hub when it opens and gets a fresh registry ID
+(`P.id(peer)`). It leaves every topic when it closes, on any path: a peer
+close, a server close, a protocol error, an idle timeout, or a dropped TCP
+connection (1006). The same registry update revokes its ID, so a `P.Peer`
+kept after the close can no longer subscribe. You don't need to unsubscribe in
+`close`.
 
 To send to one connection, use `P.handle(peer)` with the usual
 `B.websocket_send_text` helpers, or keep the handle to send from elsewhere.
@@ -66,27 +68,33 @@ To send to one connection, use `P.handle(peer)` with the usual
 | `P.publish_binary_others(peer, topic, bytes)` | same | Binary, sender excluded. |
 | `P.members(hub, topic)` | `IO(Result<Store.Error, List<Nat>>)` | Registry IDs subscribed to `topic`. |
 | `P.size(hub)` | `IO(Result<Store.Error, Nat>)` | Subscriptions across all topics. |
+| `P.connections(hub)` | `IO(Result<Store.Error, Nat>)` | Connections that joined and have not closed. |
 
 `subscribe` and `unsubscribe` return `True` once the registry has applied the
-change. A publication that starts after that sees it. `False` means the hub
-timed out or is unavailable.
+change. A publication that starts after that sees it. `False` from
+`unsubscribe` means the hub timed out or is unavailable. `False` from
+`subscribe` can also mean the connection has already closed, in which case
+the registry is unchanged.
 
 A publication returns `P.Delivery{sent, dropped, gone}`:
 
 - `sent`: mailboxes that accepted the message. As with the
   [send helpers](websocket-sessions.md#send-from-a-handler-or-another-route),
   acceptance does not mean the peer has read it.
-- `dropped`: subscribers whose mailbox was full, or whose `max_message` is
-  smaller than the message. They miss this message and stay subscribed.
-- `gone`: subscribers that had already closed. The publication removes them
-  from the registry.
+- `dropped`: open subscribers whose mailbox was full, or whose `max_message`
+  is smaller than the message. They miss this message and stay subscribed.
+- `gone`: subscribers that had already closed, whatever the message size. The
+  publication removes them from the registry.
 
 `Fail{Store.Unavailable{}}` or `Fail{Store.TimedOut{}}` means the registry
 couldn't be read, and nothing was sent.
 
 ## Delivery guarantees
 
-A publication never waits for a subscriber. Each recipient gets one
+A publication selects each subscribed connection exactly once: every
+connection with a subscription to the topic, minus the sender for the
+`_others` forms, gets one offer of the message on the mailbox it subscribed
+with. A publication never waits for a subscriber. Each recipient gets one
 nonblocking offer, so a slow or stalled subscriber cannot delay the publisher
 or anyone else. When a subscriber's mailbox is full, that subscriber's copy
 is dropped and counted in `dropped`. A reader that stops reading completely
@@ -130,5 +138,7 @@ pings.
 publication to 50 subscribers with bystanders on other topics, sender
 exclusion, HTTP publication, unsubscribe, 1,000 connect-and-disconnect cycles
 that leave the registry empty, the slow-subscriber policy, per-publisher
-ordering, and the latency figures above. The registry laws live in
-`proof/ws-topics-laws.bend`; `bun run prove` checks them.
+ordering, a kept `P.Peer` subscribing after its connection closed (once in
+order and 30 times racing the close), an oversized publication that still
+prunes a closed subscriber, and the latency figures above. The registry laws
+live in `proof/ws-topics-laws.bend`; `bun run prove` checks them.

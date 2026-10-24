@@ -3,6 +3,7 @@ import ../../src/main.bend as B
 import ../../src/ws/connection.bend as W
 import ../../src/ws/message.bend as M
 import ../../src/ws/pubsub.bend as P
+import ../../src/ws/session.bend as S
 import ../../src/app/store.bend as Store
 import ../../src/app/context.bend as C
 import ../../src/router/methods.bend as Methods
@@ -13,6 +14,15 @@ type Route is Data:
   SizeRoute{}
   MembersRoute{}
   HealthRoute{}
+  KeepRoute{}
+  LateRoute{}
+  GhostRoute{}
+  ConnectionsRoute{}
+
+# `kept` holds the Peer of the latest /keep connection, so a request can
+# subscribe it after that connection has closed.
+type Shared is Data:
+  Shared{hub: P.Hub, kept: Store.Store<Maybe<&2, P.Peer>>}
 
 def flag(ok: Bool) -> String:
   match ok:
@@ -98,6 +108,45 @@ def message(topic: String, peer: P.Peer, message: M.Message) -> IO(String):
 def closed(topic: String, code: U32, reason: String) -> IO(Unit):
   IO.pure(Unit, Unit{})
 
+# /keep: retains the Peer without subscribing it, then reports `ready <id>`.
+def kept_open_copy(+kept: Store.Store<Maybe<&2, P.Peer>>, +peer: P.Peer) -> IO(Store.Store<Maybe<&2, P.Peer>>):
+  do IO<Store.Store<Maybe<&2, P.Peer>>>:
+    got : Result<&2, &2, Store.Error, Maybe<&2, P.Peer>> <- Store.update(Maybe<&2, P.Peer>, kept, old => Some{peer})
+    sent : Bool <- W.text(P.handle(peer), "ready " ++ Nat.show(P.id(peer)))
+    return kept
+
+def kept_open(kept: Store.Store<Maybe<&2, P.Peer>>, peer: P.Peer) -> IO(Store.Store<Maybe<&2, P.Peer>>):
+  kept_open_copy(kept, peer)
+
+def kept_message(kept: Store.Store<Maybe<&2, P.Peer>>, peer: P.Peer, message: M.Message) -> IO(Store.Store<Maybe<&2, P.Peer>>):
+  IO.pure(Store.Store<Maybe<&2, P.Peer>>, kept)
+
+def kept_closed(kept: Store.Store<Maybe<&2, P.Peer>>, code: U32, reason: String) -> IO(Unit):
+  IO.pure(Unit, Unit{})
+
+def late_peer(got: Result<&2, &2, Store.Error, Maybe<&2, P.Peer>>, topic: String) -> IO(Bool):
+  match got:
+    case Done{Some{peer}}: P.subscribe(peer, topic)
+    case _: IO.pure(Bool, False{})
+
+# Subscribes the retained /keep Peer to `topic`.
+def late(kept: Store.Store<Maybe<&2, P.Peer>>, topic: String) -> IO(Bool):
+  do IO<Bool>:
+    got : Result<&2, &2, Store.Error, Maybe<&2, P.Peer>> <- Store.get(Maybe<&2, P.Peer>, kept)
+    late_peer(got, topic)
+
+# A subscriber whose connection has closed but is still registered, as when
+# its close-path removal failed: a closed mailbox and liveness channel, and a
+# `max_message` of 20 bytes.
+def ghost(+hub: P.Hub, topic: String) -> IO(Bool):
+  do IO<Bool>:
+    +outbound : Chan(S.Command) <- Chan.new(S.Command, 1)
+    +alive : Chan(Unit) <- Chan.new(Unit, 0)
+    Chan.close(S.Command, outbound)
+    Chan.close(Unit, alive)
+    id : Nat <- P.join(hub)
+    P.subscribe(P.Peer{W.Handle{outbound, 20, alive}, id, hub}, topic)
+
 # Fields: max_message, mailbox_capacity, poll_ms, poll_max_ms, idle_ms,
 # ping_ms, close_ms, write_ms. /slow holds one queued message and polls its
 # mailbox only once a minute unless bytes arrive; /ws keeps the default
@@ -105,6 +154,7 @@ def closed(topic: String, code: U32, reason: String) -> IO(Unit):
 def session_config(path: String) -> W.Config:
   match path:
     case "slow": W.Config{1048576, 1, 60000, 60000, 0, 0, 100, 1000}
+    case "small": W.Config{20, 64, 10, 100, 60000, 0, 200, 1000}
     case _: W.Config{1048576, 64, 10, 100, 60000, 0, 200, 1000}
 
 def mode(param: Maybe<&2, String>) -> String:
@@ -157,7 +207,7 @@ def text_param(param: Maybe<&2, String>) -> String:
     case None{}: "m"
 
 @unsafe
-def handler(route: Route, +c: B.Context(Unit), +hub: P.Hub) -> IO(B.Res):
+def handler(route: Route, +c: B.Context(Unit), +hub: P.Hub, +kept: Store.Store<Maybe<&2, P.Peer>>) -> IO(B.Res):
   match route:
     case SocketRoute{}:
       P.handlers(~Unit, ~String, ~opened, ~message, ~closed, c, hub, topic_of(B.param(c, "topic")), B.websocket_config(), session_config(mode(B.query(c, "mode"))))
@@ -174,19 +224,35 @@ def handler(route: Route, +c: B.Context(Unit), +hub: P.Hub) -> IO(B.Res):
         got : Result<&2, &2, Store.Error, List<&2, Nat>> <- P.members(hub, topic_of(B.param(c, "topic")))
         return B.text(c, members_text(got))
     case HealthRoute{}: IO.pure(B.Res, B.text(c, "ok"))
+    case KeepRoute{}:
+      P.handlers(~Unit, ~(Store.Store<Maybe<&2, P.Peer>>), ~kept_open, ~kept_message, ~kept_closed, c, hub, kept, B.websocket_config(), W.defaults())
+    case LateRoute{}:
+      do IO<B.Res>:
+        ok : Bool <- late(kept, topic_of(B.param(c, "topic")))
+        return B.text(c, flag(ok))
+    case GhostRoute{}:
+      do IO<B.Res>:
+        ok : Bool <- ghost(hub, topic_of(B.param(c, "topic")))
+        return B.text(c, flag(ok))
+    case ConnectionsRoute{}:
+      do IO<B.Res>:
+        got : Result<&2, &2, Store.Error, Nat> <- P.connections(hub)
+        return B.text(c, size_text(got))
 
 @unsafe
-def dispatch(route: Route, c: B.Context(Unit), hub: P.Hub) -> IO(B.Res):
-  handler(route, c, hub)
+def dispatch(route: Route, c: B.Context(Unit), shared: Shared) -> IO(B.Res):
+  Shared{hub, kept} = shared
+  handler(route, c, hub, kept)
 
 @unsafe
-def ready(hub: P.Hub, result: Result<&2, &2, Methods.BuildError, B.Routes(Route)>) -> IO(Unit):
+def ready(shared: Shared, result: Result<&2, &2, Methods.BuildError, B.Routes(Route)>) -> IO(Unit):
   match result:
     case Fail{e}: IO.die(Unit, 1, "routes")
-    case Done{routes}: B.serve(~Route, ~P.Hub, ~dispatch, routes, hub, B.config())
+    case Done{routes}: B.serve(~Route, ~Shared, ~dispatch, routes, shared, B.config())
 
 @unsafe
 def main() -> IO(Unit):
   do IO<Unit>:
     hub : P.Hub <- P.hub()
-    ready(hub, B.routes(Route, [B.get(Route, "/", HealthRoute{}), B.get(Route, "/ws/:topic", SocketRoute{}), B.post(Route, "/publish/:topic", PublishRoute{}), B.get(Route, "/size", SizeRoute{}), B.get(Route, "/members/:topic", MembersRoute{})]))
+    kept : Store.Store<Maybe<&2, P.Peer>> <- B.store(Maybe<&2, P.Peer>, None{})
+    ready(Shared{hub, kept}, B.routes(Route, [B.get(Route, "/", HealthRoute{}), B.get(Route, "/ws/:topic", SocketRoute{}), B.post(Route, "/publish/:topic", PublishRoute{}), B.get(Route, "/size", SizeRoute{}), B.get(Route, "/members/:topic", MembersRoute{}), B.get(Route, "/keep", KeepRoute{}), B.post(Route, "/late/:topic", LateRoute{}), B.post(Route, "/ghost/:topic", GhostRoute{}), B.get(Route, "/connections", ConnectionsRoute{})]))

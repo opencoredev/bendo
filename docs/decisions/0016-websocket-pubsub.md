@@ -8,22 +8,35 @@ whether a publication can wake an idle subscriber.
 ## One registry, one actor
 
 The registry is the pure `src/ws/topics.bend`: a list of `Sub{topic, id,
-target}` entries plus the next connection ID. A `B.Store` actor owns it, so
+target}` entries, the next connection ID, and the IDs of connections that
+joined and have not closed. A `B.Store` actor owns it, so
 subscribe, unsubscribe, join and remove are serialized as store updates.
 `src/ws/pubsub.bend` is the IO shell around it.
 
 Connections need an identity to unsubscribe and to exclude a sender. Channels
 can't be compared, so each connection joins the hub when it opens and receives
-a counter ID from the registry. `P.handlers` wraps the application's
-templates. Its state holds the user's state, the ID and the hub, and its
-`close` wrapper removes the ID from every topic before calling the user's
-`close`. BND-52 runs `close` exactly once on every session end, including EOF
-and transport failure (1006), so cleanup needs no separate path.
+a counter ID from the registry, which also marks the ID active.
+`P.handlers` wraps the application's templates. Its state holds the user's
+state, the ID and the hub, and its `close` wrapper removes the ID from every
+topic and revokes it in one store update before calling the user's `close`.
+BND-52 runs `close` exactly once on every session end, including EOF and
+transport failure (1006), so cleanup needs no separate path.
+
+A `P.Peer` is ordinary data, so an application can keep one after its
+connection closes. `P.subscribe` goes through `T.admit`, which records the
+subscription only for an active ID. A subscribe that the actor serializes
+after the close cleanup leaves the registry unchanged and returns `False`, so
+it cannot re-register a dead connection.
 
 The removal is a store update with the hub's timeout. If it fails, the dead
-entry is still harmless: its mailbox is already closed, so the next
-publication to that topic gets a closed result, counts it as `gone`, and
-removes it.
+entry is still harmless: its connection is closed, so the next publication to
+that topic counts it as `gone` and removes it. Liveness is checked apart from
+the message: when a message is too large for the subscriber's `max_message`,
+the publisher does not offer it, and instead probes the handle's `alive`
+channel. That channel has no room and no receiver, so a send to it never
+lands. It waits while the connection runs and fails once the connection
+closes it together with the mailbox. An oversized message therefore still
+counts an open subscriber as `dropped` and a closed one as `gone`.
 
 The list representation keeps the laws simple and costs O(subscriptions) per
 operation. A publication reads a snapshot of the whole registry with
@@ -81,7 +94,27 @@ connection. Neither is cheap enough here.
 `proof/ws-topics-laws.bend` states the registry's contract against an
 independent model in `proof/ws-topics-spec.bend`. In that model, a
 connection's membership in a topic is decided by the last operation that names
-the pair. The laws cover subscribe and unsubscribe membership, remove leaving
-every topic, independence of other topics, publication targets equal to
-members minus the sender, and, over any history of operations, agreement with
-the model and exactly-once targeting. `proof/ws-topics.bend` proves them.
+the pair. The first laws cover subscribe and unsubscribe membership, remove
+leaving every topic, independence of other topics, publication targets equal
+to members minus the sender, and, over any history of subscribe, unsubscribe
+and remove, agreement with the model and exactly-once targeting.
+
+Review round 1 added laws over complete records, so a swapped mailbox handle
+would fail them. A publication selects exactly the spec's filter of the
+records (topic, sender excluded, targets included). Subscribing stores its
+target and replaces the earlier record for the pair. Unsubscribe, remove and
+the independence laws are stated over whole records too, and remove keeps
+`next`. `admit` is `subscribe` for an active ID and a no-op otherwise, and an
+admit after `remove(c)` changes nothing. The allocator laws say `join`
+increments `next`, returns the old value, keeps every record, and adds only
+the new ID to the active set.
+
+They also define `Spec.wf`: no pair recorded twice, every record's ID active,
+every active ID below `next`, and `next` positive. The empty registry is
+well-formed, and `join`, `admit`, `unsubscribe`, `remove` and `remove_all`
+preserve it, so every registry reachable through the shell's operations is
+well-formed (`ws_topics_history_wf`, over histories with a target on each
+subscribe plus joins, closes and prunes). In a well-formed registry, a newly
+joined ID is nonzero and differs from every active and subscribed ID, and a
+publication selects each subscribed connection exactly once, minus the sender.
+`proof/ws-topics.bend` proves all of them.

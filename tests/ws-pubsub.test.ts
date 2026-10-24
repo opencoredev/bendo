@@ -134,6 +134,10 @@ async function get(path: string): Promise<string> {
   return (await fetch(`${server.url}${path}`)).text();
 }
 
+async function post(path: string): Promise<string> {
+  return (await fetch(`${server.url}${path}`, { method: "POST" })).text();
+}
+
 async function eventually(path: string, expected: string, ms = 10000): Promise<void> {
   const deadline = Date.now() + ms;
   let actual = await get(path);
@@ -222,6 +226,8 @@ test("1,000 subscribe-and-disconnect cycles leave the registry empty", async () 
   }
   await eventually("/size", "0");
   expect(await get("/members/e")).toBe("0");
+  // Every close path also revoked its connection's ID.
+  await eventually("/connections", "0");
 }, 60000);
 
 test("a full mailbox drops that subscriber's copy without blocking anyone", async () => {
@@ -270,6 +276,58 @@ test("each publisher's messages arrive in order at every subscriber", async () =
   } finally {
     closeAll(wires);
   }
+}, 30000);
+
+test("a Peer kept after its connection closed cannot subscribe again", async () => {
+  const wire = await open("/keep");
+  expect(await wire.text()).toMatch(/^ready \d+$/);
+  // While the connection is open, the kept Peer subscribes as usual.
+  expect(await post("/late/k")).toBe("yes");
+  expect(await get("/members/k")).toBe("1");
+  wire.socket.destroy();
+  // The close cleanup drops the subscription and revokes the ID together.
+  await eventually("/members/k", "0");
+  expect(await post("/late/k")).toBe("no");
+  expect(await get("/members/k")).toBe("0");
+  expect(await publish("k", "late")).toBe("0 0 0");
+}, 30000);
+
+test("subscribes racing their connection's close never leave a registration", async () => {
+  let accepted = 0;
+  let refused = 0;
+  for (let round = 0; round < 30; round++) {
+    const wire = await open("/keep");
+    expect(await wire.text()).toMatch(/^ready \d+$/);
+    const before = Array.from({ length: 4 }, () => post("/late/race"));
+    wire.socket.destroy();
+    const after = Array.from({ length: 4 }, () => post("/late/race"));
+    for (const answer of await Promise.all([...before, ...after])) {
+      if (answer === "yes") accepted++;
+      else if (answer === "no") refused++;
+      else throw new Error(`unexpected answer ${answer}`);
+    }
+    await eventually("/members/race", "0");
+    // Long after the close, the kept Peer is still refused.
+    expect(await post("/late/race")).toBe("no");
+  }
+  console.log(`racing subscribes: ${accepted} accepted, ${refused} refused`);
+  expect(accepted + refused).toBe(30 * 8);
+  expect(await get("/members/race")).toBe("0");
+}, 60000);
+
+test("an oversized publication still prunes a closed subscriber", async () => {
+  // `max_message` is 20 bytes for both subscribers.
+  using small = await subscriber("/ws/o?mode=small");
+  expect(await post("/ghost/o")).toBe("yes");
+  expect(await get("/members/o")).toBe("2");
+  const big = "x".repeat(24);
+  // The open subscriber refuses the copy; the closed one is gone and pruned.
+  expect(await publish("o", big)).toBe("0 1 1");
+  expect(await get("/members/o")).toBe("1");
+  expect(await publish("o", big)).toBe("0 1 0");
+  expect(await get("/members/o")).toBe("1");
+  expect(await publish("o", "ok")).toBe("1 0 0");
+  expect(await small.text()).toBe("ok:1");
 }, 30000);
 
 function median(values: number[]): number {

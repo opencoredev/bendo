@@ -144,7 +144,7 @@ def count_pick(+id: Nat, +m: List<&2, Nat>, +b: Bool, +c: Nat) -> {Spec.count(T.
 
 def L.ws_topics_subscribe_member(A, r, c, t, x):
   match r:
-    case T.Registry{next, s}:
+    case T.Registry{next, live, s}:
       Equal.trans(Bool, Spec.has(T.pick(c, T.members_of(A, T.without(A, s, c, t), t), String.eq(t, t)), c), (String.eq(t, t) && Nat.is_eq(c, c)) || Spec.has(T.members_of(A, T.without(A, s, c, t), t), c), True{}, has_pick(c, T.members_of(A, T.without(A, s, c, t), t), String.eq(t, t), c), or_left(String.eq(t, t) && Nat.is_eq(c, c), Spec.has(T.members_of(A, T.without(A, s, c, t), t), c), and_true(String.eq(t, t), Nat.is_eq(c, c), string_refl(t), nat_refl(c))))
 
 def unsub_step(-A: Data, +topic: String, +id: Nat, +x: A, +rest: List<&2, T.Sub<A>>, +c: Nat, +t: String, b: Bool, eb: {(String.eq(topic, t) && Nat.is_eq(id, c)) == b : Bool}, ih: {Spec.has(T.members_of(A, T.without(A, rest, c, t), t), c) == False{} : Bool}) -> {Spec.has(T.members_of(A, T.keep(A, T.Sub{topic, id, x}, T.without(A, rest, c, t), b), t), c) == False{} : Bool}:
@@ -161,7 +161,7 @@ def unsub_gone(-A: Data, +s: List<&2, T.Sub<A>>, +c: Nat, +t: String) -> {Spec.h
 
 def L.ws_topics_unsubscribe_leaves(A, r, c, t):
   match r:
-    case T.Registry{next, s}: unsub_gone(A, s, c, t)
+    case T.Registry{next, live, s}: unsub_gone(A, s, c, t)
 
 def drop_step(-A: Data, +topic: String, +id: Nat, +x: A, +rest: List<&2, T.Sub<A>>, +c: Nat, +t: String, b: Bool, eb: {Nat.is_eq(id, c) == b : Bool}, ih: {Spec.has(T.members_of(A, T.dropped(A, rest, c), t), c) == False{} : Bool}) -> {Spec.has(T.members_of(A, T.keep(A, T.Sub{topic, id, x}, T.dropped(A, rest, c), b), t), c) == False{} : Bool}:
   match b:
@@ -177,7 +177,7 @@ def drop_gone(-A: Data, +s: List<&2, T.Sub<A>>, +c: Nat, +t: String) -> {Spec.ha
 
 def L.ws_topics_remove_leaves(A, r, c, t):
   match r:
-    case T.Registry{next, s}: drop_gone(A, s, c, t)
+    case T.Registry{next, live, s}: drop_gone(A, s, c, t)
 
 # ---- Independent topics ----
 
@@ -198,12 +198,12 @@ def without_other(-A: Data, +s: List<&2, T.Sub<A>>, +c: Nat, +t: String, +u: Str
 
 def L.ws_topics_subscribe_independent(A, r, c, t, u, x, other):
   match r:
-    case T.Registry{next, s}:
+    case T.Registry{next, live, s}:
       Equal.trans(List<&2, Nat>, T.pick(c, T.members_of(A, T.without(A, s, c, t), u), String.eq(t, u)), T.members_of(A, T.without(A, s, c, t), u), T.members_of(A, s, u), pick_false(c, T.members_of(A, T.without(A, s, c, t), u), String.eq(t, u), other), without_other(A, s, c, t, u, other))
 
 def L.ws_topics_unsubscribe_independent(A, r, c, t, u, other):
   match r:
-    case T.Registry{next, s}: without_other(A, s, c, t, u, other)
+    case T.Registry{next, live, s}: without_other(A, s, c, t, u, other)
 
 # ---- Publication targets ----
 
@@ -226,7 +226,7 @@ def targets_spec(-A: Data, +s: List<&2, T.Sub<A>>, +t: String, +ex: Maybe<&2, Na
 
 def targets_registry(-A: Data, +r: T.Registry<A>, +t: String, +ex: Maybe<&2, Nat>) -> {T.target_ids(A, T.targets(A, r, t, ex)) == Spec.others(T.members(A, r, t), ex) : List<&2, Nat>}:
   match r:
-    case T.Registry{next, s}: targets_spec(A, s, t, ex)
+    case T.Registry{next, live, s}: targets_spec(A, s, t, ex)
 
 def L.ws_topics_publish_targets(A, r, t, sender):
   targets_registry(A, r, t, sender)
@@ -314,9 +314,9 @@ def tally(ops: List<&2, Spec.Op>, +c: Nat, +t: String, n: Nat) -> Nat:
 
 def apply_count(-A: Data, +x: A, +r: T.Registry<A>, +op: Spec.Op, +c: Nat, +t: String) -> {Spec.count(T.members(A, Spec.apply(A, x, r, op), t), c) == tally_effect(op, c, t, Spec.count(T.members(A, r, t), c)) : Nat}:
   match r op:
-    case T.Registry{next, s} Spec.OpSubscribe{d, u}: count_subscribe(A, s, d, u, x, c, t)
-    case T.Registry{next, s} Spec.OpUnsubscribe{d, u}: count_without(A, s, d, u, c, t)
-    case T.Registry{next, s} Spec.OpRemove{d}: count_dropped(A, s, d, c, t)
+    case T.Registry{next, live, s} Spec.OpSubscribe{d, u}: count_subscribe(A, s, d, u, x, c, t)
+    case T.Registry{next, live, s} Spec.OpUnsubscribe{d, u}: count_without(A, s, d, u, c, t)
+    case T.Registry{next, live, s} Spec.OpRemove{d}: count_dropped(A, s, d, c, t)
 
 def replay_count(-A: Data, +x: A, +ops: List<&2, Spec.Op>, +r: T.Registry<A>, +c: Nat, +t: String) -> {Spec.count(T.members(A, Spec.replay_from(A, x, ops, r), t), c) == tally(ops, c, t, Spec.count(T.members(A, r, t), c)) : Nat}:
   match ops:
@@ -412,3 +412,481 @@ def L.ws_topics_publish_once(A, x, ops, c, t, sender):
   +b = Spec.member(ops, c, t, False{})
   +s = Spec.sender(c, sender)
   Equal.trans(Nat, Spec.count(T.target_ids(A, T.targets(A, r, t, sender)), c), Spec.count(Spec.others(m, sender), c), Spec.once(b && Bool.not(s)), Equal.cong(List<&2, Nat>, Nat, l => Spec.count(l, c), T.target_ids(A, T.targets(A, r, t, sender)), Spec.others(m, sender), targets_registry(A, r, t, sender)), Equal.trans(Nat, Spec.count(Spec.others(m, sender), c), set_if(s, 0n, Spec.count(m, c)), Spec.once(b && Bool.not(s)), count_others(sender, m, c), Equal.trans(Nat, set_if(s, 0n, Spec.count(m, c)), set_if(s, 0n, Spec.once(b)), Spec.once(b && Bool.not(s)), Equal.cong(Nat, Nat, n => set_if(s, 0n, n), Spec.count(m, c), Spec.once(b), replay_once(A, x, ops, c, t)), mask_once(s, b))))
+
+# ==== Review round 1: records, active IDs, allocator, well-formedness ====
+
+# ---- More Bool facts ----
+
+def or_right(+a: Bool, -b: Bool, eb: {b == True{} : Bool}) -> {(a || b) == True{} : Bool}:
+  match a:
+    case True{}: {==}
+    case False{}: eb
+
+def or_false_l(+a: Bool, -b: Bool, e: {(a || b) == False{} : Bool}) -> {a == False{} : Bool}:
+  match a:
+    case False{}: {==}
+    case True{}: absurd({True{} == False{} : Bool}, false_true(Equal.sym(Bool, True{}, False{}, e)))
+
+def or_false_r(+a: Bool, -b: Bool, e: {(a || b) == False{} : Bool}) -> {b == False{} : Bool}:
+  match a:
+    case False{}: e
+    case True{}: absurd({b == False{} : Bool}, false_true(Equal.sym(Bool, True{}, False{}, e)))
+
+def not_true(+a: Bool, e: {Bool.not(a) == True{} : Bool}) -> {a == False{} : Bool}:
+  match a:
+    case False{}: {==}
+    case True{}: absurd({True{} == False{} : Bool}, false_true(e))
+
+def not_false(+a: Bool, e: {a == False{} : Bool}) -> {Bool.not(a) == True{} : Bool}:
+  match a:
+    case False{}: {==}
+    case True{}: absurd({Bool.not(True{}) == True{} : Bool}, false_true(Equal.sym(Bool, True{}, False{}, e)))
+
+# ---- Nat order facts ----
+
+def lt_succ(+n: Nat) -> {Nat.is_lt(n, 1n+n) == True{} : Bool}:
+  match n:
+    case 0n: {==}
+    case 1n+m: lt_succ(m)
+
+def lt_step(+a: Nat, +n: Nat, e: {Nat.is_lt(a, n) == True{} : Bool}) -> {Nat.is_lt(a, 1n+n) == True{} : Bool}:
+  match a n:
+    case 0n 0n: {==}
+    case 0n 1n+q: {==}
+    case 1n+p 0n: absurd({Nat.is_lt(1n+p, 1n) == True{} : Bool}, false_true(e))
+    case 1n+p 1n+q: lt_step(p, q, e)
+
+def lt_ne(+a: Nat, +b: Nat, e: {Nat.is_lt(a, b) == True{} : Bool}) -> {Nat.is_eq(a, b) == False{} : Bool}:
+  match a b:
+    case 0n 0n: absurd({Nat.is_eq(0n, 0n) == False{} : Bool}, false_true(e))
+    case 0n 1n+q: {==}
+    case 1n+p 0n: {==}
+    case 1n+p 1n+q: lt_ne(p, q, e)
+
+def lt_zero_ne(+n: Nat, e: {Nat.is_lt(0n, n) == True{} : Bool}) -> {Nat.is_eq(n, 0n) == False{} : Bool}:
+  match n:
+    case 0n: absurd({Nat.is_eq(0n, 0n) == False{} : Bool}, false_true(e))
+    case 1n+m: {==}
+
+# ---- Records ----
+
+def put_same(-A: Data, +s: T.Sub<A>, +a: List<&2, T.Sub<A>>, +b: List<&2, T.Sub<A>>, k: Bool, e: {a == b : List<&2, T.Sub<A>>}) -> {List.filter.put(T.Sub<A>, s, a, k) == Spec.put_if(A, s, b, k) : List<&2, T.Sub<A>>}:
+  match k:
+    case True{}: Equal.cong(List<&2, T.Sub<A>>, List<&2, T.Sub<A>>, m => s <> m, a, b, e)
+    case False{}: e
+
+def select_step(-A: Data, +topic: String, +id: Nat, +x: A, +rest: List<&2, T.Sub<A>>, +t: String, +ex: Maybe<&2, Nat>, ih: {T.targets_of(A, rest, t, ex) == Spec.select(A, rest, t, ex) : List<&2, T.Sub<A>>}) -> {T.targets_of(A, T.Sub{topic, id, x} <> rest, t, ex) == Spec.select(A, T.Sub{topic, id, x} <> rest, t, ex) : List<&2, T.Sub<A>>}:
+  match ex:
+    case None{}: put_same(A, T.Sub{topic, id, x}, T.targets_of(A, rest, t, None{}), Spec.select(A, rest, t, None{}), String.eq(topic, t) && Bool.not(False{}), ih)
+    case Some{e}: put_same(A, T.Sub{topic, id, x}, T.targets_of(A, rest, t, Some{e}), Spec.select(A, rest, t, Some{e}), String.eq(topic, t) && Bool.not(Nat.is_eq(id, e)), ih)
+
+def targets_select(-A: Data, +s: List<&2, T.Sub<A>>, +t: String, +ex: Maybe<&2, Nat>) -> {T.targets_of(A, s, t, ex) == Spec.select(A, s, t, ex) : List<&2, T.Sub<A>>}:
+  match s:
+    case Nil{}: {==}
+    case T.Sub{topic, id, x} <> rest: select_step(A, topic, id, x, rest, t, ex, targets_select(A, rest, t, ex))
+
+def L.ws_topics_targets_records(A, r, t, sender):
+  match r:
+    case T.Registry{next, live, s}: targets_select(A, s, t, sender)
+
+def members_paired(-A: Data, +s: List<&2, T.Sub<A>>, +c: Nat, +t: String) -> {Spec.has(T.members_of(A, s, t), c) == Spec.paired(A, s, c, t) : Bool}:
+  match s:
+    case Nil{}: {==}
+    case T.Sub{topic, id, x} <> rest:
+      Equal.trans(Bool, Spec.has(T.pick(id, T.members_of(A, rest, t), String.eq(topic, t)), c), (String.eq(topic, t) && Nat.is_eq(id, c)) || Spec.has(T.members_of(A, rest, t), c), (String.eq(topic, t) && Nat.is_eq(id, c)) || Spec.paired(A, rest, c, t), has_pick(id, T.members_of(A, rest, t), String.eq(topic, t), c), Equal.cong(Bool, Bool, v => (String.eq(topic, t) && Nat.is_eq(id, c)) || v, Spec.has(T.members_of(A, rest, t), c), Spec.paired(A, rest, c, t), members_paired(A, rest, c, t)))
+
+def L.ws_topics_members_records(A, r, c, t):
+  match r:
+    case T.Registry{next, live, s}: members_paired(A, s, c, t)
+
+def keep_put(-A: Data, +s: T.Sub<A>, +a: List<&2, T.Sub<A>>, +b: List<&2, T.Sub<A>>, k: Bool, e: {a == b : List<&2, T.Sub<A>>}) -> {T.keep(A, s, a, k) == Spec.put_if(A, s, b, Bool.not(k)) : List<&2, T.Sub<A>>}:
+  match k:
+    case True{}: e
+    case False{}: Equal.cong(List<&2, T.Sub<A>>, List<&2, T.Sub<A>>, m => s <> m, a, b, e)
+
+def without_unpaired(-A: Data, +s: List<&2, T.Sub<A>>, +c: Nat, +t: String) -> {T.without(A, s, c, t) == Spec.unpaired(A, s, c, t) : List<&2, T.Sub<A>>}:
+  match s:
+    case Nil{}: {==}
+    case T.Sub{topic, id, x} <> rest: keep_put(A, T.Sub{topic, id, x}, T.without(A, rest, c, t), Spec.unpaired(A, rest, c, t), String.eq(topic, t) && Nat.is_eq(id, c), without_unpaired(A, rest, c, t))
+
+def dropped_not_owned(-A: Data, +s: List<&2, T.Sub<A>>, +c: Nat) -> {T.dropped(A, s, c) == Spec.not_owned(A, s, c) : List<&2, T.Sub<A>>}:
+  match s:
+    case Nil{}: {==}
+    case T.Sub{topic, id, x} <> rest: keep_put(A, T.Sub{topic, id, x}, T.dropped(A, rest, c), Spec.not_owned(A, rest, c), Nat.is_eq(id, c), dropped_not_owned(A, rest, c))
+
+def L.ws_topics_subscribe_record(A, r, c, t, x):
+  match r:
+    case T.Registry{next, live, s}: Equal.cong(List<&2, T.Sub<A>>, List<&2, T.Sub<A>>, m => T.Sub{t, c, x} <> m, T.without(A, s, c, t), Spec.unpaired(A, s, c, t), without_unpaired(A, s, c, t))
+
+def L.ws_topics_unsubscribe_record(A, r, c, t):
+  match r:
+    case T.Registry{next, live, s}: without_unpaired(A, s, c, t)
+
+def L.ws_topics_remove_record(A, r, c):
+  match r:
+    case T.Registry{next, live, s}: dropped_not_owned(A, s, c)
+
+def L.ws_topics_remove_next(A, r, c):
+  match r:
+    case T.Registry{next, live, s}: {==}
+
+def found_true(-A: Data, +x: A, +m: Maybe<&2, A>, b: Bool, e: {b == True{} : Bool}) -> {Spec.found(A, x, m, b) == Some{x} : Maybe<&2, A>}:
+  match b:
+    case True{}: {==}
+    case False{}: absurd({Spec.found(A, x, m, False{}) == Some{x} : Maybe<&2, A>}, false_true(e))
+
+def L.ws_topics_subscribe_target(A, r, c, t, x):
+  match r:
+    case T.Registry{next, live, s}: found_true(A, x, Spec.find(A, T.without(A, s, c, t), c, t), String.eq(t, t) && Nat.is_eq(c, c), and_true(String.eq(t, t), Nat.is_eq(c, c), string_refl(t), nat_refl(c)))
+
+def put_false(-A: Data, +s: T.Sub<A>, +m: List<&2, T.Sub<A>>, b: Bool, e: {b == False{} : Bool}) -> {Spec.put_if(A, s, m, b) == m : List<&2, T.Sub<A>>}:
+  match b:
+    case False{}: {==}
+    case True{}: absurd({Spec.put_if(A, s, m, True{}) == m : List<&2, T.Sub<A>>}, false_true(Equal.sym(Bool, True{}, False{}, e)))
+
+def topic_step(-A: Data, +topic: String, +id: Nat, +x: A, +rest: List<&2, T.Sub<A>>, +c: Nat, +t: String, +u: String, +other: {String.eq(t, u) == False{} : Bool}, b: Bool, eb: {(String.eq(topic, t) && Nat.is_eq(id, c)) == b : Bool}, ih: {Spec.on_topic(A, T.without(A, rest, c, t), u) == Spec.on_topic(A, rest, u) : List<&2, T.Sub<A>>}) -> {Spec.on_topic(A, T.keep(A, T.Sub{topic, id, x}, T.without(A, rest, c, t), b), u) == Spec.put_if(A, T.Sub{topic, id, x}, Spec.on_topic(A, rest, u), String.eq(topic, u)) : List<&2, T.Sub<A>>}:
+  match b:
+    case False{}:
+      Equal.cong(List<&2, T.Sub<A>>, List<&2, T.Sub<A>>, m => Spec.put_if(A, T.Sub{topic, id, x}, m, String.eq(topic, u)), Spec.on_topic(A, T.without(A, rest, c, t), u), Spec.on_topic(A, rest, u), ih)
+    case True{}:
+      +same = JS.string_sound(topic, t, and_l(String.eq(topic, t), Nat.is_eq(id, c), eb))
+      +ne = Equal.trans(Bool, String.eq(topic, u), String.eq(t, u), False{}, Equal.cong(String, Bool, v => String.eq(v, u), topic, t, same), other)
+      Equal.trans(List<&2, T.Sub<A>>, Spec.on_topic(A, T.without(A, rest, c, t), u), Spec.on_topic(A, rest, u), Spec.put_if(A, T.Sub{topic, id, x}, Spec.on_topic(A, rest, u), String.eq(topic, u)), ih, Equal.sym(List<&2, T.Sub<A>>, Spec.put_if(A, T.Sub{topic, id, x}, Spec.on_topic(A, rest, u), String.eq(topic, u)), Spec.on_topic(A, rest, u), put_false(A, T.Sub{topic, id, x}, Spec.on_topic(A, rest, u), String.eq(topic, u), ne)))
+
+def without_on_topic(-A: Data, +s: List<&2, T.Sub<A>>, +c: Nat, +t: String, +u: String, +other: {String.eq(t, u) == False{} : Bool}) -> {Spec.on_topic(A, T.without(A, s, c, t), u) == Spec.on_topic(A, s, u) : List<&2, T.Sub<A>>}:
+  match s:
+    case Nil{}: {==}
+    case T.Sub{topic, id, x} <> rest:
+      topic_step(A, topic, id, x, rest, c, t, u, other, String.eq(topic, t) && Nat.is_eq(id, c), {==}, without_on_topic(A, rest, c, t, u, other))
+
+def L.ws_topics_subscribe_records_independent(A, r, c, t, u, x, other):
+  match r:
+    case T.Registry{next, live, s}:
+      Equal.trans(List<&2, T.Sub<A>>, Spec.put_if(A, T.Sub{t, c, x}, Spec.on_topic(A, T.without(A, s, c, t), u), String.eq(t, u)), Spec.on_topic(A, T.without(A, s, c, t), u), Spec.on_topic(A, s, u), put_false(A, T.Sub{t, c, x}, Spec.on_topic(A, T.without(A, s, c, t), u), String.eq(t, u), other), without_on_topic(A, s, c, t, u, other))
+
+def L.ws_topics_unsubscribe_records_independent(A, r, c, t, u, other):
+  match r:
+    case T.Registry{next, live, s}: without_on_topic(A, s, c, t, u, other)
+
+# ---- Active IDs ----
+
+def revoked_step(+h: Nat, +t: List<&2, Nat>, +c: Nat, k: Bool, ek: {Nat.is_eq(h, c) == k : Bool}, ih: {Spec.has(T.revoked(t, c), c) == False{} : Bool}) -> {Spec.has(T.pick(h, T.revoked(t, c), Bool.not(k)), c) == False{} : Bool}:
+  match k:
+    case True{}: ih
+    case False{}: or_false(Nat.is_eq(h, c), Spec.has(T.revoked(t, c), c), ek, ih)
+
+def revoked_gone(+ids: List<&2, Nat>, +c: Nat) -> {Spec.has(T.revoked(ids, c), c) == False{} : Bool}:
+  match ids:
+    case Nil{}: {==}
+    case h <> t: revoked_step(h, t, c, Nat.is_eq(h, c), {==}, revoked_gone(t, c))
+
+def remove_revokes_r(-A: Data, +r: T.Registry<A>, +c: Nat) -> {Spec.has(T.live(A, T.remove(A, r, c)), c) == False{} : Bool}:
+  match r:
+    case T.Registry{next, live, s}: revoked_gone(live, c)
+
+def L.ws_topics_remove_revokes(A, r, c):
+  remove_revokes_r(A, r, c)
+
+def holds_has(+ids: List<&2, Nat>, +c: Nat) -> {T.holds(ids, c) == Spec.has(ids, c) : Bool}:
+  match ids:
+    case Nil{}: {==}
+    case h <> t: Equal.cong(Bool, Bool, v => Nat.is_eq(h, c) || v, T.holds(t, c), Spec.has(t, c), holds_has(t, c))
+
+def active_has(-A: Data, +r: T.Registry<A>, +c: Nat) -> {T.active(A, r, c) == Spec.has(T.live(A, r), c) : Bool}:
+  match r:
+    case T.Registry{next, live, s}: holds_has(live, c)
+
+def admit_on(-A: Data, +r: T.Registry<A>, +c: Nat, +t: String, +x: A, k: Bool, ek: {k == True{} : Bool}) -> {T.admit_if(A, r, c, t, x, k) == T.subscribe(A, r, c, t, x) : T.Registry<A>}:
+  match k:
+    case True{}: {==}
+    case False{}: absurd({T.admit_if(A, r, c, t, x, False{}) == T.subscribe(A, r, c, t, x) : T.Registry<A>}, false_true(ek))
+
+def admit_off(-A: Data, +r: T.Registry<A>, +c: Nat, +t: String, +x: A, k: Bool, ek: {k == False{} : Bool}) -> {T.admit_if(A, r, c, t, x, k) == r : T.Registry<A>}:
+  match k:
+    case False{}: {==}
+    case True{}: absurd({T.admit_if(A, r, c, t, x, True{}) == r : T.Registry<A>}, false_true(Equal.sym(Bool, True{}, False{}, ek)))
+
+def admit_inactive_r(-A: Data, +r: T.Registry<A>, +c: Nat, +t: String, +x: A, inactive: {Spec.has(T.live(A, r), c) == False{} : Bool}) -> {T.admit(A, r, c, t, x) == r : T.Registry<A>}:
+  admit_off(A, r, c, t, x, T.active(A, r, c), Equal.trans(Bool, T.active(A, r, c), Spec.has(T.live(A, r), c), False{}, active_has(A, r, c), inactive))
+
+def L.ws_topics_admit_active(A, r, c, t, x, active):
+  admit_on(A, r, c, t, x, T.active(A, r, c), Equal.trans(Bool, T.active(A, r, c), Spec.has(T.live(A, r), c), True{}, active_has(A, r, c), active))
+
+def L.ws_topics_admit_inactive(A, r, c, t, x, inactive):
+  admit_inactive_r(A, r, c, t, x, inactive)
+
+def L.ws_topics_late_subscribe(A, r, c, t, x):
+  admit_inactive_r(A, T.remove(A, r, c), c, t, x, remove_revokes_r(A, r, c))
+
+# ---- Allocator ----
+
+def L.ws_topics_join_next(A, r):
+  match r:
+    case T.Registry{next, live, s}: {==}
+
+def L.ws_topics_join_id(A, r):
+  match r:
+    case T.Registry{next, live, s}: {==}
+
+def L.ws_topics_join_subs(A, r):
+  match r:
+    case T.Registry{next, live, s}: {==}
+
+def L.ws_topics_join_live(A, r):
+  match r:
+    case T.Registry{next, live, s}: {==}
+
+# The four parts of Spec.wf.
+def wf_d(-A: Data, +n: Nat, +l: List<&2, Nat>, +s: List<&2, T.Sub<A>>, w: {Spec.wf(A, T.Registry{n, l, s}) == True{} : Bool}) -> {Spec.distinct(A, s) == True{} : Bool}:
+  and_l(Spec.distinct(A, s), Spec.covered(A, s, l), and_l(Spec.distinct(A, s) && Spec.covered(A, s, l), Spec.below(l, n), and_l((Spec.distinct(A, s) && Spec.covered(A, s, l)) && Spec.below(l, n), Nat.is_lt(0n, n), w)))
+
+def wf_c(-A: Data, +n: Nat, +l: List<&2, Nat>, +s: List<&2, T.Sub<A>>, w: {Spec.wf(A, T.Registry{n, l, s}) == True{} : Bool}) -> {Spec.covered(A, s, l) == True{} : Bool}:
+  and_r(Spec.distinct(A, s), Spec.covered(A, s, l), and_l(Spec.distinct(A, s) && Spec.covered(A, s, l), Spec.below(l, n), and_l((Spec.distinct(A, s) && Spec.covered(A, s, l)) && Spec.below(l, n), Nat.is_lt(0n, n), w)))
+
+def wf_b(-A: Data, +n: Nat, +l: List<&2, Nat>, +s: List<&2, T.Sub<A>>, w: {Spec.wf(A, T.Registry{n, l, s}) == True{} : Bool}) -> {Spec.below(l, n) == True{} : Bool}:
+  and_r(Spec.distinct(A, s) && Spec.covered(A, s, l), Spec.below(l, n), and_l((Spec.distinct(A, s) && Spec.covered(A, s, l)) && Spec.below(l, n), Nat.is_lt(0n, n), w))
+
+def wf_p(-A: Data, +n: Nat, +l: List<&2, Nat>, +s: List<&2, T.Sub<A>>, w: {Spec.wf(A, T.Registry{n, l, s}) == True{} : Bool}) -> {Nat.is_lt(0n, n) == True{} : Bool}:
+  and_r((Spec.distinct(A, s) && Spec.covered(A, s, l)) && Spec.below(l, n), Nat.is_lt(0n, n), w)
+
+def wf_mk(-A: Data, +n: Nat, +l: List<&2, Nat>, +s: List<&2, T.Sub<A>>, d: {Spec.distinct(A, s) == True{} : Bool}, c: {Spec.covered(A, s, l) == True{} : Bool}, b: {Spec.below(l, n) == True{} : Bool}, p: {Nat.is_lt(0n, n) == True{} : Bool}) -> {Spec.wf(A, T.Registry{n, l, s}) == True{} : Bool}:
+  and_true((Spec.distinct(A, s) && Spec.covered(A, s, l)) && Spec.below(l, n), Nat.is_lt(0n, n), and_true(Spec.distinct(A, s) && Spec.covered(A, s, l), Spec.below(l, n), and_true(Spec.distinct(A, s), Spec.covered(A, s, l), d, c), b), p)
+
+def below_fresh(+ids: List<&2, Nat>, +n: Nat, +e: {Spec.below(ids, n) == True{} : Bool}) -> {Spec.has(ids, n) == False{} : Bool}:
+  match ids:
+    case Nil{}: {==}
+    case h <> t: or_false(Nat.is_eq(h, n), Spec.has(t, n), lt_ne(h, n, and_l(Nat.is_lt(h, n), Spec.below(t, n), e)), below_fresh(t, n, and_r(Nat.is_lt(h, n), Spec.below(t, n), e)))
+
+def id_out_k(+id: Nat, +c: Nat, +live: List<&2, Nat>, k: Bool, ek: {Nat.is_eq(id, c) == k : Bool}, inn: {Spec.has(live, id) == True{} : Bool}, out: {Spec.has(live, c) == False{} : Bool}) -> {k == False{} : Bool}:
+  match k:
+    case False{}: {==}
+    case True{}:
+      +same = nat_sound(id, c, ek)
+      +moved = Equal.cong(Nat, Bool, v => Spec.has(live, v), id, c, same)
+      +now = Equal.trans(Bool, Spec.has(live, c), Spec.has(live, id), True{}, Equal.sym(Bool, Spec.has(live, id), Spec.has(live, c), moved), inn)
+      absurd({True{} == False{} : Bool}, false_true(Equal.trans(Bool, False{}, Spec.has(live, c), True{}, Equal.sym(Bool, Spec.has(live, c), False{}, out), now)))
+
+def covered_ids(-A: Data, +s: List<&2, T.Sub<A>>, +live: List<&2, Nat>, +c: Nat, +cv: {Spec.covered(A, s, live) == True{} : Bool}, +out: {Spec.has(live, c) == False{} : Bool}) -> {Spec.has(Spec.ids(A, s), c) == False{} : Bool}:
+  match s:
+    case Nil{}: {==}
+    case T.Sub{topic, id, x} <> rest:
+      or_false(Nat.is_eq(id, c), Spec.has(Spec.ids(A, rest), c), id_out_k(id, c, live, Nat.is_eq(id, c), {==}, and_l(Spec.has(live, id), Spec.covered(A, rest, live), cv), out), covered_ids(A, rest, live, c, and_r(Spec.has(live, id), Spec.covered(A, rest, live), cv), out))
+
+def L.ws_topics_join_positive(A, r, wf):
+  match r:
+    case T.Registry{next, live, s}: lt_zero_ne(next, wf_p(A, next, live, s, wf))
+
+def L.ws_topics_join_fresh_live(A, r, wf):
+  match r:
+    case T.Registry{next, live, s}: below_fresh(live, next, wf_b(A, next, live, s, wf))
+
+def L.ws_topics_join_fresh_subs(A, r, wf):
+  match r:
+    case T.Registry{next, live, s}: covered_ids(A, s, live, next, wf_c(A, next, live, s, wf), below_fresh(live, next, wf_b(A, next, live, s, wf)))
+
+# ---- Invariant preservation ----
+
+def unpaired_keep(-A: Data, +topic: String, +id: Nat, +x: A, +w: List<&2, T.Sub<A>>, +c: Nat, +t: String, b: Bool, hc: {(String.eq(topic, t) && Nat.is_eq(id, c)) == False{} : Bool}, ih: {Spec.paired(A, w, c, t) == False{} : Bool}) -> {Spec.paired(A, T.keep(A, T.Sub{topic, id, x}, w, b), c, t) == False{} : Bool}:
+  match b:
+    case True{}: ih
+    case False{}: or_false(String.eq(topic, t) && Nat.is_eq(id, c), Spec.paired(A, w, c, t), hc, ih)
+
+def unpaired_without(-A: Data, +s: List<&2, T.Sub<A>>, +d: Nat, +u: String, +c: Nat, +t: String, +e: {Spec.paired(A, s, c, t) == False{} : Bool}) -> {Spec.paired(A, T.without(A, s, d, u), c, t) == False{} : Bool}:
+  match s:
+    case Nil{}: {==}
+    case T.Sub{topic, id, x} <> rest:
+      unpaired_keep(A, topic, id, x, T.without(A, rest, d, u), c, t, String.eq(topic, u) && Nat.is_eq(id, d), or_false_l(String.eq(topic, t) && Nat.is_eq(id, c), Spec.paired(A, rest, c, t), e), unpaired_without(A, rest, d, u, c, t, or_false_r(String.eq(topic, t) && Nat.is_eq(id, c), Spec.paired(A, rest, c, t), e)))
+
+def unpaired_dropped(-A: Data, +s: List<&2, T.Sub<A>>, +d: Nat, +c: Nat, +t: String, +e: {Spec.paired(A, s, c, t) == False{} : Bool}) -> {Spec.paired(A, T.dropped(A, s, d), c, t) == False{} : Bool}:
+  match s:
+    case Nil{}: {==}
+    case T.Sub{topic, id, x} <> rest:
+      unpaired_keep(A, topic, id, x, T.dropped(A, rest, d), c, t, Nat.is_eq(id, d), or_false_l(String.eq(topic, t) && Nat.is_eq(id, c), Spec.paired(A, rest, c, t), e), unpaired_dropped(A, rest, d, c, t, or_false_r(String.eq(topic, t) && Nat.is_eq(id, c), Spec.paired(A, rest, c, t), e)))
+
+def distinct_keep(-A: Data, +topic: String, +id: Nat, +x: A, +w: List<&2, T.Sub<A>>, b: Bool, hd: {Bool.not(Spec.paired(A, w, id, topic)) == True{} : Bool}, ih: {Spec.distinct(A, w) == True{} : Bool}) -> {Spec.distinct(A, T.keep(A, T.Sub{topic, id, x}, w, b)) == True{} : Bool}:
+  match b:
+    case True{}: ih
+    case False{}: and_true(Bool.not(Spec.paired(A, w, id, topic)), Spec.distinct(A, w), hd, ih)
+
+def distinct_without(-A: Data, +s: List<&2, T.Sub<A>>, +d: Nat, +u: String, +e: {Spec.distinct(A, s) == True{} : Bool}) -> {Spec.distinct(A, T.without(A, s, d, u)) == True{} : Bool}:
+  match s:
+    case Nil{}: {==}
+    case T.Sub{topic, id, x} <> rest:
+      distinct_keep(A, topic, id, x, T.without(A, rest, d, u), String.eq(topic, u) && Nat.is_eq(id, d), not_false(Spec.paired(A, T.without(A, rest, d, u), id, topic), unpaired_without(A, rest, d, u, id, topic, not_true(Spec.paired(A, rest, id, topic), and_l(Bool.not(Spec.paired(A, rest, id, topic)), Spec.distinct(A, rest), e)))), distinct_without(A, rest, d, u, and_r(Bool.not(Spec.paired(A, rest, id, topic)), Spec.distinct(A, rest), e)))
+
+def distinct_dropped(-A: Data, +s: List<&2, T.Sub<A>>, +d: Nat, +e: {Spec.distinct(A, s) == True{} : Bool}) -> {Spec.distinct(A, T.dropped(A, s, d)) == True{} : Bool}:
+  match s:
+    case Nil{}: {==}
+    case T.Sub{topic, id, x} <> rest:
+      distinct_keep(A, topic, id, x, T.dropped(A, rest, d), Nat.is_eq(id, d), not_false(Spec.paired(A, T.dropped(A, rest, d), id, topic), unpaired_dropped(A, rest, d, id, topic, not_true(Spec.paired(A, rest, id, topic), and_l(Bool.not(Spec.paired(A, rest, id, topic)), Spec.distinct(A, rest), e)))), distinct_dropped(A, rest, d, and_r(Bool.not(Spec.paired(A, rest, id, topic)), Spec.distinct(A, rest), e)))
+
+def self_keep(-A: Data, +topic: String, +id: Nat, +x: A, +w: List<&2, T.Sub<A>>, +c: Nat, +t: String, b: Bool, eb: {(String.eq(topic, t) && Nat.is_eq(id, c)) == b : Bool}, ih: {Spec.paired(A, w, c, t) == False{} : Bool}) -> {Spec.paired(A, T.keep(A, T.Sub{topic, id, x}, w, b), c, t) == False{} : Bool}:
+  match b:
+    case True{}: ih
+    case False{}: or_false(String.eq(topic, t) && Nat.is_eq(id, c), Spec.paired(A, w, c, t), eb, ih)
+
+def without_self(-A: Data, +s: List<&2, T.Sub<A>>, +c: Nat, +t: String) -> {Spec.paired(A, T.without(A, s, c, t), c, t) == False{} : Bool}:
+  match s:
+    case Nil{}: {==}
+    case T.Sub{topic, id, x} <> rest:
+      self_keep(A, topic, id, x, T.without(A, rest, c, t), c, t, String.eq(topic, t) && Nat.is_eq(id, c), {==}, without_self(A, rest, c, t))
+
+def covered_keep(-A: Data, +topic: String, +id: Nat, +x: A, +w: List<&2, T.Sub<A>>, +live: List<&2, Nat>, b: Bool, hc: {Spec.has(live, id) == True{} : Bool}, ih: {Spec.covered(A, w, live) == True{} : Bool}) -> {Spec.covered(A, T.keep(A, T.Sub{topic, id, x}, w, b), live) == True{} : Bool}:
+  match b:
+    case True{}: ih
+    case False{}: and_true(Spec.has(live, id), Spec.covered(A, w, live), hc, ih)
+
+def covered_without(-A: Data, +s: List<&2, T.Sub<A>>, +d: Nat, +u: String, +live: List<&2, Nat>, +e: {Spec.covered(A, s, live) == True{} : Bool}) -> {Spec.covered(A, T.without(A, s, d, u), live) == True{} : Bool}:
+  match s:
+    case Nil{}: {==}
+    case T.Sub{topic, id, x} <> rest:
+      covered_keep(A, topic, id, x, T.without(A, rest, d, u), live, String.eq(topic, u) && Nat.is_eq(id, d), and_l(Spec.has(live, id), Spec.covered(A, rest, live), e), covered_without(A, rest, d, u, live, and_r(Spec.has(live, id), Spec.covered(A, rest, live), e)))
+
+def covered_cons(-A: Data, +s: List<&2, T.Sub<A>>, +n: Nat, +live: List<&2, Nat>, +e: {Spec.covered(A, s, live) == True{} : Bool}) -> {Spec.covered(A, s, n <> live) == True{} : Bool}:
+  match s:
+    case Nil{}: {==}
+    case T.Sub{topic, id, x} <> rest:
+      and_true(Spec.has(n <> live, id), Spec.covered(A, rest, n <> live), or_right(Nat.is_eq(n, id), Spec.has(live, id), and_l(Spec.has(live, id), Spec.covered(A, rest, live), e)), covered_cons(A, rest, n, live, and_r(Spec.has(live, id), Spec.covered(A, rest, live), e)))
+
+def has_revoked_step(+h: Nat, +t: List<&2, Nat>, +c: Nat, +i: Nat, k: Bool, +ek: {Nat.is_eq(h, i) == k : Bool}, inn: {(k || Spec.has(t, i)) == True{} : Bool}, ne: {Nat.is_eq(i, c) == False{} : Bool}, ih: {Spec.has(t, i) == True{} : Bool} -> {Spec.has(T.revoked(t, c), i) == True{} : Bool}) -> {Spec.has(T.pick(h, T.revoked(t, c), Bool.not(Nat.is_eq(h, c))), i) == True{} : Bool}:
+  match k:
+    case True{}:
+      +same = nat_sound(h, i, ek)
+      +hc = Equal.trans(Bool, Nat.is_eq(h, c), Nat.is_eq(i, c), False{}, Equal.cong(Nat, Bool, v => Nat.is_eq(v, c), h, i, same), ne)
+      Equal.trans(Bool, Spec.has(T.pick(h, T.revoked(t, c), Bool.not(Nat.is_eq(h, c))), i), (Bool.not(Nat.is_eq(h, c)) && Nat.is_eq(h, i)) || Spec.has(T.revoked(t, c), i), True{}, has_pick(h, T.revoked(t, c), Bool.not(Nat.is_eq(h, c)), i), or_left(Bool.not(Nat.is_eq(h, c)) && Nat.is_eq(h, i), Spec.has(T.revoked(t, c), i), and_true(Bool.not(Nat.is_eq(h, c)), Nat.is_eq(h, i), not_false(Nat.is_eq(h, c), hc), ek)))
+    case False{}:
+      Equal.trans(Bool, Spec.has(T.pick(h, T.revoked(t, c), Bool.not(Nat.is_eq(h, c))), i), (Bool.not(Nat.is_eq(h, c)) && Nat.is_eq(h, i)) || Spec.has(T.revoked(t, c), i), True{}, has_pick(h, T.revoked(t, c), Bool.not(Nat.is_eq(h, c)), i), or_right(Bool.not(Nat.is_eq(h, c)) && Nat.is_eq(h, i), Spec.has(T.revoked(t, c), i), ih(inn)))
+
+def has_revoked(+live: List<&2, Nat>, +c: Nat, +i: Nat, inn: {Spec.has(live, i) == True{} : Bool}, +ne: {Nat.is_eq(i, c) == False{} : Bool}) -> {Spec.has(T.revoked(live, c), i) == True{} : Bool}:
+  match live:
+    case Nil{}: absurd({Spec.has(T.revoked([], c), i) == True{} : Bool}, false_true(inn))
+    case h <> t: has_revoked_step(h, t, c, i, Nat.is_eq(h, i), {==}, inn, ne, e2 => has_revoked(t, c, i, e2, ne))
+
+def covered_drop_step(-A: Data, +topic: String, +id: Nat, +x: A, +rest: List<&2, T.Sub<A>>, +c: Nat, +live: List<&2, Nat>, k: Bool, ek: {Nat.is_eq(id, c) == k : Bool}, hc: {Spec.has(live, id) == True{} : Bool}, ih: {Spec.covered(A, T.dropped(A, rest, c), T.revoked(live, c)) == True{} : Bool}) -> {Spec.covered(A, T.keep(A, T.Sub{topic, id, x}, T.dropped(A, rest, c), k), T.revoked(live, c)) == True{} : Bool}:
+  match k:
+    case True{}: ih
+    case False{}: and_true(Spec.has(T.revoked(live, c), id), Spec.covered(A, T.dropped(A, rest, c), T.revoked(live, c)), has_revoked(live, c, id, hc, ek), ih)
+
+def covered_dropped(-A: Data, +s: List<&2, T.Sub<A>>, +c: Nat, +live: List<&2, Nat>, +e: {Spec.covered(A, s, live) == True{} : Bool}) -> {Spec.covered(A, T.dropped(A, s, c), T.revoked(live, c)) == True{} : Bool}:
+  match s:
+    case Nil{}: {==}
+    case T.Sub{topic, id, x} <> rest:
+      covered_drop_step(A, topic, id, x, rest, c, live, Nat.is_eq(id, c), {==}, and_l(Spec.has(live, id), Spec.covered(A, rest, live), e), covered_dropped(A, rest, c, live, and_r(Spec.has(live, id), Spec.covered(A, rest, live), e)))
+
+def below_pick(+h: Nat, +m: List<&2, Nat>, +n: Nat, k: Bool, hb: {Nat.is_lt(h, n) == True{} : Bool}, ih: {Spec.below(m, n) == True{} : Bool}) -> {Spec.below(T.pick(h, m, k), n) == True{} : Bool}:
+  match k:
+    case True{}: and_true(Nat.is_lt(h, n), Spec.below(m, n), hb, ih)
+    case False{}: ih
+
+def below_revoked(+ids: List<&2, Nat>, +c: Nat, +n: Nat, +e: {Spec.below(ids, n) == True{} : Bool}) -> {Spec.below(T.revoked(ids, c), n) == True{} : Bool}:
+  match ids:
+    case Nil{}: {==}
+    case h <> t: below_pick(h, T.revoked(t, c), n, Bool.not(Nat.is_eq(h, c)), and_l(Nat.is_lt(h, n), Spec.below(t, n), e), below_revoked(t, c, n, and_r(Nat.is_lt(h, n), Spec.below(t, n), e)))
+
+def below_step(+ids: List<&2, Nat>, +n: Nat, +e: {Spec.below(ids, n) == True{} : Bool}) -> {Spec.below(ids, 1n+n) == True{} : Bool}:
+  match ids:
+    case Nil{}: {==}
+    case h <> t: and_true(Nat.is_lt(h, 1n+n), Spec.below(t, 1n+n), lt_step(h, n, and_l(Nat.is_lt(h, n), Spec.below(t, n), e)), below_step(t, n, and_r(Nat.is_lt(h, n), Spec.below(t, n), e)))
+
+def wf_join_r(-A: Data, +r: T.Registry<A>, +w: {Spec.wf(A, r) == True{} : Bool}) -> {Spec.wf(A, T.join(A, r)) == True{} : Bool}:
+  match r:
+    case T.Registry{next, live, s}:
+      wf_mk(A, 1n+next, next <> live, s, wf_d(A, next, live, s, w), covered_cons(A, s, next, live, wf_c(A, next, live, s, w)), and_true(Nat.is_lt(next, 1n+next), Spec.below(live, 1n+next), lt_succ(next), below_step(live, next, wf_b(A, next, live, s, w))), {==})
+
+def wf_admit_k(-A: Data, +n: Nat, +l: List<&2, Nat>, +s: List<&2, T.Sub<A>>, +c: Nat, +t: String, +x: A, k: Bool, ek: {T.holds(l, c) == k : Bool}, +w: {Spec.wf(A, T.Registry{n, l, s}) == True{} : Bool}) -> {Spec.wf(A, T.admit_if(A, T.Registry{n, l, s}, c, t, x, k)) == True{} : Bool}:
+  match k:
+    case False{}: w
+    case True{}:
+      +on = Equal.trans(Bool, Spec.has(l, c), T.holds(l, c), True{}, Equal.sym(Bool, T.holds(l, c), Spec.has(l, c), holds_has(l, c)), ek)
+      +ds = and_true(Bool.not(Spec.paired(A, T.without(A, s, c, t), c, t)), Spec.distinct(A, T.without(A, s, c, t)), not_false(Spec.paired(A, T.without(A, s, c, t), c, t), without_self(A, s, c, t)), distinct_without(A, s, c, t, wf_d(A, n, l, s, w)))
+      +cs = and_true(Spec.has(l, c), Spec.covered(A, T.without(A, s, c, t), l), on, covered_without(A, s, c, t, l, wf_c(A, n, l, s, w)))
+      wf_mk(A, n, l, T.Sub{t, c, x} <> T.without(A, s, c, t), ds, cs, wf_b(A, n, l, s, w), wf_p(A, n, l, s, w))
+
+def wf_admit_r(-A: Data, +r: T.Registry<A>, +c: Nat, +t: String, +x: A, +w: {Spec.wf(A, r) == True{} : Bool}) -> {Spec.wf(A, T.admit(A, r, c, t, x)) == True{} : Bool}:
+  match r:
+    case T.Registry{next, live, s}: wf_admit_k(A, next, live, s, c, t, x, T.holds(live, c), {==}, w)
+
+def wf_unsubscribe_r(-A: Data, +r: T.Registry<A>, +c: Nat, +t: String, +w: {Spec.wf(A, r) == True{} : Bool}) -> {Spec.wf(A, T.unsubscribe(A, r, c, t)) == True{} : Bool}:
+  match r:
+    case T.Registry{next, live, s}:
+      wf_mk(A, next, live, T.without(A, s, c, t), distinct_without(A, s, c, t, wf_d(A, next, live, s, w)), covered_without(A, s, c, t, live, wf_c(A, next, live, s, w)), wf_b(A, next, live, s, w), wf_p(A, next, live, s, w))
+
+def wf_remove_r(-A: Data, +r: T.Registry<A>, +c: Nat, +w: {Spec.wf(A, r) == True{} : Bool}) -> {Spec.wf(A, T.remove(A, r, c)) == True{} : Bool}:
+  match r:
+    case T.Registry{next, live, s}:
+      wf_mk(A, next, T.revoked(live, c), T.dropped(A, s, c), distinct_dropped(A, s, c, wf_d(A, next, live, s, w)), covered_dropped(A, s, c, live, wf_c(A, next, live, s, w)), below_revoked(live, c, next, wf_b(A, next, live, s, w)), wf_p(A, next, live, s, w))
+
+def wf_remove_all_r(-A: Data, +ids: List<&2, Nat>, +r: T.Registry<A>, +w: {Spec.wf(A, r) == True{} : Bool}) -> {Spec.wf(A, T.remove_all(A, ids, r)) == True{} : Bool}:
+  match ids:
+    case Nil{}: w
+    case c <> rest: wf_remove_all_r(A, rest, T.remove(A, r, c), wf_remove_r(A, r, c, w))
+
+def L.ws_topics_wf_empty(A):
+  {==}
+
+def L.ws_topics_wf_join(A, r, wf):
+  wf_join_r(A, r, wf)
+
+def L.ws_topics_wf_admit(A, r, c, t, x, wf):
+  wf_admit_r(A, r, c, t, x, wf)
+
+def L.ws_topics_wf_unsubscribe(A, r, c, t, wf):
+  wf_unsubscribe_r(A, r, c, t, wf)
+
+def L.ws_topics_wf_remove(A, r, c, wf):
+  wf_remove_r(A, r, c, wf)
+
+def L.ws_topics_wf_remove_all(A, ids, r, wf):
+  wf_remove_all_r(A, ids, r, wf)
+
+def change_wf(-A: Data, +r: T.Registry<A>, +ch: Spec.Change<A>, +w: {Spec.wf(A, r) == True{} : Bool}) -> {Spec.wf(A, Spec.change(A, r, ch)) == True{} : Bool}:
+  match ch:
+    case Spec.ChJoin{}: wf_join_r(A, r, w)
+    case Spec.ChSubscribe{c, t, x}: wf_admit_r(A, r, c, t, x, w)
+    case Spec.ChUnsubscribe{c, t}: wf_unsubscribe_r(A, r, c, t, w)
+    case Spec.ChClose{c}: wf_remove_r(A, r, c, w)
+    case Spec.ChPrune{gone}: wf_remove_all_r(A, gone, r, w)
+
+def run_wf(-A: Data, +chs: List<&2, Spec.Change<A>>, +r: T.Registry<A>, +w: {Spec.wf(A, r) == True{} : Bool}) -> {Spec.wf(A, Spec.run_from(A, chs, r)) == True{} : Bool}:
+  match chs:
+    case Nil{}: w
+    case ch <> rest: run_wf(A, rest, Spec.change(A, r, ch), change_wf(A, r, ch, w))
+
+def history_wf(-A: Data, +chs: List<&2, Spec.Change<A>>) -> {Spec.wf(A, Spec.run(A, chs)) == True{} : Bool}:
+  run_wf(A, chs, T.empty(A), {==})
+
+def L.ws_topics_history_wf(A, chs):
+  history_wf(A, chs)
+
+# ---- Exactly-once selection ----
+
+def once_step(-A: Data, +topic: String, +id: Nat, +rest: List<&2, T.Sub<A>>, +c: Nat, +t: String, h: Bool, +eh: {(String.eq(topic, t) && Nat.is_eq(id, c)) == h : Bool}, hd: {Spec.paired(A, rest, id, topic) == False{} : Bool}, ih: {Spec.count(T.members_of(A, rest, t), c) == Spec.once(Spec.paired(A, rest, c, t)) : Nat}) -> {Spec.tick(h, Spec.count(T.members_of(A, rest, t), c)) == Spec.once(h || Spec.paired(A, rest, c, t)) : Nat}:
+  match h:
+    case False{}: ih
+    case True{}:
+      +st = JS.string_sound(topic, t, and_l(String.eq(topic, t), Nat.is_eq(id, c), eh))
+      +si = nat_sound(id, c, and_r(String.eq(topic, t), Nat.is_eq(id, c), eh))
+      +moved = Equal.trans(Bool, Spec.paired(A, rest, id, topic), Spec.paired(A, rest, c, topic), Spec.paired(A, rest, c, t), Equal.cong(Nat, Bool, v => Spec.paired(A, rest, v, topic), id, c, si), Equal.cong(String, Bool, v => Spec.paired(A, rest, c, v), topic, t, st))
+      +gone = Equal.trans(Bool, Spec.paired(A, rest, c, t), Spec.paired(A, rest, id, topic), False{}, Equal.sym(Bool, Spec.paired(A, rest, id, topic), Spec.paired(A, rest, c, t), moved), hd)
+      +zero = Equal.trans(Nat, Spec.count(T.members_of(A, rest, t), c), Spec.once(Spec.paired(A, rest, c, t)), 0n, ih, Equal.cong(Bool, Nat, b => Spec.once(b), Spec.paired(A, rest, c, t), False{}, gone))
+      Equal.cong(Nat, Nat, n => 1n+n, Spec.count(T.members_of(A, rest, t), c), 0n, zero)
+
+def count_distinct(-A: Data, +s: List<&2, T.Sub<A>>, +c: Nat, +t: String, +d: {Spec.distinct(A, s) == True{} : Bool}) -> {Spec.count(T.members_of(A, s, t), c) == Spec.once(Spec.paired(A, s, c, t)) : Nat}:
+  match s:
+    case Nil{}: {==}
+    case T.Sub{topic, id, x} <> rest:
+      Equal.trans(Nat, Spec.count(T.pick(id, T.members_of(A, rest, t), String.eq(topic, t)), c), Spec.tick(String.eq(topic, t) && Nat.is_eq(id, c), Spec.count(T.members_of(A, rest, t), c)), Spec.once((String.eq(topic, t) && Nat.is_eq(id, c)) || Spec.paired(A, rest, c, t)), count_pick(id, T.members_of(A, rest, t), String.eq(topic, t), c), once_step(A, topic, id, rest, c, t, String.eq(topic, t) && Nat.is_eq(id, c), {==}, not_true(Spec.paired(A, rest, id, topic), and_l(Bool.not(Spec.paired(A, rest, id, topic)), Spec.distinct(A, rest), d)), count_distinct(A, rest, c, t, and_r(Bool.not(Spec.paired(A, rest, id, topic)), Spec.distinct(A, rest), d))))
+
+def publish_once_wf_r(-A: Data, +r: T.Registry<A>, +c: Nat, +t: String, +sender: Maybe<&2, Nat>, +w: {Spec.wf(A, r) == True{} : Bool}) -> {Spec.count(T.target_ids(A, T.targets(A, r, t, sender)), c) == Spec.once(Spec.paired(A, T.subs(A, r), c, t) && Bool.not(Spec.sender(c, sender))) : Nat}:
+  match r:
+    case T.Registry{next, live, s}:
+      +m = T.members_of(A, s, t)
+      +p = Spec.paired(A, s, c, t)
+      +q = Spec.sender(c, sender)
+      Equal.trans(Nat, Spec.count(T.target_ids(A, T.targets_of(A, s, t, sender)), c), Spec.count(Spec.others(m, sender), c), Spec.once(p && Bool.not(q)), Equal.cong(List<&2, Nat>, Nat, ids => Spec.count(ids, c), T.target_ids(A, T.targets_of(A, s, t, sender)), Spec.others(m, sender), targets_spec(A, s, t, sender)), Equal.trans(Nat, Spec.count(Spec.others(m, sender), c), set_if(q, 0n, Spec.count(m, c)), Spec.once(p && Bool.not(q)), count_others(sender, m, c), Equal.trans(Nat, set_if(q, 0n, Spec.count(m, c)), set_if(q, 0n, Spec.once(p)), Spec.once(p && Bool.not(q)), Equal.cong(Nat, Nat, n => set_if(q, 0n, n), Spec.count(m, c), Spec.once(p), count_distinct(A, s, c, t, wf_d(A, next, live, s, w))), mask_once(q, p))))
+
+def L.ws_topics_publish_once_wf(A, r, c, t, sender, wf):
+  publish_once_wf_r(A, r, c, t, sender, wf)
+
+def L.ws_topics_history_once(A, chs, c, t, sender):
+  publish_once_wf_r(A, Spec.run(A, chs), c, t, sender, history_wf(A, chs))
