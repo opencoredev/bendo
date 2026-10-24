@@ -204,6 +204,38 @@ test("number tokens compare by exact decimal value", () => {
   }
 });
 
+test("long zero runs compare in linear time", () => {
+  // A backtracking /0+$/ took quadratic time on mantissas like these.
+  const zeros = "0".repeat(200_000);
+  const small = Date.now();
+  expect(compareDecimal(`1.${"0".repeat(2_000)}1`, "1")).toBe(1);
+  const smallMs = Date.now() - small;
+  const large = Date.now();
+  expect(compareDecimal(`1.${zeros}1`, "1")).toBe(1);
+  expect(compareDecimal(`1.${zeros}`, "1")).toBe(0);
+  const largeMs = Date.now() - large;
+  // 100x the input must stay far below the 10,000x a quadratic scan would cost.
+  expect(largeMs).toBeLessThan(Math.max(smallMs, 1) * 1_000 + 200);
+});
+
+test("overflowed bounds leave their side open in both directions", async () => {
+  const steps = (value: string) => [{ kind: "capture" as const, name: "n", value }];
+  const params = (bounds: Record<string, number>) => ({
+    type: "object",
+    properties: { n: { type: "number", ...bounds } },
+    required: ["n"],
+  });
+  // Bend admits 1e500 under minimum 1e400, which the table holds as Infinity.
+  expect(await admits(params({ minimum: Number.POSITIVE_INFINITY }), steps("1e500"))).toBe(true);
+  expect(await admits(params({ minimum: Number.POSITIVE_INFINITY }), steps("5"))).toBe(true);
+  expect(await admits(params({ maximum: Number.NEGATIVE_INFINITY }), steps("-1e500"))).toBe(true);
+  // Finite bounds still apply.
+  expect(await admits(params({ minimum: 10 }), steps("5"))).toBe(false);
+  expect(
+    await admits(params({ minimum: 10, maximum: Number.POSITIVE_INFINITY }), steps("1e500")),
+  ).toBe(true);
+});
+
 test("a __proto__ capture stays an own key of the params object", async () => {
   // Built as the generated table writes it: a computed key, so it stays an own property.
   // The object is open because Ajv ignores a __proto__ property schema, so a

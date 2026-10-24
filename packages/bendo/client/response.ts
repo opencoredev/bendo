@@ -91,14 +91,28 @@ const FIRST_MATCH = "Bendo decodes with the first matching member";
 /** An exact decimal: `0.digits × 10^exponent`, with `digits` free of leading and trailing zeros. */
 type Decimal = { sign: -1 | 0 | 1; digits: string; exponent: bigint };
 
+/** Index of the first character that is not "0" (a linear scan; a `/0+$/` regex backtracks quadratically). */
+function firstNonZero(text: string): number {
+  let i = 0;
+  while (i < text.length && text[i] === "0") i++;
+  return i;
+}
+
+/** One past the last character that is not "0". */
+function lastNonZero(text: string): number {
+  let i = text.length;
+  while (i > 0 && text[i - 1] === "0") i--;
+  return i;
+}
+
 function decimal(token: string): Decimal {
   const parts = NUMBER.exec(token);
   if (parts === null) return { sign: 0, digits: "", exponent: 0n };
   const whole = parts[2] ?? "";
   const all = whole + (parts[3] ?? "");
-  const digits = all.replace(/^0+/, "").replace(/0+$/, "");
+  const leading = firstNonZero(all);
+  const digits = all.slice(leading, Math.max(leading, lastNonZero(all)));
   if (digits === "") return { sign: 0, digits, exponent: 0n };
-  const leading = all.length - all.replace(/^0+/, "").length;
   // BigInt keeps exponents such as 1e400 and 1e-99999999999999999999 exact.
   const exponent = BigInt(parts[4] ?? "0") + BigInt(whole.length - leading);
   return { sign: parts[1] === "-" ? -1 : 1, digits, exponent };
@@ -124,11 +138,12 @@ export function compareDecimal(a: string, b: string): -1 | 0 | 1 {
 
 /**
  * The exported bound as a token. The table holds it as a double, so a bound
- * beyond the double range is `Infinity` and leaves that side open.
+ * beyond the double range is `Infinity` and leaves that side open, whatever
+ * its sign: the client can't know the exact bound, and narrowing must not
+ * exclude a row the server would admit.
  */
 function within(token: string, bound: unknown, side: "minimum" | "maximum"): boolean {
-  if (typeof bound !== "number" || Number.isNaN(bound)) return true;
-  if (!Number.isFinite(bound)) return side === "minimum" ? bound < 0 : bound > 0;
+  if (typeof bound !== "number" || !Number.isFinite(bound)) return true;
   const order = compareDecimal(token, String(bound));
   return side === "minimum" ? order >= 0 : order <= 0;
 }
@@ -150,8 +165,10 @@ function coerceNumber(schema: Record<string, unknown>, token: string): Coerced {
   if (!admitted) return { ok: false };
   let value = Number(token);
   if (!Number.isFinite(value)) value = value > 0 ? Number.MAX_VALUE : -Number.MAX_VALUE;
-  if (typeof schema.minimum === "number") value = Math.max(value, schema.minimum);
-  if (typeof schema.maximum === "number") value = Math.min(value, schema.maximum);
+  if (typeof schema.minimum === "number" && Number.isFinite(schema.minimum))
+    value = Math.max(value, schema.minimum);
+  if (typeof schema.maximum === "number" && Number.isFinite(schema.maximum))
+    value = Math.min(value, schema.maximum);
   return { ok: true, value };
 }
 
@@ -200,10 +217,37 @@ function paramsOf(
   return { ok: true, params: Object.fromEntries(entries) };
 }
 
+const BOUNDS = new Set(["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"]);
+
+/** A copy of `value` without numeric bounds that overflowed to ±Infinity, which leave their side open. */
+function withoutOpenBounds(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutOpenBounds);
+  if (!record(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(
+        ([key, item]) => !(BOUNDS.has(key) && typeof item === "number" && !Number.isFinite(item)),
+      )
+      .map(([key, item]) => [key, withoutOpenBounds(item)]),
+  );
+}
+
+const opened = new WeakMap<object, JsonSchema>();
+
+function openBounds(schema: JsonSchema): JsonSchema {
+  if (!record(schema)) return schema;
+  const cached = opened.get(schema);
+  if (cached !== undefined) return cached;
+  const copy = withoutOpenBounds(schema);
+  const result: JsonSchema = record(copy) ? copy : schema;
+  opened.set(schema, result);
+  return result;
+}
+
 /** Whether the server's params check would admit the call's captures under `schema`. */
 export async function admits(schema: JsonSchema, steps: readonly Step[]): Promise<boolean> {
   const params = paramsOf(schema, steps);
-  return params.ok && (await check(schema, params.params)).length === 0;
+  return params.ok && (await check(openBounds(schema), params.params)).length === 0;
 }
 
 /**
