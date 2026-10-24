@@ -16,8 +16,10 @@ import {
 import { doctor } from "./doctor.ts";
 import { prove } from "./prove.ts";
 import { fetchManifest } from "./manifest.ts";
+import { OPENAPI_USAGE, parseOpenApiArgs, runOpenApi } from "./openapi-command.ts";
 import { scaffold } from "./scaffold.ts";
 import { sourceGraph } from "./sources.ts";
+import { buildShared } from "./shared.ts";
 import { devProxy, privatePort, waitForServer } from "./dev-server.ts";
 
 const USAGE = `bendo ${pkg.version}
@@ -26,10 +28,15 @@ Usage:
   bendo new <dir>       create a minimal app
   bendo dev [entry] [--native]  watch and restart with Bun JS (or native) (default: main.bend)
   bendo build [entry]   build dist/server (default: main.bend)
+  bendo build --shared [dir] [--out dir]
+                       compile dir/*.bend to .mjs with .d.mts types
+                       (default: shared, into dist/shared)
   bendo start          run dist/server; honors PORT (default: 8787)
   bendo routes [entry] print the method/path table (default: main.bend)
   bendo prove [file]   check proofs (default: PROOF.bend)
-  bendo gen [entry]    validate the manifest; types land in BND-56
+  bendo gen [entry]    write .bendo/routes.ts from the manifest
+  bendo openapi [entry] [--out file] [--bend file] [--config file]
+                       write an OpenAPI 3.1 document from the manifest
   bendo doctor         check Bend, Lean/elan, clang and Bun versions
   bendo --version      print the version
 
@@ -173,6 +180,31 @@ async function dev(entry: string, target: Target): Promise<number> {
 }
 
 type Command = "new" | "dev" | "build" | "start" | "doctor" | "routes" | "prove" | "gen";
+
+async function openapi(args: string[]): Promise<number> {
+  if (args.includes("--help") || args.includes("-h")) {
+    log(OPENAPI_USAGE);
+    return 0;
+  }
+  const parsed = parseOpenApiArgs(args);
+  const pipeline = new Pipeline();
+  const cancel = (): void => {
+    void pipeline.close();
+  };
+  process.once("SIGINT", cancel);
+  process.once("SIGTERM", cancel);
+  try {
+    return await runOpenApi(parsed, {
+      build: (entry) => pipeline.build(entry),
+      log,
+      warn: (line) => process.stderr.write(`${line}\n`),
+    });
+  } finally {
+    process.removeListener("SIGINT", cancel);
+    process.removeListener("SIGTERM", cancel);
+    await pipeline.close();
+  }
+}
 function parseCommand(value: string): Command {
   switch (value) {
     case "new":
@@ -189,7 +221,36 @@ function parseCommand(value: string): Command {
   }
 }
 
+/** `bendo build --shared [dir] [--out dir]`. */
+async function shared(args: string[]): Promise<number> {
+  const rest = args.filter((arg) => arg !== "--shared");
+  let out = "dist/shared";
+  const at = rest.indexOf("--out");
+  if (at >= 0) {
+    const value = rest[at + 1];
+    if (value === undefined || value.startsWith("-"))
+      throw new Error(`--out needs a directory\n${USAGE}`);
+    out = value;
+    rest.splice(at, 2);
+  }
+  if (rest.length > 1 || rest.some((arg) => arg.startsWith("-")))
+    throw new Error(`Unexpected arguments\n${USAGE}`);
+  const dir = rest[0] ?? "shared";
+  for (const built of await buildShared(dir, out)) {
+    for (const warning of built.warnings) log(`warning: ${warning}`);
+    log(`build: ${built.module} (${built.named.length} named exports) and ${built.declarations}`);
+  }
+  return 0;
+}
+
 async function main(args: string[]): Promise<number> {
+  if (args[0] === "build" && args.includes("--shared")) {
+    if (args.includes("--help") || args.includes("-h")) {
+      log(USAGE);
+      return 0;
+    }
+    return shared(args.slice(1));
+  }
   const native = args[0] === "dev" && args.includes("--native");
   const [rawCommand, argument, ...extra] = native ? args.filter((arg) => arg !== "--native") : args;
   const command = rawCommand;
@@ -201,6 +262,7 @@ async function main(args: string[]): Promise<number> {
     log(pkg.version);
     return 0;
   }
+  if (command === "openapi") return openapi(args.slice(1));
   const parsed = parseCommand(command);
   if (argument === "--help" || argument === "-h") {
     log(USAGE);

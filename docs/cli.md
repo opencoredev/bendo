@@ -33,6 +33,9 @@ Every command supports `--help`.
   Saves are debounced for 100 ms, including atomic editor saves. `.cache`, `dist`, `node_modules`, and `.git` are ignored.
 - `bendo build [entry]` builds a native executable at `dist/server`. Run it from
   the app directory. The entry defaults to `main.bend`.
+- `bendo build --shared [dir] [--out dir]` compiles each `dir/*.bend` (default
+  `shared`) to an ES module and its TypeScript declarations in `dist/shared`, for
+  browsers and other JavaScript runtimes. See [shared.md](shared.md).
 - `bendo start` runs `dist/server` without compiling or requiring Bend. It inherits
   your environment, including `PORT`. Run `build` first.
 - `bendo routes [entry]` builds the app if needed, runs it with `--bendo-routes`,
@@ -43,8 +46,13 @@ Every command supports `--help`.
   and shows law diagnostics and source locations without JavaScript stack traces.
   Proof checks have a ten-minute limit.
 - `bendo gen [entry]` uses the same cached build and manifest validation as `routes`.
-  It reports the number of routes. Type generation lands in BND-56; this command
-  currently writes no type files or placeholders.
+  It writes [TypeScript route types](route-types.md) to `.bendo/routes.ts` and
+  reports the number of routes.
+- `bendo openapi [entry]` builds the app like `routes` and writes an OpenAPI 3.1
+  document from its manifest to `openapi.json`. `--bend <file>` also writes a
+  Bend module that embeds it, `--config <file>` sets info, servers, tags and
+  per-route overrides, and `--manifest <file>` reads a saved manifest instead
+  of building. See [OpenAPI and API docs](openapi.md).
 - `bendo doctor` checks Bend, elan, Lean, clang, and Bun, printing versions and
   paths. Bend must match `.bend-version`; Lean must match `lean-toolchain`. A
   pin is resolved by elan itself (`elan dump-state --no-net` with the pin in
@@ -137,8 +145,8 @@ limit. The app must exit without starting a server when passed `--bendo-routes`.
 
 [Decision 0003](decisions/0003-typed-values.md) specifies the precompile stage:
 evaluate schema metadata through `.mjs`, generate named Bend records and
-decoders, then compile handlers. BND-56 will use the validated manifest to write
-TypeScript route types. `build --shared` remains a separate step (BND-58).
+decoders, then compile handlers. The manifest phase now writes
+[TypeScript route types](route-types.md). `build --shared` remains a separate step (BND-58).
 Unsupported options fail explicitly.
 
 Run the CLI integration tests with `bun test packages/bendo --timeout 30000`

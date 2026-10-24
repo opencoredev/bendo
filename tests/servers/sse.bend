@@ -169,8 +169,8 @@ def host(value: Result<&1, &1, U32 & String, String>) -> String:
     case Done{s}: s
 
 def with_host(config: Config.Config, host: String) -> Config.Config:
-  Config.Config{old, port, body, header, idle, head, timeout, max, keep, router} = config
-  Config.Config{host, port, body, header, idle, head, timeout, max, keep, router}
+  Config.Config{old, port, body, header, idle, head, timeout, max, keep, router, mode} = config
+  Config.Config{host, port, body, header, idle, head, timeout, max, keep, router, mode}
 
 def ready(result: Result<&2, &2, Methods.BuildError, B.Routes(Tag)>, address: String) -> IO(Unit):
   match result:

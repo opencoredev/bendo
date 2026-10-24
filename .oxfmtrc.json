@@ -4,6 +4,8 @@
     "**/*.md",
     "**/*.mdx",
     "tests/fixtures/JSONTestSuite/**",
+    "tests/fixtures/openapi/openapi.json",
+    "tests/fixtures/openapi/golden/*.openapi.json",
     "tests/fixtures/static/vite-app/build/**"
   ],
   "sortPackageJson": false

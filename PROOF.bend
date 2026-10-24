@@ -7,6 +7,7 @@ import ./proof/manifest-built.bend as ManifestBuiltProof
 import ./proof/manifest-schema.bend as ManifestSchemaProof
 import ./proof/json-schema.bend as JsonSchemaProof
 import ./proof/compose.bend as ComposeProof
+import ./proof/validate.bend as ValidateProof
 import ./proof/plugin.bend as PluginProof
 
 # BND-47
@@ -39,6 +40,14 @@ import ./proof/middleware-selection.bend as MiddlewareSelection
 import ./proof/schema-compound.bend as SchemaProof
 import ./proof/schema-errors.bend as SchemaErrors
 import ./proof/schema-coerce.bend as SchemaCoerce
+
+import ./proof/json.bend as JsonProof
+import ./proof/json-escape.bend as JsonEscapeProof
+import ./proof/json-codec.bend as JsonCodecProof
+import ./proof/json-number.bend as JsonNumberProof
+import ./proof/json-space.bend as JsonSpaceProof
+import ./proof/json-writer.bend as JsonWriterProof
+import ./proof/json-tree-parse.bend as JsonTreeParseProof
 import ./src/http/response.bend as Response
 import ./src/http/write_response.bend as WriteResponse
 
@@ -886,3 +895,9 @@ def Laws.websocket_response_refuse_400():
 
 def Laws.websocket_response_refuse_403():
   {==}
+
+# BND-28: the writer is total within its actual scan budget, and its exact
+# rendered output decodes and parses back to the original tree.
+def Laws.json_roundtrip(value, pretty, ascii, valid):
+  +output = String.reverse(JsonWriterProof.render_acc(512n, value, True{}, pretty, ascii, 0n, True{}, ""))
+  (output, (JsonWriterProof.write_output(value, pretty, ascii, valid), JsonTreeParseProof.parse_output(value, pretty, ascii, valid)))

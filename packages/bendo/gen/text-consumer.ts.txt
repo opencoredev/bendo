@@ -1,0 +1,50 @@
+import type { Routes } from "./routes";
+type Input = Routes["input"];
+type Query = Input["query"];
+export const cases: { params: Input["params"]; query: Query; headers: Input["headers"] }[] = [
+  { params: { id: "word" }, query: { choice: "word", enum: "one", literal: "yes", integer: 10, number: 1.5, boolean: true, nullable: 12, tags: ["word", "word"], ids: [1, "2", 3], limits: [8, "9"] }, headers: { "x-choice": "word", "x-enum": "one", "x-literal": "yes" } },
+  { params: { id: "word" }, query: { choice: "word", enum: "one", literal: "yes", integer: "10", number: "1.5", boolean: "false", ids: ["4"] }, headers: { "x-choice": "word", "x-enum": "one", "x-literal": "yes" } },
+];
+// @ts-expect-error unions never coerce their numeric branches
+const numericUnion: Query["choice"] = 10;
+// @ts-expect-error unions never coerce their boolean branches
+const booleanUnion: Query["choice"] = true;
+// @ts-expect-error a numeric spelling cannot match a numeric union branch
+const unionSpelling: Query["choice"] = "10";
+// @ts-expect-error numeric enum members cannot arrive as numbers
+const numericEnum: Query["enum"] = 1;
+// @ts-expect-error numeric enum members cannot arrive as strings either
+const enumSpelling: Query["enum"] = "1";
+// @ts-expect-error boolean enum members cannot arrive as booleans
+const booleanEnum: Query["enum"] = true;
+// @ts-expect-error numeric-only enum has no reachable input
+const onlyNumericEnum: Query["numeric-enum"] = 1;
+// @ts-expect-error numeric literal has no reachable input
+const numericLiteral: Query["numeric-literal"] = 1;
+// @ts-expect-error boolean literal has no reachable input
+const booleanLiteral: Query["boolean-literal"] = true;
+// @ts-expect-error numeric/boolean-only union has no reachable input
+const onlyNumericUnion: Query["numeric-union"] = 10;
+// @ts-expect-error null serializes to text and cannot decode as nullable integer
+const nullable: Query["nullable"] = null;
+// @ts-expect-error a required text array needs an item: [] serializes to no key
+const emptyIds: Query["ids"] = [];
+// @ts-expect-error required text arrays cannot be omitted
+const missingIds: Query = { choice: "word", enum: "one", literal: "yes", integer: 10, number: 1.5, boolean: true };
+// @ts-expect-error array item unions do not coerce
+const array: Query["tags"] = [10];
+// @ts-expect-error params must also survive serialization
+const param: Input["params"] = { id: 10 };
+// @ts-expect-error headers must also survive serialization
+const header: Input["headers"] = { "x-choice": true, "x-enum": "one", "x-literal": "yes" };
+
+export function serialize(input: (typeof cases)[number]): { path: string; query: URLSearchParams; headers: Headers } {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(input.query)) {
+    for (const item of Array.isArray(value) ? value : [value]) query.append(key, String(item));
+  }
+  const headers = new Headers();
+  for (const [key, value] of Object.entries(input.headers)) headers.set(key, String(value));
+  return { path: `/text/${encodeURIComponent(input.params.id)}`, query, headers };
+}
+export const requests = cases.map(serialize);

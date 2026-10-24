@@ -13,6 +13,7 @@ import ./app/config.bend as Config
 import ./app/manifest.bend as Manifest
 import ./app/table.bend as Table
 import ./app/handle.bend as Handle
+import ./app/validate.bend as Validate
 import ./app/context.bend as Context
 import ./app/errors.bend as Errors
 import ./app/body-policy.bend as BodyPolicy
@@ -281,7 +282,7 @@ def serve_config(~app: R.Req -> List<&2, U32> -> List<&2, U32>, config: Config) 
     +port : U32 = port_or(env, fallback)
     l : Listener <- IO.try(Listener, TCP.listen("127.0.0.1", port))
     IO.print("bendo listening on http://127.0.0.1:" ++ U32.show(port))
-    loop(~U32, ~(req => env => env), ~(req => body => env => close => legacy(~app, req, body, env, close)), l, limit, Config.Config{"127.0.0.1", port, limit, 65536, 5000, 10000, 30000, 1, False{}, Router.Spec{}})
+    loop(~U32, ~(req => env => env), ~(req => body => env => close => peer => legacy(~app, req, body, env, close, peer)), l, limit, Config.Config{"127.0.0.1", port, limit, 65536, 5000, 10000, 30000, 1, False{}, Router.Spec{}, Config.Development{}})
 
 def serve(~app: R.Req -> List<&2, U32> -> List<&2, U32>, port: U32) -> IO(Unit):
   serve_config(~app, defaults(port))
@@ -292,10 +293,10 @@ def encoded(res: Response.Res) -> List<&2, U32>:
   Bytes.append(Bytes.encode(Write.status_text(status) ++ Write.headers_text(headers) ++ "\r\n\r\n"), body)
 
 type State<-Tag: Data, -Env: Data> is Data:
-  State{table: Table.Table<Tag>, env: Env, router: Router.RouterKind, body_limit: U32}
+  State{table: Table.Table<Tag>, env: Env, router: Router.RouterKind, body_limit: U32, mode: Config.Mode}
 
 def selected_limit(~Tag: Data, ~Env: Data, ~select: Tag -> Maybe<&2, U32>, req: R.Req, state: State<Tag, Env>) -> U32:
-  State{table, env, router, limit} = state
+  State{table, env, router, limit, mode} = state
   BodyPolicy.for_request(~Tag, ~select, req, table, router, limit)
 
 # Handle returns a normalized response, including HEAD's representation length.
@@ -323,33 +324,44 @@ def prepare_transport(result: Response.Res & (StreamTypes.Transport & IO(Unit)),
   (res, (stream, after)) = result
   prepare_stream(res, close, stream, after)
 
-def respond_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), req: R.Req, body: List<&2, U32>, state: State<Tag, Env>, close: Bool, peer: Maybe<&2, Conn.ConnInfo>) -> IO(Reply):
-  State{table, env, router, limit} = state
+def respond_with(~validator: Validate.Job -> Validate.Answer, ~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), req: R.Req, body: List<&2, U32>, state: State<Tag, Env>, close: Bool, peer: Maybe<&2, Conn.ConnInfo>) -> IO(Reply):
+  State{table, env, router, limit, mode} = state
   do IO<Reply>:
-    result : Response.Res & (StreamTypes.Transport & IO(Unit)) <- Handle.transport_routed(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, router, table, env, req, body, peer)
+    result : Response.Res & (StreamTypes.Transport & IO(Unit)) <- Handle.transport_routed(~validator, ~Vars, ~Tag, ~Env, ~dispatch, ~middleware, router, mode, table, env, req, body, peer)
     return prepare_transport(result, close)
 
-def startup_limits_with(~Vars: Data, ~Tag: Data, ~select: Tag -> Maybe<&2, U32>, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +table: Table.Table<Tag>, env: Env, +config: Config.Config, manifest: Bool) -> IO(Unit):
+# A validator that decodes nothing must not serve a table with schemas.
+def admitted_table(answer: Validate.Answer, declared: Bool) -> IO(Unit):
+  match answer declared:
+    case Validate.Enabled{False{}} True{}: IO.die(Unit, 1, "bendo: this table declares route schemas; serve it with the entrypoints in src/validated.bend (docs/validation.md)")
+    case _ _: IO.pure(Unit, Unit{})
+
+def startup_limits_with(~validator: Validate.Job -> Validate.Answer, ~Vars: Data, ~Tag: Data, ~select: Tag -> Maybe<&2, U32>, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +table: Table.Table<Tag>, env: Env, +config: Config.Config, manifest: Bool) -> IO(Unit):
   match config manifest:
     case _ True{}:
       do IO<Unit>:
         IO.print(Manifest.json(Tag, table))
         IO.exit(0)
-    case Config.Config{+host, +fallback, +limit, header_limit, idle, head, body, max_requests, keep_alive, router} False{}:
+    case Config.Config{+host, +fallback, +limit, header_limit, idle, head, body, max_requests, keep_alive, router, mode} False{}:
       do IO<Unit>:
+        admitted_table(validator(Validate.Probe{}), Table.declares_schemas(Tag, Table.layers(Tag, table)))
         port_env : Result<&1, &1, U32 & String, String> <- IO.get_env("PORT")
         +port : U32 = Config.port_env(port_env, fallback)
+        mode_env : Result<&1, &1, U32 & String, String> <- IO.get_env("BENDO_ENV")
         listener : Listener <- IO.try(Listener, TCP.listen(host, port))
         IO.print("bendo listening on http://" ++ host ++ ":" ++ U32.show(port))
-        loop(~State<Tag, Env>, ~(req => state => selected_limit(~Tag, ~Env, ~select, req, state)), ~(req => body => state => close => respond_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, req, body, state, close)), listener, State{table, env, router, limit}, config)
+        loop(~State<Tag, Env>, ~(req => state => selected_limit(~Tag, ~Env, ~select, req, state)), ~(req => body => state => close => peer => respond_with(~validator, ~Vars, ~Tag, ~Env, ~dispatch, ~middleware, req, body, state, close, peer)), listener, State{table, env, router, limit, Config.mode_env(mode_env, mode)}, config)
 
 def startup_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config, manifest: Bool) -> IO(Unit):
-  startup_limits_with(~Vars, ~Tag, ~(tag => None{}), ~Env, ~dispatch, ~middleware, table, env, config, manifest)
+  startup_limits_with(~Validate.skip, ~Vars, ~Tag, ~(tag => None{}), ~Env, ~dispatch, ~middleware, table, env, config, manifest)
 
-def run_limits_with(~Vars: Data, ~Tag: Data, ~select: Tag -> Maybe<&2, U32>, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config) -> IO(Unit):
+def run_limits_checked(~validator: Validate.Job -> Validate.Answer, ~Vars: Data, ~Tag: Data, ~select: Tag -> Maybe<&2, U32>, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config) -> IO(Unit):
   do IO<Unit>:
     args : List<String> <- IO.args()
-    startup_limits_with(~Vars, ~Tag, ~select, ~Env, ~dispatch, ~middleware, table, env, config, Manifest.argv(args))
+    startup_limits_with(~validator, ~Vars, ~Tag, ~select, ~Env, ~dispatch, ~middleware, table, env, config, Manifest.argv(args))
+
+def run_limits_with(~Vars: Data, ~Tag: Data, ~select: Tag -> Maybe<&2, U32>, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config) -> IO(Unit):
+  run_limits_checked(~Validate.skip, ~Vars, ~Tag, ~select, ~Env, ~dispatch, ~middleware, table, env, config)
 
 def run_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config) -> IO(Unit):
   run_limits_with(~Vars, ~Tag, ~(tag => None{}), ~Env, ~dispatch, ~middleware, table, env, config)

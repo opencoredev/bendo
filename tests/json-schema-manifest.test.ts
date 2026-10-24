@@ -177,6 +177,15 @@ describe("the CLI manifest parser", () => {
     });
   });
 
+  test("accepts the bare * pattern, which an app prints as registered", () => {
+    expect(
+      parseManifest('{"bendo":1,"routes":[{"method":"GET","path":"*","params":["*"]}]}').routes,
+    ).toEqual([{ method: "GET", path: "*", params: ["*"], all: false, schemas: {} }]);
+    expect(() => parseManifest('{"bendo":1,"routes":[{"method":"GET","path":"x"}]}')).toThrow(
+      "needs a method and /path",
+    );
+  });
+
   test("rejects malformed params, flags and schema slots", () => {
     for (const route of [
       '{"method":"GET","path":"/","params":"id"}',
