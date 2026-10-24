@@ -29,11 +29,12 @@ Bun.
 
 ```ts
 // vite.config.ts
+import { defineConfig } from "vite";
 import bendo from "vite-plugin-bendo";
 
-export default {
+export default defineConfig({
   plugins: [bendo({ concurrency: 2 })],
-};
+});
 ```
 
 ### `BendoPluginOptions`
@@ -60,6 +61,7 @@ A `concurrency` that is not a positive integer throws when Vite resolves its
 config.
 
 ```ts
+import { defineConfig } from "vite";
 import bendo, { type BendoPluginOptions } from "vite-plugin-bendo";
 
 const options: BendoPluginOptions = {
@@ -67,7 +69,7 @@ const options: BendoPluginOptions = {
   declarations: process.env.CI === undefined,
   diskCache: false,
 };
-export default { plugins: [bendo(options)] };
+export default defineConfig({ plugins: [bendo(options)] });
 ```
 
 ### `BendoApi`
@@ -322,12 +324,10 @@ message gains a note saying so, listing the candidate files, and `id` is the
 entry. Send it with `server.hot.send({ type: "error", err })`.
 
 ```ts
+import type { ViteDevServer } from "vite";
 import { overlayError, type Diagnostic } from "vite-plugin-bendo";
 
-type Hot = { send(payload: { type: "error"; err: ReturnType<typeof overlayError> }): void };
-
-// `hot` is a Vite dev environment's `hot` channel, such as `server.hot`.
-function showError(hot: Hot, diagnostic: Diagnostic): void {
-  hot.send({ type: "error", err: overlayError(diagnostic) });
+function showError(server: ViteDevServer, diagnostic: Diagnostic): void {
+  server.hot.send({ type: "error", err: overlayError(diagnostic) });
 }
 ```
