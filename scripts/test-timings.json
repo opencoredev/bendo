@@ -34,6 +34,7 @@
     "packages/vite-plugin-bendo/src/build.test.ts": 3000,
     "packages/vite-plugin-bendo/src/dev.test.ts": 3000,
     "packages/vite-plugin-bendo/src/lifecycle.test.ts": 3000,
-    "packages/vite-plugin-bendo/src/plugin.test.ts": 3000
+    "packages/vite-plugin-bendo/src/plugin.test.ts": 3000,
+    "tests/laws-docs.test.ts": 200
   }
 }
