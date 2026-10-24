@@ -17,6 +17,7 @@
     "packages/bendo/shared/*.ts",
     "packages/bendo/gen",
     "packages/bendo/client",
+    "packages/bendo/query",
     "tests",
     "scripts/*.ts"
   ]
