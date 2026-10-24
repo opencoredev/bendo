@@ -1,21 +1,32 @@
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { compile } from "../tests/harness.ts";
 
-// Multipart's typechecking peaks above 6 GiB. Warm it before the test workers
-// start so several compilers cannot force it into swap on a cold CI runner.
-// These calls are cheap cache lookups on subsequent runs.
-// Keep this phase serial. run-tests.ts also budgets the workers because other
-// fixtures (including generated ones) compile inside the test processes.
-compile("tests/servers/multipart.bend", "native");
-compile("tests/fixtures/multipart/consumer.bend", "mjs");
-// Observability peaks above 3 GiB. Keep it out of the
-// smaller workers' budget too, using the same cache entry as its test.
-compile("tests/servers/mw-observability.bend", "native");
-// Errors reached 5.28 GiB in a cold worker, despite lower peaks in other runs.
-// Prewarm its exact native cache entry rather than budgeting for the average.
-compile("tests/servers/errors.bend", "native");
-// Stream reached 2.08 GiB, above the remaining workers' compiler allowance.
-compile("tests/servers/stream.bend", "native");
+import { selectedTestFiles } from "./test-shards.ts";
+
+// Only prewarm heavy fixtures used by this shard. All other fixtures compile
+// lazily through the harness. Keep these compilers out of the worker pool.
+const selected = new Set(selectedTestFiles());
+const heavyFixtures = [
+  { test: "tests/multipart.test.ts", entry: "tests/servers/multipart.bend", target: "native" },
+  {
+    test: "tests/multipart.test.ts",
+    entry: "tests/fixtures/multipart/consumer.bend",
+    target: "mjs",
+  },
+  {
+    test: "tests/mw-observability.test.ts",
+    entry: "tests/servers/mw-observability.bend",
+    target: "native",
+  },
+  { test: "tests/errors.test.ts", entry: "tests/servers/errors.bend", target: "native" },
+  { test: "tests/stream.test.ts", entry: "tests/servers/stream.bend", target: "native" },
+  { test: "tests/mw-cors.test.ts", entry: "tests/servers/mw-cors.bend", target: "native" },
+] satisfies { test: string; entry: string; target: Parameters<typeof compile>[1] }[];
+for (const fixture of heavyFixtures) {
+  if (!selected.has(fixture.test)) continue;
+  console.log(`Prewarm: ${fixture.entry} (${fixture.target})`);
+  compile(fixture.entry, fixture.target);
+}
 
 // Keep measured scheduling data outside tracked files. Seed a fresh checkout
 // with the recorded cold-run costs, then let Bun update it after every run.
