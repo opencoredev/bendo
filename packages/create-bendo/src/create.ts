@@ -1,6 +1,5 @@
 import {
-  chmodSync,
-  cpSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -13,7 +12,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 
 export const TEMPLATES = ["api", "fullstack"] as const;
 export type Template = (typeof TEMPLATES)[number];
@@ -175,38 +174,54 @@ export function checkTarget(target: string): void {
 export type Created = { target: string; template: Template; bendVersion: string };
 
 /**
- * Writes the app into a sibling temporary directory and renames it into
- * place, so a failure never leaves a half-written project behind.
+ * Copies a directory tree. Directories are made with plain mkdir rather than
+ * cpSync's copy of the source mode, so they inherit the destination's setgid
+ * bit and group the way directories the user makes do.
+ */
+function copyTree(from: string, to: string): void {
+  mkdirSync(to, { recursive: true });
+  for (const entry of readdirSync(from, { withFileTypes: true })) {
+    const source = join(from, entry.name);
+    const destination = join(to, entry.name);
+    if (entry.isDirectory()) copyTree(source, destination);
+    else copyFileSync(source, destination);
+  }
+}
+
+/**
+ * Writes the app into a temporary directory inside the target, then moves
+ * each entry up into the target. The target is never replaced, so it keeps
+ * its owner, group, mode and setgid bit, and every file inherits them as if
+ * the user had made it there. A failure before the move leaves the target as
+ * it was (a target this call made is removed again).
  */
 export function create(directory: string, template: Template, toolkit = locateToolkit()): Created {
   const target = resolve(directory);
   checkTarget(target);
-  const parent = dirname(target);
-  mkdirSync(parent, { recursive: true });
-  const staging = mkdtempSync(join(parent, `.${basename(target)}.create-`));
+  const made = !existsSync(target);
+  mkdirSync(target, { recursive: true });
+  const staging = mkdtempSync(join(target, ".create-"));
   try {
-    cpSync(join(PACKAGE_DIR, "templates", template), staging, { recursive: true });
+    copyTree(join(PACKAGE_DIR, "templates", template), staging);
     renameSync(join(staging, "gitignore"), join(staging, ".gitignore"));
     const { source, pins } = library(toolkit);
-    cpSync(source, join(staging, "bendo"), { recursive: true });
-    for (const pin of PINS) cpSync(join(pins, pin), join(staging, pin));
+    copyTree(source, join(staging, "bendo"));
+    for (const pin of PINS) copyFileSync(join(pins, pin), join(staging, pin));
     const bendVersion = readFileSync(join(staging, ".bend-version"), "utf8");
     writeFileSync(
       join(staging, "package.json"),
       `${JSON.stringify(manifest(template, toolkit, packageName(target)), null, 2)}\n`,
     );
-    // Recheck: the directory may have been filled while the app was written.
-    checkTarget(target);
-    // mkdtemp makes the staging directory 0700. Keep the mode of an empty
-    // directory the user prepared (group access, setgid), or give a new one
-    // the mode mkdir would have.
-    const mode = existsSync(target) ? statSync(target).mode & 0o7777 : 0o777 & ~process.umask();
-    if (existsSync(target)) rmdirSync(target);
-    renameSync(staging, target);
-    chmodSync(target, mode);
+    // Recheck: something else may have written into the target meanwhile.
+    const others = readdirSync(target).filter((name) => name !== basename(staging));
+    if (others.length > 0)
+      throw new TargetNotEmpty(`${target} is not empty. Choose a new or empty directory.`);
+    for (const name of readdirSync(staging)) renameSync(join(staging, name), join(target, name));
+    rmdirSync(staging);
     return { target, template, bendVersion: bendVersion.trim() };
   } catch (error) {
     rmSync(staging, { recursive: true, force: true });
+    if (made && existsSync(target) && readdirSync(target).length === 0) rmdirSync(target);
     throw error;
   }
 }

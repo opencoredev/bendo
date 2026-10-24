@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   chmodSync,
+  chownSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   statSync,
@@ -137,12 +139,25 @@ describe("main", () => {
     expect(existsSync(join(cwd, "empty/main.bend"))).toBe(true);
   });
 
-  test("keeps the mode of an existing empty directory, and gives a new one mkdir's", async () => {
+  test("keeps an existing directory's mode and inheritance, and makes a new one like mkdir", async () => {
     const cwd = directory();
     mkdirSync(join(cwd, "shared"));
+    // With a second group to hand, give the target that group, as a shared
+    // project directory would have.
+    const other = process.getgroups?.().find((gid) => gid !== process.getgid?.());
+    if (other !== undefined) chownSync(join(cwd, "shared"), statSync(cwd).uid, other);
     chmodSync(join(cwd, "shared"), 0o2770);
     expect(await main([join(cwd, "shared"), "-t", "api"], fakeIo(false), cwd)).toBe(0);
     expect(statSync(join(cwd, "shared")).mode & 0o7777).toBe(0o2770);
+    // setgid on the target reaches what create wrote inside it.
+    expect(statSync(join(cwd, "shared/bendo")).mode & 0o2000).toBe(0o2000);
+    expect(readdirSync(join(cwd, "shared")).some((name) => name.startsWith(".create-"))).toBe(
+      false,
+    );
+    if (other !== undefined) {
+      expect(statSync(join(cwd, "shared")).gid).toBe(other);
+      expect(statSync(join(cwd, "shared/main.bend")).gid).toBe(other);
+    }
     mkdirSync(join(cwd, "probe"));
     expect(await main([join(cwd, "fresh"), "-t", "api"], fakeIo(false), cwd)).toBe(0);
     expect(statSync(join(cwd, "fresh")).mode & 0o7777).toBe(
