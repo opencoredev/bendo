@@ -1,5 +1,14 @@
 // The typed client (BND-57). Usage and result kinds: docs/client.md.
-import { captureStep, headerEntries, pathOf, textEntries, type Built, type Step } from "./path.ts";
+import { remember } from "./chain.ts";
+import {
+  captureStep,
+  headerEntries,
+  methodOf,
+  pathOf,
+  textEntries,
+  type Built,
+  type Step,
+} from "./path.ts";
 import {
   errorBody,
   expected,
@@ -9,7 +18,7 @@ import {
   type Expected,
   type ResponseSchemaTable,
 } from "./response.ts";
-import type { Client, ClientResult, Method, MethodKey, RouteRecord } from "./types.ts";
+import type { Client, ClientResult, Method, RouteRecord } from "./types.ts";
 
 export type {
   BendoFieldError,
@@ -43,21 +52,6 @@ export type ClientOptions = {
   /** Sent with every request; a call's own headers replace these by name. */
   headers?: HeadersInit;
 } & Validation;
-
-const METHODS: Record<MethodKey, Method> = {
-  get: "GET",
-  head: "HEAD",
-  post: "POST",
-  put: "PUT",
-  delete: "DELETE",
-  options: "OPTIONS",
-  patch: "PATCH",
-};
-
-function methodOf(name: string): Method | undefined {
-  for (const [key, method] of Object.entries(METHODS)) if (key === name) return method;
-  return undefined;
-}
 
 type Settings = {
   base: string;
@@ -204,7 +198,7 @@ async function request(
 }
 
 function node(settings: Settings, steps: readonly Step[]): unknown {
-  return new Proxy(() => undefined, {
+  const proxy = new Proxy(() => undefined, {
     get(_target, property) {
       // `then` would make every node look like a promise to `await`.
       if (typeof property === "symbol" || property === "then") return undefined;
@@ -217,6 +211,8 @@ function node(settings: Settings, steps: readonly Step[]): unknown {
       return node(settings, [...steps, captureStep(args[0])]);
     },
   });
+  remember(proxy, steps);
+  return proxy;
 }
 
 /**

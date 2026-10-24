@@ -18,6 +18,7 @@
     "packages/bendo/gen",
     "packages/vite-plugin-bendo/fixtures/app/vite.config.ts",
     "packages/bendo/client",
+    "packages/bendo/query",
     "tests",
     "scripts/*.ts"
   ]
