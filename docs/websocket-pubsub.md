@@ -127,7 +127,7 @@ the frame arriving at a raw client:
 
 A publication cannot cut an idle wait short, because Bend has no way to wait
 on a socket and a channel at once. See
-[the decision](decisions/0016-websocket-pubsub.md). For lower idle latency,
+[the decision](decisions/0017-websocket-pubsub.md). For lower idle latency,
 lower `poll_max_ms` and accept more idle CPU, or have clients send periodic
 pings.
 

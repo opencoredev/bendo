@@ -1,7 +1,7 @@
 # WebSocket publish/subscribe (BND-53). A Hub is a B.Store actor holding the
 # pure topics.bend registry; each connection joins it on open and leaves it on
 # every close path. Publication never waits on a recipient: a full mailbox
-# drops that recipient's copy (decision 0016).
+# drops that recipient's copy (decision 0017).
 import Base
 import ./topics.bend as T
 import ./connection.bend as W
