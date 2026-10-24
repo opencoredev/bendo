@@ -26,10 +26,10 @@ def dispatch(tag: Tag, ctx: B.Ctx, env: Unit) -> IO(B.Res):
 
 def configured(mode: Result<&1, &1, U32 & String, String>) -> Config.Config:
   match mode:
-    case Done{"short"}: Config.Config{"127.0.0.1", 8787, 8, 128, 150, 350, 350, 3, True{}, Router.Spec{}, Config.Development{}}
-    case Done{"zero"}: Config.Config{"127.0.0.1", 8787, 8, 65536, 150, 350, 350, 0, True{}, Router.Spec{}, Config.Development{}}
-    case Done{"disabled"}: Config.Config{"127.0.0.1", 8787, 8, 65536, 150, 350, 350, 100, False{}, Router.Spec{}, Config.Development{}}
-    case _: Config.Config{"127.0.0.1", 8787, 8, 65536, 2000, 1000, 1000, 100, True{}, Router.Spec{}, Config.Development{}}
+    case Done{"short"}: Config.Config{"127.0.0.1", 8787, 8, 128, 150, 350, 350, 3, True{}, Router.Spec{}, Config.Development{}, 1}
+    case Done{"zero"}: Config.Config{"127.0.0.1", 8787, 8, 65536, 150, 350, 350, 0, True{}, Router.Spec{}, Config.Development{}, 1}
+    case Done{"disabled"}: Config.Config{"127.0.0.1", 8787, 8, 65536, 150, 350, 350, 100, False{}, Router.Spec{}, Config.Development{}, 1}
+    case _: Config.Config{"127.0.0.1", 8787, 8, 65536, 2000, 1000, 1000, 100, True{}, Router.Spec{}, Config.Development{}, 1}
 
 def ready(result: Result<&2, &2, Methods.BuildError, B.Routes(Tag)>, config: Config.Config) -> IO(Unit):
   match result:
