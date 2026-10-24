@@ -294,18 +294,20 @@ def seek_hit(k: String, t: List<&2, Recent>, back: List<&2, Recent>, length: Nat
   (m, ok) = got
   seek_pick(k, t, back, length, m, ok)
 
-def seek_step(s: Seek) -> Seek:
-  match s:
-    case Seeking{Nil{}, Nil{}, length, m}: Exhausted{m}
-    case Seeking{Nil{}, h <> t, length, m}: Seeking{List.reverse(&2, Recent, h <> t), [], length, m}
-    case Seeking{Recent{+k, +st} <> t, back, length, m}: seek_hit(k, t, back, Nat.sub(length, 1n), current(k, st, m))
-    case Found{k, front, back, length, m}: Found{k, front, back, length, m}
-    case Exhausted{m}: Exhausted{m}
+def seek_step(front: List<&2, Recent>, back: List<&2, Recent>, length: Nat, m: Map<&2, Slot>) -> Seek:
+  match front back:
+    case Nil{} Nil{}: Exhausted{m}
+    case Nil{} h <> t: Seeking{List.reverse(&2, Recent, h <> t), [], length, m}
+    case Recent{+k, +st} <> t back: seek_hit(k, t, back, Nat.sub(length, 1n), current(k, st, m))
 
+# Fuel only bounds the search; it stops at the first current pair, so a pop
+# costs the stale pairs it skips, not the table size.
 def seek_run(fuel: Nat, s: Seek) -> Seek:
-  match fuel:
-    case 0n: s
-    case 1n+f: seek_run(f, seek_step(s))
+  match fuel s:
+    case 0n s: s
+    case 1n+f Seeking{front, back, length, m}: seek_run(f, seek_step(front, back, length, m))
+    case 1n+f Found{k, front, back, length, m}: Found{k, front, back, length, m}
+    case 1n+f Exhausted{m}: Exhausted{m}
 
 def sweep_key(m: Map<&2, Slot>, +key: String, drop: Bool) -> Map<&2, Slot>:
   match drop:

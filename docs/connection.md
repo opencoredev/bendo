@@ -94,6 +94,8 @@ proxies, list them as `trusted_proxies` in `B.ip_policy`. Then, only when
 the socket peer is one of them:
 
 - every `X-Forwarded-For` field is read as one comma-separated list, in order;
+- each entry loses its surrounding spaces and tabs. An entry left empty, as in
+  `a,,b`, after a trailing comma or in an empty field, is malformed;
 - entries are taken from the right (the nearest hop). Trusted proxies are
   skipped, and the first other address is the client;
 - a malformed entry, or running out of entries, stops at the last trusted hop
@@ -217,7 +219,9 @@ without `RateLimit-Policy` and `RateLimit` fields.
 
 Eviction keeps a queue of recent keys. It grows by one entry per request and
 is compacted back to at most `max_keys` once it passes twice that, so the
-memory bound stays proportional to `max_keys`.
+memory bound stays proportional to `max_keys`. Finding a victim skips only the
+stale queue entries ahead of it, so under steady churn an eviction costs about
+the same at any `max_keys`.
 
 ## Laws
 
@@ -242,6 +246,9 @@ memory bound stays proportional to `max_keys`.
   the end of the list stops at the last trusted hop (`client_trusted_chain`,
   `chain_skips_trusted`, `chain_first_untrusted`, `chain_malformed_stops`,
   `chain_exhausted`).
+- The entries are every field split at each comma, empty entries kept, each
+  trimmed of surrounding spaces and tabs only, in field and entry order
+  (`conn_entries_spec`).
 - Fixed window: in the counter's window a request is allowed exactly when
   fewer than `limit` were counted, and only allowed requests count. A later
   window starts from zero, and a zero limit refuses everything. Any run of

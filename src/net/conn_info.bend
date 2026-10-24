@@ -35,13 +35,43 @@ def peer_address(info: Maybe<&2, ConnInfo>) -> Maybe<&2, Ip.Addr>:
     case None{}: None{}
     case Some{i}: Some{address(i)}
 
+# Entry trimming tests characters through Bytes.ows, so the entries law can
+# reason about any character without splitting on its bits.
+def lead_pick(+c: U32, t: List<&2, U32>, rest: List<&2, U32>, space: Bool) -> List<&2, U32>:
+  match space:
+    case True{}: rest
+    case False{}: c <> t
+
+# Drop leading spaces and tabs.
+def strip_lead(xs: List<&2, U32>) -> List<&2, U32>:
+  match xs:
+    case Nil{}: []
+    case +c <> +t: lead_pick(c, t, strip_lead(t), Bytes.ows(c))
+
+def trail_pick(+c: U32, space: Bool, rest: List<&2, U32>) -> List<&2, U32>:
+  match space rest:
+    case True{} Nil{}: []
+    case True{} h <> t: c <> h <> t
+    case False{} rest: c <> rest
+
+# Drop trailing spaces and tabs: a blank character survives only if something
+# after it does.
+def strip_trail(xs: List<&2, U32>) -> List<&2, U32>:
+  match xs:
+    case Nil{}: []
+    case +c <> t: trail_pick(c, Bytes.ows(c), strip_trail(t))
+
+def trim(xs: List<&2, U32>) -> List<&2, U32>:
+  strip_trail(strip_lead(xs))
+
 def entry_texts(parts: List<&2, List<&2, U32>>) -> List<&2, String>:
   match parts:
     case Nil{}: []
-    case p <> t: Bytes.ascii(Bytes.trim(p)) <> entry_texts(t)
+    case p <> t: Bytes.ascii(trim(p)) <> entry_texts(t)
 
 # Every comma-separated entry of every X-Forwarded-For field, in order, with
-# surrounding spaces and tabs removed.
+# surrounding spaces and tabs removed. Empty entries stay (and are malformed),
+# so "a,,b" has three entries and an empty field has one.
 def entries(fields: List<&2, List<&2, U32>>) -> List<&2, String>:
   match fields:
     case Nil{}: []

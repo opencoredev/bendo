@@ -4,6 +4,7 @@ import ../src/net/ip.bend as Ip
 import ../src/net/conn_info.bend as Conn
 import ./ip-spec.bend as Spec
 import ./ip-laws.bend as Laws
+import ./conn-entries.bend as Entries
 
 def absurd(-A: Type, e: Empty) -> A:
   match e:
@@ -252,6 +253,7 @@ def Laws.ip_unknown_not_allowed(deny, c, allow): unknown_not_allowed(deny, c, al
 def Laws.client_default_peer(peer, fields): client_default(peer, fields)
 def Laws.client_untrusted_peer(peer, fields, trusted, outside): client_untrusted(peer, fields, trusted, outside)
 def Laws.client_trusted_chain(peer, fields, trusted, inside): client_chain(peer, fields, trusted, inside)
+def Laws.conn_entries_spec(fields): Entries.entries_spec(fields)
 def Laws.chain_skips_trusted(x, rest, trusted, current, a, parsed, proxy): chain_skip(x, rest, trusted, current, a, parsed, proxy)
 def Laws.chain_first_untrusted(x, rest, trusted, current, a, parsed, client): chain_untrusted(x, rest, trusted, current, a, parsed, client)
 def Laws.chain_malformed_stops(x, rest, trusted, current, bad): chain_malformed(x, rest, trusted, current, bad)

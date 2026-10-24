@@ -4,6 +4,7 @@ import Base
 import ../src/net/ip.bend as Ip
 import ../src/net/conn_info.bend as Conn
 import ./ip-spec.bend as Spec
+import ./conn-spec.bend as ConnSpec
 
 # Membership means the first len bits agree: every bit index below the
 # prefix length reads the same (present) bit in the address and the network.
@@ -97,6 +98,13 @@ law client_untrusted_peer:
   for +trusted: List<&2, Ip.Cidr>
   for outside: {Ip.any(peer, trusted) == False{} : Bool}
   {Conn.client(Some{peer}, fields, trusted) == Some{peer} : Maybe<&2, Ip.Addr>}
+
+# The forwarded entries: every X-Forwarded-For field splits at each comma,
+# empty entries included, and each entry loses only its surrounding spaces and
+# tabs. Fields and entries keep their order.
+law conn_entries_spec:
+  for +fields: List<&2, List<&2, U32>>
+  {Conn.entries(fields) == ConnSpec.entries(fields) : List<&2, String>}
 
 # Behind a trusted peer, the forwarded entries are scanned right to left
 # (nearest hop first), starting from the peer as the fallback.

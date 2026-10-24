@@ -4,25 +4,28 @@ import { pathToFileURL } from "node:url";
 import { build, compile, start, type RunningServer } from "./harness.ts";
 
 const binary = build("tests/servers/mw-ip.bend");
-const modulePath = compile("tests/fixtures/ip/consumer.bend", "mjs");
-
-const loaded: unknown = await import(pathToFileURL(modulePath).href);
-if (typeof loaded !== "object" || loaded === null || !("default" in loaded)) {
-  throw new Error("Missing Bend module");
-}
-const exports: unknown = loaded.default;
-function exported(name: string): (...args: string[]) => string {
-  if (typeof exports !== "object" || exports === null || !(name in exports)) {
-    throw new Error(`Missing export ${name}`);
+/** Load a Bend module compiled to .mjs; return a lookup for its string functions. */
+async function load(path: string): Promise<(name: string) => (...args: string[]) => string> {
+  const loaded: unknown = await import(pathToFileURL(compile(path, "mjs")).href);
+  if (typeof loaded !== "object" || loaded === null || !("default" in loaded)) {
+    throw new Error("Missing Bend module");
   }
-  const fn: unknown = Reflect.get(exports, name);
-  if (typeof fn !== "function") throw new Error(`Not callable: ${name}`);
-  return (...args) => {
-    const result: unknown = fn(...args);
-    if (typeof result !== "string") throw new Error(`${name} did not return a string`);
-    return result;
+  const exports: unknown = loaded.default;
+  return (name) => {
+    if (typeof exports !== "object" || exports === null || !(name in exports)) {
+      throw new Error(`Missing export ${name}`);
+    }
+    const fn: unknown = Reflect.get(exports, name);
+    if (typeof fn !== "function") throw new Error(`Not callable: ${name}`);
+    return (...args) => {
+      const result: unknown = fn(...args);
+      if (typeof result !== "string") throw new Error(`${name} did not return a string`);
+      return result;
+    };
   };
 }
+const exported = await load("tests/fixtures/ip/consumer.bend");
+const rateCore = await load("tests/fixtures/rate/churn.bend");
 const parse = exported("parse");
 const bendBits = exported("bits");
 const cidr = exported("cidr");
@@ -308,6 +311,48 @@ describe("CIDR matching edge prefixes (pure core)", () => {
   });
 });
 
+describe("EvictOldest cost (pure core through .mjs)", () => {
+  const churn = rateCore("churn");
+  const seek = rateCore("seek");
+  /** Best of three wall times in milliseconds, so one slow run on a loaded host doesn't count. */
+  function best(run: () => void): number {
+    let fastest = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < 3; i++) {
+      const started = performance.now();
+      run();
+      fastest = Math.min(fastest, performance.now() - started);
+    }
+    return fastest;
+  }
+
+  test("the victim search stops at the first current pair, whatever its fuel", () => {
+    expect(seek("10")).toBe("found k");
+    expect(seek("10000000")).toBe("found k");
+    expect(seek("0")).toBe("seeking");
+    const repeat = (fuel: string) => () => {
+      for (let i = 0; i < 50; i++) seek(fuel);
+    };
+    const small = best(repeat("10"));
+    const large = best(repeat("10000000"));
+    // Spending all its fuel took ~70 ms per call at 10^7, over 1000 times the small case.
+    expect(large).toBeLessThan(small * 20 + 20);
+  });
+
+  // Steady churn: every request is a new key, so each one evicts. Compare the
+  // added cost of 32768 evictions at two table sizes 256 times apart. A search
+  // that scaled with max_keys grows that cost far past 8x; the tree map's
+  // depth alone measured 2-3x.
+  test("eviction cost under steady churn doesn't scale with max_keys", () => {
+    const rounds = "32768";
+    expect(churn("64", rounds)).toBe(`64 ${rounds}`);
+    expect(churn("16384", rounds)).toBe(`16384 ${rounds}`);
+    const added = (keys: string) => best(() => churn(keys, rounds)) - best(() => churn(keys, "0"));
+    const small = added("64");
+    const large = added("16384");
+    expect(large / small).toBeLessThan(8);
+  }, 90_000);
+});
+
 let server: RunningServer;
 beforeAll(async () => {
   server = await start(binary);
@@ -333,7 +378,7 @@ async function setClock(ms: number): Promise<void> {
 }
 
 /** Send one raw request and return the reply text with the client's local port. */
-function raw(path: string): Promise<{ text: string; port: number }> {
+function raw(path: string, lines: readonly string[] = []): Promise<{ text: string; port: number }> {
   const url = new URL(server.url);
   return new Promise((resolve, reject) => {
     const socket = connect(Number(url.port), url.hostname);
@@ -342,7 +387,8 @@ function raw(path: string): Promise<{ text: string; port: number }> {
     socket.setTimeout(10_000, () => socket.destroy(new Error("raw request timed out")));
     socket.on("connect", () => {
       port = socket.localPort ?? -1;
-      socket.write(`GET ${path} HTTP/1.1\r\nhost: x\r\nconnection: close\r\n\r\n`);
+      const extra = lines.map((line) => `${line}\r\n`).join("");
+      socket.write(`GET ${path} HTTP/1.1\r\nhost: x\r\n${extra}connection: close\r\n\r\n`);
     });
     socket.on("data", (chunk: Buffer) => {
       text += chunk.toString("latin1");
@@ -364,6 +410,37 @@ describe("connection info (compiled server)", () => {
     expect(await response.text()).toBe("127.0.0.1");
     const behind = await get("/proxied/client", { "x-forwarded-for": "1.1.1.1, 198.51.100.9" });
     expect(await behind.text()).toBe("198.51.100.9");
+  });
+
+  // Only 127.0.0.1 is trusted on /proxied/client. An entry that is empty after
+  // trimming is malformed and stops the scan at the trusted hop.
+  test("forwarded entries trim only spaces and tabs and keep empty entries", async () => {
+    const client = async (value: string): Promise<string> =>
+      (await get("/proxied/client", { "x-forwarded-for": value })).text();
+    expect(await client("1.1.1.1,\t198.51.100.9\t,127.0.0.1")).toBe("198.51.100.9");
+    expect(await client("198.51.100.9 \t ,  127.0.0.1")).toBe("198.51.100.9");
+    expect(await client("198.51.100.9,,127.0.0.1")).toBe("127.0.0.1");
+    expect(await client("198.51.100.9, \t ,127.0.0.1")).toBe("127.0.0.1");
+    expect(await client("198.51.100.9,")).toBe("127.0.0.1");
+    expect(await client("198.51.100.9,127.0.0.1")).toBe("198.51.100.9");
+  });
+
+  test("repeated X-Forwarded-For fields form one list in field order", async () => {
+    const body = async (lines: readonly string[]): Promise<string> => {
+      const { text } = await raw("/proxied/client", lines);
+      expect([lines, text.split("\r\n")[0]]).toEqual([lines, "HTTP/1.1 200 OK"]);
+      return text.split("\r\n\r\n")[1] ?? "";
+    };
+    const [ordered, nearest, emptyField, emptyLast] = await Promise.all([
+      body(["x-forwarded-for: 198.51.100.9", "x-forwarded-for: 127.0.0.1"]),
+      body(["x-forwarded-for: 198.51.100.9", "x-forwarded-for: 192.0.2.7,\t127.0.0.1 "]),
+      body(["x-forwarded-for: 198.51.100.9", "x-forwarded-for:", "x-forwarded-for: 127.0.0.1"]),
+      body(["x-forwarded-for: 198.51.100.9", "x-forwarded-for: \t"]),
+    ]);
+    expect(ordered).toBe("198.51.100.9");
+    expect(nearest).toBe("192.0.2.7");
+    expect(emptyField).toBe("127.0.0.1");
+    expect(emptyLast).toBe("127.0.0.1");
   });
 });
 
