@@ -1,3 +1,4 @@
+import ./proof/ws-session.bend as WsSessionProof
 # Proofs of LAWS.bend. Run: bend PROOF.bend --verdict
 import Base
 import ./proof/manifest-schema-documents.bend as ManifestSchemaDocuments
