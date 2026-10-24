@@ -87,12 +87,13 @@ functions in the table or introducing another callback contract. The
 plugin is used.
 
 `GuardOptions<Tag>` contains `hooks: List<&2, HookSpec<Tag>>` and
-`schemas: SchemaSlot`. The only current schema constructor is `NoSchemas{}`;
-`B.guard_options` fills it automatically. It accepts no untyped placeholder and
-performs no validation. BND-33/34 will define schema descriptions; BND-36 can
-extend this slot and attach inherited schema metadata beside each route's
-placements. Response validation remains a later feature. Nothing serializes
-this reserved slot as a schema in the current manifest.
+`schemas: SchemaSlot`. `B.guard_options` fills it with `NoSchemas{}`;
+`B.guard_schemas` fills it with `WithSchemas{schemas}` (BND-36). A guard's
+schemas become one `Checks{scope, schemas}` placement after its hook placements
+on every member route, so they travel with routes exactly like inherited hooks,
+and hook selection skips them. Per slot, the innermost declaration wins; see
+[route validation](../validation.md). Nothing serializes the schemas in the
+manifest yet (BND-37).
 
 ## Laws and verification
 

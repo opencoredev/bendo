@@ -9,6 +9,8 @@ import ../data/utf8.bend as Utf8
 import ../data/json.bend as Json
 import ./observability.bend as Obs
 import ./errors.bend as Errors
+import ./validate.bend as V
+import ../data/schema.bend as Schema
 import ../net/conn_info.bend as Conn
 
 import ../data/cookie.bend as Cookie
@@ -312,3 +314,60 @@ def set_signed_cookie(-Vars: Data, c: Ctx<Vars>, name: String, value: String, ke
 
 def signed_cookie(-Vars: Data, c: Ctx<Vars>, name: String, keys: SignedCookie.Keys) -> Maybe<&2, String>:
   SignedCookie.read(keys, cookie(Vars, c, name))
+
+# Values the route's schemas decoded (BND-36), read without parsing again.
+# Each is None when the route declares no schema for that slot.
+def values_of(found: Maybe<&2, V.Values>) -> V.Values:
+  match found:
+    case None{}: V.no_values()
+    case Some{v}: v
+
+def values(-Vars: Data, c: Ctx<Vars>) -> V.Values:
+  values_of(Obs.valid(observation(Vars, c)))
+
+def with_values(-Vars: Data, c: Ctx<Vars>, v: V.Values) -> Ctx<Vars>:
+  Ctx{r, p, b, q, s, hs, vars, o} = c
+  Ctx{r, p, b, q, s, hs, vars, Obs.with_valid(o, v)}
+
+def valid_params(-Vars: Data, c: Ctx<Vars>) -> Maybe<&2, Schema.Value>:
+  V.params_value(values(Vars, c))
+
+def valid_query(-Vars: Data, c: Ctx<Vars>) -> Maybe<&2, Schema.Value>:
+  V.query_value(values(Vars, c))
+
+def valid_headers(-Vars: Data, c: Ctx<Vars>) -> Maybe<&2, Schema.Value>:
+  V.headers_value(values(Vars, c))
+
+def valid_body(-Vars: Data, c: Ctx<Vars>) -> Maybe<&2, Schema.Value>:
+  V.body_value(values(Vars, c))
+
+def json_rejected(-Vars: Data, c: Ctx<Vars>, +code: U32, text: Result<&2, &2, Json.Error, String>) -> Response.Res:
+  match text:
+    case Done{s}: respond(Vars, status(Vars, c, code), Response.utf8(s), "application/json; charset=utf-8")
+    case Fail{e}: error(Vars, c, Errors.http_error(code, ""))
+
+# What validation reads: route params, query pairs, headers and the raw body.
+def validation_input(-Vars: Data, c: Ctx<Vars>) -> V.Input:
+  Ctx{Request.Req{m, p, q, ver, hs}, ps, b, pairs, s, out, v, o} = c
+  V.Input{ps, pairs, hs, b}
+
+# The request validation failed: a JSON list of every failing path.
+def rejected(-Vars: Data, c: Ctx<Vars>, +code: U32, errors: List<&2, Schema.Error>) -> Response.Res:
+  json_rejected(Vars, c, code, Json.stringify(V.rejection(code, Response.reason(code), errors)))
+
+# How a request enters its handler (BND-36). A valid verdict dispatches with
+# exactly the verdict's values in the context; an invalid one answers the
+# rejection, and nothing is dispatched.
+type Entry<-Vars: Data> is Data:
+  EnterHandler{ctx: Ctx<Vars>}
+  RejectRequest{res: Response.Res}
+
+def entry(-Vars: Data, +c: Ctx<Vars>, verdict: V.Verdict) -> Entry<Vars>:
+  match verdict:
+    case V.Valid{values}: EnterHandler{with_values(Vars, c, values)}
+    case V.Invalid{code, errors}: RejectRequest{rejected(Vars, c, code, errors)}
+
+def enters(-Vars: Data, e: Entry<Vars>) -> Bool:
+  match e:
+    case EnterHandler{c}: True{}
+    case RejectRequest{res}: False{}

@@ -116,13 +116,14 @@ and exits 1 when:
   from 0);
 - a schema is nested too deep for the JSON writer's 512-level limit.
 
-Starting the server does not check the list. Schemas are not validated at
-request time yet; that is BND-36.
+Starting the server does not check the list, and the list is not validated
+at request time. [Route validation](validation.md) (BND-36) reads schemas that
+the route table itself declares and serves through `src/validated.bend`, whose
+`--bendo-routes` derives this list from the table.
 
-### Slot interface for BND-36
+### Slot interface
 
-`src/app/route-schemas.bend` owns the slot type, so route validation and the
-manifest read the same data:
+`src/app/route-schemas.bend` owns the slot type of the manifest list:
 
 ```python
 type RouteSchemas is Data:
@@ -130,15 +131,22 @@ type RouteSchemas is Data:
 ```
 
 The list is indexed by forward registration ordinal. `RouteSlot.identity`
-returns the reversed ordinal `count - 1 - index`, so BND-36 converts once at
-the runtime boundary before indexing. `ManifestSchemas.attach(Tag, table, schemas)`
+returns the reversed ordinal `count - 1 - index`, so a runtime consumer converts
+once at the boundary before indexing. `ManifestSchemas.attach(Tag, table, schemas)`
 in `src/app/manifest-schemas.bend`
 returns `Done{List<Attached>}` with `Attached{route, row, schemas}`, or the
-`AttachError` above. BND-36 may check the same result at startup. If BND-36
-moves schemas into the table or `GuardOptions.schemas` (today the closed slot
-`Table.NoSchemas{}`), it should keep `RouteSchemas` as the per-route value and
-feed `ManifestSchemas.attach` the same positional list, so the laws below keep
-covering the manifest.
+`AttachError` above.
+
+Route validation (BND-36) keeps its schemas in the table instead: on the route
+(`B.route_schemas`) and in `GuardOptions.schemas`, prepared as
+`Validate.Schemas`. `TableSchemas.effective(Tag, table)` in
+`src/app/table-schemas.bend` projects them into this list: one `RouteSchemas`
+per registration in forward order, each the route's effective schemas after
+guards, groups, mounts and plugins, converted back to raw schemas with
+`SP.schema`. The `V.serve*` entrypoints of `src/validated.bend` print it through
+`ManifestSchemas.json_schemas` for `--bendo-routes`, so the laws below cover
+validated apps too. Law `table_schemas_one_per_route` states the list has one
+entry per registration.
 
 ### Guarantees
 
