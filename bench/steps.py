@@ -8,8 +8,10 @@ benchmark servers for every tree, then measures them with the BND-68 profile
 recipe: server on CPUs 0-3, oha on CPUs 4-7, 64 keep-alive connections, two
 oha workers, 3 s discarded warmup, 10 s measured sample, three samples per
 server. Sample rounds alternate forward and reverse variant order. Every
-sample first checks status 200, the exact body and the middleware headers,
-and a sample with any oha error or non-200 status fails the run.
+sample first checks status 200, the exact body and the middleware headers.
+oha transport errors and non-200 responses are counted per sample, as in
+the BND-67 suite, rather than discarded. A rerun skips samples already in
+OUT/samples.json.
 """
 
 import json
@@ -116,8 +118,6 @@ def sample(name, scenario, index):
         codes = data.get("statusCodeDistribution", {})
         responses = sum(codes.values())
         errors = sum(data.get("errorDistribution", {}).values()) + sum(n for code, n in codes.items() if code != "200")
-        if errors:
-            raise RuntimeError(f"{tag}: {errors} errors {data.get('errorDistribution')} {codes}")
         seconds = (after - before) / os.sysconf("SC_CLK_TCK")
         row = {
             "variant": name, "scenario": scenario, "sample": index,
@@ -146,11 +146,14 @@ def main():
     for name, src in VARIANTS:
         build(name, src)
     names = [name for name, _ in VARIANTS]
-    rows = []
+    saved = OUT / "samples.json"
+    rows = json.loads(saved.read_text()) if saved.exists() else []
     for index in range(1, SAMPLES + 1):
         order = names if index % 2 else list(reversed(names))
         for name in order:
             for scenario in SCENARIOS:
+                if any(r["variant"] == name and r["scenario"] == scenario and r["sample"] == index for r in rows):
+                    continue
                 rows.append(sample(name, scenario, index))
                 (OUT / "samples.json").write_text(json.dumps(rows, indent=1))
     summary = {}
@@ -160,7 +163,7 @@ def main():
             summary.setdefault(name, {})[scenario] = {
                 metric: {"median": statistics.median(r[metric] for r in got), "min": min(r[metric] for r in got), "max": max(r[metric] for r in got)}
                 for metric in ("rps", "p50Ms", "p99Ms", "cpuUsPerResponse")
-            }
+            } | {"errors": sum(r["errors"] for r in got)}
     (OUT / "summary.json").write_text(json.dumps(summary, indent=1))
     print("STEPS-DONE", flush=True)
 
