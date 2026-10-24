@@ -65,8 +65,8 @@ back to back; a command sent to an idle connection waits at most `poll_max_ms`
 (below). When the connection ends, commands still queued are discarded, so a
 saved handle does not keep their payloads alive. Do not wait inside a
 handler for an enqueued frame to be delivered: delivery resumes when the handler
-returns. See [the concurrency decision](decisions/0015-websocket-mailbox.md)
-for BND-53's publication seam and the slow-recipient policy.
+returns. To send to every connection subscribed to a topic, see
+[publish and subscribe](websocket-pubsub.md).
 
 ## Limits and timers
 
