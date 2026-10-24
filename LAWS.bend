@@ -1722,6 +1722,43 @@ law stream_rfc_last_chunk:
   for +suffix: List<&2, U32>
   {StreamRfc.parse(48 <> 13 <> 10 <> 13 <> 10 <> suffix, limit) == StreamRfc.Decoded{[], suffix} : StreamRfc.DecodeResult}
 
+# BND-91: a stream that knows its length up front is framed with exactly that
+# Content-Length and no Transfer-Encoding, in place of any application field.
+law stream_sized_fields:
+  for +n: Nat
+  for +headers: List<&2, Request.Header>
+  {StreamFraming.body_fields(Some{n}, headers) == WriteResponse.length_header(n) <> WriteResponse.headers(headers) : List<&2, Request.Header>}
+
+# Over every chunk partition and declared length, the writes of a sized stream
+# (the model the drive follows chunk by chunk) are the concatenated chunks
+# when they total exactly n octets, and an abort otherwise: a producer can
+# neither overrun nor fall short of its Content-Length.
+law stream_sized_body:
+  for +chunks: List<&2, List<&2, U32>>
+  for +n: Nat
+  {StreamFraming.sent(chunks, StreamFraming.Left{n}) == StreamFraming.exactly(List.concat(&2, U32, chunks), n) : Maybe<&2, List<&2, U32>>}
+
+# exactly's test is the octet count, stated with Base's length.
+law stream_sized_exact:
+  for +bytes: List<&2, U32>
+  for +n: Nat
+  {StreamFraming.exact(bytes, n) == Nat.is_eq(List.length(&2, U32, bytes), n) : Bool}
+
+# HEAD of a known-length stream whose status allows a body carries the same
+# head fields as the GET, Content-Length included; only the body is dropped.
+law stream_head_matches_get:
+  for +status: U32
+  for +n: Nat
+  for +headers: List<&2, Request.Header>
+  for allowed: {WriteResponse.allows_body(status) == True{} : Bool}
+  {StreamFraming.bodyless_fields(Request.Head{}, status, Some{n}, headers) == StreamFraming.body_fields(Some{n}, headers) : List<&2, Request.Header>}
+
+# HTTP/1.0 has no chunked encoding, so it takes a stream exactly when the
+# stream knows its length.
+law stream_http10_needs_length:
+  for +length: Maybe<&2, Nat>
+  {StreamFraming.version_ok(Request.Http10{}, length) == StreamFraming.known(length) : Bool}
+
 # BND-41: RFC 9110 weak If-None-Match comparison for arbitrary fields and tags.
 # The independent specification validates every list member and separately
 # asks whether any entity-tag denotes the same opaque validator.

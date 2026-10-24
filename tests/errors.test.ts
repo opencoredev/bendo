@@ -182,27 +182,38 @@ function onConnection(url: string, agent: Agent): Promise<string> {
   });
 }
 
-test("IO.die exits the whole process, dropping a gated request on another keep-alive connection", async () => {
-  const port = 20000 + Math.floor(Math.random() * 20000);
+type Crashable = { url: string; proc: Bun.Subprocess<"ignore", "ignore", "pipe"> };
+
+// Starts the server on a random port below Linux's ephemeral range
+// (32768-60999), retrying on a new port when the server exits before it is
+// ready, which is what a port another process already holds looks like.
+async function startCrashable(attempts: number): Promise<Crashable> {
+  const port = 20000 + Math.floor(Math.random() * 10000);
   const url = `http://127.0.0.1:${port}`;
   const proc = Bun.spawn([binary], {
     env: { ...process.env, PORT: String(port) },
     stdout: "ignore",
     stderr: "pipe",
   });
+  const deadline = Date.now() + 20000;
+  while (Date.now() < deadline && proc.exitCode === null) {
+    const ready = await fetch(url, { signal: AbortSignal.timeout(1000) }).then(
+      (r) => r.ok,
+      () => false,
+    );
+    if (ready) return { url, proc };
+    await Bun.sleep(50);
+  }
+  if (proc.exitCode === null) proc.kill();
+  const stderr = await new Response(proc.stderr).text();
+  if (attempts > 1) return startCrashable(attempts - 1);
+  throw new Error(`server never became ready on port ${port}: ${stderr}`);
+}
+
+test("IO.die exits the whole process, dropping a gated request on another keep-alive connection", async () => {
+  const { url, proc } = await startCrashable(3);
   const agent = new Agent({ keepAlive: true, maxSockets: 1 });
   try {
-    const deadline = Date.now() + 20000;
-    let ready = false;
-    while (Date.now() < deadline && proc.exitCode === null) {
-      ready = await fetch(url, { signal: AbortSignal.timeout(1000) }).then(
-        (r) => r.ok,
-        () => false,
-      );
-      if (ready) break;
-      await Bun.sleep(50);
-    }
-    expect(ready).toBe(true);
     expect(await onConnection(url + "/", agent)).toBe("ok");
     const pending = onConnection(url + "/pending", agent);
     // This rendezvous proves /pending reached its gate before /crash is sent.

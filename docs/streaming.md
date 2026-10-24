@@ -43,7 +43,16 @@ def handler(c: B.Context(Unit)) -> IO(B.Res):
 ```
 
 The response contains three `hi` lines. Return this response from a route
-handler served by `B.serve` or `B.serve_with`. Network-free `B.handle` and the
+handler served by `B.serve` or `B.serve_with`.
+
+When the producer knows the body's exact length up front, register it with
+`B.stream_sized(~Vars, ~State, ~step, ~cleanup, context, initial, config, length)`
+instead. The response then carries `content-length: <length>` and the chunks as
+raw octets, with no chunked framing, and HTTP/1.0 clients can receive it.
+Before sending each chunk Bendo checks it against the octets still owed: a chunk
+that would pass the declared length aborts the connection unsent, and an `End`
+that comes early aborts it too, so the client sees a short body rather than a
+wrong one. [Static files](static.md) stream this way. Network-free `B.handle` and the
 older buffered pending adapters cancel streams and return an empty 500.
 They cannot represent an affine transport body. Their observers see that 500.
 
@@ -80,13 +89,19 @@ connection may stay open while each write completes within its budget.
 
 ## HTTP and lifecycle behavior
 
-Streams use HTTP/1.1 chunked encoding. Bendo removes application Content-Length
-and Transfer-Encoding fields before setting `transfer-encoding: chunked`.
+Streams without a known length use HTTP/1.1 chunked encoding. Bendo removes
+application Content-Length and Transfer-Encoding fields before setting
+`transfer-encoding: chunked`, or `content-length` for a sized stream.
 HEAD, informational responses, 204, 205, 304 and successful CONNECT responses
-never send a body. HEAD has no fabricated representation length; 205 has
-`content-length: 0` except for successful CONNECT. Successful CONNECT always
-omits both framing fields, as do other bodyless streaming responses.
-HTTP/1.0 streaming is rejected with an empty 505 before sending the head.
+never send a body. HEAD of a sized stream carries the same head fields as GET,
+`content-length` included; HEAD of an unsized one has no fabricated
+representation length. 205 has `content-length: 0` except for successful
+CONNECT. Successful CONNECT always omits both framing fields, as do other
+bodyless streaming responses. HTTP/1.0 has no chunked encoding, so an unsized
+stream is rejected there with an empty 505 before sending the head. A sized
+stream is sent with its length, and the connection closes afterwards, as every
+HTTP/1.0 connection does. Bendo does not fall back to a close-delimited body
+for unsized streams: an aborted stream would look complete to the client.
 
 Response hooks run before transport. Bendo finalizes request ID and server timing,
 selects the stream, and applies Date before sending the head. A private response
@@ -122,6 +137,21 @@ or infinite streams, but those are outside this finite round-trip law. Bodyless
 responses and aborted streams are also outside it and have socket tests instead.
 The existing `stream_roundtrip`, `stream_chunk_tail` and `stream_empty_chunk`
 laws remain unchanged.
+
+Sized streams (BND-91) have their own laws, proven in
+[`proof/stream-sized.bend`](../proof/stream-sized.bend):
+
+- `stream_sized_fields`: a known length `n` gives `content-length: n` in place
+  of any application Content-Length or Transfer-Encoding.
+- `stream_sized_body`: for every chunk partition and every `n`, the writes the
+  transport makes (`StreamFraming.sent`, which uses the same budget functions as
+  the drive) are the concatenated chunks when they total exactly `n` octets, and
+  an abort otherwise. `stream_sized_exact` states that test as
+  `List.length(bytes) == n`.
+- `stream_head_matches_get`: HEAD of a sized stream whose status allows a body
+  has exactly GET's head fields.
+- `stream_http10_needs_length`: HTTP/1.0 takes a stream exactly when its length
+  is known.
 
 Run the memory test only on an isolated Boat VM with the pinned toolchain:
 
