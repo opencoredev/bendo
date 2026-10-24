@@ -24,6 +24,8 @@ import ./proof/tail-laws.bend as TailLaws
 import ./proof/routing-stack-laws.bend as RoutingStackLaws
 import ./proof/legacy-http-tail.bend as LegacyHttpTail
 import ./proof/methods-tail.bend as MethodsTail
+# BND-47
+import ./proof/proxy-laws.bend as ProxyLaws
 
 # BND-44
 import ./proof/ip-laws.bend as IpLaws
@@ -119,6 +121,9 @@ import ./proof/date-spec.bend as HttpDateSpec
 # BND-45
 import ./src/static/path.bend as StaticPath
 import ./proof/static-spec.bend as StaticSpec
+
+# BND-51
+import ./proof/ws-frame-laws.bend as WsFrameLaws
 
 # LAW: a text response is a head with no blank line in it, then a blank
 # line, then the body. So the first blank line in the response is the one

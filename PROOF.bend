@@ -9,6 +9,9 @@ import ./proof/json-schema.bend as JsonSchemaProof
 import ./proof/compose.bend as ComposeProof
 import ./proof/plugin.bend as PluginProof
 
+# BND-47
+import ./proof/proxy.bend as ProxyProof
+
 # BND-44
 import ./proof/ip.bend as IpProof
 import ./proof/rate-limit.bend as RateLimitProof
@@ -117,6 +120,9 @@ import ./proof/parse-tail.bend as ParseTail
 import ./proof/bytes-tail.bend as BytesTail
 
 import ./proof/static-path.bend as StaticProof
+import ./proof/ws-frame.bend as WsFrameProof
+import ./proof/ws-frame-roundtrip.bend as WsFrameRoundtrip
+import ./proof/ws-frame-decode.bend as WsFrameDecode
 
 # Check the pure crypto implementations with the strict kernel as well.
 import ./src/crypto/sha1.bend as SHA1
