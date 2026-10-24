@@ -56,10 +56,11 @@ in any case; Bendo lowercases them. `host` is one of:
 - an IPv6 address in brackets, in RFC 5952 form: lowercase (Bendo lowercases
   it for you), compressed, with no zone ID and no dotted IPv4 tail, such as
   `[::1]` or `[2001:db8::1]`. `[0::1]` and `[::ffff:1.2.3.4]` are refused.
-  Addresses that carry an IPv4 address are refused too, because a dual-stack
-  socket would reach the IPv4 host: IPv4-mapped addresses (`::ffff:0:0/96`,
-  such as `[::ffff:c000:201]`) and IPv4-compatible ones (`::/96` other than
-  `[::]` and `[::1]`, such as `[::c000:201]`). Other prefixes are ordinary
+  Addresses that carry an IPv4 address are refused too. An IPv4-mapped
+  address (`::ffff:0:0/96`, such as `[::ffff:c000:201]`) would reach the IPv4
+  host through a dual-stack socket, so write the IPv4 address instead.
+  IPv4-compatible addresses (`::/96` other than `[::]` and `[::1]`, such as
+  `[::c000:201]`) are deprecated (RFC 4291) and refused as a matter of policy. Other prefixes are ordinary
   IPv6, including NAT64 (`64:ff9b::/96`) and `::ffff:0:0:0/96`.
 
 The port has one to five digits with a value from 1 to 65535 and defaults to

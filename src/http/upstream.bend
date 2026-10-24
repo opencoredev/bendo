@@ -118,10 +118,10 @@ def v4_pieces(ps: List<&2, String>) -> Bool:
     case SNil{} <> (SNil{} <> rest): v4_groups(rest)
     case _: False{}
 
-# IPv4-mapped (::ffff:0:0/96) and IPv4-compatible (::/96 except :: and ::1)
-# addresses, which a dual-stack socket would reach over IPv4. In RFC 5952 text
-# they are "::" followed by "ffff" and two groups, or by one or two groups
-# other than "1". Only text Origin.ipv6 accepts is asked.
+# IPv4-mapped (::ffff:0:0/96) addresses, which a dual-stack socket would reach
+# over IPv4, and deprecated IPv4-compatible ones (::/96 except :: and ::1). In
+# RFC 5952 text they are "::" followed by "ffff" and two groups, or by one or
+# two groups other than "1". Only text Origin.ipv6 accepts is asked.
 def embeds_v4(+t: String) -> Bool:
   v4_pieces(String.split(t, ':'))
 

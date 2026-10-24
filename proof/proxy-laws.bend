@@ -58,8 +58,8 @@ law proxy_upstream_rejects_ipv4_shorthand:
 law proxy_upstream_rejects_noncanonical_ipv6:
   {Upstream.read_authority("[0::1]") == None{} : Maybe<&2, Upstream.Endpoint>}
 
-# An IPv6 address that carries an IPv4 one, mapped or compatible, is refused:
-# a dual-stack socket would dial the IPv4 address.
+# An IPv6 address that carries an IPv4 one is refused: a mapped address would
+# reach IPv4 through a dual-stack socket, and compatible ones are deprecated.
 law proxy_upstream_rejects_ipv4_mapped:
   {Upstream.read_authority("[::ffff:c000:201]") == None{} : Maybe<&2, Upstream.Endpoint>}
 
