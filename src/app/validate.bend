@@ -9,6 +9,7 @@ import ../data/json.bend as J
 import ../data/utf8.bend as Utf8
 import ../data/urlencoded.bend as Query
 import ../http/bytes.bend as Bytes
+import ../http/media.bend as Media
 import ../http/request.bend as Request
 import ../http/stream_marker.bend as Marker
 import ../router/pattern.bend as Pattern
@@ -118,21 +119,13 @@ def headers_json(hs: List<&2, Request.Header>) -> J.Json:
 
 # A JSON media type: application/json or application/*+json, any case and
 # parameters. An absent Content-Type is not JSON.
-def first(parts: List<&2, String>) -> String:
-  match parts:
-    case Nil{}: ""
-    case h <> t: h
-
-def essence(s: String) -> String:
-  Bytes.fold(Bytes.ascii(Bytes.trim(Bytes.encode(first(String.split(s, ';'))))))
-
 def json_essence(+e: String) -> Bool:
   String.eq(e, "application/json") || (String.starts_with(e, "application/") && String.ends_with(e, "+json"))
 
 def json_media(values: List<&2, List<&2, U32>>) -> Bool:
   match values:
     case Nil{}: False{}
-    case v <> t: json_essence(essence(Bytes.ascii(v)))
+    case v <> t: json_essence(Media.essence(Bytes.ascii(v)))
 
 def json_body(hs: List<&2, Request.Header>) -> Bool:
   json_media(Request.lookup(hs, "content-type"))

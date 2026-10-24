@@ -42,11 +42,13 @@ def form_media(+m: String) -> Bool:
   String.eq(m, "application/x-www-form-urlencoded") || String.eq(m, "multipart/form-data") || String.eq(m, "text/plain")
 
 # Content types an HTML form can send without a CORS preflight. A request
-# without Content-Type counts too, since a browser may omit it.
+# without Content-Type counts too, since a browser may omit it, and so does a
+# malformed media type: the check fails closed rather than exempt a value it
+# cannot read.
 def form(content_type: Maybe<&2, String>) -> Bool:
   match content_type:
     case None{}: True{}
-    case Some{value}: form_media(Media.essence(value))
+    case Some{+value}: form_media(Media.essence(value)) || Bool.not(Media.well_formed(value))
 
 type Site is Data:
   SameOrigin{}

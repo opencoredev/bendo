@@ -553,3 +553,13 @@ test("cache middleware skips the informational upgrade response", async () => {
   expect(response.status).toBe(101);
   expect(response.headers.has("cache-control")).toBe(false);
 });
+
+test("websocket_origins_checked reports each dropped allow-list entry once at startup", async () => {
+  const lines = server
+    .accessLog()
+    .split("\n")
+    .filter((line) => line.startsWith("bendo: websocket:"));
+  expect(lines).toEqual([
+    'bendo: websocket: ignoring allowed origin "not an origin": not an http or https URL',
+  ]);
+});
