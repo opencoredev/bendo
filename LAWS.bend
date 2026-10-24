@@ -21,6 +21,12 @@ import ./proof/compose-laws.bend as ComposeLaws
 import ./proof/validate-laws.bend as ValidateLaws
 import ./proof/plugin-laws.bend as PluginLaws
 
+# BND-85
+import ./proof/trim-laws.bend as TrimLaws
+import ./proof/media-laws.bend as MediaLaws
+import ./proof/origin-laws.bend as OriginLaws
+import ./proof/csrf-v1-laws.bend as CsrfV1Laws
+
 # BND-68
 import ./proof/hot-path-laws.bend as HotPathLaws
 
@@ -1621,7 +1627,7 @@ law jwt_verify_rejects_repeated_claim:
 
 # The CSRF decision equals CsrfSpec.allows for every policy (configured
 # origins and optional scheme), method and header combination. The spec
-# inspects only non-GET/HEAD requests with a form-like or absent
+# inspects only non-GET/HEAD requests with a form-like, malformed or absent
 # Content-Type; trusts Sec-Fetch-Site: same-origin, a listed source, or the
 # scheme://Host origin unless Sec-Fetch-Site is cross-site; takes Origin over
 # Referer; and never trusts a missing or unparsable source such as "null".
@@ -1714,6 +1720,43 @@ law stream_rfc_last_chunk:
   for +limit: U32
   for +suffix: List<&2, U32>
   {StreamRfc.parse(48 <> 13 <> 10 <> 13 <> 10 <> suffix, limit) == StreamRfc.Decoded{[], suffix} : StreamRfc.DecodeResult}
+
+# BND-91: a stream that knows its length up front is framed with exactly that
+# Content-Length and no Transfer-Encoding, in place of any application field.
+law stream_sized_fields:
+  for +n: Nat
+  for +headers: List<&2, Request.Header>
+  {StreamFraming.body_fields(Some{n}, headers) == WriteResponse.length_header(n) <> WriteResponse.headers(headers) : List<&2, Request.Header>}
+
+# Over every chunk partition and declared length, the writes of a sized stream
+# (the model the drive follows chunk by chunk) are the concatenated chunks
+# when they total exactly n octets, and an abort otherwise: a producer can
+# neither overrun nor fall short of its Content-Length.
+law stream_sized_body:
+  for +chunks: List<&2, List<&2, U32>>
+  for +n: Nat
+  {StreamFraming.sent(chunks, StreamFraming.Left{n}) == StreamFraming.exactly(List.concat(&2, U32, chunks), n) : Maybe<&2, List<&2, U32>>}
+
+# exactly's test is the octet count, stated with Base's length.
+law stream_sized_exact:
+  for +bytes: List<&2, U32>
+  for +n: Nat
+  {StreamFraming.exact(bytes, n) == Nat.is_eq(List.length(&2, U32, bytes), n) : Bool}
+
+# HEAD of a known-length stream whose status allows a body carries the same
+# head fields as the GET, Content-Length included; only the body is dropped.
+law stream_head_matches_get:
+  for +status: U32
+  for +n: Nat
+  for +headers: List<&2, Request.Header>
+  for allowed: {WriteResponse.allows_body(status) == True{} : Bool}
+  {StreamFraming.bodyless_fields(Request.Head{}, status, Some{n}, headers) == StreamFraming.body_fields(Some{n}, headers) : List<&2, Request.Header>}
+
+# HTTP/1.0 has no chunked encoding, so it takes a stream exactly when the
+# stream knows its length.
+law stream_http10_needs_length:
+  for +length: Maybe<&2, Nat>
+  {StreamFraming.version_ok(Request.Http10{}, length) == StreamFraming.known(length) : Bool}
 
 # BND-41: RFC 9110 weak If-None-Match comparison for arbitrary fields and tags.
 # The independent specification validates every list member and separately

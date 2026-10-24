@@ -196,19 +196,35 @@ def token(s: String) -> Bool:
 def ows(+c: U32) -> Bool:
   U32.is_eq(c, 32) || U32.is_eq(c, 9)
 
+# c is the octet read before xs, and space whether it is SP or HTAB. The
+# octet tests are Bool values rather than literal patterns, so proofs can
+# split on them (BND-85).
+def trim_lead(xs: List<&2, U32>, +c: U32, space: Bool) -> List<&2, U32>:
+  match xs space:
+    case Nil{} False{}:
+      [c]
+    case Nil{} True{}:
+      []
+    case +d <> t False{}:
+      c <> (d <> t)
+    case +d <> t True{}:
+      trim_lead(t, d, ows(d))
+
 def trim_start(xs: List<&2, U32>) -> List<&2, U32>:
   match xs:
     case Nil{}:
       []
-    case 9 <> xs:
-      trim_start(xs)
-    case 32 <> xs:
-      trim_start(xs)
-    case c <> xs:
-      c <> xs
+    case +c <> t:
+      trim_lead(t, c, ows(c))
 
+# Without leading and trailing SP and HTAB. proof/trim-spec.bend states this
+# for every input.
 def trim(xs: List<&2, U32>) -> List<&2, U32>:
   List.reverse(&2, U32, trim_start(List.reverse(&2, U32, trim_start(xs))))
+
+# The same trim over text, one character per code.
+def trim_text(s: String) -> String:
+  ascii(trim(encode(s)))
 
 def value_octet(+c: U32) -> Bool:
   U32.is_eq(c, 9) || ((c >= 32 : U32) && (c <= 255 : U32) && U32.is_ne(c, 127))

@@ -1,17 +1,17 @@
 # BND-40: the CORS decision, stated without the middleware's helpers.
-# Origin serialization (src/http/origin.bend) is a shared parsing primitive,
-# not policy.
+# Origins come from the independent specification (proof/origin-spec.bend;
+# BND-85), not from the parser the middleware runs.
 import Base
 import ../src/mw/cors_policy.bend as P
 import ../src/http/request.bend as Request
-import ../src/http/origin.bend as Origin
+import ./origin-spec.bend as OriginSpec
 
 # The origin a request names: exactly one Origin field that serializes as an
 # http or https origin. "null", a path, a repeated or absent Origin give None.
 def request_origin(sent: P.Sent) -> Maybe<&2, String>:
   match sent:
     case P.Absent{}: None{}
-    case P.Sent{v}: Origin.canonical(v)
+    case P.Sent{v}: OriginSpec.canonical(v)
     case P.Repeated{}: None{}
 
 def first_flag(c: Bool, rest: Maybe<&2, Bool>, here: Bool) -> Maybe<&2, Bool>:
@@ -53,7 +53,7 @@ def present(m: Maybe<&2, String>, credentials: Bool) -> List<&2, P.Entry>:
 def configured(xs: List<&2, P.Entry>) -> List<&2, P.Entry>:
   match xs:
     case Nil{}: []
-    case P.Entry{o, c} <> t: List.append(&2, P.Entry, present(Origin.of_url(o), c), configured(t))
+    case P.Entry{o, c} <> t: List.append(&2, P.Entry, present(OriginSpec.of_url(o), c), configured(t))
 
 def is_options(m: Request.Method) -> Bool:
   match m:

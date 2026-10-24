@@ -17,7 +17,7 @@ A config count above 256 stops startup with EINVAL (22).
 
 On four CPUs of a Boat sandbox, four workers served 3.3 times the requests of
 one: 63,000 hello requests per second against 19,000. [Decision
-0016](decisions/0016-workers.md) has the measurements.
+0017](decisions/0017-workers.md) has the measurements.
 
 ## Workers share nothing
 

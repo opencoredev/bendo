@@ -1,5 +1,5 @@
 # Trusted process boundary, outside the proofs: start the worker processes of
-# a multi-worker server (BND-69, decision 0016).
+# a multi-worker server (BND-69, decision 0017).
 #
 # Call it after the listener is bound. Returns this process's worker index. A
 # process started by this effect has BENDO_WORKER_INDEX set, reports to the

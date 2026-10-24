@@ -37,7 +37,7 @@ type Config is Data:
 # mode: Development; $BENDO_ENV=production selects Production at startup (BND-36).
 # workers: 1 process; 0 is one per CPU, and a valid $BENDO_WORKERS overrides it.
 #   Workers share no memory, so stores and rate limits are per worker (BND-69,
-#   decision 0016).
+#   decision 0017).
 def defaults() -> Config:
   Config{"127.0.0.1", 8787, 1048576, 65536, 5000, 10000, 30000, 100, True{}, Router.default_kind(), Development{}, 1}
 

@@ -4,7 +4,7 @@ import { get } from "node:http";
 import { connect } from "node:net";
 import { build, start, type RunningServer } from "./harness.ts";
 
-// Workers (BND-69, decision 0016): tests/servers/workers.bend serves with
+// Workers (BND-69, decision 0017): tests/servers/workers.bend serves with
 // B.workers(config, 3) and answers each request with the serving PID.
 const binary = build("tests/servers/workers.bend");
 

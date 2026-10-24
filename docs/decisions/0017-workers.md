@@ -1,4 +1,4 @@
-# 0016: Serve on several cores with SO_REUSEPORT worker processes
+# 0017: Serve on several cores with SO_REUSEPORT worker processes
 
 Date: 2026-10-24. Issue: BND-69 ("Use every CPU core for serving"; the ticket
 proposed this record as 0006, which was taken). Status: accepted for M9.

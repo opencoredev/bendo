@@ -146,12 +146,12 @@ def talk(~Env: Data, ~select: R.Req -> Env -> U32, ~app: R.Req -> List<&2, U32> 
         out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- TCP.send_bytes(s, dated)
         after
         talk(~Env, ~select, ~app, Sent{out, state, rest, close}, env, config, peer)
-    case Replied{s, state, rest, Streaming{bytes, close, StreamTypes.Plan{+timeout, action}, after}}:
+    case Replied{s, state, rest, Streaming{bytes, close, StreamTypes.Plan{+timeout, length, action}, after}}:
       do IO<Unit>:
         dated : List<&2, U32> <- DateWire.ensure(bytes)
         result : Socket & Bool <- Stream.send(s, dated, timeout)
-        talk(~Env, ~select, ~app, StreamHead{result, state, rest, close, StreamTypes.Plan{timeout, action}, after}, env, config, peer)
-    case StreamHead{(s, True{}), state, rest, close, StreamTypes.Plan{timeout, action}, after}:
+        talk(~Env, ~select, ~app, StreamHead{result, state, rest, close, StreamTypes.Plan{timeout, length, action}, after}, env, config, peer)
+    case StreamHead{(s, True{}), state, rest, close, StreamTypes.Plan{timeout, length, action}, after}:
       do IO<Unit>:
         result : StreamTypes.Outcome <- action(StreamTypes.Start{s})
         after
@@ -344,7 +344,7 @@ def admitted_table(answer: Validate.Answer, declared: Bool) -> IO(Unit):
 
 # One worker keeps TCP.listen. Several workers each bind their own
 # SO_REUSEPORT listener before Workers.start_workers, and the first process
-# accepts only once every worker is bound (decision 0016).
+# accepts only once every worker is bound (decision 0017).
 def listen(host: String, port: U32, single: Bool) -> IO(Result<&1, &1, U32 & String, Listener>):
   match single:
     case True{}: TCP.listen(host, port)

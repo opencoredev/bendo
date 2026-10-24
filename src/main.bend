@@ -158,7 +158,7 @@ def valid_headers_in(-Vars: Data, c: Context.Ctx<Vars>) -> Maybe<&2, SchemaLang.
 def valid_body_in(-Vars: Data, c: Context.Ctx<Vars>) -> Maybe<&2, SchemaLang.Value>: Context.valid_body(Vars, c)
 def field(value: Maybe<&2, SchemaLang.Value>, key: String) -> Maybe<&2, SchemaLang.Value>: Validate.field(value, key)
 def production(config: Config.Config) -> Config.Config: Config.with_mode(config, Config.Production{})
-# Worker processes; 0 is one per CPU. Workers share no memory (decision 0016).
+# Worker processes; 0 is one per CPU. Workers share no memory (decision 0017).
 def workers(config: Config.Config, count: U32) -> Config.Config: Config.with_workers(config, count)
 
 # BND-26 plugins: functions from a Builder to a Builder. See docs/guides/plugins.md.
@@ -261,6 +261,20 @@ def StreamStep(-State: Type) -> Type: StreamTypes.Step<State>
 def stream_config() -> StreamTypes.Config: Stream.defaults()
 def stream(~Vars: Data, ~State: Type, ~step: State -> IO(StreamTypes.Step<State>), ~cleanup: State -> IO(Unit), +c: Context.Ctx<Vars>, state: State, config: StreamTypes.Config) -> IO(Response.Res):
   Stream.register(Observation.stream(Context.observation(Vars, c)), Context.body(Vars, c, [], None{}), Stream.plan(~State, ~step, ~cleanup, state, config))
+# A stream whose body has exactly length octets: Content-Length instead of
+# chunked framing, also over HTTP/1.0. Sending more or fewer aborts.
+def stream_sized(~Vars: Data, ~State: Type, ~step: State -> IO(StreamTypes.Step<State>), ~cleanup: State -> IO(Unit), +c: Context.Ctx<Vars>, state: State, config: StreamTypes.Config, length: Nat) -> IO(Response.Res):
+  Stream.register(Observation.stream(Context.observation(Vars, c)), Context.body(Vars, c, [], None{}), Stream.plan_sized(~State, ~step, ~cleanup, state, config, length))
+
+# One stderr line per configured origin an allow list drops because it is not
+# an http or https URL.
+def report_rejected(+kind: String, xs: List<&2, String>) -> IO(Unit):
+  match xs:
+    case Nil{}: IO.pure(Unit, Unit{})
+    case x <> t:
+      do IO<Unit>:
+        IO.print_err("bendo: " ++ kind ++ ": ignoring allowed origin \"" ++ x ++ "\": not an http or https URL")
+        report_rejected(kind, t)
 
 # WebSocket opening handshake (RFC 6455). websocket_config accepts every
 # Origin and offers no subprotocol. After the 101, session receives the state,
@@ -270,6 +284,13 @@ def stream(~Vars: Data, ~State: Type, ~step: State -> IO(StreamTypes.Step<State>
 def WebSocketConfig() -> Data: Handshake.Config
 def websocket_config() -> Handshake.Config: Handshake.defaults()
 def websocket_origins(config: Handshake.Config, origins: List<&2, String>) -> Handshake.Config: Handshake.with_origins(config, origins)
+
+# websocket_origins, run once at startup, reporting each dropped entry on stderr.
+def websocket_origins_checked(config: Handshake.Config, +origins: List<&2, String>) -> IO(Handshake.Config):
+  do IO<Handshake.Config>:
+    report_rejected("websocket", Handshake.rejected(origins))
+    return Handshake.with_origins(config, origins)
+
 def websocket_protocols(config: Handshake.Config, protocols: List<&2, String>) -> Handshake.Config: Handshake.with_protocols(config, protocols)
 def websocket_timeout(config: Handshake.Config, milliseconds: U32) -> Handshake.Config: Handshake.with_timeout(config, milliseconds)
 def websocket(~Vars: Data, ~State: Type, ~session: State -> Socket -> List<&2, U32> -> IO(Unit), ~cleanup: State -> IO(Unit), +c: Context.Ctx<Vars>, state: State, config: Handshake.Config) -> IO(Response.Res):
@@ -331,6 +352,13 @@ def cors_headers(config: CorsPolicy.Config, headers: List<&2, String>) -> CorsPo
 def cors_expose(config: CorsPolicy.Config, headers: List<&2, String>) -> CorsPolicy.Config: CorsPolicy.with_expose(config, headers)
 def cors_max_age(config: CorsPolicy.Config, seconds: Nat) -> CorsPolicy.Config: CorsPolicy.with_max_age(config, seconds)
 def cors(config: CorsPolicy.Config) -> Builtin.Builtin: Builtin.Cors{config}
+
+# cors_allow, run once at startup: it also reports each dropped entry on
+# stderr, so a typo such as "app.example" does not silently match nothing.
+def cors_allow_checked(+origins: List<&2, CorsPolicy.Entry>) -> IO(CorsPolicy.Config):
+  do IO<CorsPolicy.Config>:
+    report_rejected("cors", CorsPolicy.rejected(origins))
+    return CorsPolicy.allow(origins)
 
 # Security headers with Hono's secureHeaders defaults.
 def SecureConfig() -> Data: Secure.Config
