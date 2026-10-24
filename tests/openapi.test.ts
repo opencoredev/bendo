@@ -14,6 +14,7 @@ import {
   generateOpenApi,
   parseOpenApiConfig,
   parsePattern,
+  type License,
 } from "../packages/bendo/src/openapi.ts";
 import { build, start, type RunningServer } from "./harness.ts";
 
@@ -291,6 +292,16 @@ describe("config and CLI", () => {
         },
       }),
     ).toThrow("info.license takes an identifier or a url, not both");
+    const named: License = { name: "MIT" };
+    const spdx: License = { name: "MIT", identifier: "MIT" };
+    const linked: License = { name: "MIT", url: "https://opensource.org/license/mit" };
+    // @ts-expect-error OpenAPI 3.1 forbids a license with both an identifier and a url.
+    const both: License = {
+      name: "MIT",
+      identifier: "MIT",
+      url: "https://opensource.org/license/mit",
+    };
+    expect([named, spdx, linked, both]).toHaveLength(4);
     expect(
       parseOpenApiConfig({ info: { license: { name: "MIT", identifier: "MIT" } } }).info?.license,
     ).toEqual({

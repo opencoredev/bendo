@@ -102,9 +102,9 @@ export type Contact = {
 };
 /** OpenAPI 3.1 allows an SPDX `identifier` or a `url` for a license, never both. */
 export type License =
-  | { name: string }
-  | { name: string; identifier: string }
-  | { name: string; url: string };
+  | { name: string; identifier?: never; url?: never }
+  | { name: string; identifier: string; url?: never }
+  | { name: string; url: string; identifier?: never };
 export type Info = {
   title: string;
   version: string;
