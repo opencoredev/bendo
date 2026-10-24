@@ -1,0 +1,9 @@
+# Static hosting for the docs site on Cloudflare Workers static assets.
+# Nothing deploys automatically. See SITE.md before running `wrangler deploy`.
+name = "bendo-docs"
+compatibility_date = "2026-10-01"
+
+[assets]
+directory = "./.vitepress/dist"
+html_handling = "auto-trailing-slash"
+not_found_handling = "404-page"
