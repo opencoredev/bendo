@@ -4,22 +4,23 @@ import { cgroupMemoryFiles, memoryAllowance, testWorkers } from "../scripts/test
 test("cold workers share a memory budget and never exceed four or the CPU count", () => {
   const workers = (memory: number, cores = 4, override?: string) =>
     testWorkers({ memory, cores, override });
-  expect(workers(6 * 1024 ** 3)).toBe(2);
+  expect(workers(6 * 1024 ** 3)).toBe(1);
   for (const { gib, count } of [
-    { gib: 4.125, count: 2 },
-    { gib: 6.125, count: 3 },
-    { gib: 8.125, count: 4 },
+    { gib: 12.125, count: 2 },
+    { gib: 18.125, count: 3 },
+    { gib: 24.125, count: 4 },
   ]) {
     const threshold = gib * 1024 ** 3;
     expect(workers(threshold - 1)).toBe(count - 1);
     expect(workers(threshold)).toBe(count);
   }
-  expect(workers(6.3 * 1024 ** 3)).toBe(3);
+  expect(workers(6.3 * 1024 ** 3)).toBe(1);
+  expect(workers(15 * 1024 ** 3)).toBe(2);
   expect(workers(64 * 1024 ** 3)).toBe(4);
   expect(workers(64 * 1024 ** 3, 2)).toBe(2);
   expect(workers(0)).toBe(1);
   expect(workers(64 * 1024 ** 3, 4, "2")).toBe(2);
-  expect(workers(6 * 1024 ** 3, 4, "99")).toBe(2);
+  expect(workers(6 * 1024 ** 3, 4, "99")).toBe(1);
   for (const override of ["0", "-1", "1.5", "many", "", "Infinity"]) {
     expect(() => workers(8 * 1024 ** 3, 4, override)).toThrow(
       "BENDO_TEST_WORKERS must be a positive integer",

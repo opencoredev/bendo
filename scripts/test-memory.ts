@@ -3,11 +3,12 @@ import { freemem } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 
 const GiB = 1024 ** 3;
-// Large compiles finish before workers start; the largest
-// .mjs test heaps run in separate serial processes. Remaining cold compiles
-// peaked at 1.68 GiB on Boat, leaving about 330 MiB of scheduling headroom for
-// Bun and its servers. This allowance schedules processes; it is not a heap limit.
-export const WORKER_MEMORY_BYTES = 2 * GiB;
+// Large compiles finish before workers start; the largest .mjs test heaps
+// run in separate serial processes. Request-core changes can also make lazy
+// compiles exceed 3 GiB each: two overlapping conformance/server compiles OOMed
+// an 8 GiB Boat default. Budget 6 GiB per remaining worker, including its Bun
+// process and native compiler. This schedules processes; it is not a heap limit.
+export const WORKER_MEMORY_BYTES = 6 * GiB;
 const RUNNER_RESERVE_BYTES = GiB / 8;
 
 function read(path: string): string | undefined {
