@@ -18,6 +18,10 @@ import ./src/data/schema-pattern.bend as SchemaPattern
 import ./proof/compose-laws.bend as ComposeLaws
 import ./proof/plugin-laws.bend as PluginLaws
 
+# BND-44
+import ./proof/ip-laws.bend as IpLaws
+import ./proof/rate-limit-laws.bend as RateLimitLaws
+
 # BND-32
 import ./proof/signed-cookie-laws.bend as SignedCookieLaws
 
@@ -50,6 +54,9 @@ import ./proof/response-framing-spec.bend as ResponseFramingSpec
 import ./src/http/chunked.bend as Chunked
 import ./src/http/stream_framing.bend as StreamFraming
 import ./proof/stream-rfc-spec.bend as StreamRfc
+import ./src/http/sse.bend as Sse
+import ./proof/sse-spec.bend as SseSpec
+import ./proof/sse-model.bend as SseModel
 import ./src/http.bend as Http
 import ./src/http/bytes.bend as Bytes
 import ./src/http/request.bend as Request
@@ -99,6 +106,10 @@ import ./proof/trailing-spec.bend as TrailingSpec
 
 import ./src/http/date.bend as HttpDate
 import ./proof/date-spec.bend as HttpDateSpec
+
+# BND-45
+import ./src/static/path.bend as StaticPath
+import ./proof/static-spec.bend as StaticSpec
 
 # LAW: a text response is a head with no blank line in it, then a blank
 # line, then the body. So the first blank line in the response is the one
@@ -1817,6 +1828,59 @@ law etag_middleware_spec:
   for +res: Response.Res
   {ETag.decide(method, field, res) == LimitsSpec.etag(method, field, res) : Response.Res}
 
+# BND-49: Server-Sent Events, checked against the independent WHATWG HTML
+# event-stream parser in proof/sse-spec.bend (Base only). Over every list of
+# admissible frames, with arbitrary text data: each message reports its retry
+# value as a number, then one event with its type, its data with every CR, LF
+# and CRLF read as one LF, and the last event id in force. Comments
+# (heartbeats) report nothing. Admissible: every field is exactly the UTF-8 of
+# Unicode scalar values (so a browser's UTF-8 decoding replaces nothing and
+# the parsed octets are the UTF-8 of its text), no CR or LF in an event name,
+# id or comment, and no NUL in an id.
+law sse_roundtrip:
+  for +frames: List<&2, Sse.Frame>
+  for valid: {SseModel.admissible(frames) == True{} : Bool}
+  {SseSpec.parse(Sse.wire(frames)) == SseModel.observe(frames, []) : List<&2, SseSpec.Observed>}
+
+# The runtime sends exactly the admissible frames, unchanged, and rejects
+# every other frame whole: no stripping, escaping or truncation.
+law sse_encode_rejects_unsafe:
+  for +frame: Sse.Frame
+  {Sse.encode(frame) == SseModel.guard(frame) : Maybe<&2, List<&2, U32>>}
+
+# No injection, for any frame: whatever octets the runtime sends parse as
+# exactly that frame's observations and nothing else.
+law sse_sent_frame_exact:
+  for +frame: Sse.Frame
+  for +bytes: List<&2, U32>
+  for sent: {Sse.encode(frame) == Some{bytes} : Maybe<&2, List<&2, U32>>}
+  {SseSpec.parse(bytes) == SseModel.observe([frame], []) : List<&2, SseSpec.Observed>}
+
+# A heartbeat comment at any line start, mid-event included, leaves the
+# parser's buffers and every later observation unchanged.
+law sse_heartbeat_ignored:
+  for +buffers: SseSpec.Buffers
+  for +text: List<&2, U32>
+  for +rest: List<&2, U32>
+  for clean: {SseModel.one_line(text) == True{} : Bool}
+  {SseSpec.run(Bytes.append(Sse.render(Sse.Comment{text}), rest), SseSpec.Begin{buffers}) == SseSpec.run(rest, SseSpec.Begin{buffers}) : SseSpec.State}
+
+# Admissibility excludes no text: every String of Unicode scalar values, as
+# B.sse_message encodes it, passes the UTF-8 check.
+law sse_text_utf8:
+  for +s: String
+  for +valid: {Utf8.valid(s) == True{} : Bool}
+  {SseModel.utf8_ok(Response.utf8(s)) == True{} : Bool}
+
+# Retry renders as ASCII digits whose base-ten value is the number sent.
+law sse_retry_decimal:
+  for +ms: U32
+  {SseSpec.digits(Sse.decimal(ms)) == True{} : Bool}
+
+law sse_retry_value:
+  for +ms: U32
+  {SseSpec.decimal_value(Sse.decimal(ms), 0n) == U32.to_nat(ms) : Nat}
+
 # BND-40: CORS. The grant (the Access-Control-Allow-Origin value and whether
 # credentials are allowed) equals CorsSpec.grant for every policy and Origin
 # field: a wildcard policy answers "*" without credentials; a listed policy
@@ -2054,3 +2118,70 @@ law trailing_append_target:
   for ends: {TrailingSpec.final_slash(path) == False{} : Bool}
   for ok: {TrailingSpec.same_origin_path(path ++ ("/" ++ Request.query_text(q))) == True{} : Bool}
   {TrailingPolicy.target(TrailingPolicy.Append{}, m, path, q) == Some{path ++ ("/" ++ Request.query_text(q))} : Maybe<&2, String>}
+
+# BND-45: static files (docs/static.md).
+#
+# `raw` is any request path after the mount prefix, undecoded, and `index`
+# any index file name. StaticSpec (proof/static-spec.bend) shares no code
+# with the resolver: it splits the relative path on '/' with Base's
+# String.split and requires every piece to be nonempty, not ".", not "..",
+# and free of control characters (NUL included), DEL, backslash and '%'.
+# With no '%' left after one decoding, no encoded separator or second
+# encoding survives. static_path_confined also requires the segment count
+# to equal the raw path's count after its leading '/'. A count alone does
+# not show that decoding added no separator ("/a%2Fb/c" and "a/b" have
+# matching counts); static_path_segments does, segment by segment.
+
+# LAW: no request path resolves outside the static root. Every resolution
+# is refused, or is a relative path made only of in-root segments.
+law static_path_confined:
+  for +raw: String
+  for +index: String
+  {StaticSpec.confined(raw, StaticPath.resolve(raw, index)) == True{} : Bool}
+
+# LAW: the path handed to the open effect is root ++ "/" ++ the resolved
+# relative path, and nothing is opened for a refused one. The effect opens
+# root, then walks each '/'-separated segment beneath it without following
+# symlinks (src/effects/static_file.c).
+law static_path_target:
+  for root: String
+  for +raw: String
+  for +index: String
+  {StaticPath.target(root, raw, index) == StaticSpec.opened(root, StaticPath.resolve(raw, index)) : Maybe<&2, String>}
+
+# LAW: each piece of a resolution is the decoding of exactly one raw
+# segment, in order. If `raw` resolves to `rel`, splitting `rel` on '/'
+# gives the raw path's segments after its leading '/', each decoded on its
+# own (StaticSpec.decoded), with an empty final segment replaced by `index`.
+# Since no piece contains '/', decoding added no separator.
+law static_path_segments:
+  for +raw: String
+  for +index: String
+  {StaticSpec.resolved_pieces(StaticPath.resolve(raw, index)) == StaticSpec.when_resolved(StaticPath.resolve(raw, index), StaticSpec.decoded(raw, index)) : Maybe<&2, List<&2, String>>}
+
+# LAW: no resolution has a piece starting with '.', so dotfiles and dot
+# directories such as .env and .git are never served.
+law static_path_no_dotfiles:
+  for +raw: String
+  for +index: String
+  {StaticSpec.no_dotfiles(StaticPath.resolve(raw, index)) == True{} : Bool}
+
+# LAW: the resolver is not empty. Servable segments (nonempty printable
+# ASCII without space, '%', '/' or '\', not starting with '.') written as
+# "/first/rest..." resolve to the same segments joined by '/'.
+law static_path_complete:
+  for +first: String
+  for +rest: List<&2, String>
+  for +index: String
+  for servable: {StaticSpec.servable(first <> rest) == True{} : Bool}
+  {StaticPath.resolve(StaticSpec.request(first <> rest), index) == Some{StaticSpec.joined(rest, first)} : Maybe<&2, String>}
+
+# LAW: a trailing slash names the index. Servable segments written as
+# "/xs.../" ("/" for none) resolve to those segments followed by `index`,
+# when `index` is itself a servable segment.
+law static_path_index:
+  for +xs: List<&2, String>
+  for +index: String
+  for servable: {StaticSpec.servable(xs) == True{} : Bool}
+  for named: {StaticSpec.servable_segment(index) == True{} : Bool}
+  {StaticPath.resolve(StaticSpec.directory(xs), index) == Some{StaticSpec.joined_index(xs, index)} : Maybe<&2, String>}
