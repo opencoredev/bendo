@@ -1,6 +1,8 @@
 # Connection IO shell. Pure parsing, deadlines and persistence policy live
 # in http/connection.bend. Each socket is owned by one spawned computation.
 import Base
+import ./effects/peer.bend as Peer
+import ./net/conn_info.bend as Conn
 import ./stream.bend as Stream
 import ./http/stream_types.bend as StreamTypes
 import ./http/request.bend as R
@@ -18,8 +20,6 @@ import ./http/response.bend as Response
 import ./http/write_response.bend as Write
 import ./http/bytes.bend as Bytes
 import ./http/date_wire.bend as DateWire
-import ./effects/peer.bend as Peer
-import ./net/conn_info.bend as Conn
 
 type Config is Data:
   Config{port: U32, body_limit: U32}
@@ -104,6 +104,8 @@ def interim(s: Socket, send: Bool) -> IO(Socket):
 type Reply is Type:
   Reply{bytes: List<&2, U32>, close: Bool, after: IO(Unit)}
   Streaming{bytes: List<&2, U32>, close: Bool, plan: StreamTypes.Plan, after: IO(Unit)}
+  # An accepted 101. It never takes Connection.response_closing's close.
+  Upgrading{bytes: List<&2, U32>, session: StreamTypes.Session, after: IO(Unit)}
 
 type ConnectionEvent is Type:
   Tick{socket: Socket, state: Connection.State}
@@ -112,6 +114,7 @@ type ConnectionEvent is Type:
   Read{read: Socket & Poll<&1, &1, Result<&1, &1, U32 & String, Maybe<&1, List<&2, U32>>>, Unit>, state: Connection.State}
   Replied{socket: Socket, state: Connection.State, rest: List<&2, U32>, reply: Reply}
   StreamHead{result: Socket & Bool, state: Connection.State, rest: List<&2, U32>, close: Bool, plan: StreamTypes.Plan, after: IO(Unit)}
+  UpgradeHead{result: Socket & Bool, rest: List<&2, U32>, action: StreamTypes.Handoff -> IO(Unit), after: IO(Unit)}
   StreamBody{outcome: StreamTypes.Outcome, state: Connection.State, rest: List<&2, U32>, close: Bool}
   Sent{sent: Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>, state: Connection.State, rest: List<&2, U32>, close: Bool}
 
@@ -149,6 +152,22 @@ def talk(~Env: Data, ~select: R.Req -> Env -> U32, ~app: R.Req -> List<&2, U32> 
     case StreamHead{(s, False{}), state, rest, close, plan, after}:
       do IO<Unit>:
         Stream.cancel(plan)
+        after
+        Socket.close(s)
+    # After the 101, HTTP parsing stops: the session owns the socket and the
+    # octets already read past the handshake.
+    case Replied{s, state, rest, Upgrading{bytes, StreamTypes.Session{+timeout, action}, after}}:
+      do IO<Unit>:
+        dated : List<&2, U32> <- DateWire.ensure(bytes)
+        result : Socket & Bool <- Stream.send(s, dated, timeout)
+        talk(~Env, ~select, ~app, UpgradeHead{result, rest, action, after}, env, config, peer)
+    case UpgradeHead{(s, True{}), rest, action, after}:
+      do IO<Unit>:
+        after
+        action(StreamTypes.Open{s, rest})
+    case UpgradeHead{(s, False{}), rest, action, after}:
+      do IO<Unit>:
+        action(StreamTypes.Abort{})
         after
         Socket.close(s)
     case StreamBody{StreamTypes.Written{s, True{}}, state, rest, close}:
@@ -262,7 +281,7 @@ def serve_config(~app: R.Req -> List<&2, U32> -> List<&2, U32>, config: Config) 
     +port : U32 = port_or(env, fallback)
     l : Listener <- IO.try(Listener, TCP.listen("127.0.0.1", port))
     IO.print("bendo listening on http://127.0.0.1:" ++ U32.show(port))
-    loop(~U32, ~(req => env => env), ~(req => body => env => close => peer => legacy(~app, req, body, env, close, peer)), l, limit, Config.Config{"127.0.0.1", port, limit, 65536, 5000, 10000, 30000, 1, False{}, Router.Spec{}})
+    loop(~U32, ~(req => env => env), ~(req => body => env => close => legacy(~app, req, body, env, close)), l, limit, Config.Config{"127.0.0.1", port, limit, 65536, 5000, 10000, 30000, 1, False{}, Router.Spec{}})
 
 def serve(~app: R.Req -> List<&2, U32> -> List<&2, U32>, port: U32) -> IO(Unit):
   serve_config(~app, defaults(port))
@@ -292,21 +311,22 @@ def prepare_pending(result: Response.Res & IO(Unit), close: Bool) -> Reply:
   (res, after) = result
   prepare(res, close, after)
 
-def prepare_stream(+res: Response.Res, close: Bool, stream: Maybe<&1, StreamTypes.Plan>, after: IO(Unit)) -> Reply:
+def prepare_stream(+res: Response.Res, close: Bool, stream: StreamTypes.Transport, after: IO(Unit)) -> Reply:
   match res stream:
-    case res None{}: prepare(res, close, after)
-    case Response.Res{status, hs, body, rep} Some{plan}:
+    case res StreamTypes.Buffered{}: prepare(res, close, after)
+    case res StreamTypes.Upgraded{session}: Upgrading{encoded(res), session, after}
+    case Response.Res{status, hs, body, rep} StreamTypes.Streamed{plan}:
       +closing = Connection.response_closing(res, close)
       Streaming{encoded(Response.Res{status, Connection.headers(hs, closing), body, rep}), closing, plan, after}
 
-def prepare_transport(result: Response.Res & (Maybe<&1, StreamTypes.Plan> & IO(Unit)), close: Bool) -> Reply:
+def prepare_transport(result: Response.Res & (StreamTypes.Transport & IO(Unit)), close: Bool) -> Reply:
   (res, (stream, after)) = result
   prepare_stream(res, close, stream, after)
 
 def respond_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), req: R.Req, body: List<&2, U32>, state: State<Tag, Env>, close: Bool, peer: Maybe<&2, Conn.ConnInfo>) -> IO(Reply):
   State{table, env, router, limit} = state
   do IO<Reply>:
-    result : Response.Res & (Maybe<&1, StreamTypes.Plan> & IO(Unit)) <- Handle.transport_routed(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, router, table, env, req, body, peer)
+    result : Response.Res & (StreamTypes.Transport & IO(Unit)) <- Handle.transport_routed(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, router, table, env, req, body, peer)
     return prepare_transport(result, close)
 
 def startup_limits_with(~Vars: Data, ~Tag: Data, ~select: Tag -> Maybe<&2, U32>, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +table: Table.Table<Tag>, env: Env, +config: Config.Config, manifest: Bool) -> IO(Unit):
@@ -321,7 +341,7 @@ def startup_limits_with(~Vars: Data, ~Tag: Data, ~select: Tag -> Maybe<&2, U32>,
         +port : U32 = Config.port_env(port_env, fallback)
         listener : Listener <- IO.try(Listener, TCP.listen(host, port))
         IO.print("bendo listening on http://" ++ host ++ ":" ++ U32.show(port))
-        loop(~State<Tag, Env>, ~(req => state => selected_limit(~Tag, ~Env, ~select, req, state)), ~(req => body => state => close => peer => respond_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, req, body, state, close, peer)), listener, State{table, env, router, limit}, config)
+        loop(~State<Tag, Env>, ~(req => state => selected_limit(~Tag, ~Env, ~select, req, state)), ~(req => body => state => close => respond_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, req, body, state, close)), listener, State{table, env, router, limit}, config)
 
 def startup_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config, manifest: Bool) -> IO(Unit):
   startup_limits_with(~Vars, ~Tag, ~(tag => None{}), ~Env, ~dispatch, ~middleware, table, env, config, manifest)
