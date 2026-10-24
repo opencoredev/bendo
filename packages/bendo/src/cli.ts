@@ -18,6 +18,7 @@ import { prove } from "./prove.ts";
 import { fetchManifest } from "./manifest.ts";
 import { scaffold } from "./scaffold.ts";
 import { sourceGraph } from "./sources.ts";
+import { buildShared } from "./shared.ts";
 import { devProxy, privatePort, waitForServer } from "./dev-server.ts";
 
 const USAGE = `bendo ${pkg.version}
@@ -26,6 +27,9 @@ Usage:
   bendo new <dir>       create a minimal app
   bendo dev [entry] [--native]  watch and restart with Bun JS (or native) (default: main.bend)
   bendo build [entry]   build dist/server (default: main.bend)
+  bendo build --shared [dir] [--out dir]
+                       compile dir/*.bend to .mjs with .d.mts types
+                       (default: shared, into dist/shared)
   bendo start          run dist/server; honors PORT (default: 8787)
   bendo routes [entry] print the method/path table (default: main.bend)
   bendo prove [file]   check proofs (default: PROOF.bend)
@@ -189,7 +193,36 @@ function parseCommand(value: string): Command {
   }
 }
 
+/** `bendo build --shared [dir] [--out dir]`. */
+async function shared(args: string[]): Promise<number> {
+  const rest = args.filter((arg) => arg !== "--shared");
+  let out = "dist/shared";
+  const at = rest.indexOf("--out");
+  if (at >= 0) {
+    const value = rest[at + 1];
+    if (value === undefined || value.startsWith("-"))
+      throw new Error(`--out needs a directory\n${USAGE}`);
+    out = value;
+    rest.splice(at, 2);
+  }
+  if (rest.length > 1 || rest.some((arg) => arg.startsWith("-")))
+    throw new Error(`Unexpected arguments\n${USAGE}`);
+  const dir = rest[0] ?? "shared";
+  for (const built of await buildShared(dir, out)) {
+    for (const warning of built.warnings) log(`warning: ${warning}`);
+    log(`build: ${built.module} (${built.named.length} named exports) and ${built.declarations}`);
+  }
+  return 0;
+}
+
 async function main(args: string[]): Promise<number> {
+  if (args[0] === "build" && args.includes("--shared")) {
+    if (args.includes("--help") || args.includes("-h")) {
+      log(USAGE);
+      return 0;
+    }
+    return shared(args.slice(1));
+  }
   const native = args[0] === "dev" && args.includes("--native");
   const [rawCommand, argument, ...extra] = native ? args.filter((arg) => arg !== "--native") : args;
   const command = rawCommand;

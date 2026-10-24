@@ -12,5 +12,5 @@
     "skipLibCheck": true,
     "types": ["bun"]
   },
-  "include": ["packages/*/src", "tests", "scripts/*.ts"]
+  "include": ["packages/*/src", "packages/bendo/shared/*.ts", "tests", "scripts/*.ts"]
 }
