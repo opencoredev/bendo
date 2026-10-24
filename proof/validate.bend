@@ -12,6 +12,9 @@ import ../src/data/json.bend as J
 import ../src/data/utf8.bend as Utf8
 import ../src/data/urlencoded.bend as Query
 import ../src/http/bytes.bend as Bytes
+import ../src/http/media.bend as Media
+import ./media-spec.bend as MediaSpec
+import ./media.bend as MediaProof
 import ../src/http/request.bend as Request
 import ../src/router/pattern.bend as Pattern
 import ../src/app/context.bend as C
@@ -98,16 +101,11 @@ def headers_go_eq(+hs: List<&2, Request.Header>, +rev: List<&2, J.Field>) -> {V.
       headers_go_eq(t, J.Field{Bytes.fold(k), J.JString{V.header_text(v)}} <> rev)
 
 # Media types.
-def first_eq(+parts: List<&2, String>) -> {V.first(parts) == Spec.before_semicolon(parts) : String}:
-  match parts:
-    case Nil{}: {==}
-    case h <> t: {==}
-
 def media_eq(+values: List<&2, List<&2, U32>>) -> {V.json_media(values) == Spec.first_json(values) : Bool}:
   match values:
     case Nil{}: {==}
     case v <> t:
-      Equal.cong(String, Bool, z => Spec.json_media(Bytes.fold(Bytes.ascii(Bytes.trim(Bytes.encode(z))))), V.first(String.split(Bytes.ascii(v), ';')), Spec.before_semicolon(String.split(Bytes.ascii(v), ';')), first_eq(String.split(Bytes.ascii(v), ';')))
+      Equal.cong(String, Bool, z => Spec.json_media(z), Media.essence(Bytes.ascii(v)), MediaSpec.essence(Bytes.ascii(v)), MediaProof.essence(Bytes.ascii(v)))
 
 def json_body_eq(+hs: List<&2, Request.Header>) -> {V.json_body(hs) == Spec.json_type(hs) : Bool}:
   media_eq(Request.lookup(hs, "content-type"))

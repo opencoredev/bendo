@@ -3,6 +3,8 @@ import Base
 import ../src/mw/cors_policy.bend as P
 import ../src/http/request.bend as Request
 import ../src/http/origin.bend as Origin
+import ./origin-spec.bend as OriginSpec
+import ./origin.bend as OriginProof
 import ./cors-spec.bend as Spec
 
 def is_none(-A: Data, m: Maybe<&2, A>) -> Type:
@@ -51,7 +53,7 @@ def grant(+origins: P.Origins, +sent: P.Sent) -> {P.grant(origins, sent) == Spec
     case P.Listed{+es}:
       match sent:
         case P.Absent{}: {==}
-        case P.Sent{+v}: listed(es, Origin.canonical(v))
+        case P.Sent{+v}: Equal.trans(Maybe<&2, P.Grant>, P.listed_grant(es, Origin.canonical(v)), Spec.found(Origin.canonical(v), es), Spec.found(OriginSpec.canonical(v), es), listed(es, Origin.canonical(v)), Equal.cong(Maybe<&2, String>, Maybe<&2, P.Grant>, m => Spec.found(m, es), Origin.canonical(v), OriginSpec.canonical(v), OriginProof.canonical_same(v)))
         case P.Repeated{}: {==}
 
 def wildcard(+sent: P.Sent) -> {P.grant(P.Any{}, sent) == Some{P.Grant{"*", False{}}} : Maybe<&2, P.Grant>}:
@@ -61,7 +63,7 @@ def unparsed(+es: List<&2, P.Entry>, +sent: P.Sent, h: {Spec.request_origin(sent
   match sent:
     case P.Absent{}: {==}
     case P.Sent{+v}:
-      %Equal.sym(Maybe<&2, String>, Origin.canonical(v), None{}, h) : {P.listed_grant(es, _) == None{} : Maybe<&2, P.Grant>}
+      %Equal.sym(Maybe<&2, String>, Origin.canonical(v), None{}, Equal.trans(Maybe<&2, String>, Origin.canonical(v), OriginSpec.canonical(v), None{}, OriginProof.canonical_same(v), h)) : {P.listed_grant(es, _) == None{} : Maybe<&2, P.Grant>}
       {==}
     case P.Repeated{}: {==}
 
@@ -109,7 +111,7 @@ def echo_found(+es: List<&2, P.Entry>, +m: Maybe<&2, String>, +o: String, +c: Bo
 def echo(+es: List<&2, P.Entry>, +sent: P.Sent, +o: String, +c: Bool, h: {P.grant(P.Listed{es}, sent) == Some{P.Grant{o, c}} : Maybe<&2, P.Grant>}) -> {Spec.request_origin(sent) == Some{o} : Maybe<&2, String>}:
   match sent:
     case P.Absent{}: absurd({None{} == Some{o} : Maybe<&2, String>}, none_not_some(P.Grant, P.Grant{o, c}, h))
-    case P.Sent{+v}: echo_found(es, Origin.canonical(v), o, c, h)
+    case P.Sent{+v}: Equal.trans(Maybe<&2, String>, OriginSpec.canonical(v), Origin.canonical(v), Some{o}, Equal.sym(Maybe<&2, String>, Origin.canonical(v), OriginSpec.canonical(v), OriginProof.canonical_same(v)), echo_found(es, Origin.canonical(v), o, c, h))
     case P.Repeated{}: absurd({None{} == Some{o} : Maybe<&2, String>}, none_not_some(P.Grant, P.Grant{o, c}, h))
 
 # ---- Configuration ----
@@ -123,8 +125,8 @@ def serialized(+xs: List<&2, P.Entry>) -> {P.serialized(xs) == Spec.configured(x
   match xs:
     case Nil{}: {==}
     case P.Entry{+o, +c} <> +t:
-      %serialized(t) : {P.entry_kept(Origin.of_url(o), c, P.serialized(t)) == List.append(&2, P.Entry, Spec.present(Origin.of_url(o), c), _) : List<&2, P.Entry>}
-      kept(Origin.of_url(o), c, P.serialized(t))
+      %serialized(t) : {P.entry_kept(Origin.of_url(o), c, P.serialized(t)) == List.append(&2, P.Entry, Spec.present(OriginSpec.of_url(o), c), _) : List<&2, P.Entry>}
+      Equal.trans(List<&2, P.Entry>, P.entry_kept(Origin.of_url(o), c, P.serialized(t)), List.append(&2, P.Entry, Spec.present(Origin.of_url(o), c), P.serialized(t)), List.append(&2, P.Entry, Spec.present(OriginSpec.of_url(o), c), P.serialized(t)), kept(Origin.of_url(o), c, P.serialized(t)), Equal.cong(Maybe<&2, String>, List<&2, P.Entry>, m => List.append(&2, P.Entry, Spec.present(m, c), P.serialized(t)), Origin.of_url(o), OriginSpec.of_url(o), OriginProof.of_url_same(o)))
 
 def configured(+xs: List<&2, P.Entry>) -> {P.listed(xs) == P.Listed{Spec.configured(xs)} : P.Origins}:
   Equal.cong(List<&2, P.Entry>, P.Origins, es => P.Listed{es}, P.serialized(xs), Spec.configured(xs), serialized(xs))

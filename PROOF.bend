@@ -18,6 +18,12 @@ import ./proof/compose.bend as ComposeProof
 import ./proof/validate.bend as ValidateProof
 import ./proof/plugin.bend as PluginProof
 
+# BND-85
+import ./proof/trim.bend as TrimProof
+import ./proof/media.bend as MediaProof
+import ./proof/origin.bend as OriginProof
+import ./proof/csrf-v1.bend as CsrfV1Proof
+
 # BND-47
 import ./proof/proxy.bend as ProxyProof
 
