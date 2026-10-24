@@ -156,12 +156,23 @@ def lookup_step(value: List<&2, U32>, rest: List<&2, List<&2, U32>>, same: Bool)
     case False{}:
       rest
 
-def lookup_folded(hs: List<&2, Header>, +name: String) -> List<&2, List<&2, U32>>:
+def lookup_folded_spec(hs: List<&2, Header>, +name: String) -> List<&2, List<&2, U32>>:
   match hs:
     case Nil{}:
       []
     case Header{n, v} <> t:
-      lookup_step(v, lookup_folded(t, name), String.eq(n, name))
+      lookup_step(v, lookup_folded_spec(t, name), String.eq(n, name))
+
+# The spec's right fold as a tail loop over the reversed headers (BND-84).
+def lookup_folded_go(rev: List<&2, Header>, +name: String, found: List<&2, List<&2, U32>>) -> List<&2, List<&2, U32>>:
+  match rev:
+    case Nil{}:
+      found
+    case Header{n, v} <> r:
+      lookup_folded_go(r, name, lookup_step(v, found, String.eq(n, name)))
+
+def lookup_folded(hs: List<&2, Header>, +name: String) -> List<&2, List<&2, U32>>:
+  lookup_folded_go(List.reverse(&2, Header, hs), name, [])
 
 # Every matching value, in arrival order. Never combine repeated fields.
 def lookup(hs: List<&2, Header>, name: String) -> List<&2, List<&2, U32>>:

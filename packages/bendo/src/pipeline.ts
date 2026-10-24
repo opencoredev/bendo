@@ -14,6 +14,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { stripVTControlCharacters } from "node:util";
 import { findBend } from "./bend.ts";
 import { fetchManifest, type Manifest } from "./manifest.ts";
+import { writeRouteTypes } from "./route-types.ts";
 import { mapImports, sourceGraph } from "./sources.ts";
 
 export type Target = "js" | "native";
@@ -105,9 +106,8 @@ export async function generateSchemas(binary?: string): Promise<void | Manifest>
     return;
   }
   const manifest = fetchManifest(binary);
-  log(
-    `generate: validated ${manifest.routes.length} routes; type generation lands in BND-56 (no files written)`,
-  );
+  writeRouteTypes(manifest);
+  log(`generate: wrote .bendo/routes.ts (${manifest.routes.length} routes)`);
   return manifest;
 }
 

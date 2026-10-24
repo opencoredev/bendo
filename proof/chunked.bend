@@ -2,6 +2,7 @@
 import Base
 import ../src/http/chunked.bend as C
 import ../src/http/bytes.bend as B
+import ./bytes-tail.bend as BT
 import ../src/http/request.bend as R
 import ../src/router/codec-bits.bend as Bits
 
@@ -46,7 +47,8 @@ law feed_append:
   for +s: C.State
   {C.feed(B.append(xs, ys), s) == resume(ys, C.feed(xs, s)) : C.State & C.DecodeResult}
 
-def feed_append(xs, ys, s):
+# The induction runs over Base List.append; feed_append converts B.append.
+def feed_append_list(+xs: List<&2, U32>, +ys: List<&2, U32>, +s: C.State) -> {C.feed(List.append(&2, U32, xs, ys), s) == resume(ys, C.feed(xs, s)) : C.State & C.DecodeResult}:
   match xs s:
     case Nil{} C.Size{budget, body, line, count, cr}:
       {==}
@@ -63,25 +65,29 @@ def feed_append(xs, ys, s):
     case Nil{} C.Failed{status}:
       failed_suffix(status, ys)
     case c <> t C.Complete{body, hs}:
-      {==}
+      Equal.cong(List<&2, U32>, C.State & C.DecodeResult, l => (C.Complete{body, hs}, C.Decoded{body, hs, l}), c <> List.append(&2, U32, t, ys), B.append(c <> t, ys), Equal.sym(List<&2, U32>, B.append(c <> t, ys), List.append(&2, U32, c <> t, ys), BT.append_equiv(c <> t, ys)))
     case c <> t C.Failed{status}:
       {==}
     case c <> t C.Size{budget, body, line, count, cr}:
-      feed_append(t, ys, C.advance(C.Size{budget, body, line, count, cr}, c))
+      feed_append_list(t, ys, C.advance(C.Size{budget, body, line, count, cr}, c))
     case c <> t C.Payload{budget, body, left}:
-      feed_append(t, ys, C.advance(C.Payload{budget, body, left}, c))
+      feed_append_list(t, ys, C.advance(C.Payload{budget, body, left}, c))
     case c <> t C.DataCR{budget, body}:
-      feed_append(t, ys, C.advance(C.DataCR{budget, body}, c))
+      feed_append_list(t, ys, C.advance(C.DataCR{budget, body}, c))
     case c <> t C.DataLF{budget, body}:
-      feed_append(t, ys, C.advance(C.DataLF{budget, body}, c))
+      feed_append_list(t, ys, C.advance(C.DataLF{budget, body}, c))
     case c <> t C.Trailers{body, hs, line, count, cr}:
-      feed_append(t, ys, C.advance(C.Trailers{body, hs, line, count, cr}, c))
+      feed_append_list(t, ys, C.advance(C.Trailers{body, hs, line, count, cr}, c))
 
 law scan_terminal:
   for +budget: U32
   for +acc: List<&2, U32>
   for +suffix: List<&2, U32>
   {C.feed(48 <> 13 <> 10 <> 13 <> 10 <> suffix, C.Size{budget, acc, [], 0, False{}}) == (C.Complete{List.reverse(&2, U32, acc), []}, C.Decoded{List.reverse(&2, U32, acc), [], suffix}) : C.State & C.DecodeResult}
+
+def feed_append(xs, ys, s):
+  Equal.trans(C.State & C.DecodeResult, C.feed(B.append(xs, ys), s), C.feed(List.append(&2, U32, xs, ys), s), resume(ys, C.feed(xs, s)), Equal.cong(List<&2, U32>, C.State & C.DecodeResult, l => C.feed(l, s), B.append(xs, ys), List.append(&2, U32, xs, ys), BT.append_equiv(xs, ys)), feed_append_list(xs, ys, s))
+
 
 def scan_terminal(budget, acc, suffix):
   terminal_suffix(List.reverse(&2, U32, acc), [], suffix)
@@ -129,15 +135,20 @@ def and_assoc(a, b, c):
     case True{}:
       {==}
 
-def octets_append(xs, ys):
+def octets_append_list(+xs: List<&2, U32>, +ys: List<&2, U32>) -> {C.octets(List.append(&2, U32, xs, ys)) == C.octets(xs) && C.octets(ys) : Bool}:
   match xs:
     case Nil{}:
       {==}
     case c <> t:
-      %Equal.sym(Bool, C.octets(B.append(t, ys)), C.octets(t) && C.octets(ys), octets_append(t, ys)) : {(c <= 255 : U32) && _ == C.octets(c <> t) && C.octets(ys) : Bool}
+      %Equal.sym(Bool, C.octets(List.append(&2, U32, t, ys)), C.octets(t) && C.octets(ys), octets_append_list(t, ys)) : {(c <= 255 : U32) && _ == C.octets(c <> t) && C.octets(ys) : Bool}
       and_assoc((c <= 255 : U32), C.octets(t), C.octets(ys))
 
 # Four bits represent a digit without an arithmetic range hypothesis.
+
+def octets_append(xs, ys):
+  Equal.trans(Bool, C.octets(B.append(xs, ys)), C.octets(List.append(&2, U32, xs, ys)), C.octets(xs) && C.octets(ys), Equal.cong(List<&2, U32>, Bool, l => C.octets(l), B.append(xs, ys), List.append(&2, U32, xs, ys), BT.append_equiv(xs, ys)), octets_append_list(xs, ys))
+
+
 def nibble(bits: Word(4n)) -> U32:
   U32{Bits.pad(4n, 28n, bits)}
 
@@ -298,8 +309,8 @@ def parse_hex_digits(ds, acc, seen, safe):
 
 # The encoder's accumulator is a genuine suffix, including at fuel exhaustion.
 def hex_append_case(+fuel: Nat, +n: U32, +xs: List<&2, U32>, +ys: List<&2, U32>, zero: Bool,
-    step: {C.hex_go(fuel, (n / 16 : U32), C.hex_char((n % 16 : U32)) <> B.append(xs, ys)) == B.append(C.hex_go(fuel, (n / 16 : U32), C.hex_char((n % 16 : U32)) <> xs), ys) : List<&2, U32>}) ->
-    {C.branch(List<&2, U32>, zero, u => B.append(xs, ys), u => C.hex_go(fuel, (n / 16 : U32), C.hex_char((n % 16 : U32)) <> B.append(xs, ys))) == B.append(C.branch(List<&2, U32>, zero, u => xs, u => C.hex_go(fuel, (n / 16 : U32), C.hex_char((n % 16 : U32)) <> xs)), ys) : List<&2, U32>}:
+    step: {C.hex_go(fuel, (n / 16 : U32), C.hex_char((n % 16 : U32)) <> List.append(&2, U32, xs, ys)) == List.append(&2, U32, C.hex_go(fuel, (n / 16 : U32), C.hex_char((n % 16 : U32)) <> xs), ys) : List<&2, U32>}) ->
+    {C.branch(List<&2, U32>, zero, u => List.append(&2, U32, xs, ys), u => C.hex_go(fuel, (n / 16 : U32), C.hex_char((n % 16 : U32)) <> List.append(&2, U32, xs, ys))) == List.append(&2, U32, C.branch(List<&2, U32>, zero, u => xs, u => C.hex_go(fuel, (n / 16 : U32), C.hex_char((n % 16 : U32)) <> xs)), ys) : List<&2, U32>}:
   match zero:
     case True{}:
       {==}
@@ -313,14 +324,19 @@ law hex_go_append:
   for +ys: List<&2, U32>
   {C.hex_go(fuel, n, B.append(xs, ys)) == B.append(C.hex_go(fuel, n, xs), ys) : List<&2, U32>}
 
-def hex_go_append(fuel, n, xs, ys):
+def hex_go_append_list(+fuel: Nat, +n: U32, +xs: List<&2, U32>, +ys: List<&2, U32>) -> {C.hex_go(fuel, n, List.append(&2, U32, xs, ys)) == List.append(&2, U32, C.hex_go(fuel, n, xs), ys) : List<&2, U32>}:
   match fuel:
     case 0n:
       {==}
     case 1n+p:
-      hex_append_case(p, n, xs, ys, U32.is_eq(n, 0), hex_go_append(p, (n / 16 : U32), C.hex_char((n % 16 : U32)) <> xs, ys))
+      hex_append_case(p, n, xs, ys, U32.is_eq(n, 0), hex_go_append_list(p, (n / 16 : U32), C.hex_char((n % 16 : U32)) <> xs, ys))
 
 # Quotient bits followed by four zero bits; the result index is 4 + n.
+
+def hex_go_append(fuel, n, xs, ys):
+  Equal.trans(List<&2, U32>, C.hex_go(fuel, n, B.append(xs, ys)), C.hex_go(fuel, n, List.append(&2, U32, xs, ys)), B.append(C.hex_go(fuel, n, xs), ys), Equal.cong(List<&2, U32>, List<&2, U32>, l => C.hex_go(fuel, n, l), B.append(xs, ys), List.append(&2, U32, xs, ys), BT.append_equiv(xs, ys)), Equal.trans(List<&2, U32>, C.hex_go(fuel, n, List.append(&2, U32, xs, ys)), List.append(&2, U32, C.hex_go(fuel, n, xs), ys), B.append(C.hex_go(fuel, n, xs), ys), hex_go_append_list(fuel, n, xs, ys), Equal.sym(List<&2, U32>, B.append(C.hex_go(fuel, n, xs), ys), List.append(&2, U32, C.hex_go(fuel, n, xs), ys), BT.append_equiv(C.hex_go(fuel, n, xs), ys))))
+
+
 def quotient_word(n: Nat, w: Word(n)) -> Word(4n+n):
   match n w:
     case 0n WNil{}:

@@ -3,6 +3,7 @@
 # IPv4-mapped IPv6 (::ffff:a.b.c.d) is parsed as the IPv4 address it carries.
 import Base
 import ../http/bytes.bend as Bytes
+import ../http/text.bend as Text
 
 type Family is Data:
   V4{}
@@ -113,19 +114,37 @@ def split_pick(+c: U32, parts: List<&2, List<&2, U32>>, here: Bool) -> List<&2, 
     case True{}: [] <> parts
     case False{}: split_push(c, parts)
 
-# Every part, empty ones included: "a..b" splits on '.' into a, "" and b.
-def split(xs: List<&2, U32>, +sep: U32) -> List<&2, List<&2, U32>>:
+def split_spec(xs: List<&2, U32>, +sep: U32) -> List<&2, List<&2, U32>>:
   match xs:
     case Nil{}: [[]]
-    case +c <> t: split_pick(c, split(t, sep), U32.is_eq(c, sep))
+    case +c <> t: split_pick(c, split_spec(t, sep), U32.is_eq(c, sep))
+
+# Every part, empty ones included: "a..b" splits on '.' into a, "" and b.
+# Every loop over address text is a tail call (BND-84): forwarded fields can
+# hold a malformed 64 KiB address, which must fail without a stack overflow.
+def split_go(rev: List<&2, U32>, +sep: U32, acc: List<&2, List<&2, U32>>) -> List<&2, List<&2, U32>>:
+  match rev:
+    case Nil{}: acc
+    case +c <> r: split_go(r, sep, split_pick(c, acc, U32.is_eq(c, sep)))
+
+def split(xs: List<&2, U32>, +sep: U32) -> List<&2, List<&2, U32>>:
+  split_go(List.reverse(&2, U32, xs), sep, [[]])
 
 def digit(+c: U32) -> Bool:
   (c >= 48 : U32) && (c <= 57 : U32)
 
-def all_digits(xs: List<&2, U32>) -> Bool:
+def all_digits_spec(xs: List<&2, U32>) -> Bool:
   match xs:
     case Nil{}: True{}
-    case +c <> t: digit(c) && all_digits(t)
+    case +c <> t: digit(c) && all_digits_spec(t)
+
+def all_digits_go(xs: List<&2, U32>, acc: Bool) -> Bool:
+  match xs:
+    case Nil{}: acc
+    case +c <> t: all_digits_go(t, acc && digit(c))
+
+def all_digits(xs: List<&2, U32>) -> Bool:
+  all_digits_go(xs, True{})
 
 def decimal_value(xs: List<&2, U32>, acc: Nat) -> Nat:
   match xs:
@@ -195,10 +214,18 @@ def v4_octets(xs: List<&2, U32>) -> Maybe<&2, List<&2, Nat>>:
 def hex(+c: U32) -> Bool:
   digit(c) || ((c >= 97 : U32) && (c <= 102 : U32)) || ((c >= 65 : U32) && (c <= 70 : U32))
 
-def all_hex(xs: List<&2, U32>) -> Bool:
+def all_hex_spec(xs: List<&2, U32>) -> Bool:
   match xs:
     case Nil{}: True{}
-    case +c <> t: hex(c) && all_hex(t)
+    case +c <> t: hex(c) && all_hex_spec(t)
+
+def all_hex_go(xs: List<&2, U32>, acc: Bool) -> Bool:
+  match xs:
+    case Nil{}: acc
+    case +c <> t: all_hex_go(t, acc && hex(c))
+
+def all_hex(xs: List<&2, U32>) -> Bool:
+  all_hex_go(xs, True{})
 
 def hex_digit_pick(c: U32, decimal: Bool) -> U32:
   match decimal:
@@ -220,13 +247,21 @@ def hex_pick(xs: List<&2, U32>, ok: Bool) -> Maybe<&2, U32>:
 
 # One to four hex digits.
 def hex_group(+xs: List<&2, U32>) -> Maybe<&2, U32>:
-  +n = List.length(&2, U32, xs)
+  +n = Text.length(U32, xs)
   hex_pick(xs, Nat.is_lt(0n, n) && Nat.is_le(n, 4n) && all_hex(xs))
 
-def has(xs: List<&2, U32>, +c: U32) -> Bool:
+def has_spec(xs: List<&2, U32>, +c: U32) -> Bool:
   match xs:
     case Nil{}: False{}
-    case x <> t: U32.is_eq(x, c) || has(t, c)
+    case x <> t: U32.is_eq(x, c) || has_spec(t, c)
+
+def has_go(xs: List<&2, U32>, +c: U32, acc: Bool) -> Bool:
+  match xs:
+    case Nil{}: acc
+    case x <> t: has_go(t, c, acc || U32.is_eq(x, c))
+
+def has(xs: List<&2, U32>, +c: U32) -> Bool:
+  has_go(xs, c, False{})
 
 def nat_u32(n: Nat) -> U32:
   U32.from_nat(n)
@@ -249,12 +284,32 @@ def cons_group(g: Maybe<&2, U32>, rest: Maybe<&2, List<&2, U32>>) -> Maybe<&2, L
     case Some{x} Some{xs}: Some{x <> xs}
     case _ _: None{}
 
-# Hex groups; only the final part (with tail on) may be a dotted IPv4 address.
-def groups(parts: List<&2, List<&2, U32>>, +tail: Bool) -> Maybe<&2, List<&2, U32>>:
+def groups_spec(parts: List<&2, List<&2, U32>>, +tail: Bool) -> Maybe<&2, List<&2, U32>>:
   match parts:
     case Nil{}: Some{[]}
     case +p <> Nil{}: last_group(p, tail && has(p, 46))
-    case p <> t: cons_group(hex_group(p), groups(t, tail))
+    case p <> t: cons_group(hex_group(p), groups_spec(t, tail))
+
+# The groups read so far, newest first, or None once one failed.
+def groups_push(g: Maybe<&2, U32>, done: Maybe<&2, List<&2, U32>>) -> Maybe<&2, List<&2, U32>>:
+  match g done:
+    case Some{x} Some{xs}: Some{x <> xs}
+    case _ _: None{}
+
+def groups_finish(done: Maybe<&2, List<&2, U32>>, rest: Maybe<&2, List<&2, U32>>) -> Maybe<&2, List<&2, U32>>:
+  match done rest:
+    case Some{r} Some{xs}: Some{List.reverse.go(&2, U32, r, xs)}
+    case _ _: None{}
+
+def groups_go(parts: List<&2, List<&2, U32>>, +tail: Bool, done: Maybe<&2, List<&2, U32>>) -> Maybe<&2, List<&2, U32>>:
+  match parts:
+    case Nil{}: groups_finish(done, Some{[]})
+    case +p <> Nil{}: groups_finish(done, last_group(p, tail && has(p, 46)))
+    case p <> t: groups_go(t, tail, groups_push(hex_group(p), done))
+
+# Hex groups; only the final part (with tail on) may be a dotted IPv4 address.
+def groups(parts: List<&2, List<&2, U32>>, +tail: Bool) -> Maybe<&2, List<&2, U32>>:
+  groups_go(parts, tail, Some{[]})
 
 def side(xs: List<&2, U32>) -> List<&2, List<&2, U32>>:
   match xs:
@@ -266,12 +321,23 @@ def double_push(c: U32, parts: List<&2, List<&2, U32>>) -> List<&2, List<&2, U32
     case Nil{}: [[c]]
     case p <> t: (c <> p) <> t
 
-# Split on every "::", scanning left to right.
-def doubles(xs: List<&2, U32>) -> List<&2, List<&2, U32>>:
+def doubles_spec(xs: List<&2, U32>) -> List<&2, List<&2, U32>>:
   match xs:
     case Nil{}: [[]]
-    case 58 <> 58 <> t: [] <> doubles(t)
-    case c <> t: double_push(c, doubles(t))
+    case 58 <> 58 <> t: [] <> doubles_spec(t)
+    case c <> t: double_push(c, doubles_spec(t))
+
+# The same patterns as doubles_spec; cur is the part read so far, reversed,
+# and done holds the finished parts, newest first.
+def doubles_go(xs: List<&2, U32>, cur: List<&2, U32>, done: List<&2, List<&2, U32>>) -> List<&2, List<&2, U32>>:
+  match xs:
+    case Nil{}: List.reverse(&2, List<&2, U32>, List.reverse(&2, U32, cur) <> done)
+    case 58 <> 58 <> t: doubles_go(t, [], List.reverse(&2, U32, cur) <> done)
+    case c <> t: doubles_go(t, c <> cur, done)
+
+# Split on every "::", scanning left to right.
+def doubles(xs: List<&2, U32>) -> List<&2, List<&2, U32>>:
+  doubles_go(xs, [], [])
 
 def zeros(n: Nat) -> List<&2, U32>:
   match n:
@@ -280,15 +346,15 @@ def zeros(n: Nat) -> List<&2, U32>:
 
 def full(gs: Maybe<&2, List<&2, U32>>) -> Maybe<&2, List<&2, U32>>:
   match gs:
-    case Some{+xs}: gate(List<&2, U32>, xs, Nat.is_eq(List.length(&2, U32, xs), 8n))
+    case Some{+xs}: gate(List<&2, U32>, xs, Nat.is_eq(Text.length(U32, xs), 8n))
     case None{}: None{}
 
 # "::" stands for one or more zero groups.
 def compressed(l: Maybe<&2, List<&2, U32>>, r: Maybe<&2, List<&2, U32>>) -> Maybe<&2, List<&2, U32>>:
   match l r:
     case Some{+a} Some{+b}:
-      +used = Nat.add(List.length(&2, U32, a), List.length(&2, U32, b))
-      gate(List<&2, U32>, List.append(&2, U32, a, List.append(&2, U32, zeros(Nat.sub(8n, used)), b)), Nat.is_le(used, 7n))
+      +used = Nat.add(Text.length(U32, a), Text.length(U32, b))
+      gate(List<&2, U32>, Text.bytes_append(a, Text.bytes_append(zeros(Nat.sub(8n, used)), b)), Nat.is_le(used, 7n))
     case _ _: None{}
 
 def v6_halves(halves: List<&2, List<&2, U32>>) -> Maybe<&2, List<&2, U32>>:

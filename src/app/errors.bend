@@ -160,21 +160,39 @@ def parameter(parts: List<&2, String>) -> Bool:
     case key <> Nil{}: Bool.not(String.eq(trim(key), "q"))
     case _: False{}
 
-def parameters(xs: List<&2, String>) -> Bool:
+def parameters_spec(xs: List<&2, String>) -> Bool:
   match xs:
     case Nil{}: True{}
-    case x <> tail: parameter(split(trim(x), '=')) && parameters(tail)
+    case x <> tail: parameter(split(trim(x), '=')) && parameters_spec(tail)
+
+# List folds are tail loops over the reversed list (BND-84): a 64 KiB Accept
+# field may hold tens of thousands of elements.
+def parameters_go(rev: List<&2, String>, acc: Bool) -> Bool:
+  match rev:
+    case Nil{}: acc
+    case x <> r: parameters_go(r, parameter(split(trim(x), '=')) && acc)
+
+def parameters(xs: List<&2, String>) -> Bool:
+  parameters_go(List.reverse(&2, String, xs), True{})
 
 def media(parts: List<&2, String>) -> Bool:
   match parts:
     case Nil{}: False{}
     case name <> rest: String.eq(trim(name), "application/json") && parameters(rest)
 
-def accepts_json_tokens(xs: List<&2, String>) -> Bool:
+def accepts_json_tokens_spec(xs: List<&2, String>) -> Bool:
   match xs:
     case Nil{}: False{}
     case x <> tail:
-      media(split(Bytes.fold(x), ';')) || accepts_json_tokens(tail)
+      media(split(Bytes.fold(x), ';')) || accepts_json_tokens_spec(tail)
+
+def accepts_json_tokens_go(rev: List<&2, String>, acc: Bool) -> Bool:
+  match rev:
+    case Nil{}: acc
+    case x <> r: accepts_json_tokens_go(r, media(split(Bytes.fold(x), ';')) || acc)
+
+def accepts_json_tokens(xs: List<&2, String>) -> Bool:
+  accepts_json_tokens_go(List.reverse(&2, String, xs), False{})
 
 def accepts_json(value: Maybe<&2, String>) -> Bool:
   match value:

@@ -54,6 +54,8 @@ import ./src/http/chunked.bend as Chunked
 import ./proof/stream.bend as StreamProof
 import ./proof/stream-rfc.bend as StreamRfcProof
 import ./proof/sse.bend as SseProof
+import ./src/http/sse.bend as SseImpl
+import ./proof/sse-spec.bend as SseSpecM
 import ./src/http/stream_framing.bend as StreamFraming
 import ./src/http.bend as Http
 import ./src/http/bytes.bend as Bytes
@@ -121,6 +123,10 @@ import ./proof/response-policy.bend as ResponsePolicyProof
 import ./proof/secure-headers.bend as SecureHeadersProof
 import ./proof/override.bend as OverrideProof
 import ./proof/trailing.bend as TrailingProof
+import ./proof/review-tail.bend as ReviewTailProof
+import ./proof/tail.bend as TailProof
+import ./proof/parse-tail.bend as ParseTail
+import ./proof/bytes-tail.bend as BytesTail
 
 import ./proof/static-path.bend as StaticProof
 import ./proof/ws-frame.bend as WsFrameProof
@@ -153,13 +159,16 @@ def selected_values(+n: String, +v: List<&2, U32>, +hs: List<&2, Request.Header>
     case False{}:
       {==}
 
-def lookup_selected(+hs: List<&2, Request.Header>, +name: String) -> {Request.lookup_folded(hs, name) == Support.header_values(Support.matching_headers(hs, name)) : List<&2, List<&2, U32>>}:
+def lookup_selected_inner(+hs: List<&2, Request.Header>, +name: String) -> {Request.lookup_folded_spec(hs, name) == Support.header_values(Support.matching_headers(hs, name)) : List<&2, List<&2, U32>>}:
   match hs:
     case Nil{}:
       {==}
     case Request.Header{n, v} <> t:
-      %Equal.sym(List<&2, List<&2, U32>>, Request.lookup_folded(t, name), Support.header_values(Support.matching_headers(t, name)), lookup_selected(t, name)) : {Request.lookup_step(v, _, String.eq(n, name)) == Support.header_values(Support.matching_headers(Request.Header{n, v} <> t, name)) : List<&2, List<&2, U32>>}
+      %Equal.sym(List<&2, List<&2, U32>>, Request.lookup_folded_spec(t, name), Support.header_values(Support.matching_headers(t, name)), lookup_selected_inner(t, name)) : {Request.lookup_step(v, _, String.eq(n, name)) == Support.header_values(Support.matching_headers(Request.Header{n, v} <> t, name)) : List<&2, List<&2, U32>>}
       selected_values(n, v, Support.matching_headers(t, name), String.eq(n, name))
+
+def lookup_selected(+hs: List<&2, Request.Header>, +name: String) -> {Request.lookup_folded(hs, name) == Support.header_values(Support.matching_headers(hs, name)) : List<&2, List<&2, U32>>}:
+  Equal.trans(List<&2, List<&2, U32>>, Request.lookup_folded(hs, name), Request.lookup_folded_spec(hs, name), Support.header_values(Support.matching_headers(hs, name)), ParseTail.lookup_equiv(hs, name), lookup_selected_inner(hs, name))
 
 def Laws.header_lookup_all_in_order(headers, name):
   lookup_selected(headers, Bytes.fold(name))
@@ -171,7 +180,7 @@ def head_feed(+m: Request.Method, +p: String, +q: Maybe<&2, String>, +v: Request
   %Equal.sym(List<&2, U32>, Bytes.append(Bytes.append(content, [13, 10]), tail), Bytes.append(content, 13 <> 10 <> tail), Laws.append_assoc(content, [13, 10], tail)) : {Parse.feed(_, Parse.initial()) == (Parse.Complete{Request.Req{m, p, q, v, hs}}, Request.Parsed{Request.Req{m, p, q, v, hs}, []}) : Parse.State & Request.ParseResult}
   %Equal.sym(Parse.State & Request.ParseResult, Parse.feed(Bytes.append(content, 13 <> 10 <> tail), Parse.initial()), Parse.feed(tail, Parse.request_line(content)), Laws.scan_request_line(content, tail, Laws.line_printable(m, p, q, v, mv, tv))) : {_ == (Parse.Complete{Request.Req{m, p, q, v, hs}}, Request.Parsed{Request.Req{m, p, q, v, hs}, []}) : Parse.State & Request.ParseResult}
   %Equal.sym(Parse.State, Parse.request_line(content), Parse.Headers{Request.Req{m, p, q, v, []}, [], False{}}, Laws.line_recover(m, p, q, v, mv, tv)) : {Parse.feed(tail, _) == (Parse.Complete{Request.Req{m, p, q, v, hs}}, Request.Parsed{Request.Req{m, p, q, v, hs}, []}) : Parse.State & Request.ParseResult}
-  %Laws.append_nil(U32, tail) : {Parse.feed(_, Parse.Headers{Request.Req{m, p, q, v, []}, [], False{}}) == (Parse.Complete{Request.Req{m, p, q, v, hs}}, Request.Parsed{Request.Req{m, p, q, v, hs}, []}) : Parse.State & Request.ParseResult}
+  %Equal.trans(List<&2, U32>, Bytes.append(tail, []), List.append(&2, U32, tail, []), tail, BytesTail.append_equiv(tail, []), Laws.append_nil(U32, tail)) : {Parse.feed(_, Parse.Headers{Request.Req{m, p, q, v, []}, [], False{}}) == (Parse.Complete{Request.Req{m, p, q, v, hs}}, Request.Parsed{Request.Req{m, p, q, v, hs}, []}) : Parse.State & Request.ParseResult}
   %Laws.reverse_twice(Request.Header, hs) : {Parse.feed(Bytes.append(tail, []), Parse.Headers{Request.Req{m, p, q, v, []}, [], False{}}) == (Parse.Complete{Request.Req{m, p, q, v, _}}, Request.Parsed{Request.Req{m, p, q, v, _}, []}) : Parse.State & Request.ParseResult}
   Laws.scan_headers(hs, m, p, q, v, [], [], hv)
 
@@ -315,7 +324,7 @@ def response_forbidden_bytes(+method: Request.Method, +status: U32, +headers: Li
   +r = {Response.Res{status, headers, body, representation} : Response.Res}
   %Equal.sym(Bool, Response.valid(r), True{}, valid) : {WriteResponse.write_valid(method, r, _) == WriteResponse.head(method, r) : List<&2, U32>}
   %Equal.sym(List<&2, U32>, WriteResponse.payload(method, r), [], response_forbidden_payload(method, status, headers, body, representation, forbidden)) : {Bytes.append(WriteResponse.head(method, r), _) == WriteResponse.head(method, r) : List<&2, U32>}
-  Laws.append_nil(U32, WriteResponse.head(method, r))
+  Equal.trans(List<&2, U32>, Bytes.append(WriteResponse.head(method, r), []), List.append(&2, U32, WriteResponse.head(method, r), []), WriteResponse.head(method, r), BytesTail.append_equiv(WriteResponse.head(method, r), []), Laws.append_nil(U32, WriteResponse.head(method, r)))
 
 def response_prefix_safe(+method: Request.Method, +res: Response.Res, valid: {Response.valid(res) == True{} : Bool}) -> {String.contains(Bytes.ascii(WriteResponse.prefix(method, res)), "\r\n\r\n") == False{} : Bool}:
   match res:
@@ -679,7 +688,7 @@ def Laws.stream_empty_chunk():
   {==}
 
 def Laws.stream_chunk_tail(bytes, tail):
-  StreamProof.chunk_tail(bytes, tail)
+  Equal.trans(List<&2, U32>, Bytes.append(StreamFraming.chunk(bytes), tail), List.append(&2, U32, Chunked.encode_chunk(bytes, []), tail), Chunked.encode_chunk(bytes, tail), BytesTail.append_equiv(StreamFraming.chunk(bytes), tail), StreamProof.chunk_tail(bytes, tail))
 
 def Laws.stream_rfc_roundtrip(chunks, limit, suffix, valid):
   StreamRfcProof.wire_roundtrip(chunks, limit, suffix, valid)
@@ -705,7 +714,8 @@ def Laws.sse_sent_frame_exact(frame, bytes, sent):
   SseProof.sent_frame(frame, bytes, sent)
 
 def Laws.sse_heartbeat_ignored(buffers, text, rest, clean):
-  SseProof.comment_ignored(buffers, text, rest, clean)
+  +r = SseImpl.render(SseImpl.Comment{text})
+  Equal.trans(SseSpecM.State, SseSpecM.run(Bytes.append(r, rest), SseSpecM.Begin{buffers}), SseSpecM.run(List.append(&2, U32, r, rest), SseSpecM.Begin{buffers}), SseSpecM.run(rest, SseSpecM.Begin{buffers}), Equal.cong(List<&2, U32>, SseSpecM.State, x => SseSpecM.run(x, SseSpecM.Begin{buffers}), Bytes.append(r, rest), List.append(&2, U32, r, rest), BytesTail.append_equiv(r, rest)), SseProof.comment_ignored(buffers, text, rest, clean))
 
 def Laws.sse_text_utf8(s, valid):
   SseProof.text_utf8(s, valid)

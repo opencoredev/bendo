@@ -1,6 +1,7 @@
 # Content-Type by file extension (BND-45). Pure. Text types carry
 # charset=utf-8; unknown extensions are application/octet-stream.
 import Base
+import ../http/text.bend as Text
 
 type Entry is Data:
   Entry{extension: String, media: String}
@@ -48,7 +49,7 @@ def extension_of(parts: List<&2, String>) -> String:
 
 # The lowercase text after the last '.' of the file name, or "".
 def extension(path: String) -> String:
-  extension_of(String.split(String.to_lower(last_of(String.split(path, '/'))), '.'))
+  extension_of(Text.split(Text.lower(last_of(Text.split(path, '/'))), '.'))
 
 def content_type(path: String) -> String:
   Maybe.default(&2, String, lookup(table(), extension(path)), "application/octet-stream")

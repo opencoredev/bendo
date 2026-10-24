@@ -3,6 +3,7 @@
 # the port left out when it is the scheme's default (80 or 443).
 import Base
 import ./bytes.bend as Bytes
+import ./text.bend as Text
 
 type Cut is Data:
   Cut{left: String, right: String}
@@ -17,11 +18,20 @@ def cut_pick(c: Char, t: String, rest: Maybe<&2, Cut>, here: Bool) -> Maybe<&2, 
     case True{}: Some{Cut{"", t}}
     case False{}: cut_prepend(c, rest)
 
-# Split at the first occurrence of sep.
-def cut(s: String, +sep: Char) -> Maybe<&2, Cut>:
+def cut_spec(s: String, +sep: Char) -> Maybe<&2, Cut>:
   match s:
     case SNil{}: None{}
-    case SCon{+c, +t}: cut_pick(c, t, cut(t, sep), Char.is_eq(c, sep))
+    case SCon{+c, +t}: cut_pick(c, t, cut_spec(t, sep), Char.is_eq(c, sep))
+
+def from_text(r: Maybe<&2, Text.Cut>) -> Maybe<&2, Cut>:
+  match r:
+    case None{}: None{}
+    case Some{Text.Cut{a, b}}: Some{Cut{a, b}}
+
+# Split at the first occurrence of sep. Every loop over header text in this
+# module is a tail call (BND-84).
+def cut(s: String, +sep: Char) -> Maybe<&2, Cut>:
+  from_text(Text.cut(s, sep))
 
 def ends_authority(c: Char) -> Bool:
   match c:
@@ -39,11 +49,31 @@ def authority_pick(c: Char, t: String, rest: Cut, end: Bool) -> Cut:
     case True{}: Cut{"", SCon{c, t}}
     case False{}: authority_prepend(c, rest)
 
-# The authority runs up to the first '/', '?' or '#'.
-def authority(s: String) -> Cut:
+def authority_spec(s: String) -> Cut:
   match s:
     case SNil{}: Cut{"", ""}
-    case SCon{+c, +t}: authority_pick(c, t, authority(t), ends_authority(c))
+    case SCon{+c, +t}: authority_pick(c, t, authority_spec(t), ends_authority(c))
+
+# The suffix read so far, from the right, and the spec's answer for it.
+type Folded is Data:
+  Folded{rest: String, cut: Cut}
+
+def authority_fold(+c: Char, acc: Folded) -> Folded:
+  match acc:
+    case Folded{+t, res}: Folded{SCon{c, t}, authority_pick(c, t, res, ends_authority(c))}
+
+def authority_answer(acc: Folded) -> Cut:
+  match acc:
+    case Folded{t, res}: res
+
+def authority_go(rev: String, acc: Folded) -> Cut:
+  match rev:
+    case SNil{}: authority_answer(acc)
+    case SCon{+c, r}: authority_go(r, authority_fold(c, acc))
+
+# The authority runs up to the first '/', '?' or '#'.
+def authority(s: String) -> Cut:
+  authority_go(String.reverse(s), Folded{"", Cut{"", ""}})
 
 def in_range(+x: U32, lo: U32, hi: U32) -> Bool:
   (x >= lo : U32) && (x <= hi : U32)
@@ -52,10 +82,18 @@ def digit(c: Char) -> Bool:
   match c:
     case Chr{+x}: in_range(x, 48, 57)
 
-def digits(s: String) -> Bool:
+def digits_spec(s: String) -> Bool:
   match s:
     case SNil{}: True{}
-    case SCon{c, t}: digit(c) && digits(t)
+    case SCon{c, t}: digit(c) && digits_spec(t)
+
+def digits_go(rev: String, acc: Bool) -> Bool:
+  match rev:
+    case SNil{}: acc
+    case SCon{c, r}: digits_go(r, digit(c) && acc)
+
+def digits(s: String) -> Bool:
+  digits_go(String.reverse(s), True{})
 
 # Host characters a browser serializes after IDNA: letters, digits, '-', '.'
 # and '_'. Anything else (userinfo '@', '%', spaces) is rejected.
@@ -63,10 +101,18 @@ def name_char(c: Char) -> Bool:
   match c:
     case Chr{+x}: in_range(x, 97, 122) || in_range(x, 48, 57) || in_range(x, 45, 46) || U32.is_eq(x, 95)
 
-def name_chars(s: String) -> Bool:
+def name_chars_spec(s: String) -> Bool:
   match s:
     case SNil{}: True{}
-    case SCon{c, t}: name_char(c) && name_chars(t)
+    case SCon{c, t}: name_char(c) && name_chars_spec(t)
+
+def name_chars_go(rev: String, acc: Bool) -> Bool:
+  match rev:
+    case SNil{}: acc
+    case SCon{c, r}: name_chars_go(r, name_char(c) && acc)
+
+def name_chars(s: String) -> Bool:
+  name_chars_go(String.reverse(s), True{})
 
 # An IPv6 literal between brackets: hex digits, ':' and '.' (for an embedded
 # IPv4 address). The text is kept as written, so "[::1]" and "[0::1]" differ.
@@ -74,10 +120,18 @@ def ipv6_char(c: Char) -> Bool:
   match c:
     case Chr{+x}: in_range(x, 97, 102) || in_range(x, 48, 58) || U32.is_eq(x, 46)
 
-def ipv6_chars(s: String) -> Bool:
+def ipv6_chars_spec(s: String) -> Bool:
   match s:
     case SNil{}: True{}
-    case SCon{c, t}: ipv6_char(c) && ipv6_chars(t)
+    case SCon{c, t}: ipv6_char(c) && ipv6_chars_spec(t)
+
+def ipv6_chars_go(rev: String, acc: Bool) -> Bool:
+  match rev:
+    case SNil{}: acc
+    case SCon{c, r}: ipv6_chars_go(r, ipv6_char(c) && acc)
+
+def ipv6_chars(s: String) -> Bool:
+  ipv6_chars_go(String.reverse(s), True{})
 
 def host_ok(+host: String, valid: Bool) -> Maybe<&2, String>:
   match valid:

@@ -4,6 +4,7 @@
 # the whole file is sent with 200, which RFC 9110 permits.
 import Base
 import ../router/encoding.bend as E
+import ../http/text.bend as Text
 
 type Range is Data:
   Whole{}
@@ -86,7 +87,7 @@ def unit_rest(+lower: String, ok: Bool) -> Spec:
 # The unit is case-insensitive. Optional whitespace around the value is
 # trimmed.
 def parse(value: String) -> Spec:
-  +lower = String.to_lower(String.trim(value))
+  +lower = Text.lower(String.trim(value))
   unit_rest(lower, String.starts_with(lower, "bytes="))
 
 def pick_last(+last: Nat, +length: Nat) -> Nat:

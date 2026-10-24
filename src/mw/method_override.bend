@@ -22,10 +22,18 @@ def text(m: Maybe<&2, String>) -> String:
     case None{}: "?"
     case Some{s}: s
 
-def texts(xs: List<&2, List<&2, U32>>) -> List<&2, String>:
+def texts_spec(xs: List<&2, List<&2, U32>>) -> List<&2, String>:
   match xs:
     case Nil{}: []
-    case x <> t: text(Utf8.decode(x)) <> texts(t)
+    case x <> t: text(Utf8.decode(x)) <> texts_spec(t)
+
+def texts_go(xs: List<&2, List<&2, U32>>, acc: List<&2, String>) -> List<&2, String>:
+  match xs:
+    case Nil{}: acc
+    case x <> t: texts_go(t, text(Utf8.decode(x)) <> acc)
+
+def texts(xs: List<&2, List<&2, U32>>) -> List<&2, String>:
+  texts_go(List.reverse(&2, List<&2, U32>, xs), [])
 
 def pick(v: String, rest: List<&2, String>, same: Bool) -> List<&2, String>:
   match same:
@@ -34,11 +42,20 @@ def pick(v: String, rest: List<&2, String>, same: Bool) -> List<&2, String>:
 
 # Field values named name. A file part with that name counts, as an
 # unreadable value, so it cannot be ignored.
-def field_values(parts: List<&2, Multipart.Part>, +name: String) -> List<&2, String>:
+def field_values_spec(parts: List<&2, Multipart.Part>, +name: String) -> List<&2, String>:
   match parts:
     case Nil{}: []
-    case Multipart.Field{+k, v} <> t: pick(v, field_values(t, name), String.eq(k, name))
-    case Multipart.File{+k, f, ct, b} <> t: pick("?", field_values(t, name), String.eq(k, name))
+    case Multipart.Field{+k, v} <> t: pick(v, field_values_spec(t, name), String.eq(k, name))
+    case Multipart.File{+k, f, ct, b} <> t: pick("?", field_values_spec(t, name), String.eq(k, name))
+
+def field_values_go(xs: List<&2, Multipart.Part>, +name: String, acc: List<&2, String>) -> List<&2, String>:
+  match xs:
+    case Nil{}: acc
+    case Multipart.Field{+k, v} <> t: field_values_go(t, name, pick(v, acc, String.eq(k, name)))
+    case Multipart.File{+k, f, ct, b} <> t: field_values_go(t, name, pick("?", acc, String.eq(k, name)))
+
+def field_values(xs: List<&2, Multipart.Part>, +name: String) -> List<&2, String>:
+  field_values_go(List.reverse(&2, Multipart.Part, xs), name, [])
 
 def parsed(r: Result<&2, &2, Multipart.Error, List<&2, Multipart.Part>>, +name: String) -> Values:
   match r:

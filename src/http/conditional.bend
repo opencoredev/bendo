@@ -27,11 +27,25 @@ def opaque_step(parsed: Maybe<&2, String>, acc: String, final_quote: Bool, valid
     case True{}: Some{String.reverse(acc)}
     case False{}: opaque_checked(parsed, valid)
 
-def opaque(s: String, +acc: String) -> Maybe<&2, String>:
+def opaque_spec(s: String, +acc: String) -> Maybe<&2, String>:
   match s:
     case SNil{}: None{}
     case SCon{Chr{+c}, +t}:
-      opaque_step(opaque(t, SCon{Chr{c}, acc}), acc, U32.is_eq(c, 34) && String.is_empty(t), Lex.etagc(c))
+      opaque_step(opaque_spec(t, SCon{Chr{c}, acc}), acc, U32.is_eq(c, 34) && String.is_empty(t), Lex.etagc(c))
+
+# Only the last character may be the closing quote; ok records that every
+# earlier one was an etagc. Tail calls throughout (BND-84).
+def opaque_last(+c: U32, acc: String, ok: Bool) -> Maybe<&2, String>:
+  opaque_end(acc, ok && U32.is_eq(c, 34))
+
+def opaque_go(s: String, +acc: String, ok: Bool) -> Maybe<&2, String>:
+  match s:
+    case SNil{}: None{}
+    case SCon{Chr{+c}, SNil{}}: opaque_last(c, acc, ok)
+    case SCon{Chr{+c}, t}: opaque_go(t, SCon{Chr{c}, acc}, ok && Lex.etagc(c))
+
+def opaque(s: String, +acc: String) -> Maybe<&2, String>:
+  opaque_go(s, acc, True{})
 
 def unweak(+s: String, weak: Bool) -> String:
   match weak:
@@ -70,12 +84,23 @@ def prepended(rest: List<&2, String>, acc: String, cut: Bool) -> List<&2, String
     case True{}: String.reverse(acc) <> rest
     case False{}: rest
 
-def segments(s: String, +quoted: Bool, +acc: String) -> List<&2, String>:
+def segments_spec(s: String, +quoted: Bool, +acc: String) -> List<&2, String>:
   match s:
     case SNil{}: [String.reverse(acc)]
     case SCon{Chr{+c}, t}:
       +cut = U32.is_eq(c, 44) && Bool.not(quoted)
-      prepended(segments(t, toggled(quoted, U32.is_eq(c, 34)), accumulated(Chr{c}, acc, cut)), acc, cut)
+      prepended(segments_spec(t, toggled(quoted, U32.is_eq(c, 34)), accumulated(Chr{c}, acc, cut)), acc, cut)
+
+# done holds the finished segments, newest first.
+def segments_go(s: String, +quoted: Bool, +acc: String, done: List<&2, String>) -> List<&2, String>:
+  match s:
+    case SNil{}: List.reverse(&2, String, String.reverse(acc) <> done)
+    case SCon{Chr{+c}, t}:
+      +cut = U32.is_eq(c, 44) && Bool.not(quoted)
+      segments_go(t, toggled(quoted, U32.is_eq(c, 34)), accumulated(Chr{c}, acc, cut), prepended(done, acc, cut))
+
+def segments(s: String, +quoted: Bool, +acc: String) -> List<&2, String>:
+  segments_go(s, quoted, acc, [])
 
 def trim(s: String) -> String: Bytes.ascii(Bytes.trim(Bytes.encode(s)))
 
@@ -97,11 +122,19 @@ def combine_member(s: String, tag: Maybe<&2, String>, result: Sigma<&2, &2, Bool
   (valid, hit) = result
   combine_valid(member(s, tag, hit), valid)
 
-def members(xs: List<&2, String>, +tag: Maybe<&2, String>) -> Sigma<&2, &2, Bool, _ => Bool>:
+def members_spec(xs: List<&2, String>, +tag: Maybe<&2, String>) -> Sigma<&2, &2, Bool, _ => Bool>:
   match xs:
     case Nil{}: (True{}, False{})
     case h <> t:
-      combine_member(trim(h), tag, members(t, tag))
+      combine_member(trim(h), tag, members_spec(t, tag))
+
+def members_go(rev: List<&2, String>, +tag: Maybe<&2, String>, acc: Sigma<&2, &2, Bool, _ => Bool>) -> Sigma<&2, &2, Bool, _ => Bool>:
+  match rev:
+    case Nil{}: acc
+    case h <> r: members_go(r, tag, combine_member(trim(h), tag, acc))
+
+def members(xs: List<&2, String>, +tag: Maybe<&2, String>) -> Sigma<&2, &2, Bool, _ => Bool>:
+  members_go(List.reverse(&2, String, xs), tag, (True{}, False{}))
 
 def decision(result: Sigma<&2, &2, Bool, _ => Bool>) -> Bool:
   (valid, hit) = result
