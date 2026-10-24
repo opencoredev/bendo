@@ -1,0 +1,4336 @@
+{
+  "schema": "bnd68-steps-v1",
+  "measuredAt": "2026-10-24",
+  "harness": "bench/steps.py",
+  "hardware": {
+    "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+    "vcpus": 8,
+    "kernel": "7.0.0-38-generic",
+    "sandbox": "Boat large",
+    "clang": "Ubuntu clang version 18.1.3 (1ubuntu1)"
+  },
+  "versions": {
+    "bend": "2.0.38",
+    "oha": "1.16.0",
+    "bun": "1.4.4"
+  },
+  "method": {
+    "serverCpus": "0-3",
+    "ohaCpus": "4-7",
+    "connections": 64,
+    "ohaWorkers": 2,
+    "warmupSeconds": 3,
+    "sampleSeconds": 10,
+    "samples": 7,
+    "order": "forward, reverse, forward",
+    "requestHeaders": {
+      "Content-Type": "application/json",
+      "Origin": "https://bench.example"
+    }
+  },
+  "notes": [
+    "BND-96. Variants: pre = 38f86d4 (BND-68 before merging main's BND-36), main = 07b27be, branch = 08a5212. Binaries built from these trees with bend -o x.c and clang -std=c11 -O3.",
+    "The Boat hosts were shared with other large sandboxes during both runs; CPU steal was about 1.6% of all jiffies over the 7-sample run and higher in bursts, which widened the ranges.",
+    "additionalRuns holds an earlier 3-sample run of the same binaries on another sandbox, kept for completeness: it measured hello at 0.827 of pre on a host whose steal rose during the run.",
+    "All samples had zero errors and passed the status, body and middleware-header checks."
+  ],
+  "variants": [
+    {
+      "name": "pre",
+      "commit": "38f86d4b2fcbce3a7c546def4781ab82b59f9f3e"
+    },
+    {
+      "name": "main",
+      "commit": "07b27be42c1d536745961107826dccf45b1b55b2"
+    },
+    {
+      "name": "branch",
+      "commit": "08a5212bb67aadd5bc89566b83f2a9602678a7c9"
+    }
+  ],
+  "summary": {
+    "pre": {
+      "hello": {
+        "rps": {
+          "median": 15353.308597834728,
+          "min": 14340.583728209496,
+          "max": 19073.014472300616
+        },
+        "p50Ms": {
+          "median": 4.0268429999999995,
+          "min": 3.2315859999999996,
+          "max": 4.263076
+        },
+        "p99Ms": {
+          "median": 7.431998,
+          "min": 4.834161,
+          "max": 10.307008
+        },
+        "cpuUsPerResponse": {
+          "median": 65.14594383521525,
+          "min": 52.34422484438203,
+          "max": 69.68786803905309
+        },
+        "errors": 0
+      },
+      "json": {
+        "rps": {
+          "median": 13305.90373010896,
+          "min": 11374.101708965236,
+          "max": 15701.11388628533
+        },
+        "p50Ms": {
+          "median": 4.525066000000001,
+          "min": 3.936411,
+          "max": 5.155061
+        },
+        "p99Ms": {
+          "median": 9.711061,
+          "min": 6.158257000000001,
+          "max": 14.271557000000001
+        },
+        "cpuUsPerResponse": {
+          "median": 75.09875486264438,
+          "min": 63.58764146499816,
+          "max": 87.76862118043964
+        },
+        "errors": 0
+      },
+      "params": {
+        "rps": {
+          "median": 9233.932431632897,
+          "min": 7176.89473128487,
+          "max": 10357.384046434305
+        },
+        "p50Ms": {
+          "median": 6.642529000000001,
+          "min": 5.9611350000000005,
+          "max": 8.262933
+        },
+        "p99Ms": {
+          "median": 15.671717000000001,
+          "min": 10.486853,
+          "max": 20.214419
+        },
+        "cpuUsPerResponse": {
+          "median": 108.10284378652123,
+          "min": 96.46922631680494,
+          "max": 138.99903994657095
+        },
+        "errors": 0
+      },
+      "echo": {
+        "rps": {
+          "median": 1558.3480738347093,
+          "min": 1278.3100950931198,
+          "max": 1980.4905478472522
+        },
+        "p50Ms": {
+          "median": 43.146537,
+          "min": 31.460235000000004,
+          "max": 47.56602
+        },
+        "p99Ms": {
+          "median": 74.01561600000001,
+          "min": 68.95212500000001,
+          "max": 99.933492
+        },
+        "cpuUsPerResponse": {
+          "median": 641.2633463333547,
+          "min": 504.0241448692153,
+          "max": 782.2838016657586
+        },
+        "errors": 0
+      },
+      "middleware": {
+        "rps": {
+          "median": 1414.0034034971236,
+          "min": 1011.5552577876884,
+          "max": 1689.6416038479256
+        },
+        "p50Ms": {
+          "median": 43.265991,
+          "min": 37.361463,
+          "max": 59.686255
+        },
+        "p99Ms": {
+          "median": 63.28937,
+          "min": 48.216594,
+          "max": 111.594109
+        },
+        "cpuUsPerResponse": {
+          "median": 846.4303333568257,
+          "min": 725.7065313587823,
+          "max": 1158.0502215657311
+        },
+        "errors": 0
+      }
+    },
+    "main": {
+      "hello": {
+        "rps": {
+          "median": 13171.702801549056,
+          "min": 12109.04446396495,
+          "max": 15188.655736476509
+        },
+        "p50Ms": {
+          "median": 4.559434,
+          "min": 4.0694490000000005,
+          "max": 4.910823
+        },
+        "p99Ms": {
+          "median": 9.781641,
+          "min": 6.605325000000001,
+          "max": 13.074034
+        },
+        "cpuUsPerResponse": {
+          "median": 75.87656400567556,
+          "min": 65.72973826536655,
+          "max": 82.59552944476991
+        },
+        "errors": 0
+      },
+      "json": {
+        "rps": {
+          "median": 12435.218511493582,
+          "min": 9575.693345217007,
+          "max": 13069.738769088057
+        },
+        "p50Ms": {
+          "median": 4.945133,
+          "min": 4.718494,
+          "max": 5.994819000000001
+        },
+        "p99Ms": {
+          "median": 9.750256,
+          "min": 7.21468,
+          "max": 17.042289
+        },
+        "cpuUsPerResponse": {
+          "median": 80.36905469917863,
+          "min": 76.46662996268428,
+          "max": 104.24057765349139
+        },
+        "errors": 0
+      },
+      "params": {
+        "rps": {
+          "median": 8108.656750871043,
+          "min": 5887.87979052095,
+          "max": 9303.404225065406
+        },
+        "p50Ms": {
+          "median": 7.5707320000000005,
+          "min": 6.659091,
+          "max": 9.406909
+        },
+        "p99Ms": {
+          "median": 14.928145,
+          "min": 9.736069,
+          "max": 30.397297000000002
+        },
+        "cpuUsPerResponse": {
+          "median": 123.07199526930468,
+          "min": 107.37909114337256,
+          "max": 169.65542982203146
+        },
+        "errors": 0
+      },
+      "echo": {
+        "rps": {
+          "median": 1685.8805341316754,
+          "min": 1143.221055734271,
+          "max": 2057.0792804618527
+        },
+        "p50Ms": {
+          "median": 41.916928,
+          "min": 31.933411000000003,
+          "max": 53.629295
+        },
+        "p99Ms": {
+          "median": 78.176504,
+          "min": 67.154495,
+          "max": 110.553694
+        },
+        "cpuUsPerResponse": {
+          "median": 592.6450622749543,
+          "min": 485.53568832679167,
+          "max": 874.0985315839778
+        },
+        "errors": 0
+      },
+      "middleware": {
+        "rps": {
+          "median": 1428.1929246443103,
+          "min": 1193.4515326338894,
+          "max": 1651.2040579990928
+        },
+        "p50Ms": {
+          "median": 44.174009,
+          "min": 38.441693,
+          "max": 52.476318
+        },
+        "p99Ms": {
+          "median": 63.291599000000005,
+          "min": 47.731232,
+          "max": 83.5977
+        },
+        "cpuUsPerResponse": {
+          "median": 843.2726511822557,
+          "min": 732.9590050111694,
+          "max": 1002.5
+        },
+        "errors": 0
+      }
+    },
+    "branch": {
+      "hello": {
+        "rps": {
+          "median": 15710.630072050104,
+          "min": 13832.880244221848,
+          "max": 17032.67149317572
+        },
+        "p50Ms": {
+          "median": 3.929493,
+          "min": 3.629752,
+          "max": 4.324836
+        },
+        "p99Ms": {
+          "median": 6.817005999999999,
+          "min": 6.115925000000001,
+          "max": 9.960517000000001
+        },
+        "cpuUsPerResponse": {
+          "median": 63.615254938134164,
+          "min": 58.61162610593509,
+          "max": 72.09888672961472
+        },
+        "errors": 0
+      },
+      "json": {
+        "rps": {
+          "median": 13423.3943258086,
+          "min": 12288.804572056688,
+          "max": 15480.944955033372
+        },
+        "p50Ms": {
+          "median": 4.602102,
+          "min": 4.01727,
+          "max": 4.812051
+        },
+        "p99Ms": {
+          "median": 8.893382,
+          "min": 6.442178,
+          "max": 11.978091999999998
+        },
+        "cpuUsPerResponse": {
+          "median": 74.37352034662975,
+          "min": 64.4848954298993,
+          "max": 79.66896731133494
+        },
+        "errors": 0
+      },
+      "params": {
+        "rps": {
+          "median": 8865.27951425578,
+          "min": 7692.31633064701,
+          "max": 9833.133944745085
+        },
+        "p50Ms": {
+          "median": 6.981055,
+          "min": 6.322612,
+          "max": 7.790451
+        },
+        "p99Ms": {
+          "median": 13.444009999999999,
+          "min": 9.583011,
+          "max": 18.427608000000003
+        },
+        "cpuUsPerResponse": {
+          "median": 112.69129347066645,
+          "min": 101.59607432768797,
+          "max": 129.95443156295843
+        },
+        "errors": 0
+      },
+      "echo": {
+        "rps": {
+          "median": 1700.721424768124,
+          "min": 1336.3865988845123,
+          "max": 2121.323171751458
+        },
+        "p50Ms": {
+          "median": 40.884421999999994,
+          "min": 27.271528,
+          "max": 47.973641
+        },
+        "p99Ms": {
+          "median": 69.879741,
+          "min": 66.743142,
+          "max": 79.00146
+        },
+        "cpuUsPerResponse": {
+          "median": 587.8564318754026,
+          "min": 470.5495228693649,
+          "max": 747.2462042274486
+        },
+        "errors": 0
+      },
+      "middleware": {
+        "rps": {
+          "median": 1559.3149462852782,
+          "min": 1391.1809041656354,
+          "max": 1681.8865775492927
+        },
+        "p50Ms": {
+          "median": 40.774792999999995,
+          "min": 37.641887,
+          "max": 43.146724
+        },
+        "p99Ms": {
+          "median": 52.084906000000004,
+          "min": 49.094934,
+          "max": 112.06524700000001
+        },
+        "cpuUsPerResponse": {
+          "median": 785.7553864842401,
+          "min": 732.2857989919953,
+          "max": 842.9954985677261
+        },
+        "errors": 0
+      }
+    }
+  },
+  "samples": [
+    {
+      "variant": "pre",
+      "scenario": "hello",
+      "sample": 1,
+      "rps": 15156.086223585271,
+      "p50Ms": 4.027158,
+      "p99Ms": 7.431998,
+      "responses": 151649,
+      "errors": 0,
+      "cpuUsPerResponse": 66.00768880770727,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 16:46:49 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "json",
+      "sample": 1,
+      "rps": 12466.825366946963,
+      "p50Ms": 4.800722,
+      "p99Ms": 11.718178,
+      "responses": 124774,
+      "errors": 0,
+      "cpuUsPerResponse": 80.14490198278487,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 16:47:02 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "params",
+      "sample": 1,
+      "rps": 7176.89473128487,
+      "p50Ms": 8.262933,
+      "p99Ms": 19.514727999999998,
+      "responses": 71871,
+      "errors": 0,
+      "cpuUsPerResponse": 138.99903994657095,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "7",
+          "date": "Sat, 24 Oct 2026 16:47:15 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "User 42"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "echo",
+      "sample": 1,
+      "rps": 1278.3100950931198,
+      "p50Ms": 47.061316,
+      "p99Ms": 99.933492,
+      "responses": 12847,
+      "errors": 0,
+      "cpuUsPerResponse": 782.2838016657586,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "1024",
+          "date": "Sat, 24 Oct 2026 16:47:28 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "middleware",
+      "sample": 1,
+      "rps": 1011.5552577876884,
+      "p50Ms": 59.686255,
+      "p99Ms": 111.594109,
+      "responses": 10155,
+      "errors": 0,
+      "cpuUsPerResponse": 1158.0502215657311,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "0481541d3cb94d14be675493110ee2ad",
+          "date": "Sat, 24 Oct 2026 16:47:42 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "hello",
+      "sample": 1,
+      "rps": 12109.04446396495,
+      "p50Ms": 4.910823,
+      "p99Ms": 13.074034,
+      "responses": 121193,
+      "errors": 0,
+      "cpuUsPerResponse": 82.59552944476991,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 16:47:55 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "json",
+      "sample": 1,
+      "rps": 9575.693345217007,
+      "p50Ms": 5.994819000000001,
+      "p99Ms": 17.042289,
+      "responses": 95836,
+      "errors": 0,
+      "cpuUsPerResponse": 104.24057765349139,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 16:48:08 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "params",
+      "sample": 1,
+      "rps": 5887.87979052095,
+      "p50Ms": 9.406909,
+      "p99Ms": 30.397297000000002,
+      "responses": 58943,
+      "errors": 0,
+      "cpuUsPerResponse": 169.65542982203146,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "7",
+          "date": "Sat, 24 Oct 2026 16:48:21 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "User 42"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "echo",
+      "sample": 1,
+      "rps": 1143.221055734271,
+      "p50Ms": 53.629295,
+      "p99Ms": 110.553694,
+      "responses": 11509,
+      "errors": 0,
+      "cpuUsPerResponse": 874.0985315839778,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "1024",
+          "date": "Sat, 24 Oct 2026 16:48:34 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "middleware",
+      "sample": 1,
+      "rps": 1231.1826762507787,
+      "p50Ms": 50.725317,
+      "p99Ms": 77.819918,
+      "responses": 12363,
+      "errors": 0,
+      "cpuUsPerResponse": 973.8736552616679,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "659fd38e9aab2aaad6f5622660546bc0",
+          "date": "Sat, 24 Oct 2026 16:48:48 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "hello",
+      "sample": 1,
+      "rps": 14500.678265491413,
+      "p50Ms": 4.170553,
+      "p99Ms": 9.106577,
+      "responses": 145125,
+      "errors": 0,
+      "cpuUsPerResponse": 68.97502153316107,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 16:49:01 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "json",
+      "sample": 1,
+      "rps": 12288.804572056688,
+      "p50Ms": 4.795118,
+      "p99Ms": 11.978091999999998,
+      "responses": 123009,
+      "errors": 0,
+      "cpuUsPerResponse": 79.66896731133494,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 16:49:14 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "params",
+      "sample": 1,
+      "rps": 8286.375444484513,
+      "p50Ms": 7.3049,
+      "p99Ms": 15.144648,
+      "responses": 82958,
+      "errors": 0,
+      "cpuUsPerResponse": 120.54292533571204,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "7",
+          "date": "Sat, 24 Oct 2026 16:49:27 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "User 42"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "echo",
+      "sample": 1,
+      "rps": 1336.3865988845123,
+      "p50Ms": 47.973641,
+      "p99Ms": 77.997483,
+      "responses": 13436,
+      "errors": 0,
+      "cpuUsPerResponse": 747.2462042274486,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "1024",
+          "date": "Sat, 24 Oct 2026 16:49:40 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "middleware",
+      "sample": 1,
+      "rps": 1461.8129155443864,
+      "p50Ms": 43.140094,
+      "p99Ms": 62.408688,
+      "responses": 14662,
+      "errors": 0,
+      "cpuUsPerResponse": 842.9954985677261,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "9872fe0afc0a9fa29f34a9d89288199d",
+          "date": "Sat, 24 Oct 2026 16:49:54 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "hello",
+      "sample": 2,
+      "rps": 15710.630072050104,
+      "p50Ms": 3.929493,
+      "p99Ms": 6.817005999999999,
+      "responses": 157195,
+      "errors": 0,
+      "cpuUsPerResponse": 63.615254938134164,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 16:50:07 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "json",
+      "sample": 2,
+      "rps": 14202.287525603248,
+      "p50Ms": 4.32691,
+      "p99Ms": 8.893382,
+      "responses": 142125,
+      "errors": 0,
+      "cpuUsPerResponse": 70.36059806508355,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 16:50:20 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "params",
+      "sample": 2,
+      "rps": 8915.944057255347,
+      "p50Ms": 6.885513,
+      "p99Ms": 13.444009999999999,
+      "responses": 89241,
+      "errors": 0,
+      "cpuUsPerResponse": 112.05611770374604,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "7",
+          "date": "Sat, 24 Oct 2026 16:50:33 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "User 42"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "echo",
+      "sample": 2,
+      "rps": 2121.323171751458,
+      "p50Ms": 27.271528,
+      "p99Ms": 78.016595,
+      "responses": 21273,
+      "errors": 0,
+      "cpuUsPerResponse": 470.5495228693649,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "1024",
+          "date": "Sat, 24 Oct 2026 16:50:46 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "middleware",
+      "sample": 2,
+      "rps": 1681.8865775492927,
+      "p50Ms": 37.641887,
+      "p99Ms": 49.282742,
+      "responses": 16865,
+      "errors": 0,
+      "cpuUsPerResponse": 732.2857989919953,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "fca63c6fb188649369a233eaa1bed431",
+          "date": "Sat, 24 Oct 2026 16:51:00 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "hello",
+      "sample": 2,
+      "rps": 14563.459211388616,
+      "p50Ms": 4.222712,
+      "p99Ms": 6.7191469999999995,
+      "responses": 145734,
+      "errors": 0,
+      "cpuUsPerResponse": 68.54954917864053,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 16:51:13 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "json",
+      "sample": 2,
+      "rps": 12921.976299697524,
+      "p50Ms": 4.718494,
+      "p99Ms": 10.206975,
+      "responses": 129299,
+      "errors": 0,
+      "cpuUsPerResponse": 77.34011863974199,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 16:51:26 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "params",
+      "sample": 2,
+      "rps": 8226.693343449026,
+      "p50Ms": 7.388282,
+      "p99Ms": 14.345706,
+      "responses": 82341,
+      "errors": 0,
+      "cpuUsPerResponse": 121.44618112483452,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "7",
+          "date": "Sat, 24 Oct 2026 16:51:39 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "User 42"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "echo",
+      "sample": 2,
+      "rps": 1475.1351273731448,
+      "p50Ms": 45.32964200000001,
+      "p99Ms": 88.722356,
+      "responses": 14809,
+      "errors": 0,
+      "cpuUsPerResponse": 676.6155716118576,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "1024",
+          "date": "Sat, 24 Oct 2026 16:51:52 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "middleware",
+      "sample": 2,
+      "rps": 1193.4515326338894,
+      "p50Ms": 52.476318,
+      "p99Ms": 83.5977,
+      "responses": 12000,
+      "errors": 0,
+      "cpuUsPerResponse": 1002.5,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "a23a8441ad60e3278e3c16cc9c581b36",
+          "date": "Sat, 24 Oct 2026 16:52:05 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "hello",
+      "sample": 2,
+      "rps": 14340.583728209496,
+      "p50Ms": 4.263076,
+      "p99Ms": 10.307008,
+      "responses": 143497,
+      "errors": 0,
+      "cpuUsPerResponse": 69.68786803905309,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 16:52:19 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "json",
+      "sample": 2,
+      "rps": 13305.90373010896,
+      "p50Ms": 4.525066000000001,
+      "p99Ms": 9.916874,
+      "responses": 133158,
+      "errors": 0,
+      "cpuUsPerResponse": 75.09875486264438,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 16:52:32 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "params",
+      "sample": 2,
+      "rps": 9233.932431632897,
+      "p50Ms": 6.642529000000001,
+      "p99Ms": 11.993397,
+      "responses": 92412,
+      "errors": 0,
+      "cpuUsPerResponse": 108.10284378652123,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "7",
+          "date": "Sat, 24 Oct 2026 16:52:45 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "User 42"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "echo",
+      "sample": 2,
+      "rps": 1980.4905478472522,
+      "p50Ms": 34.233837,
+      "p99Ms": 71.24369399999999,
+      "responses": 19880,
+      "errors": 0,
+      "cpuUsPerResponse": 504.0241448692153,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "1024",
+          "date": "Sat, 24 Oct 2026 16:52:58 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "middleware",
+      "sample": 2,
+      "rps": 1594.7890749122776,
+      "p50Ms": 39.687909,
+      "p99Ms": 54.229236,
+      "responses": 15996,
+      "errors": 0,
+      "cpuUsPerResponse": 767.6919229807452,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "c7cce59f07b9fa13b3e38160b44fe47a",
+          "date": "Sat, 24 Oct 2026 16:53:11 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "hello",
+      "sample": 3,
+      "rps": 17105.45212406829,
+      "p50Ms": 3.619676,
+      "p99Ms": 5.771308,
+      "responses": 171136,
+      "errors": 0,
+      "cpuUsPerResponse": 58.43305908750935,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 16:53:25 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "json",
+      "sample": 3,
+      "rps": 15200.274677298086,
+      "p50Ms": 4.079919,
+      "p99Ms": 6.158257000000001,
+      "responses": 152100,
+      "errors": 0,
+      "cpuUsPerResponse": 65.68047337278107,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 16:53:38 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "params",
+      "sample": 3,
+      "rps": 10357.384046434305,
+      "p50Ms": 5.9611350000000005,
+      "p99Ms": 10.486853,
+      "responses": 103660,
+      "errors": 0,
+      "cpuUsPerResponse": 96.46922631680494,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "7",
+          "date": "Sat, 24 Oct 2026 16:53:51 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "User 42"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "echo",
+      "sample": 3,
+      "rps": 1974.9942035887648,
+      "p50Ms": 31.460235000000004,
+      "p99Ms": 73.414598,
+      "responses": 19825,
+      "errors": 0,
+      "cpuUsPerResponse": 505.92686002522066,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "1024",
+          "date": "Sat, 24 Oct 2026 16:54:04 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "middleware",
+      "sample": 3,
+      "rps": 1635.9450071474498,
+      "p50Ms": 38.74132,
+      "p99Ms": 48.666387,
+      "responses": 16408,
+      "errors": 0,
+      "cpuUsPerResponse": 746.5870307167236,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "a2bc9432626391704c785f6f5f4cce58",
+          "date": "Sat, 24 Oct 2026 16:54:17 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "hello",
+      "sample": 3,
+      "rps": 15188.655736476509,
+      "p50Ms": 4.0694490000000005,
+      "p99Ms": 6.605325000000001,
+      "responses": 151986,
+      "errors": 0,
+      "cpuUsPerResponse": 65.72973826536655,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 16:54:30 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "json",
+      "sample": 3,
+      "rps": 13069.738769088057,
+      "p50Ms": 4.759546,
+      "p99Ms": 7.21468,
+      "responses": 130776,
+      "errors": 0,
+      "cpuUsPerResponse": 76.46662996268428,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 16:54:44 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "params",
+      "sample": 3,
+      "rps": 9096.102559827572,
+      "p50Ms": 6.84232,
+      "p99Ms": 9.736069,
+      "responses": 91039,
+      "errors": 0,
+      "cpuUsPerResponse": 109.8430343039796,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "7",
+          "date": "Sat, 24 Oct 2026 16:54:57 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "User 42"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "echo",
+      "sample": 3,
+      "rps": 2057.0792804618527,
+      "p50Ms": 31.933411000000003,
+      "p99Ms": 67.83931799999999,
+      "responses": 20637,
+      "errors": 0,
+      "cpuUsPerResponse": 485.53568832679167,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "1024",
+          "date": "Sat, 24 Oct 2026 16:55:10 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "middleware",
+      "sample": 3,
+      "rps": 1651.2040579990928,
+      "p50Ms": 38.441693,
+      "p99Ms": 47.731232,
+      "responses": 16563,
+      "errors": 0,
+      "cpuUsPerResponse": 732.9590050111694,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "a91ce5b1307eb0565fb8a17faee5075b",
+          "date": "Sat, 24 Oct 2026 16:55:23 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "hello",
+      "sample": 3,
+      "rps": 16429.691779362016,
+      "p50Ms": 3.780645,
+      "p99Ms": 6.115925000000001,
+      "responses": 164385,
+      "errors": 0,
+      "cpuUsPerResponse": 60.771968245277854,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 16:55:36 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "json",
+      "sample": 3,
+      "rps": 14949.368948286723,
+      "p50Ms": 4.141413,
+      "p99Ms": 6.728485999999999,
+      "responses": 149590,
+      "errors": 0,
+      "cpuUsPerResponse": 66.7825389397687,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 16:55:49 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "params",
+      "sample": 3,
+      "rps": 9833.133944745085,
+      "p50Ms": 6.322612,
+      "p99Ms": 9.583011,
+      "responses": 98429,
+      "errors": 0,
+      "cpuUsPerResponse": 101.59607432768797,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "7",
+          "date": "Sat, 24 Oct 2026 16:56:02 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "User 42"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "echo",
+      "sample": 3,
+      "rps": 2092.6204213762812,
+      "p50Ms": 34.280989999999996,
+      "p99Ms": 66.743142,
+      "responses": 20996,
+      "errors": 0,
+      "cpuUsPerResponse": 477.2337588112021,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "1024",
+          "date": "Sat, 24 Oct 2026 16:56:16 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "middleware",
+      "sample": 3,
+      "rps": 1602.6908978979425,
+      "p50Ms": 39.351538999999995,
+      "p99Ms": 51.531181000000004,
+      "responses": 16075,
+      "errors": 0,
+      "cpuUsPerResponse": 760.1866251944012,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "6d3980fe97d05d0e0a8014bbd8d18dc4",
+          "date": "Sat, 24 Oct 2026 16:56:29 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "hello",
+      "sample": 4,
+      "rps": 17032.67149317572,
+      "p50Ms": 3.629752,
+      "p99Ms": 6.300642000000001,
+      "responses": 170444,
+      "errors": 0,
+      "cpuUsPerResponse": 58.61162610593509,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 16:56:42 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "json",
+      "sample": 4,
+      "rps": 15480.944955033372,
+      "p50Ms": 4.01727,
+      "p99Ms": 6.442178,
+      "responses": 154920,
+      "errors": 0,
+      "cpuUsPerResponse": 64.4848954298993,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 16:56:55 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "params",
+      "sample": 4,
+      "rps": 9523.808055610258,
+      "p50Ms": 6.4471169999999995,
+      "p99Ms": 10.988342999999999,
+      "responses": 95324,
+      "errors": 0,
+      "cpuUsPerResponse": 104.90537535143301,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "7",
+          "date": "Sat, 24 Oct 2026 16:57:08 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "User 42"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "echo",
+      "sample": 4,
+      "rps": 2073.9228978072806,
+      "p50Ms": 33.497201999999994,
+      "p99Ms": 69.231975,
+      "responses": 20818,
+      "errors": 0,
+      "cpuUsPerResponse": 481.3142472860025,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "1024",
+          "date": "Sat, 24 Oct 2026 16:57:21 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "middleware",
+      "sample": 4,
+      "rps": 1628.566322021439,
+      "p50Ms": 38.952621,
+      "p99Ms": 49.094934,
+      "responses": 16343,
+      "errors": 0,
+      "cpuUsPerResponse": 753.22768157621,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "84d602b30666a4f516d57746041a950d",
+          "date": "Sat, 24 Oct 2026 16:57:35 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "hello",
+      "sample": 4,
+      "rps": 14437.64784168704,
+      "p50Ms": 4.268199,
+      "p99Ms": 7.904377,
+      "responses": 144467,
+      "errors": 0,
+      "cpuUsPerResponse": 69.2199602677428,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 16:57:48 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "json",
+      "sample": 4,
+      "rps": 12435.218511493582,
+      "p50Ms": 4.945133,
+      "p99Ms": 9.516833,
+      "responses": 124426,
+      "errors": 0,
+      "cpuUsPerResponse": 80.36905469917863,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 16:58:01 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "params",
+      "sample": 4,
+      "rps": 7870.733996717548,
+      "p50Ms": 7.850703,
+      "p99Ms": 14.967035,
+      "responses": 78775,
+      "errors": 0,
+      "cpuUsPerResponse": 127.07077118375119,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "7",
+          "date": "Sat, 24 Oct 2026 16:58:14 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "User 42"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "echo",
+      "sample": 4,
+      "rps": 1804.2791786839798,
+      "p50Ms": 39.963512,
+      "p99Ms": 78.176504,
+      "responses": 18100,
+      "errors": 0,
+      "cpuUsPerResponse": 554.1436464088398,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "1024",
+          "date": "Sat, 24 Oct 2026 16:58:27 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "middleware",
+      "sample": 4,
+      "rps": 1288.2993167321122,
+      "p50Ms": 49.212343,
+      "p99Ms": 66.640898,
+      "responses": 12939,
+      "errors": 0,
+      "cpuUsPerResponse": 928.974418424917,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "afccec782a7a123b26f9dfcceedee249",
+          "date": "Sat, 24 Oct 2026 16:58:40 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "hello",
+      "sample": 4,
+      "rps": 15353.308597834728,
+      "p50Ms": 4.0268429999999995,
+      "p99Ms": 7.497234000000001,
+      "responses": 153655,
+      "errors": 0,
+      "cpuUsPerResponse": 65.14594383521525,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 16:58:53 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "json",
+      "sample": 4,
+      "rps": 13142.539836857935,
+      "p50Ms": 4.645686,
+      "p99Ms": 9.711061,
+      "responses": 131520,
+      "errors": 0,
+      "cpuUsPerResponse": 76.03406326034063,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 16:59:07 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "params",
+      "sample": 4,
+      "rps": 7943.396277691235,
+      "p50Ms": 7.492153,
+      "p99Ms": 17.575564,
+      "responses": 79506,
+      "errors": 0,
+      "cpuUsPerResponse": 125.90244761401655,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "7",
+          "date": "Sat, 24 Oct 2026 16:59:20 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "User 42"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "echo",
+      "sample": 4,
+      "rps": 1422.4010379433212,
+      "p50Ms": 47.56602,
+      "p99Ms": 80.044055,
+      "responses": 14295,
+      "errors": 0,
+      "cpuUsPerResponse": 702.343476740119,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "1024",
+          "date": "Sat, 24 Oct 2026 16:59:33 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "middleware",
+      "sample": 4,
+      "rps": 1393.9678205865052,
+      "p50Ms": 45.277386,
+      "p99Ms": 63.28937,
+      "responses": 13988,
+      "errors": 0,
+      "cpuUsPerResponse": 860.0228767515013,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "a2d5dd37c25c07cf757ef5e2b90ec645",
+          "date": "Sat, 24 Oct 2026 16:59:46 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "hello",
+      "sample": 5,
+      "rps": 14683.655068271764,
+      "p50Ms": 4.11317,
+      "p99Ms": 10.123554,
+      "responses": 146926,
+      "errors": 0,
+      "cpuUsPerResponse": 68.06147312252426,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 16:59:59 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "json",
+      "sample": 5,
+      "rps": 11374.101708965236,
+      "p50Ms": 5.155061,
+      "p99Ms": 14.271557000000001,
+      "responses": 113822,
+      "errors": 0,
+      "cpuUsPerResponse": 87.76862118043964,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 17:00:12 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "params",
+      "sample": 5,
+      "rps": 8022.809276081766,
+      "p50Ms": 7.445112,
+      "p99Ms": 20.214419,
+      "responses": 80301,
+      "errors": 0,
+      "cpuUsPerResponse": 124.53145041780301,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "7",
+          "date": "Sat, 24 Oct 2026 17:00:26 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "User 42"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "echo",
+      "sample": 5,
+      "rps": 1453.0599290361358,
+      "p50Ms": 46.472426,
+      "p99Ms": 74.01561600000001,
+      "responses": 14585,
+      "errors": 0,
+      "cpuUsPerResponse": 687.6928351045594,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "1024",
+          "date": "Sat, 24 Oct 2026 17:00:39 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "middleware",
+      "sample": 5,
+      "rps": 1414.0034034971236,
+      "p50Ms": 43.265991,
+      "p99Ms": 72.31745500000001,
+      "responses": 14189,
+      "errors": 0,
+      "cpuUsPerResponse": 846.4303333568257,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "6d47cdcab687382b53e5c467dfcfdf36",
+          "date": "Sat, 24 Oct 2026 17:00:52 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "hello",
+      "sample": 5,
+      "rps": 12796.960406350778,
+      "p50Ms": 4.756889999999999,
+      "p99Ms": 10.166497999999999,
+      "responses": 128078,
+      "errors": 0,
+      "cpuUsPerResponse": 78.07742157123003,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 17:01:05 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "json",
+      "sample": 5,
+      "rps": 12431.76613950626,
+      "p50Ms": 4.975491,
+      "p99Ms": 9.750256,
+      "responses": 124392,
+      "errors": 0,
+      "cpuUsPerResponse": 80.39102193067079,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 17:01:18 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "params",
+      "sample": 5,
+      "rps": 8108.656750871043,
+      "p50Ms": 7.5707320000000005,
+      "p99Ms": 14.928145,
+      "responses": 81172,
+      "errors": 0,
+      "cpuUsPerResponse": 123.07199526930468,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "7",
+          "date": "Sat, 24 Oct 2026 17:01:32 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "User 42"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "echo",
+      "sample": 5,
+      "rps": 1685.8805341316754,
+      "p50Ms": 41.916928,
+      "p99Ms": 67.154495,
+      "responses": 16941,
+      "errors": 0,
+      "cpuUsPerResponse": 592.6450622749543,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "1024",
+          "date": "Sat, 24 Oct 2026 17:01:45 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "middleware",
+      "sample": 5,
+      "rps": 1431.9825800614417,
+      "p50Ms": 44.174009,
+      "p99Ms": 56.581922999999996,
+      "responses": 14372,
+      "errors": 0,
+      "cpuUsPerResponse": 838.4358474812135,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "b465e7e44282310b6827aece48455698",
+          "date": "Sat, 24 Oct 2026 17:01:58 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "hello",
+      "sample": 5,
+      "rps": 13832.880244221848,
+      "p50Ms": 4.324836,
+      "p99Ms": 9.765261,
+      "responses": 138421,
+      "errors": 0,
+      "cpuUsPerResponse": 72.09888672961472,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 17:02:11 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "json",
+      "sample": 5,
+      "rps": 13423.3943258086,
+      "p50Ms": 4.60992,
+      "p99Ms": 8.358051,
+      "responses": 134322,
+      "errors": 0,
+      "cpuUsPerResponse": 74.37352034662975,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 17:02:24 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "params",
+      "sample": 5,
+      "rps": 8646.04424913256,
+      "p50Ms": 7.18721,
+      "p99Ms": 11.915704,
+      "responses": 86545,
+      "errors": 0,
+      "cpuUsPerResponse": 115.54682535097348,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "7",
+          "date": "Sat, 24 Oct 2026 17:02:37 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "User 42"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "echo",
+      "sample": 5,
+      "rps": 1700.721424768124,
+      "p50Ms": 40.884421999999994,
+      "p99Ms": 68.53558199999999,
+      "responses": 17079,
+      "errors": 0,
+      "cpuUsPerResponse": 587.8564318754026,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "1024",
+          "date": "Sat, 24 Oct 2026 17:02:51 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "middleware",
+      "sample": 5,
+      "rps": 1559.3149462852782,
+      "p50Ms": 40.774792999999995,
+      "p99Ms": 52.084906000000004,
+      "responses": 15641,
+      "errors": 0,
+      "cpuUsPerResponse": 785.7553864842401,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "3c9f0071e1b1b2a7c56db178fd40f291",
+          "date": "Sat, 24 Oct 2026 17:03:04 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "hello",
+      "sample": 6,
+      "rps": 16397.779987893606,
+      "p50Ms": 3.78564,
+      "p99Ms": 6.491899,
+      "responses": 164068,
+      "errors": 0,
+      "cpuUsPerResponse": 60.889387327205796,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 17:03:17 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "json",
+      "sample": 6,
+      "rps": 12565.431433530244,
+      "p50Ms": 4.812051,
+      "p99Ms": 10.245270000000001,
+      "responses": 125761,
+      "errors": 0,
+      "cpuUsPerResponse": 79.5159071572268,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 17:03:30 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "params",
+      "sample": 6,
+      "rps": 7692.31633064701,
+      "p50Ms": 7.790451,
+      "p99Ms": 18.427608000000003,
+      "responses": 77027,
+      "errors": 0,
+      "cpuUsPerResponse": 129.95443156295843,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "7",
+          "date": "Sat, 24 Oct 2026 17:03:43 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "User 42"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "echo",
+      "sample": 6,
+      "rps": 1500.3678063584491,
+      "p50Ms": 44.857303,
+      "p99Ms": 79.00146,
+      "responses": 15056,
+      "errors": 0,
+      "cpuUsPerResponse": 665.5154091392136,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "1024",
+          "date": "Sat, 24 Oct 2026 17:03:56 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "middleware",
+      "sample": 6,
+      "rps": 1391.1809041656354,
+      "p50Ms": 43.146724,
+      "p99Ms": 112.06524700000001,
+      "responses": 13959,
+      "errors": 0,
+      "cpuUsPerResponse": 818.8265635074146,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "930ef8c65e124669d06ef9f3c65c59c7",
+          "date": "Sat, 24 Oct 2026 17:04:10 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "hello",
+      "sample": 6,
+      "rps": 13171.702801549056,
+      "p50Ms": 4.559434,
+      "p99Ms": 10.550189999999999,
+      "responses": 131793,
+      "errors": 0,
+      "cpuUsPerResponse": 75.87656400567556,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 17:04:23 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "json",
+      "sample": 6,
+      "rps": 10816.62730242881,
+      "p50Ms": 5.420382,
+      "p99Ms": 13.541437,
+      "responses": 108290,
+      "errors": 0,
+      "cpuUsPerResponse": 90.59008218672085,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 17:04:36 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "params",
+      "sample": 6,
+      "rps": 6951.848796169499,
+      "p50Ms": 8.463816000000001,
+      "p99Ms": 20.690931,
+      "responses": 69594,
+      "errors": 0,
+      "cpuUsPerResponse": 142.2536425553927,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "7",
+          "date": "Sat, 24 Oct 2026 17:04:49 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "User 42"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "echo",
+      "sample": 6,
+      "rps": 1682.9106370342845,
+      "p50Ms": 42.433287,
+      "p99Ms": 68.67725,
+      "responses": 16891,
+      "errors": 0,
+      "cpuUsPerResponse": 593.2153217689894,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "1024",
+          "date": "Sat, 24 Oct 2026 17:05:03 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "middleware",
+      "sample": 6,
+      "rps": 1523.5633290049811,
+      "p50Ms": 41.33009,
+      "p99Ms": 63.291599000000005,
+      "responses": 15297,
+      "errors": 0,
+      "cpuUsPerResponse": 791.658495129764,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "8002309d1b45bbaec55c935b567a4e37",
+          "date": "Sat, 24 Oct 2026 17:05:16 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "hello",
+      "sample": 6,
+      "rps": 17065.87338872486,
+      "p50Ms": 3.631399,
+      "p99Ms": 6.156808,
+      "responses": 170764,
+      "errors": 0,
+      "cpuUsPerResponse": 58.50179194678035,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 17:05:29 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "json",
+      "sample": 6,
+      "rps": 14881.281984784811,
+      "p50Ms": 4.1302259999999995,
+      "p99Ms": 7.412949,
+      "responses": 148903,
+      "errors": 0,
+      "cpuUsPerResponse": 67.15781414746513,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 17:05:42 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "params",
+      "sample": 6,
+      "rps": 9803.485431819601,
+      "p50Ms": 6.280669,
+      "p99Ms": 12.067881000000002,
+      "responses": 98109,
+      "errors": 0,
+      "cpuUsPerResponse": 101.92744804248336,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "7",
+          "date": "Sat, 24 Oct 2026 17:05:55 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "User 42"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "echo",
+      "sample": 6,
+      "rps": 1871.9223432136491,
+      "p50Ms": 37.10401,
+      "p99Ms": 68.95212500000001,
+      "responses": 18774,
+      "errors": 0,
+      "cpuUsPerResponse": 533.1841909023117,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "1024",
+          "date": "Sat, 24 Oct 2026 17:06:09 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "middleware",
+      "sample": 6,
+      "rps": 1689.6416038479256,
+      "p50Ms": 37.361463,
+      "p99Ms": 48.216594,
+      "responses": 16949,
+      "errors": 0,
+      "cpuUsPerResponse": 725.7065313587823,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "4003ccd44ce772166ecf76c9caa948fb",
+          "date": "Sat, 24 Oct 2026 17:06:22 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "hello",
+      "sample": 7,
+      "rps": 19073.014472300616,
+      "p50Ms": 3.2315859999999996,
+      "p99Ms": 4.834161,
+      "responses": 190852,
+      "errors": 0,
+      "cpuUsPerResponse": 52.34422484438203,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 17:06:35 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "json",
+      "sample": 7,
+      "rps": 15701.11388628533,
+      "p50Ms": 3.936411,
+      "p99Ms": 6.423559,
+      "responses": 157106,
+      "errors": 0,
+      "cpuUsPerResponse": 63.58764146499816,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 17:06:48 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "params",
+      "sample": 7,
+      "rps": 9312.07047595482,
+      "p50Ms": 6.512836,
+      "p99Ms": 15.671717000000001,
+      "responses": 93228,
+      "errors": 0,
+      "cpuUsPerResponse": 107.04938430514437,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "7",
+          "date": "Sat, 24 Oct 2026 17:07:01 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "User 42"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "echo",
+      "sample": 7,
+      "rps": 1558.3480738347093,
+      "p50Ms": 43.146537,
+      "p99Ms": 74.878389,
+      "responses": 15641,
+      "errors": 0,
+      "cpuUsPerResponse": 641.2633463333547,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "1024",
+          "date": "Sat, 24 Oct 2026 17:07:15 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+      }
+    },
+    {
+      "variant": "pre",
+      "scenario": "middleware",
+      "sample": 7,
+      "rps": 1408.7825080352025,
+      "p50Ms": 44.278875,
+      "p99Ms": 69.447827,
+      "responses": 14136,
+      "errors": 0,
+      "cpuUsPerResponse": 855.2631578947369,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "eef9e678e6f522855492eb036ebd39c9",
+          "date": "Sat, 24 Oct 2026 17:07:28 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "hello",
+      "sample": 7,
+      "rps": 12832.89296652943,
+      "p50Ms": 4.736415,
+      "p99Ms": 9.781641,
+      "responses": 128429,
+      "errors": 0,
+      "cpuUsPerResponse": 77.8640338241363,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 17:07:41 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "json",
+      "sample": 7,
+      "rps": 12810.657701207461,
+      "p50Ms": 4.821456,
+      "p99Ms": 9.09035,
+      "responses": 128227,
+      "errors": 0,
+      "cpuUsPerResponse": 77.98669546975286,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 17:07:54 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "params",
+      "sample": 7,
+      "rps": 9303.404225065406,
+      "p50Ms": 6.659091,
+      "p99Ms": 11.20154,
+      "responses": 93128,
+      "errors": 0,
+      "cpuUsPerResponse": 107.37909114337256,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "7",
+          "date": "Sat, 24 Oct 2026 17:08:07 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "User 42"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "echo",
+      "sample": 7,
+      "rps": 1732.1647318061139,
+      "p50Ms": 39.869942,
+      "p99Ms": 87.211632,
+      "responses": 17394,
+      "errors": 0,
+      "cpuUsPerResponse": 576.6356214786708,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "1024",
+          "date": "Sat, 24 Oct 2026 17:08:20 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+      }
+    },
+    {
+      "variant": "main",
+      "scenario": "middleware",
+      "sample": 7,
+      "rps": 1428.1929246443103,
+      "p50Ms": 43.937709,
+      "p99Ms": 63.071864000000005,
+      "responses": 14337,
+      "errors": 0,
+      "cpuUsPerResponse": 843.2726511822557,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "e53677782f03502bd9142a5e34eb00bd",
+          "date": "Sat, 24 Oct 2026 17:08:34 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "hello",
+      "sample": 7,
+      "rps": 14758.015188691623,
+      "p50Ms": 4.069341,
+      "p99Ms": 9.960517000000001,
+      "responses": 147690,
+      "errors": 0,
+      "cpuUsPerResponse": 67.70939129257228,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "date": "Sat, 24 Oct 2026 17:08:47 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "Hello, world!"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "json",
+      "sample": 7,
+      "rps": 13213.351169945861,
+      "p50Ms": 4.602102,
+      "p99Ms": 9.501004,
+      "responses": 132238,
+      "errors": 0,
+      "cpuUsPerResponse": 75.62122839123398,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "27",
+          "date": "Sat, 24 Oct 2026 17:09:00 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"message\":\"Hello, world!\"}"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "params",
+      "sample": 7,
+      "rps": 8865.27951425578,
+      "p50Ms": 6.981055,
+      "p99Ms": 13.958935,
+      "responses": 88738,
+      "errors": 0,
+      "cpuUsPerResponse": 112.69129347066645,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "7",
+          "date": "Sat, 24 Oct 2026 17:09:13 GMT",
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "body": "User 42"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "echo",
+      "sample": 7,
+      "rps": 1594.831116305388,
+      "p50Ms": 42.8175,
+      "p99Ms": 69.879741,
+      "responses": 16025,
+      "errors": 0,
+      "cpuUsPerResponse": 625.8970358814353,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "1024",
+          "date": "Sat, 24 Oct 2026 17:09:27 GMT",
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+      }
+    },
+    {
+      "variant": "branch",
+      "scenario": "middleware",
+      "sample": 7,
+      "rps": 1486.3555857361557,
+      "p50Ms": 42.314665,
+      "p99Ms": 59.434602000000005,
+      "responses": 14908,
+      "errors": 0,
+      "cpuUsPerResponse": 815.6694392272606,
+      "check": {
+        "status": 200,
+        "headers": {
+          "connection": "close",
+          "content-length": "13",
+          "x-request-id": "5bfe2f1758d677fa4b584b0ab6419bf7",
+          "date": "Sat, 24 Oct 2026 17:09:40 GMT",
+          "content-type": "text/plain; charset=utf-8",
+          "x-bench": "middleware",
+          "cross-origin-resource-policy": "same-origin",
+          "cross-origin-opener-policy": "same-origin",
+          "origin-agent-cluster": "?1",
+          "referrer-policy": "no-referrer",
+          "strict-transport-security": "max-age=15552000; includeSubDomains",
+          "x-content-type-options": "nosniff",
+          "x-dns-prefetch-control": "off",
+          "x-download-options": "noopen",
+          "x-frame-options": "SAMEORIGIN",
+          "x-permitted-cross-domain-policies": "none",
+          "x-xss-protection": "0",
+          "access-control-allow-origin": "*"
+        },
+        "body": "Hello, world!"
+      }
+    }
+  ],
+  "additionalRuns": [
+    {
+      "samplesPerCell": 3,
+      "summary": {
+        "pre": {
+          "hello": {
+            "rps": {
+              "median": 19279.287959969934,
+              "min": 17732.587578264098,
+              "max": 19717.735326608294
+            },
+            "p50Ms": {
+              "median": 3.1204549999999998,
+              "min": 3.101746,
+              "max": 3.4354139999999997
+            },
+            "p99Ms": {
+              "median": 6.13643,
+              "min": 5.485310999999999,
+              "max": 7.577641000000001
+            },
+            "cpuUsPerResponse": {
+              "median": 51.73182388372262,
+              "min": 50.68886162954552,
+              "max": 56.31055921627426
+            },
+            "errors": 0
+          },
+          "json": {
+            "rps": {
+              "median": 15297.571870130438,
+              "min": 15015.339321767702,
+              "max": 16678.33372492034
+            },
+            "p50Ms": {
+              "median": 3.9414259999999994,
+              "min": 3.6831400000000003,
+              "max": 4.118392999999999
+            },
+            "p99Ms": {
+              "median": 7.219017,
+              "min": 7.039313,
+              "max": 9.233078
+            },
+            "cpuUsPerResponse": {
+              "median": 65.2599947739744,
+              "min": 59.98214317815476,
+              "max": 66.56105645708809
+            },
+            "errors": 0
+          },
+          "params": {
+            "rps": {
+              "median": 10048.860398872257,
+              "min": 10001.626706983083,
+              "max": 11855.984822828486
+            },
+            "p50Ms": {
+              "median": 6.088762999999999,
+              "min": 5.150514,
+              "max": 6.130731000000001
+            },
+            "p99Ms": {
+              "median": 11.318702,
+              "min": 10.078168,
+              "max": 12.558791999999999
+            },
+            "cpuUsPerResponse": {
+              "median": 99.43718552990076,
+              "min": 84.2021863911061,
+              "max": 99.90708640963904
+            },
+            "errors": 0
+          },
+          "echo": {
+            "rps": {
+              "median": 2061.315229924974,
+              "min": 1767.3396987393585,
+              "max": 2153.4693382878004
+            },
+            "p50Ms": {
+              "median": 31.567057000000002,
+              "min": 30.598813,
+              "max": 38.889914
+            },
+            "p99Ms": {
+              "median": 79.436407,
+              "min": 72.221936,
+              "max": 86.57503299999999
+            },
+            "cpuUsPerResponse": {
+              "median": 484.690175591351,
+              "min": 463.44738182323255,
+              "max": 565.1659435397532
+            },
+            "errors": 0
+          },
+          "middleware": {
+            "rps": {
+              "median": 1729.8042279868362,
+              "min": 1560.0540866217082,
+              "max": 1757.6004438275645
+            },
+            "p50Ms": {
+              "median": 36.62256,
+              "min": 35.832280000000004,
+              "max": 40.111596999999996
+            },
+            "p99Ms": {
+              "median": 48.196135,
+              "min": 46.236116,
+              "max": 61.996216
+            },
+            "cpuUsPerResponse": {
+              "median": 704.6148527971424,
+              "min": 701.9634547724436,
+              "max": 767.9039161822014
+            },
+            "errors": 0
+          }
+        },
+        "main": {
+          "hello": {
+            "rps": {
+              "median": 14348.024288021921,
+              "min": 14143.374652648088,
+              "max": 15101.200344289862
+            },
+            "p50Ms": {
+              "median": 4.332793,
+              "min": 4.072547999999999,
+              "max": 4.387245
+            },
+            "p99Ms": {
+              "median": 8.120058,
+              "min": 7.96025,
+              "max": 8.802244
+            },
+            "cpuUsPerResponse": {
+              "median": 69.5716365003865,
+              "min": 66.16644831738722,
+              "max": 70.65240430131837
+            },
+            "errors": 0
+          },
+          "json": {
+            "rps": {
+              "median": 12541.601816417913,
+              "min": 12337.463875020223,
+              "max": 13338.824033992187
+            },
+            "p50Ms": {
+              "median": 4.82259,
+              "min": 4.678901,
+              "max": 5.005298
+            },
+            "p99Ms": {
+              "median": 9.641471000000001,
+              "min": 8.295601999999999,
+              "max": 12.416599999999999
+            },
+            "cpuUsPerResponse": {
+              "median": 79.60032509442081,
+              "min": 74.92488779998052,
+              "max": 80.98543072101329
+            },
+            "errors": 0
+          },
+          "params": {
+            "rps": {
+              "median": 8640.559042853465,
+              "min": 8395.426640738187,
+              "max": 9256.326905130816
+            },
+            "p50Ms": {
+              "median": 7.105066,
+              "min": 6.612754,
+              "max": 7.35133
+            },
+            "p99Ms": {
+              "median": 13.966449,
+              "min": 12.402318000000001,
+              "max": 14.524707
+            },
+            "cpuUsPerResponse": {
+              "median": 115.4953350983271,
+              "min": 108.04567925220732,
+              "max": 118.99378852423904
+            },
+            "errors": 0
+          },
+          "echo": {
+            "rps": {
+              "median": 1982.4004313813382,
+              "min": 1724.0058198961199,
+              "max": 2223.518636999331
+            },
+            "p50Ms": {
+              "median": 31.573245,
+              "min": 29.440324,
+              "max": 40.297609
+            },
+            "p99Ms": {
+              "median": 83.22499599999999,
+              "min": 71.6961,
+              "max": 83.626137
+            },
+            "cpuUsPerResponse": {
+              "median": 504.32421560740147,
+              "min": 449.0803050695379,
+              "max": 578.9990186457311
+            },
+            "errors": 0
+          },
+          "middleware": {
+            "rps": {
+              "median": 1627.5196742933203,
+              "min": 1496.5938732737582,
+              "max": 1666.6046182596308
+            },
+            "p50Ms": {
+              "median": 39.069811,
+              "min": 37.728879,
+              "max": 42.026908
+            },
+            "p99Ms": {
+              "median": 55.731333,
+              "min": 50.539353000000006,
+              "max": 59.679132
+            },
+            "cpuUsPerResponse": {
+              "median": 735.8166891312339,
+              "min": 727.9578896997249,
+              "max": 803.7022239978692
+            },
+            "errors": 0
+          }
+        },
+        "branch": {
+          "hello": {
+            "rps": {
+              "median": 15940.629013203072,
+              "min": 14523.192192806946,
+              "max": 17206.259338453783
+            },
+            "p50Ms": {
+              "median": 3.87976,
+              "min": 3.503965,
+              "max": 4.11906
+            },
+            "p99Ms": {
+              "median": 8.232054000000002,
+              "min": 7.524114,
+              "max": 9.84585
+            },
+            "cpuUsPerResponse": {
+              "median": 62.635585037681665,
+              "min": 58.082128129174656,
+              "max": 68.74436592096119
+            },
+            "errors": 0
+          },
+          "json": {
+            "rps": {
+              "median": 15112.973209416634,
+              "min": 13892.360946441779,
+              "max": 15328.858522445129
+            },
+            "p50Ms": {
+              "median": 4.021628,
+              "min": 4.0185059999999995,
+              "max": 4.445679999999999
+            },
+            "p99Ms": {
+              "median": 8.912951000000001,
+              "min": 7.684239,
+              "max": 9.016779000000001
+            },
+            "cpuUsPerResponse": {
+              "median": 66.1183253550554,
+              "min": 65.19712350291105,
+              "max": 71.93675320658078
+            },
+            "errors": 0
+          },
+          "params": {
+            "rps": {
+              "median": 8719.850826953776,
+              "min": 8637.694401924833,
+              "max": 10887.749939570029
+            },
+            "p50Ms": {
+              "median": 7.056636,
+              "min": 5.570905,
+              "max": 7.116225
+            },
+            "p99Ms": {
+              "median": 13.478415,
+              "min": 9.866125,
+              "max": 14.540568
+            },
+            "cpuUsPerResponse": {
+              "median": 114.55672276127524,
+              "min": 91.77848345233943,
+              "max": 115.76269226321267
+            },
+            "errors": 0
+          },
+          "echo": {
+            "rps": {
+              "median": 1889.8467650610298,
+              "min": 1758.6314151483443,
+              "max": 2387.640958816528
+            },
+            "p50Ms": {
+              "median": 35.013399,
+              "min": 14.195403,
+              "max": 39.691654
+            },
+            "p99Ms": {
+              "median": 79.054439,
+              "min": 78.31615000000001,
+              "max": 80.26225
+            },
+            "cpuUsPerResponse": {
+              "median": 528.5088875995569,
+              "min": 418.38907678817486,
+              "max": 567.9950116206564
+            },
+            "errors": 0
+          },
+          "middleware": {
+            "rps": {
+              "median": 1625.07758157956,
+              "min": 1616.1833778903208,
+              "max": 1677.4381064841568
+            },
+            "p50Ms": {
+              "median": 38.678200000000004,
+              "min": 37.416614,
+              "max": 39.397254
+            },
+            "p99Ms": {
+              "median": 53.62235,
+              "min": 52.670301,
+              "max": 60.963638
+            },
+            "cpuUsPerResponse": {
+              "median": 748.3744325849589,
+              "min": 720.4850790631316,
+              "max": 751.6662552456183
+            },
+            "errors": 0
+          }
+        }
+      },
+      "samples": [
+        {
+          "variant": "pre",
+          "scenario": "hello",
+          "sample": 1,
+          "rps": 19717.735326608294,
+          "p50Ms": 3.101746,
+          "p99Ms": 5.485310999999999,
+          "responses": 197282,
+          "errors": 0,
+          "cpuUsPerResponse": 50.68886162954552,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "13",
+              "date": "Sat, 24 Oct 2026 16:28:16 GMT",
+              "content-type": "text/plain; charset=utf-8"
+            },
+            "body": "Hello, world!"
+          }
+        },
+        {
+          "variant": "pre",
+          "scenario": "json",
+          "sample": 1,
+          "rps": 15297.571870130438,
+          "p50Ms": 3.9414259999999994,
+          "p99Ms": 9.233078,
+          "responses": 153080,
+          "errors": 0,
+          "cpuUsPerResponse": 65.2599947739744,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "27",
+              "date": "Sat, 24 Oct 2026 16:28:29 GMT",
+              "content-type": "application/json; charset=utf-8"
+            },
+            "body": "{\"message\":\"Hello, world!\"}"
+          }
+        },
+        {
+          "variant": "pre",
+          "scenario": "params",
+          "sample": 1,
+          "rps": 10048.860398872257,
+          "p50Ms": 6.088762999999999,
+          "p99Ms": 12.558791999999999,
+          "responses": 100566,
+          "errors": 0,
+          "cpuUsPerResponse": 99.43718552990076,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "7",
+              "date": "Sat, 24 Oct 2026 16:28:42 GMT",
+              "content-type": "text/plain; charset=utf-8"
+            },
+            "body": "User 42"
+          }
+        },
+        {
+          "variant": "pre",
+          "scenario": "echo",
+          "sample": 1,
+          "rps": 1767.3396987393585,
+          "p50Ms": 38.889914,
+          "p99Ms": 86.57503299999999,
+          "responses": 17747,
+          "errors": 0,
+          "cpuUsPerResponse": 565.1659435397532,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "1024",
+              "date": "Sat, 24 Oct 2026 16:28:56 GMT",
+              "content-type": "application/json; charset=utf-8"
+            },
+            "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+          }
+        },
+        {
+          "variant": "pre",
+          "scenario": "middleware",
+          "sample": 1,
+          "rps": 1560.0540866217082,
+          "p50Ms": 40.111596999999996,
+          "p99Ms": 61.996216,
+          "responses": 15653,
+          "errors": 0,
+          "cpuUsPerResponse": 767.9039161822014,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "13",
+              "x-request-id": "8e060ab6c1c39d94a73a8498f3ca6276",
+              "date": "Sat, 24 Oct 2026 16:29:09 GMT",
+              "content-type": "text/plain; charset=utf-8",
+              "x-bench": "middleware",
+              "cross-origin-resource-policy": "same-origin",
+              "cross-origin-opener-policy": "same-origin",
+              "origin-agent-cluster": "?1",
+              "referrer-policy": "no-referrer",
+              "strict-transport-security": "max-age=15552000; includeSubDomains",
+              "x-content-type-options": "nosniff",
+              "x-dns-prefetch-control": "off",
+              "x-download-options": "noopen",
+              "x-frame-options": "SAMEORIGIN",
+              "x-permitted-cross-domain-policies": "none",
+              "x-xss-protection": "0",
+              "access-control-allow-origin": "*"
+            },
+            "body": "Hello, world!"
+          }
+        },
+        {
+          "variant": "main",
+          "scenario": "hello",
+          "sample": 1,
+          "rps": 15101.200344289862,
+          "p50Ms": 4.072547999999999,
+          "p99Ms": 8.120058,
+          "responses": 151134,
+          "errors": 0,
+          "cpuUsPerResponse": 66.16644831738722,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "13",
+              "date": "Sat, 24 Oct 2026 16:29:22 GMT",
+              "content-type": "text/plain; charset=utf-8"
+            },
+            "body": "Hello, world!"
+          }
+        },
+        {
+          "variant": "main",
+          "scenario": "json",
+          "sample": 1,
+          "rps": 12337.463875020223,
+          "p50Ms": 5.005298,
+          "p99Ms": 9.641471000000001,
+          "responses": 123479,
+          "errors": 0,
+          "cpuUsPerResponse": 80.98543072101329,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "27",
+              "date": "Sat, 24 Oct 2026 16:29:35 GMT",
+              "content-type": "application/json; charset=utf-8"
+            },
+            "body": "{\"message\":\"Hello, world!\"}"
+          }
+        },
+        {
+          "variant": "main",
+          "scenario": "params",
+          "sample": 1,
+          "rps": 9256.326905130816,
+          "p50Ms": 6.612754,
+          "p99Ms": 12.402318000000001,
+          "responses": 92646,
+          "errors": 0,
+          "cpuUsPerResponse": 108.04567925220732,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "7",
+              "date": "Sat, 24 Oct 2026 16:29:48 GMT",
+              "content-type": "text/plain; charset=utf-8"
+            },
+            "body": "User 42"
+          }
+        },
+        {
+          "variant": "main",
+          "scenario": "echo",
+          "sample": 1,
+          "rps": 1724.0058198961199,
+          "p50Ms": 40.297609,
+          "p99Ms": 83.22499599999999,
+          "responses": 17323,
+          "errors": 0,
+          "cpuUsPerResponse": 578.9990186457311,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "1024",
+              "date": "Sat, 24 Oct 2026 16:30:01 GMT",
+              "content-type": "application/json; charset=utf-8"
+            },
+            "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+          }
+        },
+        {
+          "variant": "main",
+          "scenario": "middleware",
+          "sample": 1,
+          "rps": 1496.5938732737582,
+          "p50Ms": 42.026908,
+          "p99Ms": 59.679132,
+          "responses": 15018,
+          "errors": 0,
+          "cpuUsPerResponse": 803.7022239978692,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "13",
+              "x-request-id": "44c086faf7ceef212eec065cc5aaa24e",
+              "date": "Sat, 24 Oct 2026 16:30:15 GMT",
+              "content-type": "text/plain; charset=utf-8",
+              "x-bench": "middleware",
+              "cross-origin-resource-policy": "same-origin",
+              "cross-origin-opener-policy": "same-origin",
+              "origin-agent-cluster": "?1",
+              "referrer-policy": "no-referrer",
+              "strict-transport-security": "max-age=15552000; includeSubDomains",
+              "x-content-type-options": "nosniff",
+              "x-dns-prefetch-control": "off",
+              "x-download-options": "noopen",
+              "x-frame-options": "SAMEORIGIN",
+              "x-permitted-cross-domain-policies": "none",
+              "x-xss-protection": "0",
+              "access-control-allow-origin": "*"
+            },
+            "body": "Hello, world!"
+          }
+        },
+        {
+          "variant": "branch",
+          "scenario": "hello",
+          "sample": 1,
+          "rps": 15940.629013203072,
+          "p50Ms": 3.87976,
+          "p99Ms": 7.524114,
+          "responses": 159494,
+          "errors": 0,
+          "cpuUsPerResponse": 62.635585037681665,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "13",
+              "date": "Sat, 24 Oct 2026 16:30:28 GMT",
+              "content-type": "text/plain; charset=utf-8"
+            },
+            "body": "Hello, world!"
+          }
+        },
+        {
+          "variant": "branch",
+          "scenario": "json",
+          "sample": 1,
+          "rps": 15328.858522445129,
+          "p50Ms": 4.0185059999999995,
+          "p99Ms": 7.684239,
+          "responses": 153381,
+          "errors": 0,
+          "cpuUsPerResponse": 65.19712350291105,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "27",
+              "date": "Sat, 24 Oct 2026 16:30:41 GMT",
+              "content-type": "application/json; charset=utf-8"
+            },
+            "body": "{\"message\":\"Hello, world!\"}"
+          }
+        },
+        {
+          "variant": "branch",
+          "scenario": "params",
+          "sample": 1,
+          "rps": 8637.694401924833,
+          "p50Ms": 7.116225,
+          "p99Ms": 14.540568,
+          "responses": 86470,
+          "errors": 0,
+          "cpuUsPerResponse": 115.76269226321267,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "7",
+              "date": "Sat, 24 Oct 2026 16:30:55 GMT",
+              "content-type": "text/plain; charset=utf-8"
+            },
+            "body": "User 42"
+          }
+        },
+        {
+          "variant": "branch",
+          "scenario": "echo",
+          "sample": 1,
+          "rps": 1758.6314151483443,
+          "p50Ms": 39.691654,
+          "p99Ms": 80.26225,
+          "responses": 17641,
+          "errors": 0,
+          "cpuUsPerResponse": 567.9950116206564,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "1024",
+              "date": "Sat, 24 Oct 2026 16:31:08 GMT",
+              "content-type": "application/json; charset=utf-8"
+            },
+            "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+          }
+        },
+        {
+          "variant": "branch",
+          "scenario": "middleware",
+          "sample": 1,
+          "rps": 1625.07758157956,
+          "p50Ms": 38.678200000000004,
+          "p99Ms": 60.963638,
+          "responses": 16302,
+          "errors": 0,
+          "cpuUsPerResponse": 748.3744325849589,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "13",
+              "x-request-id": "de5c4fe845d8caecfcdfa2c819092cf2",
+              "date": "Sat, 24 Oct 2026 16:31:21 GMT",
+              "content-type": "text/plain; charset=utf-8",
+              "x-bench": "middleware",
+              "cross-origin-resource-policy": "same-origin",
+              "cross-origin-opener-policy": "same-origin",
+              "origin-agent-cluster": "?1",
+              "referrer-policy": "no-referrer",
+              "strict-transport-security": "max-age=15552000; includeSubDomains",
+              "x-content-type-options": "nosniff",
+              "x-dns-prefetch-control": "off",
+              "x-download-options": "noopen",
+              "x-frame-options": "SAMEORIGIN",
+              "x-permitted-cross-domain-policies": "none",
+              "x-xss-protection": "0",
+              "access-control-allow-origin": "*"
+            },
+            "body": "Hello, world!"
+          }
+        },
+        {
+          "variant": "branch",
+          "scenario": "hello",
+          "sample": 2,
+          "rps": 17206.259338453783,
+          "p50Ms": 3.503965,
+          "p99Ms": 8.232054000000002,
+          "responses": 172170,
+          "errors": 0,
+          "cpuUsPerResponse": 58.082128129174656,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "13",
+              "date": "Sat, 24 Oct 2026 16:31:34 GMT",
+              "content-type": "text/plain; charset=utf-8"
+            },
+            "body": "Hello, world!"
+          }
+        },
+        {
+          "variant": "branch",
+          "scenario": "json",
+          "sample": 2,
+          "rps": 15112.973209416634,
+          "p50Ms": 4.021628,
+          "p99Ms": 8.912951000000001,
+          "responses": 151244,
+          "errors": 0,
+          "cpuUsPerResponse": 66.1183253550554,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "27",
+              "date": "Sat, 24 Oct 2026 16:31:47 GMT",
+              "content-type": "application/json; charset=utf-8"
+            },
+            "body": "{\"message\":\"Hello, world!\"}"
+          }
+        },
+        {
+          "variant": "branch",
+          "scenario": "params",
+          "sample": 2,
+          "rps": 8719.850826953776,
+          "p50Ms": 7.056636,
+          "p99Ms": 13.478415,
+          "responses": 87293,
+          "errors": 0,
+          "cpuUsPerResponse": 114.55672276127524,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "7",
+              "date": "Sat, 24 Oct 2026 16:32:01 GMT",
+              "content-type": "text/plain; charset=utf-8"
+            },
+            "body": "User 42"
+          }
+        },
+        {
+          "variant": "branch",
+          "scenario": "echo",
+          "sample": 2,
+          "rps": 1889.8467650610298,
+          "p50Ms": 35.013399,
+          "p99Ms": 78.31615000000001,
+          "responses": 18959,
+          "errors": 0,
+          "cpuUsPerResponse": 528.5088875995569,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "1024",
+              "date": "Sat, 24 Oct 2026 16:32:14 GMT",
+              "content-type": "application/json; charset=utf-8"
+            },
+            "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+          }
+        },
+        {
+          "variant": "branch",
+          "scenario": "middleware",
+          "sample": 2,
+          "rps": 1616.1833778903208,
+          "p50Ms": 39.397254,
+          "p99Ms": 52.670301,
+          "responses": 16204,
+          "errors": 0,
+          "cpuUsPerResponse": 751.6662552456183,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "13",
+              "x-request-id": "c0f62ce027b4fc26f9767ad3af712a50",
+              "date": "Sat, 24 Oct 2026 16:32:27 GMT",
+              "content-type": "text/plain; charset=utf-8",
+              "x-bench": "middleware",
+              "cross-origin-resource-policy": "same-origin",
+              "cross-origin-opener-policy": "same-origin",
+              "origin-agent-cluster": "?1",
+              "referrer-policy": "no-referrer",
+              "strict-transport-security": "max-age=15552000; includeSubDomains",
+              "x-content-type-options": "nosniff",
+              "x-dns-prefetch-control": "off",
+              "x-download-options": "noopen",
+              "x-frame-options": "SAMEORIGIN",
+              "x-permitted-cross-domain-policies": "none",
+              "x-xss-protection": "0",
+              "access-control-allow-origin": "*"
+            },
+            "body": "Hello, world!"
+          }
+        },
+        {
+          "variant": "main",
+          "scenario": "hello",
+          "sample": 2,
+          "rps": 14348.024288021921,
+          "p50Ms": 4.332793,
+          "p99Ms": 7.96025,
+          "responses": 143593,
+          "errors": 0,
+          "cpuUsPerResponse": 69.5716365003865,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "13",
+              "date": "Sat, 24 Oct 2026 16:32:40 GMT",
+              "content-type": "text/plain; charset=utf-8"
+            },
+            "body": "Hello, world!"
+          }
+        },
+        {
+          "variant": "main",
+          "scenario": "json",
+          "sample": 2,
+          "rps": 12541.601816417913,
+          "p50Ms": 4.82259,
+          "p99Ms": 12.416599999999999,
+          "responses": 125502,
+          "errors": 0,
+          "cpuUsPerResponse": 79.60032509442081,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "27",
+              "date": "Sat, 24 Oct 2026 16:32:53 GMT",
+              "content-type": "application/json; charset=utf-8"
+            },
+            "body": "{\"message\":\"Hello, world!\"}"
+          }
+        },
+        {
+          "variant": "main",
+          "scenario": "params",
+          "sample": 2,
+          "rps": 8395.426640738187,
+          "p50Ms": 7.35133,
+          "p99Ms": 13.966449,
+          "responses": 84038,
+          "errors": 0,
+          "cpuUsPerResponse": 118.99378852423904,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "7",
+              "date": "Sat, 24 Oct 2026 16:33:06 GMT",
+              "content-type": "text/plain; charset=utf-8"
+            },
+            "body": "User 42"
+          }
+        },
+        {
+          "variant": "main",
+          "scenario": "echo",
+          "sample": 2,
+          "rps": 1982.4004313813382,
+          "p50Ms": 31.573245,
+          "p99Ms": 83.626137,
+          "responses": 19888,
+          "errors": 0,
+          "cpuUsPerResponse": 504.32421560740147,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "1024",
+              "date": "Sat, 24 Oct 2026 16:33:20 GMT",
+              "content-type": "application/json; charset=utf-8"
+            },
+            "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+          }
+        },
+        {
+          "variant": "main",
+          "scenario": "middleware",
+          "sample": 2,
+          "rps": 1666.6046182596308,
+          "p50Ms": 37.728879,
+          "p99Ms": 55.731333,
+          "responses": 16718,
+          "errors": 0,
+          "cpuUsPerResponse": 727.9578896997249,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "13",
+              "x-request-id": "8cd5d2f1ddc3c2793b342f30272fbe65",
+              "date": "Sat, 24 Oct 2026 16:33:33 GMT",
+              "content-type": "text/plain; charset=utf-8",
+              "x-bench": "middleware",
+              "cross-origin-resource-policy": "same-origin",
+              "cross-origin-opener-policy": "same-origin",
+              "origin-agent-cluster": "?1",
+              "referrer-policy": "no-referrer",
+              "strict-transport-security": "max-age=15552000; includeSubDomains",
+              "x-content-type-options": "nosniff",
+              "x-dns-prefetch-control": "off",
+              "x-download-options": "noopen",
+              "x-frame-options": "SAMEORIGIN",
+              "x-permitted-cross-domain-policies": "none",
+              "x-xss-protection": "0",
+              "access-control-allow-origin": "*"
+            },
+            "body": "Hello, world!"
+          }
+        },
+        {
+          "variant": "pre",
+          "scenario": "hello",
+          "sample": 2,
+          "rps": 19279.287959969934,
+          "p50Ms": 3.1204549999999998,
+          "p99Ms": 6.13643,
+          "responses": 192918,
+          "errors": 0,
+          "cpuUsPerResponse": 51.73182388372262,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "13",
+              "date": "Sat, 24 Oct 2026 16:33:46 GMT",
+              "content-type": "text/plain; charset=utf-8"
+            },
+            "body": "Hello, world!"
+          }
+        },
+        {
+          "variant": "pre",
+          "scenario": "json",
+          "sample": 2,
+          "rps": 16678.33372492034,
+          "p50Ms": 3.6831400000000003,
+          "p99Ms": 7.039313,
+          "responses": 166883,
+          "errors": 0,
+          "cpuUsPerResponse": 59.98214317815476,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "27",
+              "date": "Sat, 24 Oct 2026 16:34:00 GMT",
+              "content-type": "application/json; charset=utf-8"
+            },
+            "body": "{\"message\":\"Hello, world!\"}"
+          }
+        },
+        {
+          "variant": "pre",
+          "scenario": "params",
+          "sample": 2,
+          "rps": 11855.984822828486,
+          "p50Ms": 5.150514,
+          "p99Ms": 10.078168,
+          "responses": 118643,
+          "errors": 0,
+          "cpuUsPerResponse": 84.2021863911061,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "7",
+              "date": "Sat, 24 Oct 2026 16:34:13 GMT",
+              "content-type": "text/plain; charset=utf-8"
+            },
+            "body": "User 42"
+          }
+        },
+        {
+          "variant": "pre",
+          "scenario": "echo",
+          "sample": 2,
+          "rps": 2153.4693382878004,
+          "p50Ms": 30.598813,
+          "p99Ms": 72.221936,
+          "responses": 21599,
+          "errors": 0,
+          "cpuUsPerResponse": 463.44738182323255,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "1024",
+              "date": "Sat, 24 Oct 2026 16:34:26 GMT",
+              "content-type": "application/json; charset=utf-8"
+            },
+            "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+          }
+        },
+        {
+          "variant": "pre",
+          "scenario": "middleware",
+          "sample": 2,
+          "rps": 1757.6004438275645,
+          "p50Ms": 35.832280000000004,
+          "p99Ms": 48.196135,
+          "responses": 17622,
+          "errors": 0,
+          "cpuUsPerResponse": 701.9634547724436,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "13",
+              "x-request-id": "3184faad71bc0c945934afc965334bb8",
+              "date": "Sat, 24 Oct 2026 16:34:39 GMT",
+              "content-type": "text/plain; charset=utf-8",
+              "x-bench": "middleware",
+              "cross-origin-resource-policy": "same-origin",
+              "cross-origin-opener-policy": "same-origin",
+              "origin-agent-cluster": "?1",
+              "referrer-policy": "no-referrer",
+              "strict-transport-security": "max-age=15552000; includeSubDomains",
+              "x-content-type-options": "nosniff",
+              "x-dns-prefetch-control": "off",
+              "x-download-options": "noopen",
+              "x-frame-options": "SAMEORIGIN",
+              "x-permitted-cross-domain-policies": "none",
+              "x-xss-protection": "0",
+              "access-control-allow-origin": "*"
+            },
+            "body": "Hello, world!"
+          }
+        },
+        {
+          "variant": "pre",
+          "scenario": "hello",
+          "sample": 3,
+          "rps": 17732.587578264098,
+          "p50Ms": 3.4354139999999997,
+          "p99Ms": 7.577641000000001,
+          "responses": 177409,
+          "errors": 0,
+          "cpuUsPerResponse": 56.31055921627426,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "13",
+              "date": "Sat, 24 Oct 2026 16:34:52 GMT",
+              "content-type": "text/plain; charset=utf-8"
+            },
+            "body": "Hello, world!"
+          }
+        },
+        {
+          "variant": "pre",
+          "scenario": "json",
+          "sample": 3,
+          "rps": 15015.339321767702,
+          "p50Ms": 4.118392999999999,
+          "p99Ms": 7.219017,
+          "responses": 150238,
+          "errors": 0,
+          "cpuUsPerResponse": 66.56105645708809,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "27",
+              "date": "Sat, 24 Oct 2026 16:35:06 GMT",
+              "content-type": "application/json; charset=utf-8"
+            },
+            "body": "{\"message\":\"Hello, world!\"}"
+          }
+        },
+        {
+          "variant": "pre",
+          "scenario": "params",
+          "sample": 3,
+          "rps": 10001.626706983083,
+          "p50Ms": 6.130731000000001,
+          "p99Ms": 11.318702,
+          "responses": 100093,
+          "errors": 0,
+          "cpuUsPerResponse": 99.90708640963904,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "7",
+              "date": "Sat, 24 Oct 2026 16:35:19 GMT",
+              "content-type": "text/plain; charset=utf-8"
+            },
+            "body": "User 42"
+          }
+        },
+        {
+          "variant": "pre",
+          "scenario": "echo",
+          "sample": 3,
+          "rps": 2061.315229924974,
+          "p50Ms": 31.567057000000002,
+          "p99Ms": 79.436407,
+          "responses": 20673,
+          "errors": 0,
+          "cpuUsPerResponse": 484.690175591351,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "1024",
+              "date": "Sat, 24 Oct 2026 16:35:32 GMT",
+              "content-type": "application/json; charset=utf-8"
+            },
+            "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+          }
+        },
+        {
+          "variant": "pre",
+          "scenario": "middleware",
+          "sample": 3,
+          "rps": 1729.8042279868362,
+          "p50Ms": 36.62256,
+          "p99Ms": 46.236116,
+          "responses": 17357,
+          "errors": 0,
+          "cpuUsPerResponse": 704.6148527971424,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "13",
+              "x-request-id": "776365ed298fc8956d0eacd14478bfd5",
+              "date": "Sat, 24 Oct 2026 16:35:45 GMT",
+              "content-type": "text/plain; charset=utf-8",
+              "x-bench": "middleware",
+              "cross-origin-resource-policy": "same-origin",
+              "cross-origin-opener-policy": "same-origin",
+              "origin-agent-cluster": "?1",
+              "referrer-policy": "no-referrer",
+              "strict-transport-security": "max-age=15552000; includeSubDomains",
+              "x-content-type-options": "nosniff",
+              "x-dns-prefetch-control": "off",
+              "x-download-options": "noopen",
+              "x-frame-options": "SAMEORIGIN",
+              "x-permitted-cross-domain-policies": "none",
+              "x-xss-protection": "0",
+              "access-control-allow-origin": "*"
+            },
+            "body": "Hello, world!"
+          }
+        },
+        {
+          "variant": "main",
+          "scenario": "hello",
+          "sample": 3,
+          "rps": 14143.374652648088,
+          "p50Ms": 4.387245,
+          "p99Ms": 8.802244,
+          "responses": 141538,
+          "errors": 0,
+          "cpuUsPerResponse": 70.65240430131837,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "13",
+              "date": "Sat, 24 Oct 2026 16:35:58 GMT",
+              "content-type": "text/plain; charset=utf-8"
+            },
+            "body": "Hello, world!"
+          }
+        },
+        {
+          "variant": "main",
+          "scenario": "json",
+          "sample": 3,
+          "rps": 13338.824033992187,
+          "p50Ms": 4.678901,
+          "p99Ms": 8.295601999999999,
+          "responses": 133467,
+          "errors": 0,
+          "cpuUsPerResponse": 74.92488779998052,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "27",
+              "date": "Sat, 24 Oct 2026 16:36:11 GMT",
+              "content-type": "application/json; charset=utf-8"
+            },
+            "body": "{\"message\":\"Hello, world!\"}"
+          }
+        },
+        {
+          "variant": "main",
+          "scenario": "params",
+          "sample": 3,
+          "rps": 8640.559042853465,
+          "p50Ms": 7.105066,
+          "p99Ms": 14.524707,
+          "responses": 86497,
+          "errors": 0,
+          "cpuUsPerResponse": 115.4953350983271,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "7",
+              "date": "Sat, 24 Oct 2026 16:36:25 GMT",
+              "content-type": "text/plain; charset=utf-8"
+            },
+            "body": "User 42"
+          }
+        },
+        {
+          "variant": "main",
+          "scenario": "echo",
+          "sample": 3,
+          "rps": 2223.518636999331,
+          "p50Ms": 29.440324,
+          "p99Ms": 71.6961,
+          "responses": 22290,
+          "errors": 0,
+          "cpuUsPerResponse": 449.0803050695379,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "1024",
+              "date": "Sat, 24 Oct 2026 16:36:38 GMT",
+              "content-type": "application/json; charset=utf-8"
+            },
+            "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+          }
+        },
+        {
+          "variant": "main",
+          "scenario": "middleware",
+          "sample": 3,
+          "rps": 1627.5196742933203,
+          "p50Ms": 39.069811,
+          "p99Ms": 50.539353000000006,
+          "responses": 16322,
+          "errors": 0,
+          "cpuUsPerResponse": 735.8166891312339,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "13",
+              "x-request-id": "b34f8050c6a9a2e34e933725c8c8b750",
+              "date": "Sat, 24 Oct 2026 16:36:51 GMT",
+              "content-type": "text/plain; charset=utf-8",
+              "x-bench": "middleware",
+              "cross-origin-resource-policy": "same-origin",
+              "cross-origin-opener-policy": "same-origin",
+              "origin-agent-cluster": "?1",
+              "referrer-policy": "no-referrer",
+              "strict-transport-security": "max-age=15552000; includeSubDomains",
+              "x-content-type-options": "nosniff",
+              "x-dns-prefetch-control": "off",
+              "x-download-options": "noopen",
+              "x-frame-options": "SAMEORIGIN",
+              "x-permitted-cross-domain-policies": "none",
+              "x-xss-protection": "0",
+              "access-control-allow-origin": "*"
+            },
+            "body": "Hello, world!"
+          }
+        },
+        {
+          "variant": "branch",
+          "scenario": "hello",
+          "sample": 3,
+          "rps": 14523.192192806946,
+          "p50Ms": 4.11906,
+          "p99Ms": 9.84585,
+          "responses": 145321,
+          "errors": 0,
+          "cpuUsPerResponse": 68.74436592096119,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "13",
+              "date": "Sat, 24 Oct 2026 16:37:04 GMT",
+              "content-type": "text/plain; charset=utf-8"
+            },
+            "body": "Hello, world!"
+          }
+        },
+        {
+          "variant": "branch",
+          "scenario": "json",
+          "sample": 3,
+          "rps": 13892.360946441779,
+          "p50Ms": 4.445679999999999,
+          "p99Ms": 9.016779000000001,
+          "responses": 139011,
+          "errors": 0,
+          "cpuUsPerResponse": 71.93675320658078,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "27",
+              "date": "Sat, 24 Oct 2026 16:37:19 GMT",
+              "content-type": "application/json; charset=utf-8"
+            },
+            "body": "{\"message\":\"Hello, world!\"}"
+          }
+        },
+        {
+          "variant": "branch",
+          "scenario": "params",
+          "sample": 3,
+          "rps": 10887.749939570029,
+          "p50Ms": 5.570905,
+          "p99Ms": 9.866125,
+          "responses": 108958,
+          "errors": 0,
+          "cpuUsPerResponse": 91.77848345233943,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "7",
+              "date": "Sat, 24 Oct 2026 16:37:32 GMT",
+              "content-type": "text/plain; charset=utf-8"
+            },
+            "body": "User 42"
+          }
+        },
+        {
+          "variant": "branch",
+          "scenario": "echo",
+          "sample": 3,
+          "rps": 2387.640958816528,
+          "p50Ms": 14.195403,
+          "p99Ms": 79.054439,
+          "responses": 23949,
+          "errors": 0,
+          "cpuUsPerResponse": 418.38907678817486,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "1024",
+              "date": "Sat, 24 Oct 2026 16:37:45 GMT",
+              "content-type": "application/json; charset=utf-8"
+            },
+            "body": "{\"order\":42,\"customer\":\"bench\",\"items\":[{\"id\":1,\"sku\":\"SKU-0001\",\"qty\":3,\"active\":false},{\"id\":2,\"sku\":\"SKU-0002\",\"qty\":6,\"active\":true},{\"id\":3,\"sku\":\"SKU-0003\",\"qty\":9,\"active\":false},{\"id\":4,\"sku\":\"SKU-0004\",\"qty\":12,\"active\":true},{\"id\":5,\"sku\":\"SKU-0005\",\"qty\":15,\"active\":false},{\"id\":6,\"sku\":\"SKU-0006\",\"qty\":18,\"active\":true},{\"id\":7,\"sku\":\"SKU-0007\",\"qty\":21,\"active\":false},{\"id\":8,\"sku\":\"SKU-0008\",\"qty\":24,\"active\":true},{\"id\":9,\"sku\":\"SKU-0009\",\"qty\":27,\"active\":false},{\"id\":10,\"sku\":\"SKU-0010\",\"qty\":30,\"active\":true},{\"id\":11,\"sku\":\"SKU-0011\",\"qty\":33,\"active\":false},{\"id\":12,\"sku\":\"SKU-0012\",\"qty\":36,\"active\":true}],\"note\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+          }
+        },
+        {
+          "variant": "branch",
+          "scenario": "middleware",
+          "sample": 3,
+          "rps": 1677.4381064841568,
+          "p50Ms": 37.416614,
+          "p99Ms": 53.62235,
+          "responses": 16822,
+          "errors": 0,
+          "cpuUsPerResponse": 720.4850790631316,
+          "check": {
+            "status": 200,
+            "headers": {
+              "connection": "close",
+              "content-length": "13",
+              "x-request-id": "bb87dfb6f3677675327412e7bba1bbd9",
+              "date": "Sat, 24 Oct 2026 16:37:58 GMT",
+              "content-type": "text/plain; charset=utf-8",
+              "x-bench": "middleware",
+              "cross-origin-resource-policy": "same-origin",
+              "cross-origin-opener-policy": "same-origin",
+              "origin-agent-cluster": "?1",
+              "referrer-policy": "no-referrer",
+              "strict-transport-security": "max-age=15552000; includeSubDomains",
+              "x-content-type-options": "nosniff",
+              "x-dns-prefetch-control": "off",
+              "x-download-options": "noopen",
+              "x-frame-options": "SAMEORIGIN",
+              "x-permitted-cross-domain-policies": "none",
+              "x-xss-protection": "0",
+              "access-control-allow-origin": "*"
+            },
+            "body": "Hello, world!"
+          }
+        }
+      ]
+    }
+  ]
+}

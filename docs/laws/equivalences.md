@@ -25,6 +25,7 @@ says the rewrite equals the retained definition for every input. See
 - `hot_body_head_feed`, `hot_body_head_feed_policy`: the request-head scan inside the body reader, for the default limit policy and for any policy type, selector and value.
 - `hot_cors_middleware`, `hot_cors_actual`, `hot_cors_policy`: the CORS middleware runs the earlier sequence (a preflight is answered without calling the next handler; any other request runs it and is decorated), and the single policy it retains per request is the one the response used to be built with.
 - `hot_secure_prepared`, `hot_secure_prepared_spec`, `hot_secure_dispatch`, `hot_secure_dispatch_registration`: secure headers now run a policy prepared at registration; that shell, and the registration that uses it, behave exactly like the earlier per-request middleware and registration, for any Server-Timing and JWT templates in the dispatcher.
+- `hot_marker_named`: BND-96's stream-marker name test, which lowers one character at a time and stops at the first difference, answers what lowering the whole field name and comparing did, so every stream-marker law carries over.
 
 ## Tail-loop rewrites
 
