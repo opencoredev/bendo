@@ -2,6 +2,7 @@
 # attachment succeeds, read from the registrations and schema entries alone
 # (BND-37). It never calls the attachment code.
 import Base
+import ../src/data/json.bend as J
 import ../src/app/manifest.bend as Out
 import ../src/app/manifest-schemas.bend as MS
 import ../src/app/route-schemas.bend as RS
@@ -41,3 +42,42 @@ def accepted(r: Result<&2, &2, MS.AttachError, List<&2, MS.Attached>>) -> Bool:
   match r:
     case Done{xs}: True{}
     case Fail{e}: False{}
+
+# The five named slots in their wire order, independent of RS.slots.
+def named(name: String, s: Maybe<&2, S.Schema>, rest: List<&2, RS.Named>) -> List<&2, RS.Named>:
+  match s:
+    case None{}: rest
+    case Some{x}: RS.Named{name, x} <> rest
+
+def document_slots(x: RS.RouteSchemas) -> List<&2, RS.Named>:
+  match x:
+    case RS.RouteSchemas{p, q, h, b, r}: named("params", p, named("query", q, named("headers", h, named("body", b, named("response", r, [])))))
+
+def written(r: Result<&2, &2, J.Error, String>, route: Nat, slot: String) -> Result<&2, &2, MS.AttachError, String>:
+  match r:
+    case Done{text}: Done{text}
+    case Fail{e}: Fail{MS.UnwritableRouteSchema{route, slot}}
+
+def member(rev: Result<&2, &2, MS.AttachError, List<&2, String>>, text: Result<&2, &2, MS.AttachError, String>, slot: String) -> Result<&2, &2, MS.AttachError, List<&2, String>>:
+  match rev text:
+    case Fail{e} _: Fail{e}
+    case Done{xs} Fail{e}: Fail{e}
+    case Done{xs} Done{t}: Done{(Out.quote(slot) ++ ":" ++ t) <> xs}
+
+# Each present slot serializes the supplied standalone document, preserving
+# the first serialization failure. No manifest-schema or exporter helpers.
+def documents(~doc: S.Schema -> J.Json, xs: List<&2, RS.Named>, +route: Nat, rev: Result<&2, &2, MS.AttachError, List<&2, String>>) -> Result<&2, &2, MS.AttachError, List<&2, String>>:
+  match xs:
+    case Nil{}: rev
+    case RS.Named{+slot, s} <> t: documents(~doc, t, route, member(rev, written(J.stringify(doc(s)), route, slot), slot))
+
+def schema_text(r: Result<&2, &2, MS.AttachError, List<&2, String>>) -> Result<&2, &2, MS.AttachError, String>:
+  match r:
+    case Fail{e}: Fail{e}
+    case Done{Nil{}}: Done{""}
+    case Done{xs}: Done{",\"schemas\":{" ++ String.join(List.reverse(&2, String, xs), ",") ++ "}"}
+
+def attached(open: String, r: Result<&2, &2, MS.AttachError, String>) -> Result<&2, &2, MS.AttachError, String>:
+  match r:
+    case Fail{e}: Fail{e}
+    case Done{extra}: Done{open ++ extra ++ "}"}

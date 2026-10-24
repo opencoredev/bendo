@@ -94,6 +94,21 @@ Here is the query schema from [Defaults](schema.md#defaults) as
 }
 ```
 
+## Codegen priorities for BND-56 and BND-57
+
+Handle text coercion and defaults first. They determine the request types a
+client accepts and the decoded types a handler receives. Params, query and
+headers arrive as text; the manifest describes the value after Bendo coerces
+it. Do not generate a client that validates raw text against the exported
+number or boolean node. A defaulted property may be absent in a request, but
+the decoder fills it in before calling the handler. Reading `default` as if a
+JSON Schema validator inserts it produces the wrong runtime behavior.
+
+Then account for stripped keys and first-match unions. Preserve union member
+order. Keep the lexical integer rule, duplicate-key rejection and exact
+decimal comparisons in mind when adding runtime validation; JSON Schema
+alone does not reproduce those policies.
+
 ## Decoder policy and validator differences
 
 The decoder and a JSON Schema validator differ in three ways. They can accept
@@ -169,6 +184,31 @@ object. `JsonSchema.go(s, JsonSchema.start(s))` is the node exporter used for
 - `json_schema_string_wellformed`: every string node carries the lone-surrogate
   guard.
 - `json_schema_empty_enum`, `json_schema_empty_union`: both export `not: {}`.
+- `json_schema_object_properties`, `json_schema_array_items_bounds`,
+  `json_schema_nullable_child`, `json_schema_union_members`: each parent embeds
+  `go(child, start(child))`. Object properties and union members keep every
+  child in declared order. This composition carries the node guarantees to
+  every depth. Property nodes carry their field's default annotation.
+- `json_schema_object_node_exact`, `json_schema_string_node_exact`: exact
+  outer keys and order, excluding extra, duplicate or contradictory keywords.
+- `json_schema_literal_const`, `json_schema_enum_values`: literals keep their
+  exact JSON value; enums keep first occurrences under JSON scalar equality,
+  including decimal-value equality across different number spellings.
+- `json_schema_string_min_length`, `json_schema_number_bounds`,
+  `json_schema_integer_bounds`, `json_schema_array_items_bounds`: lower bounds
+  keep their values and optional upper bounds are absent when unset. Optional
+  numeric lower bounds are absent when unset too.
+- `json_schema_string_format`: Plain has no `allOf`; Email and URL carry the
+  documented check, against regex literals owned by the spec. Equivalence
+  with Bend's text predicates remains a differential test.
+- `json_schema_default_annotation`, `json_schema_no_default`: a plain node
+  has no top-level default. A Default field appends its exact value; Required
+  and Optional fields leave the child node unchanged.
+- `manifest_schema_documents`: each attached bundle serializes exactly the
+  present params, query, headers, body and response documents, in that order,
+  with the 2020-12 dialect, or reports the first unwritable slot.
+- `json_schema_document_dialect`: a standalone document prefixes the specified
+  2020-12 dialect. The lone-surrogate guard also uses a spec-owned literal.
 
 Run `bun test --timeout 60000 tests/json-schema.test.ts` for the
 differential tests. They cover 1,200 seeded random schemas of every
