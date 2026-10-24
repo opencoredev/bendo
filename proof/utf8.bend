@@ -302,19 +302,127 @@ def step21_go(+w: Word(21n), +rev: String, small: Bool) -> {U.zero(5n, U.high(16
 def step21(+w: Word(21n), +rev: String, ok: {U.scalar(U32{U.join(21n, 11n, w, Word.zero(11n))}) == True{} : Bool}) -> {walk(U.encode21(w), U.UtfReady{rev}) == U.UtfReady{SCon{Chr{U32{U.join(21n, 11n, w, Word.zero(11n))}}, rev}} : U.State}:
   step21_go(w, rev, U.zero(5n, U.high(16n, 5n, w)), {==}, ok)
 
-def step_char_padded(+w: Word(21n), +rev: String, ok: {U.scalar(U32{U.join(21n, 11n, w, Word.zero(11n))}) == True{} : Bool}) -> {walk(U.encode_char(U32{U.join(21n, 11n, w, Word.zero(11n))}), U.UtfReady{rev}) == U.UtfReady{SCon{Chr{U32{U.join(21n, 11n, w, Word.zero(11n))}}, rev}} : U.State}:
+# ---- BND-68: the ASCII fast path equals the bit-level encoder ----
+
+def zcmp(z: Bool) -> Cmp:
+  match z:
+    case True{}:
+      EQ{}
+    case False{}:
+      GT{}
+
+def fin_low_zcmp(+z: Bool) -> {Word.cmp.fin(False{}, False{}, zcmp(z)) == zcmp(z) : Cmp}:
+  match z:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def fin_high_zcmp(+z: Bool) -> {Word.cmp.fin(True{}, False{}, zcmp(z)) == GT{} : Cmp}:
+  match z:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+# Comparing with zero is EQ exactly for the zero word, and GT otherwise.
+def cmp_zero(+n: Nat, +w: Word(n)) -> {Word.cmp(n, w, Word.zero(n)) == zcmp(U.zero(n, w)) : Cmp}:
+  match n:
+    case 0n:
+      match w:
+        case WNil{}:
+          {==}
+    case 1n+p:
+      match w:
+        case WCon{False{}, t}:
+          Equal.trans(Cmp, Word.cmp.fin(False{}, False{}, Word.cmp(p, t, Word.zero(p))), Word.cmp.fin(False{}, False{}, zcmp(U.zero(p, t))), zcmp(U.zero(p, t)), Equal.cong(Cmp, Cmp, x => Word.cmp.fin(False{}, False{}, x), Word.cmp(p, t, Word.zero(p)), zcmp(U.zero(p, t)), cmp_zero(p, t)), fin_low_zcmp(U.zero(p, t)))
+        case WCon{True{}, t}:
+          Equal.trans(Cmp, Word.cmp.fin(True{}, False{}, Word.cmp(p, t, Word.zero(p))), Word.cmp.fin(True{}, False{}, zcmp(U.zero(p, t))), GT{}, Equal.cong(Cmp, Cmp, x => Word.cmp.fin(True{}, False{}, x), Word.cmp(p, t, Word.zero(p)), zcmp(U.zero(p, t)), cmp_zero(p, t)), fin_high_zcmp(U.zero(p, t)))
+
+# A clear low bit of the bound leaves the less-than verdict to the higher bits.
+def lt_fin_low(+b: Bool, +t: Cmp) -> {Cmp.is_lt(Word.cmp.fin(b, False{}, t)) == Cmp.is_lt(t) : Bool}:
+  match b t:
+    case _ LT{}:
+      {==}
+    case True{} EQ{}:
+      {==}
+    case False{} EQ{}:
+      {==}
+    case _ GT{}:
+      {==}
+
+def lt_bit7_false(+z: Bool) -> {Cmp.is_lt(Word.cmp.fin(False{}, True{}, zcmp(z))) == z : Bool}:
+  match z:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def lt_bit7_true(+z: Bool) -> {Cmp.is_lt(Word.cmp.fin(True{}, True{}, zcmp(z))) == False{} : Bool}:
+  match z:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+# Below 128 exactly when bits 7 to 31 are zero, for the 25 high bits r.
+def lt_bit7(+r: Word(25n)) -> {Cmp.is_lt(Word.cmp(25n, r, WCon{True{}, Word.zero(24n)})) == U.zero(25n, r) : Bool}:
+  match r:
+    case WCon{False{}, t}:
+      Equal.trans(Bool, Cmp.is_lt(Word.cmp.fin(False{}, True{}, Word.cmp(24n, t, Word.zero(24n)))), Cmp.is_lt(Word.cmp.fin(False{}, True{}, zcmp(U.zero(24n, t)))), U.zero(24n, t), Equal.cong(Cmp, Bool, x => Cmp.is_lt(Word.cmp.fin(False{}, True{}, x)), Word.cmp(24n, t, Word.zero(24n)), zcmp(U.zero(24n, t)), cmp_zero(24n, t)), lt_bit7_false(U.zero(24n, t)))
+    case WCon{True{}, t}:
+      Equal.trans(Bool, Cmp.is_lt(Word.cmp.fin(True{}, True{}, Word.cmp(24n, t, Word.zero(24n)))), Cmp.is_lt(Word.cmp.fin(True{}, True{}, zcmp(U.zero(24n, t)))), False{}, Equal.cong(Cmp, Bool, x => Cmp.is_lt(Word.cmp.fin(True{}, True{}, x)), Word.cmp(24n, t, Word.zero(24n)), zcmp(U.zero(24n, t)), cmp_zero(24n, t)), lt_bit7_true(U.zero(24n, t)))
+
+def lt_low(+k: Nat, +a: Word(k), +r: Word(25n)) -> {Cmp.is_lt(Word.cmp(Nat.add(k, 25n), U.join(k, 25n, a, r), U.join(k, 25n, Word.zero(k), WCon{True{}, Word.zero(24n)}))) == U.zero(25n, r) : Bool}:
+  match k:
+    case 0n:
+      lt_bit7(r)
+    case 1n+p:
+      match a:
+        case WCon{h, t}:
+          Equal.trans(Bool, Cmp.is_lt(Word.cmp.fin(h, False{}, Word.cmp(Nat.add(p, 25n), U.join(p, 25n, t, r), U.join(p, 25n, Word.zero(p), WCon{True{}, Word.zero(24n)})))), Cmp.is_lt(Word.cmp(Nat.add(p, 25n), U.join(p, 25n, t, r), U.join(p, 25n, Word.zero(p), WCon{True{}, Word.zero(24n)}))), U.zero(25n, r), lt_fin_low(h, Word.cmp(Nat.add(p, 25n), U.join(p, 25n, t, r), U.join(p, 25n, Word.zero(p), WCon{True{}, Word.zero(24n)}))), lt_low(p, t, r))
+
+def ascii_lt(+w: Word(32n)) -> {(U32{w} < 128 : U32) == U.zero(25n, U.high(7n, 25n, w)) : Bool}:
+  match w:
+    case WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{b4, WCon{b5, WCon{b6, r}}}}}}}:
+      lt_low(7n, WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{b4, WCon{b5, WCon{b6, WNil{}}}}}}}}, r)
+
+def ascii_spec(+a: Word(7n)) -> {[U32{U.join(7n, 25n, a, Word.zero(25n))}] == U.encode_char_spec(U32{U.join(7n, 25n, a, Word.zero(25n))}) : List<&2, U32>}:
+  match a:
+    case WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{b4, WCon{b5, WCon{b6, WNil{}}}}}}}}:
+      {==}
+
+def ascii_pick(+w: Word(32n), z: Bool, e: {U.zero(25n, U.high(7n, 25n, w)) == z : Bool}) -> {U.encode_char_pick(U32{w}, z) == U.encode_char_spec(U32{w}) : List<&2, U32>}:
+  match z:
+    case False{}:
+      {==}
+    case True{}:
+      %pad_reconstruct(7n, 25n, w, zero_sound(25n, U.high(7n, 25n, w), e)) : {[U32{_}] == U.encode_char_spec(U32{_}) : List<&2, U32>}
+      ascii_spec(U.low(7n, 25n, w))
+
+# The ASCII branch of encode_char equals the general encoder for every U32.
+def encode_char_equiv(+c: U32) -> {U.encode_char_spec(c) == U.encode_char(c) : List<&2, U32>}:
+  match c:
+    case U32{+w}:
+      Equal.trans(List<&2, U32>, U.encode_char_spec(U32{w}), U.encode_char_pick(U32{w}, U.zero(25n, U.high(7n, 25n, w))), U.encode_char_pick(U32{w}, (U32{w} < 128 : U32)), Equal.sym(List<&2, U32>, U.encode_char_pick(U32{w}, U.zero(25n, U.high(7n, 25n, w))), U.encode_char_spec(U32{w}), ascii_pick(w, U.zero(25n, U.high(7n, 25n, w)), {==})), Equal.cong(Bool, List<&2, U32>, z => U.encode_char_pick(U32{w}, z), U.zero(25n, U.high(7n, 25n, w)), (U32{w} < 128 : U32), Equal.sym(Bool, (U32{w} < 128 : U32), U.zero(25n, U.high(7n, 25n, w)), ascii_lt(w))))
+
+def step_char_padded(+w: Word(21n), +rev: String, ok: {U.scalar(U32{U.join(21n, 11n, w, Word.zero(11n))}) == True{} : Bool}) -> {walk(U.encode_char_spec(U32{U.join(21n, 11n, w, Word.zero(11n))}), U.UtfReady{rev}) == U.UtfReady{SCon{Chr{U32{U.join(21n, 11n, w, Word.zero(11n))}}, rev}} : U.State}:
   match w:
     case WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{b4, WCon{b5, WCon{b6, WCon{b7, WCon{b8, WCon{b9, WCon{b10, WCon{b11, WCon{b12, WCon{b13, WCon{b14, WCon{b15, WCon{b16, WCon{b17, WCon{b18, WCon{b19, WCon{b20, WNil{}}}}}}}}}}}}}}}}}}}}}}:
       step21(WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{b4, WCon{b5, WCon{b6, WCon{b7, WCon{b8, WCon{b9, WCon{b10, WCon{b11, WCon{b12, WCon{b13, WCon{b14, WCon{b15, WCon{b16, WCon{b17, WCon{b18, WCon{b19, WCon{b20, WNil{}}}}}}}}}}}}}}}}}}}}}}, rev, ok)
 
-def step_char32(+w: Word(32n), +rev: String, upper: {U.high(21n, 11n, w) == Word.zero(11n) : Word(11n)}) -> {U.scalar(U32{w}) == True{} : Bool} -> {walk(U.encode_char(U32{w}), U.UtfReady{rev}) == U.UtfReady{SCon{Chr{U32{w}}, rev}} : U.State}:
-  %pad_reconstruct(21n, 11n, w, upper) : {U.scalar(U32{_}) == True{} : Bool} -> {walk(U.encode_char(U32{_}), U.UtfReady{rev}) == U.UtfReady{SCon{Chr{U32{_}}, rev}} : U.State}
+def step_char32(+w: Word(32n), +rev: String, upper: {U.high(21n, 11n, w) == Word.zero(11n) : Word(11n)}) -> {U.scalar(U32{w}) == True{} : Bool} -> {walk(U.encode_char_spec(U32{w}), U.UtfReady{rev}) == U.UtfReady{SCon{Chr{U32{w}}, rev}} : U.State}:
+  %pad_reconstruct(21n, 11n, w, upper) : {U.scalar(U32{_}) == True{} : Bool} -> {walk(U.encode_char_spec(U32{_}), U.UtfReady{rev}) == U.UtfReady{SCon{Chr{U32{_}}, rev}} : U.State}
   ok => step_char_padded(U.low(21n, 11n, w), rev, ok)
 
-def step_char(+c: U32, +rev: String, +ok: {U.scalar(c) == True{} : Bool}) -> {walk(U.encode_char(c), U.UtfReady{rev}) == U.UtfReady{SCon{Chr{c}, rev}} : U.State}:
+def step_char_spec(+c: U32, +rev: String, +ok: {U.scalar(c) == True{} : Bool}) -> {walk(U.encode_char_spec(c), U.UtfReady{rev}) == U.UtfReady{SCon{Chr{c}, rev}} : U.State}:
   match c:
     case U32{w}:
       step_char32(w, rev, zero_sound(11n, U.high(21n, 11n, w), fits(w, ok)), ok)
+
+def step_char(+c: U32, +rev: String, +ok: {U.scalar(c) == True{} : Bool}) -> {walk(U.encode_char(c), U.UtfReady{rev}) == U.UtfReady{SCon{Chr{c}, rev}} : U.State}:
+  %encode_char_equiv(c) : {walk(_, U.UtfReady{rev}) == U.UtfReady{SCon{Chr{c}, rev}} : U.State}
+  step_char_spec(c, rev, ok)
 
 # ---- valid: a tail loop over the reversed string equals the spec ----
 

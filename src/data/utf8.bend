@@ -117,10 +117,22 @@ def encode_fit(w: Word(21n), fits: Bool) -> List<&2, U32>:
     case False{}:
       []
 
-def encode_char(c: U32) -> List<&2, U32>:
+# The general bit-level encoder; encode_char equals it for every U32.
+def encode_char_spec(c: U32) -> List<&2, U32>:
   match c:
     case U32{+w}:
       encode_fit(low(21n, 11n, w), zero(11n, high(21n, 11n, w)))
+
+def encode_char_pick(+c: U32, ascii: Bool) -> List<&2, U32>:
+  match ascii:
+    case True{}:
+      [c]
+    case False{}:
+      encode_char_spec(c)
+
+# ASCII is one byte equal to its code; skip the bit decomposition (BND-68).
+def encode_char(+c: U32) -> List<&2, U32>:
+  encode_char_pick(c, (c < 128 : U32))
 
 # Recursive reference equation used by the codec proofs.
 def encode_spec(s: String) -> List<&2, U32>:
