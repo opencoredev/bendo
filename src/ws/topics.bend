@@ -164,3 +164,68 @@ def size(-A: Data, r: Registry<A>) -> Nat:
 def connections(-A: Data, r: Registry<A>) -> Nat:
   Registry{next, live, s} = r
   List.length(&2, Nat, live)
+
+# ---- Claims ----
+
+# A session's join under its own `token`. Store.update can time out after the
+# join is queued, and the actor still commits it, so the session may never
+# learn its ID. It closes by token instead, and the actor revokes whatever ID
+# that token claimed.
+type Claim is Data:
+  Claim{token: String, id: Nat}
+
+# What the hub's actor holds: the registry and every unreleased claim.
+type Ledger<-A: Data> is Data:
+  Ledger{registry: Registry<A>, claims: List<&2, Claim>}
+
+def ledger(-A: Data) -> Ledger<A>:
+  Ledger{empty(A), []}
+
+def registry(-A: Data, l: Ledger<A>) -> Registry<A>:
+  Ledger{r, cs} = l
+  r
+
+def claims(-A: Data, l: Ledger<A>) -> List<&2, Claim>:
+  Ledger{r, cs} = l
+  cs
+
+# Applies a registry operation, keeping every claim.
+def within(-A: Data, l: Ledger<A>, f: Registry<A> -> Registry<A>) -> Ledger<A>:
+  Ledger{r, cs} = l
+  Ledger{f(r), cs}
+
+# IDs claimed under token `k`.
+def claimed(cs: List<&2, Claim>, +k: String) -> List<&2, Nat>:
+  match cs:
+    case Nil{}: []
+    case Claim{token, +id} <> rest: pick(id, claimed(rest, k), String.eq(token, k))
+
+def keep_claim(c: Claim, rest: List<&2, Claim>, drop: Bool) -> List<&2, Claim>:
+  match drop:
+    case True{}: rest
+    case False{}: c <> rest
+
+def for_token(c: Claim, +k: String) -> Bool:
+  Claim{token, id} = c
+  String.eq(token, k)
+
+def unclaimed(cs: List<&2, Claim>, +k: String) -> List<&2, Claim>:
+  match cs:
+    case Nil{}: []
+    case +c <> rest: keep_claim(c, unclaimed(rest, k), for_token(c, k))
+
+def claim_registry(-A: Data, r: Registry<A>, +k: String, cs: List<&2, Claim>) -> Ledger<A>:
+  Registry{+next, live, s} = r
+  Ledger{join(A, Registry{next, live, s}), Claim{k, next} <> cs}
+
+# Joins and records the new ID under `k`. Read it back as
+# `joined(registry(updated))`.
+def claim(-A: Data, l: Ledger<A>, +k: String) -> Ledger<A>:
+  Ledger{r, cs} = l
+  claim_registry(A, r, k, cs)
+
+# The close path: removes every ID claimed under `k` from every topic,
+# revokes it, and forgets the claims.
+def release(-A: Data, l: Ledger<A>, +k: String) -> Ledger<A>:
+  Ledger{r, +cs} = l
+  Ledger{remove_all(A, claimed(cs, k), r), unclaimed(cs, k)}

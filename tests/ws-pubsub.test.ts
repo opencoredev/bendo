@@ -330,6 +330,19 @@ test("an oversized publication still prunes a closed subscriber", async () => {
   expect(await small.text()).toBe("ok:1");
 }, 30000);
 
+test("a join that times out after it is queued is still revoked on close", async () => {
+  await eventually("/connections", "0");
+  // /delayed's hub forwards each request 400 ms late and gives up after 100.
+  const wire = await open("/delayed");
+  // The session stopped waiting before the join committed, so it has no ID.
+  expect(await wire.text()).toBe("ready 0 yes");
+  // The join still committed.
+  await eventually("/connections", "1");
+  wire.socket.destroy();
+  // The close revokes it by token.
+  await eventually("/connections", "0");
+}, 30000);
+
 function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.floor(sorted.length / 2)] ?? Number.NaN;

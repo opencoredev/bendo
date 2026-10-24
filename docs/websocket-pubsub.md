@@ -51,7 +51,9 @@ connection joins the hub when it opens and gets a fresh registry ID
 close, a server close, a protocol error, an idle timeout, or a dropped TCP
 connection (1006). The same registry update revokes its ID, so a `P.Peer`
 kept after the close can no longer subscribe. You don't need to unsubscribe in
-`close`.
+`close`. If the hub doesn't acknowledge the join in time, `P.id(peer)` is 0
+and `subscribe` returns `False`. The close still revokes the ID the hub
+assigned, because each connection joins and leaves under its own random token.
 
 To send to one connection, use `P.handle(peer)` with the usual
 `B.websocket_send_text` helpers, or keep the handle to send from elsewhere.
@@ -140,5 +142,6 @@ exclusion, HTTP publication, unsubscribe, 1,000 connect-and-disconnect cycles
 that leave the registry empty, the slow-subscriber policy, per-publisher
 ordering, a kept `P.Peer` subscribing after its connection closed (once in
 order and 30 times racing the close), an oversized publication that still
-prunes a closed subscriber, and the latency figures above. The registry laws
+prunes a closed subscriber, a join that times out after the hub queued it,
+and the latency figures above. The registry laws
 live in `proof/ws-topics-laws.bend`; `bun run prove` checks them.

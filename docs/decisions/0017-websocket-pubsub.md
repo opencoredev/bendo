@@ -22,6 +22,18 @@ topic and revokes it in one store update before calling the user's `close`.
 BND-52 runs `close` exactly once on every session end, including EOF and
 transport failure (1006), so cleanup needs no separate path.
 
+A join is a store update, and it can time out after the actor has queued it.
+The actor still commits it, so the session would hold ID 0 while a real ID
+sat in the active set with nothing to revoke it. Each connection therefore
+joins under a token of 128 random bits, and the actor holds a `T.Ledger`: the
+registry plus the `(token, id)` claims. Close releases by token, which
+revokes every ID the token claimed. The release is queued behind the join in
+the actor's mailbox, so it finds the claim even when the session never
+learned its ID. A session whose join timed out has ID 0 and cannot
+subscribe. If the system has no entropy, the connection does not join at
+all. We considered having the close path wait again for the join's reply,
+but that wait can time out too.
+
 A `P.Peer` is ordinary data, so an application can keep one after its
 connection closes. `P.subscribe` goes through `T.admit`, which records the
 subscription only for an active ID. A subscribe that the actor serializes
@@ -117,4 +129,11 @@ well-formed (`ws_topics_history_wf`, over histories with a target on each
 subscribe plus joins, closes and prunes). In a well-formed registry, a newly
 joined ID is nonzero and differs from every active and subscribed ID, and a
 publication selects each subscribed connection exactly once, minus the sender.
-`proof/ws-topics.bend` proves all of them.
+
+Review round 2 added the ledger laws. `claim(k)` is `join` on the registry
+and records the new ID under `k`. Registry changes keep every claim.
+`release(k)` revokes and unsubscribes every ID claimed under `k` and forgets
+those claims. So a claim followed by any registry changes and then a release
+of the same token leaves the claimed ID inactive (`ws_topics_late_join_released`).
+`claim` and `release` preserve `Spec.wf`, and so does every ledger history
+(`ws_topics_ledger_history_wf`). `proof/ws-topics.bend` proves all of them.

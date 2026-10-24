@@ -311,3 +311,81 @@ law ws_topics_history_once:
   for +t: String
   for +sender: Maybe<&2, Nat>
   {Spec.count(T.target_ids(A, T.targets(A, Spec.run(A, chs), t, sender)), c) == Spec.once(Spec.paired(A, T.subs(A, Spec.run(A, chs)), c, t) && Bool.not(Spec.sender(c, sender))) : Nat}
+
+# ---- Claims (review round 2) ----
+
+# claim(k) is join on the registry and records the new ID under k.
+law ws_topics_claim_registry:
+  for -A: Data
+  for +l: T.Ledger<A>
+  for +k: String
+  {T.registry(A, T.claim(A, l, k)) == T.join(A, T.registry(A, l)) : T.Registry<A>}
+
+law ws_topics_claim_records:
+  for -A: Data
+  for +l: T.Ledger<A>
+  for +k: String
+  {T.claimed(T.claims(A, T.claim(A, l, k)), k) == T.next(A, T.registry(A, l)) <> T.claimed(T.claims(A, l), k) : List<&2, Nat>}
+
+# Registry changes keep every claim, so a token still names its ID when the
+# session closes.
+law ws_topics_change_keeps_claims:
+  for -A: Data
+  for +l: T.Ledger<A>
+  for +ch: Spec.Change<A>
+  {T.claims(A, Spec.lift(A, l, ch)) == T.claims(A, l) : List<&2, T.Claim>}
+
+# release(k) revokes every ID claimed under k, whether or not the session
+# learned it, and forgets k's claims.
+law ws_topics_release_revokes:
+  for -A: Data
+  for +l: T.Ledger<A>
+  for +k: String
+  for +c: Nat
+  for +held: {Spec.has(T.claimed(T.claims(A, l), k), c) == True{} : Bool}
+  {Spec.has(T.live(A, T.registry(A, T.release(A, l, k))), c) == False{} : Bool}
+
+law ws_topics_release_leaves:
+  for -A: Data
+  for +l: T.Ledger<A>
+  for +k: String
+  for +c: Nat
+  for +t: String
+  for +held: {Spec.has(T.claimed(T.claims(A, l), k), c) == True{} : Bool}
+  {Spec.has(T.members(A, T.registry(A, T.release(A, l, k)), t), c) == False{} : Bool}
+
+law ws_topics_release_unclaims:
+  for -A: Data
+  for +l: T.Ledger<A>
+  for +k: String
+  {T.claimed(T.claims(A, T.release(A, l, k)), k) == [] : List<&2, Nat>}
+
+# A join committed after the session stopped waiting is still revoked by the
+# session's close, with any registry changes in between.
+law ws_topics_late_join_released:
+  for -A: Data
+  for +l: T.Ledger<A>
+  for +k: String
+  for +chs: List<&2, Spec.Change<A>>
+  {Spec.has(T.live(A, T.registry(A, T.release(A, Spec.play_from(A, Spec.changes(A, chs), T.claim(A, l, k)), k))), T.next(A, T.registry(A, l))) == False{} : Bool}
+
+law ws_topics_wf_claim:
+  for -A: Data
+  for +l: T.Ledger<A>
+  for +k: String
+  for +wf: {Spec.wf(A, T.registry(A, l)) == True{} : Bool}
+  {Spec.wf(A, T.registry(A, T.claim(A, l, k))) == True{} : Bool}
+
+law ws_topics_wf_release:
+  for -A: Data
+  for +l: T.Ledger<A>
+  for +k: String
+  for +wf: {Spec.wf(A, T.registry(A, l)) == True{} : Bool}
+  {Spec.wf(A, T.registry(A, T.release(A, l, k))) == True{} : Bool}
+
+# Every registry the hub's ledger can reach, through any history of claims,
+# releases and registry changes, is well-formed.
+law ws_topics_ledger_history_wf:
+  for -A: Data
+  for +evs: List<&2, Spec.Step<A>>
+  {Spec.wf(A, T.registry(A, Spec.play(A, evs))) == True{} : Bool}

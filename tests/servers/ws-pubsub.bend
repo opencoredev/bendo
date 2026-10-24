@@ -4,6 +4,7 @@ import ../../src/ws/connection.bend as W
 import ../../src/ws/message.bend as M
 import ../../src/ws/pubsub.bend as P
 import ../../src/ws/session.bend as S
+import ../../src/ws/topics.bend as T
 import ../../src/app/store.bend as Store
 import ../../src/app/context.bend as C
 import ../../src/router/methods.bend as Methods
@@ -18,11 +19,13 @@ type Route is Data:
   LateRoute{}
   GhostRoute{}
   ConnectionsRoute{}
+  DelayedRoute{}
 
 # `kept` holds the Peer of the latest /keep connection, so a request can
-# subscribe it after that connection has closed.
+# subscribe it after that connection has closed. `slow` reaches the same
+# registry through `relay`.
 type Shared is Data:
-  Shared{hub: P.Hub, kept: Store.Store<Maybe<&2, P.Peer>>}
+  Shared{hub: P.Hub, slow: P.Hub, kept: Store.Store<Maybe<&2, P.Peer>>}
 
 def flag(ok: Bool) -> String:
   match ok:
@@ -138,14 +141,44 @@ def late(kept: Store.Store<Maybe<&2, P.Peer>>, topic: String) -> IO(Bool):
 # A subscriber whose connection has closed but is still registered, as when
 # its close-path removal failed: a closed mailbox and liveness channel, and a
 # `max_message` of 20 bytes.
-def ghost(+hub: P.Hub, topic: String) -> IO(Bool):
+def ghost(+hub: P.Hub, +topic: String) -> IO(Bool):
   do IO<Bool>:
     +outbound : Chan(S.Command) <- Chan.new(S.Command, 1)
     +alive : Chan(Unit) <- Chan.new(Unit, 0)
     Chan.close(S.Command, outbound)
     Chan.close(Unit, alive)
-    id : Nat <- P.join(hub)
+    id : Nat <- P.join(hub, "ghost:" ++ topic)
     P.subscribe(P.Peer{W.Handle{outbound, 20, alive}, id, hub}, topic)
+
+def Request() -> Type:
+  Store.Message<T.Ledger<W.Handle>>
+
+# Forwards each request to the hub's actor 400 ms late, in order. A request
+# through `slow` times out after 100 ms, once it is queued, and still commits.
+@unsafe
+def relay(+from: Chan(Request()), +to: Chan(Request()), got: Maybe<&1, Request()>) -> IO(Unit):
+  match got:
+    case None{}: IO.pure(Unit, Unit{})
+    case Some{message}:
+      do IO<Unit>:
+        IO.sleep(400)
+        sent : Result<&1, &1, Request(), Unit> <- Chan.send(Request(), to, message)
+        next : Maybe<&1, Request()> <- Chan.recv(Request(), from)
+        relay(from, to, next)
+
+@unsafe
+def relay_start(+from: Chan(Request()), +to: Chan(Request())) -> IO(Unit):
+  do IO<Unit>:
+    first : Maybe<&1, Request()> <- Chan.recv(Request(), from)
+    relay(from, to, first)
+
+@unsafe
+def delayed(hub: P.Hub) -> IO(P.Hub):
+  P.Hub{Store.Store{to, ms}} = hub
+  do IO<P.Hub>:
+    +from : Chan(Request()) <- Chan.new(Request(), 128)
+    IO.spawn(Unit, relay_start(from, to))
+    return P.Hub{Store.Store{from, 100}}
 
 # Fields: max_message, mailbox_capacity, poll_ms, poll_max_ms, idle_ms,
 # ping_ms, close_ms, write_ms. /slow holds one queued message and polls its
@@ -207,7 +240,7 @@ def text_param(param: Maybe<&2, String>) -> String:
     case None{}: "m"
 
 @unsafe
-def handler(route: Route, +c: B.Context(Unit), +hub: P.Hub, +kept: Store.Store<Maybe<&2, P.Peer>>) -> IO(B.Res):
+def handler(route: Route, +c: B.Context(Unit), +hub: P.Hub, slow: P.Hub, +kept: Store.Store<Maybe<&2, P.Peer>>) -> IO(B.Res):
   match route:
     case SocketRoute{}:
       P.handlers(~Unit, ~String, ~opened, ~message, ~closed, c, hub, topic_of(B.param(c, "topic")), B.websocket_config(), session_config(mode(B.query(c, "mode"))))
@@ -238,11 +271,13 @@ def handler(route: Route, +c: B.Context(Unit), +hub: P.Hub, +kept: Store.Store<M
       do IO<B.Res>:
         got : Result<&2, &2, Store.Error, Nat> <- P.connections(hub)
         return B.text(c, size_text(got))
+    case DelayedRoute{}:
+      P.handlers(~Unit, ~String, ~opened, ~message, ~closed, c, slow, "none", B.websocket_config(), W.defaults())
 
 @unsafe
 def dispatch(route: Route, c: B.Context(Unit), shared: Shared) -> IO(B.Res):
-  Shared{hub, kept} = shared
-  handler(route, c, hub, kept)
+  Shared{hub, slow, kept} = shared
+  handler(route, c, hub, slow, kept)
 
 @unsafe
 def ready(shared: Shared, result: Result<&2, &2, Methods.BuildError, B.Routes(Route)>) -> IO(Unit):
@@ -253,6 +288,7 @@ def ready(shared: Shared, result: Result<&2, &2, Methods.BuildError, B.Routes(Ro
 @unsafe
 def main() -> IO(Unit):
   do IO<Unit>:
-    hub : P.Hub <- P.hub()
+    +hub : P.Hub <- P.hub()
+    slow : P.Hub <- delayed(hub)
     kept : Store.Store<Maybe<&2, P.Peer>> <- B.store(Maybe<&2, P.Peer>, None{})
-    ready(Shared{hub, kept}, B.routes(Route, [B.get(Route, "/", HealthRoute{}), B.get(Route, "/ws/:topic", SocketRoute{}), B.post(Route, "/publish/:topic", PublishRoute{}), B.get(Route, "/size", SizeRoute{}), B.get(Route, "/members/:topic", MembersRoute{}), B.get(Route, "/keep", KeepRoute{}), B.post(Route, "/late/:topic", LateRoute{}), B.post(Route, "/ghost/:topic", GhostRoute{}), B.get(Route, "/connections", ConnectionsRoute{})]))
+    ready(Shared{hub, slow, kept}, B.routes(Route, [B.get(Route, "/", HealthRoute{}), B.get(Route, "/ws/:topic", SocketRoute{}), B.post(Route, "/publish/:topic", PublishRoute{}), B.get(Route, "/size", SizeRoute{}), B.get(Route, "/members/:topic", MembersRoute{}), B.get(Route, "/keep", KeepRoute{}), B.post(Route, "/late/:topic", LateRoute{}), B.post(Route, "/ghost/:topic", GhostRoute{}), B.get(Route, "/connections", ConnectionsRoute{}), B.get(Route, "/delayed", DelayedRoute{})]))
