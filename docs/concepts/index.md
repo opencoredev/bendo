@@ -22,8 +22,9 @@ together they explain why a Bendo app looks the way it does.
 
 The HTTP shell reads bytes from the socket, frames and buffers the request,
 and parses it. Malformed requests get a 400 here and go no further. A parsed
-request then passes through these stages, each a pure function of the request,
-the context and your `env`:
+request then passes through these stages. Parsing, routing and validation are
+pure functions, which is what the laws are about. Hooks, middleware and
+handlers return `IO`, so they can read the clock or update a store:
 
 | Stage | What happens | Concept |
 | --- | --- | --- |

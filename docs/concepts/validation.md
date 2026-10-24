@@ -6,7 +6,8 @@ description: Route schemas as data, what happens to a request that fails them, a
 # Validation
 
 A route can declare what it accepts. Bendo then checks each request before
-your handler runs, answers bad requests with a list of every problem, and gives
+your handler runs, answers bad requests with a list of the problems (up to
+100), and gives
 the handler decoded values so it never parses input itself.
 
 ## Schemas are data
@@ -38,7 +39,8 @@ without schemas small, and refuse to start if a route declares one.
 
 ## A request that fails
 
-Every slot is checked, and the rejection lists every failing path. Posting
+Every slot is checked, and the rejection lists the failing paths, at most 100
+of them. Posting
 `{"title":""}` to the route above answers 422:
 
 ```json
@@ -77,8 +79,8 @@ Compiled apps also print their schemas as JSON Schema in the
 ## Guarantees
 
 The validation laws state that a request is admitted exactly when every
-declared slot decodes, that a rejection lists exactly the slots' errors, and
-that the handler runs only for admitted requests. See [route validation](../validation.md#guarantees)
+declared slot decodes, that a rejection lists at most 100 errors, all from the
+declared slots, and that the handler runs only for admitted requests. See [route validation](../validation.md#guarantees)
 and the [data laws](../laws/data.md).
 
 ## Read on

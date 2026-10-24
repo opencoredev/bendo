@@ -24,13 +24,33 @@ hero:
 <p class="home-demo-label">main.bend</p>
 
 ```python
+import Base
+import ./bendo/main.bend as B
+
 type Tag is Data:
   Hello{}
   Greet{}
 
+def hello(c: B.Ctx) -> IO(B.Res):
+  IO.pure(B.Res, B.text(c, "Hello from Bendo!"))
+
 def greet(+c: B.Ctx) -> IO(B.Res):
   name = Maybe.default(&2, String, B.param(c, "name"), "stranger")
   IO.pure(B.Res, B.text(c, "Hello, " ++ name ++ "!"))
+
+def dispatch(tag: Tag, ctx: B.Ctx, env: Unit) -> IO(B.Res):
+  match tag:
+    case Hello{}:
+      hello(ctx)
+    case Greet{}:
+      greet(ctx)
+
+def ready(result: Result<&2, &2, B.RouteError, B.Routes(Tag)>) -> IO(Unit):
+  match result:
+    case Done{table}:
+      B.serve(~Tag, ~Unit, ~dispatch, table, Unit{}, B.config())
+    case Fail{error}:
+      IO.die(Unit, 1, "invalid routes")
 
 def main() -> IO(Unit):
   ready(B.routes(Tag, [

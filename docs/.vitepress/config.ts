@@ -58,6 +58,9 @@ export default defineConfig({
     // Bend has no Shiki grammar yet. Its syntax is close enough to Python
     // that the existing docs already fence it as `python`.
     languageAlias: { bend: "python" },
+    // The high-contrast light theme keeps every token at 4.5:1 or more on the
+    // code background; github-light's red and orange fall below it.
+    theme: { light: "github-light-high-contrast", dark: "github-dark" },
     config(md) {
       const render = md.renderer.rules.link_open;
       md.renderer.rules.link_open = (tokens, index, options, env, self) => {

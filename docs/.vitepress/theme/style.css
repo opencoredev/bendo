@@ -29,6 +29,8 @@
   --vp-c-divider: var(--bendo-line);
   --vp-code-block-bg: var(--bendo-paper);
   --vp-code-line-highlight-color: var(--bendo-accent-soft);
+  /* VitePress's grey language label is 2.9:1 on the code background. */
+  --vp-code-lang-color: #5f6672;
 
   --vp-home-hero-name-color: var(--bendo-accent);
   --vp-button-brand-bg: var(--bendo-accent);
