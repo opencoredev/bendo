@@ -17,6 +17,7 @@ import ./secure_headers.bend as Secure
 import ./method_override.bend as Override
 import ./method_override_policy.bend as OverridePolicy
 import ./trailing_slash.bend as Trailing
+import ./ip_restriction.bend as IpRestriction
 
 import ./body_limit.bend as BodyLimit
 import ./timeout.bend as Timeout
@@ -41,6 +42,7 @@ type Builtin is Data:
   SecureHeaders{config: Secure.Config}
   MethodOverride{config: OverridePolicy.Config}
   TrailingSlash{config: Trailing.Config}
+  IpRestriction{policy: IpRestriction.Policy}
 
 def dispatch(-Vars: Data, id: Builtin, c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
   match id:
@@ -61,6 +63,7 @@ def dispatch(-Vars: Data, id: Builtin, c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(R
     case SecureHeaders{config}: Secure.middleware(Vars, config, c, next)
     case MethodOverride{config}: Override.middleware(Vars, config, c, next)
     case TrailingSlash{config}: Trailing.middleware(Vars, config, c, next)
+    case IpRestriction{policy}: IpRestriction.middleware(Vars, policy, c, next)
 
 # A pure selector for transport admission; all other built-ins have no limit.
 def body_limit(id: Builtin) -> Maybe<&2, U32>:
