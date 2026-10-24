@@ -67,3 +67,27 @@ def set(-S: Data, handle: Store<S>, value: S) -> IO(Result<&2, &2, Error, Unit>)
 
 def update(-S: Data, handle: Store<S>, change: S -> S) -> IO(Result<&2, &2, Error, S>):
   ask(S, S, handle, channel => Update{change, channel})
+
+def queued(-S: Data, +channel: Chan(S), +ms: U32, result: Result<&1, &1, Message<S>, Unit>) -> IO(Result<&2, &2, Error, S>):
+  match result:
+    case Done{u}:
+      do IO<Result<&2, &2, Error, S>>:
+        got : Poll<&1, &1, Maybe<&1, S>, Unit> <- Chan.try_recv(S, channel, ms)
+        Chan.close(S, channel)
+        return received(S, got)
+    case Fail{message}:
+      do IO<Result<&2, &2, Error, S>>:
+        Chan.close(S, channel)
+        return Fail{Unavailable{}}
+
+# Like `update`, but the request is never dropped: the send waits for room in
+# the actor's queue for as long as that takes, behind any request already
+# waiting, and only the wait for the reply is bounded by the timeout. For
+# cleanup that must reach the actor even while its queue is full. TimedOut
+# then means the update is queued and will still be applied.
+def update_queued(-S: Data, handle: Store<S>, change: S -> S) -> IO(Result<&2, &2, Error, S>):
+  Store{requests, +ms} = handle
+  do IO<Result<&2, &2, Error, S>>:
+    +channel : Chan(S) <- Chan.new(S, 1)
+    result : Result<&1, &1, Message<S>, Unit> <- Chan.send(Message<S>, requests, Update{change, channel})
+    queued(S, channel, ms, result)

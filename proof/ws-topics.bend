@@ -1033,11 +1033,16 @@ def lift_wf(-A: Data, +l: T.Ledger<A>, +ch: Spec.Change<A>, +w: {Spec.wf(A, T.re
   match l:
     case T.Ledger{r, cs}: change_wf(A, r, ch, w)
 
+def wf_prune_r(-A: Data, +l: T.Ledger<A>, +ids: List<&2, Nat>, +w: {Spec.wf(A, T.registry(A, l)) == True{} : Bool}) -> {Spec.wf(A, T.registry(A, T.prune(A, l, ids))) == True{} : Bool}:
+  match l:
+    case T.Ledger{r, cs}: wf_remove_all_r(A, ids, r, w)
+
 def event_wf(-A: Data, +l: T.Ledger<A>, +ev: Spec.Step<A>, +w: {Spec.wf(A, T.registry(A, l)) == True{} : Bool}) -> {Spec.wf(A, T.registry(A, Spec.event(A, l, ev))) == True{} : Bool}:
   match ev:
     case Spec.EvChange{ch}: lift_wf(A, l, ch, w)
     case Spec.EvClaim{k}: wf_claim_r(A, l, k, w)
     case Spec.EvRelease{k}: wf_release_r(A, l, k, w)
+    case Spec.EvPrune{gone}: wf_prune_r(A, l, gone, w)
 
 def play_wf(-A: Data, +evs: List<&2, Spec.Step<A>>, +l: T.Ledger<A>, +w: {Spec.wf(A, T.registry(A, l)) == True{} : Bool}) -> {Spec.wf(A, T.registry(A, Spec.play_from(A, evs, l))) == True{} : Bool}:
   match evs:
@@ -1046,3 +1051,325 @@ def play_wf(-A: Data, +evs: List<&2, Spec.Step<A>>, +l: T.Ledger<A>, +w: {Spec.w
 
 def L.ws_topics_ledger_history_wf(A, evs):
   play_wf(A, evs, T.ledger(A), {==})
+
+# ==== BND-98: other tokens' claims, prunes, mixed ledger histories ====
+
+# ---- More Bool facts ----
+
+def and_false_l(+a: Bool, -b: Bool, ea: {a == False{} : Bool}) -> {(a && b) == False{} : Bool}:
+  match a:
+    case False{}: {==}
+    case True{}: absurd({(True{} && b) == False{} : Bool}, false_true(Equal.sym(Bool, True{}, False{}, ea)))
+
+def and_true_r(+a: Bool, -b: Bool, eb: {b == True{} : Bool}) -> {(a && b) == a : Bool}:
+  match a:
+    case True{}: eb
+    case False{}: {==}
+
+def or_resolve(+a: Bool, -b: Bool, e: {(a || b) == True{} : Bool}, ea: {a == False{} : Bool}) -> {b == True{} : Bool}:
+  match a:
+    case False{}: e
+    case True{}: absurd({b == True{} : Bool}, false_true(Equal.sym(Bool, True{}, False{}, ea)))
+
+def or_drop_l(+a: Bool, -b: Bool, ea: {a == False{} : Bool}) -> {(a || b) == b : Bool}:
+  match a:
+    case False{}: {==}
+    case True{}: absurd({(True{} || b) == b : Bool}, false_true(Equal.sym(Bool, True{}, False{}, ea)))
+
+def set_off(+h: Bool, +v: Nat, +n: Nat, e: {h == False{} : Bool}) -> {set_if(h, v, n) == n : Nat}:
+  match h:
+    case False{}: {==}
+    case True{}: absurd({set_if(True{}, v, n) == n : Nat}, false_true(Equal.sym(Bool, True{}, False{}, e)))
+
+# ---- Other tokens' claims ----
+
+def L.ws_topics_claim_others(A, l, k, j, other):
+  match l:
+    case T.Ledger{r, cs}:
+      match r:
+        case T.Registry{n, lv, s}: pick_false(n, T.claimed(cs, j), String.eq(k, j), other)
+
+def release_other_step(+token: String, +id: Nat, +rest: List<&2, T.Claim>, +k: String, +j: String, +other: {String.eq(k, j) == False{} : Bool}, b: Bool, eb: {String.eq(token, k) == b : Bool}, ih: {T.claimed(T.unclaimed(rest, k), j) == T.claimed(rest, j) : List<&2, Nat>}) -> {T.claimed(T.keep_claim(T.Claim{token, id}, T.unclaimed(rest, k), b), j) == T.pick(id, T.claimed(rest, j), String.eq(token, j)) : List<&2, Nat>}:
+  match b:
+    case False{}:
+      Equal.cong(List<&2, Nat>, List<&2, Nat>, m => T.pick(id, m, String.eq(token, j)), T.claimed(T.unclaimed(rest, k), j), T.claimed(rest, j), ih)
+    case True{}:
+      +same = JS.string_sound(token, k, eb)
+      +ne = Equal.trans(Bool, String.eq(token, j), String.eq(k, j), False{}, Equal.cong(String, Bool, v => String.eq(v, j), token, k, same), other)
+      Equal.trans(List<&2, Nat>, T.claimed(T.unclaimed(rest, k), j), T.claimed(rest, j), T.pick(id, T.claimed(rest, j), String.eq(token, j)), ih, Equal.sym(List<&2, Nat>, T.pick(id, T.claimed(rest, j), String.eq(token, j)), T.claimed(rest, j), pick_false(id, T.claimed(rest, j), String.eq(token, j), ne)))
+
+# Releasing k keeps the IDs claimed under any other token j.
+def unclaimed_other(+cs: List<&2, T.Claim>, +k: String, +j: String, +other: {String.eq(k, j) == False{} : Bool}) -> {T.claimed(T.unclaimed(cs, k), j) == T.claimed(cs, j) : List<&2, Nat>}:
+  match cs:
+    case Nil{}: {==}
+    case T.Claim{token, id} <> rest: release_other_step(token, id, rest, k, j, other, String.eq(token, k), {==}, unclaimed_other(rest, k, j, other))
+
+def L.ws_topics_release_others(A, l, k, j, other):
+  match l:
+    case T.Ledger{r, cs}: unclaimed_other(cs, k, j, other)
+
+# ---- Prune ----
+
+def L.ws_topics_prune_registry(A, l, ids):
+  match l:
+    case T.Ledger{r, cs}: {==}
+
+def outside_pick(+id: Nat, +m: List<&2, Nat>, +q: Bool, +gone: List<&2, Nat>) -> {Spec.outside(T.pick(id, m, q), gone) == T.pick(id, Spec.outside(m, gone), q && Bool.not(Spec.has(gone, id))) : List<&2, Nat>}:
+  match q:
+    case True{}: {==}
+    case False{}: {==}
+
+def prune_step(+token: String, +id: Nat, +rest: List<&2, T.Claim>, +gone: List<&2, Nat>, +k: String, b: Bool, eb: {T.holds(gone, id) == b : Bool}, ih: {T.claimed(T.unpruned(rest, gone), k) == Spec.outside(T.claimed(rest, k), gone) : List<&2, Nat>}) -> {T.claimed(T.keep_claim(T.Claim{token, id}, T.unpruned(rest, gone), b), k) == Spec.outside(T.pick(id, T.claimed(rest, k), String.eq(token, k)), gone) : List<&2, Nat>}:
+  match b:
+    case True{}:
+      +q = String.eq(token, k)
+      +w = Spec.outside(T.claimed(rest, k), gone)
+      +hg = Equal.trans(Bool, Spec.has(gone, id), T.holds(gone, id), True{}, Equal.sym(Bool, T.holds(gone, id), Spec.has(gone, id), holds_has(gone, id)), eb)
+      +off = and_false_r(q, Bool.not(Spec.has(gone, id)), Equal.cong(Bool, Bool, v => Bool.not(v), Spec.has(gone, id), True{}, hg))
+      +rhs = Equal.trans(List<&2, Nat>, Spec.outside(T.pick(id, T.claimed(rest, k), q), gone), T.pick(id, w, q && Bool.not(Spec.has(gone, id))), w, outside_pick(id, T.claimed(rest, k), q, gone), pick_false(id, w, q && Bool.not(Spec.has(gone, id)), off))
+      Equal.trans(List<&2, Nat>, T.claimed(T.unpruned(rest, gone), k), w, Spec.outside(T.pick(id, T.claimed(rest, k), q), gone), ih, Equal.sym(List<&2, Nat>, Spec.outside(T.pick(id, T.claimed(rest, k), q), gone), w, rhs))
+    case False{}:
+      +q = String.eq(token, k)
+      +w = Spec.outside(T.claimed(rest, k), gone)
+      +hg = Equal.trans(Bool, Spec.has(gone, id), T.holds(gone, id), False{}, Equal.sym(Bool, T.holds(gone, id), Spec.has(gone, id), holds_has(gone, id)), eb)
+      +on = and_true_r(q, Bool.not(Spec.has(gone, id)), not_false(Spec.has(gone, id), hg))
+      +rhs = Equal.trans(List<&2, Nat>, Spec.outside(T.pick(id, T.claimed(rest, k), q), gone), T.pick(id, w, q && Bool.not(Spec.has(gone, id))), T.pick(id, w, q), outside_pick(id, T.claimed(rest, k), q, gone), Equal.cong(Bool, List<&2, Nat>, v => T.pick(id, w, v), q && Bool.not(Spec.has(gone, id)), q, on))
+      Equal.trans(List<&2, Nat>, T.pick(id, T.claimed(T.unpruned(rest, gone), k), q), T.pick(id, w, q), Spec.outside(T.pick(id, T.claimed(rest, k), q), gone), Equal.cong(List<&2, Nat>, List<&2, Nat>, m => T.pick(id, m, q), T.claimed(T.unpruned(rest, gone), k), w, ih), Equal.sym(List<&2, Nat>, Spec.outside(T.pick(id, T.claimed(rest, k), q), gone), T.pick(id, w, q), rhs))
+
+def prune_claims_cs(+cs: List<&2, T.Claim>, +gone: List<&2, Nat>, +k: String) -> {T.claimed(T.unpruned(cs, gone), k) == Spec.outside(T.claimed(cs, k), gone) : List<&2, Nat>}:
+  match cs:
+    case Nil{}: {==}
+    case T.Claim{token, id} <> rest: prune_step(token, id, rest, gone, k, T.holds(gone, id), {==}, prune_claims_cs(rest, gone, k))
+
+def L.ws_topics_prune_claims(A, l, ids, k):
+  match l:
+    case T.Ledger{r, cs}: prune_claims_cs(cs, ids, k)
+
+def outside_gone_step(+h: Nat, +t: List<&2, Nat>, +gone: List<&2, Nat>, +c: Nat, +gc: {Spec.has(gone, c) == True{} : Bool}, k: Bool, ek: {Nat.is_eq(h, c) == k : Bool}, ih: {Spec.has(Spec.outside(t, gone), c) == False{} : Bool}) -> {Spec.has(T.pick(h, Spec.outside(t, gone), Bool.not(Spec.has(gone, h))), c) == False{} : Bool}:
+  match k:
+    case False{}:
+      Equal.trans(Bool, Spec.has(T.pick(h, Spec.outside(t, gone), Bool.not(Spec.has(gone, h))), c), (Bool.not(Spec.has(gone, h)) && Nat.is_eq(h, c)) || Spec.has(Spec.outside(t, gone), c), False{}, has_pick(h, Spec.outside(t, gone), Bool.not(Spec.has(gone, h)), c), or_false(Bool.not(Spec.has(gone, h)) && Nat.is_eq(h, c), Spec.has(Spec.outside(t, gone), c), and_false_r(Bool.not(Spec.has(gone, h)), Nat.is_eq(h, c), ek), ih))
+    case True{}:
+      +same = nat_sound(h, c, ek)
+      +hg = Equal.trans(Bool, Spec.has(gone, h), Spec.has(gone, c), True{}, Equal.cong(Nat, Bool, v => Spec.has(gone, v), h, c, same), gc)
+      +nf = Equal.cong(Bool, Bool, v => Bool.not(v), Spec.has(gone, h), True{}, hg)
+      Equal.trans(Bool, Spec.has(T.pick(h, Spec.outside(t, gone), Bool.not(Spec.has(gone, h))), c), (Bool.not(Spec.has(gone, h)) && Nat.is_eq(h, c)) || Spec.has(Spec.outside(t, gone), c), False{}, has_pick(h, Spec.outside(t, gone), Bool.not(Spec.has(gone, h)), c), or_false(Bool.not(Spec.has(gone, h)) && Nat.is_eq(h, c), Spec.has(Spec.outside(t, gone), c), and_false_l(Bool.not(Spec.has(gone, h)), Nat.is_eq(h, c), nf), ih))
+
+# A pruned ID is not left in the list.
+def outside_gone(+xs: List<&2, Nat>, +gone: List<&2, Nat>, +c: Nat, +gc: {Spec.has(gone, c) == True{} : Bool}) -> {Spec.has(Spec.outside(xs, gone), c) == False{} : Bool}:
+  match xs:
+    case Nil{}: {==}
+    case h <> t: outside_gone_step(h, t, gone, c, gc, Nat.is_eq(h, c), {==}, outside_gone(t, gone, c, gc))
+
+def L.ws_topics_prune_unclaims(A, l, ids, k, c, gone):
+  match l:
+    case T.Ledger{r, cs}: Equal.trans(Bool, Spec.has(T.claimed(T.unpruned(cs, ids), k), c), Spec.has(Spec.outside(T.claimed(cs, k), ids), c), False{}, Equal.cong(List<&2, Nat>, Bool, xs => Spec.has(xs, c), T.claimed(T.unpruned(cs, ids), k), Spec.outside(T.claimed(cs, k), ids), prune_claims_cs(cs, ids, k)), outside_gone(T.claimed(cs, k), ids, c, gone))
+
+def outside_keep_step(+h: Nat, +t: List<&2, Nat>, +gone: List<&2, Nat>, +c: Nat, +gc: {Spec.has(gone, c) == False{} : Bool}, k: Bool, +ek: {Nat.is_eq(h, c) == k : Bool}, ih: {Spec.has(Spec.outside(t, gone), c) == Spec.has(t, c) : Bool}) -> {Spec.has(T.pick(h, Spec.outside(t, gone), Bool.not(Spec.has(gone, h))), c) == (k || Spec.has(t, c)) : Bool}:
+  match k:
+    case False{}:
+      Equal.trans(Bool, Spec.has(T.pick(h, Spec.outside(t, gone), Bool.not(Spec.has(gone, h))), c), (Bool.not(Spec.has(gone, h)) && Nat.is_eq(h, c)) || Spec.has(Spec.outside(t, gone), c), Spec.has(t, c), has_pick(h, Spec.outside(t, gone), Bool.not(Spec.has(gone, h)), c), Equal.trans(Bool, (Bool.not(Spec.has(gone, h)) && Nat.is_eq(h, c)) || Spec.has(Spec.outside(t, gone), c), Spec.has(Spec.outside(t, gone), c), Spec.has(t, c), or_drop_l(Bool.not(Spec.has(gone, h)) && Nat.is_eq(h, c), Spec.has(Spec.outside(t, gone), c), and_false_r(Bool.not(Spec.has(gone, h)), Nat.is_eq(h, c), ek)), ih))
+    case True{}:
+      +same = nat_sound(h, c, ek)
+      +hg = Equal.trans(Bool, Spec.has(gone, h), Spec.has(gone, c), False{}, Equal.cong(Nat, Bool, v => Spec.has(gone, v), h, c, same), gc)
+      Equal.trans(Bool, Spec.has(T.pick(h, Spec.outside(t, gone), Bool.not(Spec.has(gone, h))), c), (Bool.not(Spec.has(gone, h)) && Nat.is_eq(h, c)) || Spec.has(Spec.outside(t, gone), c), True{}, has_pick(h, Spec.outside(t, gone), Bool.not(Spec.has(gone, h)), c), or_left(Bool.not(Spec.has(gone, h)) && Nat.is_eq(h, c), Spec.has(Spec.outside(t, gone), c), and_true(Bool.not(Spec.has(gone, h)), Nat.is_eq(h, c), not_false(Spec.has(gone, h), hg), ek)))
+
+# An ID that was not pruned keeps its place.
+def outside_keep(+xs: List<&2, Nat>, +gone: List<&2, Nat>, +c: Nat, +gc: {Spec.has(gone, c) == False{} : Bool}) -> {Spec.has(Spec.outside(xs, gone), c) == Spec.has(xs, c) : Bool}:
+  match xs:
+    case Nil{}: {==}
+    case h <> t: outside_keep_step(h, t, gone, c, gc, Nat.is_eq(h, c), {==}, outside_keep(t, gone, c, gc))
+
+def L.ws_topics_wf_prune(A, l, ids, wf):
+  wf_prune_r(A, l, ids, wf)
+
+# ---- A claimed ID through any ledger history ----
+
+# What stays true of the ID `i` a claim under k got, seen from topic t: it is
+# below `next`, and either still claimed under k or inactive and in no record
+# for t.
+def fate_held(cs: List<&2, T.Claim>, +k: String, +i: Nat) -> Bool:
+  Spec.has(T.claimed(cs, k), i)
+
+def fate_gone(-A: Data, +r: T.Registry<A>, +i: Nat, +t: String) -> Bool:
+  Bool.not(Spec.has(T.live(A, r), i)) && Nat.is_eq(Spec.count(T.members(A, r, t), i), 0n)
+
+def fate(-A: Data, +r: T.Registry<A>, +cs: List<&2, T.Claim>, +k: String, +i: Nat, +t: String) -> Bool:
+  Nat.is_lt(i, T.next(A, r)) && (fate_held(cs, k, i) || fate_gone(A, r, i, t))
+
+def fate_l(-A: Data, l: T.Ledger<A>, +k: String, +i: Nat, +t: String) -> Bool:
+  match l:
+    case T.Ledger{r, cs}: fate(A, r, cs, k, i, t)
+
+def gone_mk(-A: Data, +r: T.Registry<A>, +i: Nat, +t: String, lf: {Spec.has(T.live(A, r), i) == False{} : Bool}, cz: {Spec.count(T.members(A, r, t), i) == 0n : Nat}) -> {fate_gone(A, r, i, t) == True{} : Bool}:
+  and_true(Bool.not(Spec.has(T.live(A, r), i)), Nat.is_eq(Spec.count(T.members(A, r, t), i), 0n), not_false(Spec.has(T.live(A, r), i), lf), Equal.trans(Bool, Nat.is_eq(Spec.count(T.members(A, r, t), i), 0n), Nat.is_eq(0n, 0n), True{}, Equal.cong(Nat, Bool, n => Nat.is_eq(n, 0n), Spec.count(T.members(A, r, t), i), 0n, cz), {==}))
+
+def gone_live(-A: Data, +r: T.Registry<A>, +i: Nat, +t: String, g: {fate_gone(A, r, i, t) == True{} : Bool}) -> {Spec.has(T.live(A, r), i) == False{} : Bool}:
+  not_true(Spec.has(T.live(A, r), i), and_l(Bool.not(Spec.has(T.live(A, r), i)), Nat.is_eq(Spec.count(T.members(A, r, t), i), 0n), g))
+
+def gone_zero(-A: Data, +r: T.Registry<A>, +i: Nat, +t: String, g: {fate_gone(A, r, i, t) == True{} : Bool}) -> {Spec.count(T.members(A, r, t), i) == 0n : Nat}:
+  nat_sound(Spec.count(T.members(A, r, t), i), 0n, and_r(Bool.not(Spec.has(T.live(A, r), i)), Nat.is_eq(Spec.count(T.members(A, r, t), i), 0n), g))
+
+def fate_split(-A: Data, +r: T.Registry<A>, +cs: List<&2, T.Claim>, +r2: T.Registry<A>, +cs2: List<&2, T.Claim>, +k: String, +i: Nat, +t: String, h: Bool, eh: {fate_held(cs, k, i) == h : Bool}, o: {(fate_held(cs, k, i) || fate_gone(A, r, i, t)) == True{} : Bool}, fh: {fate_held(cs, k, i) == True{} : Bool} -> {(fate_held(cs2, k, i) || fate_gone(A, r2, i, t)) == True{} : Bool}, fg: {fate_gone(A, r, i, t) == True{} : Bool} -> {fate_gone(A, r2, i, t) == True{} : Bool}) -> {(fate_held(cs2, k, i) || fate_gone(A, r2, i, t)) == True{} : Bool}:
+  match h:
+    case True{}: fh(eh)
+    case False{}: or_right(fate_held(cs2, k, i), fate_gone(A, r2, i, t), fg(or_resolve(fate_held(cs, k, i), fate_gone(A, r, i, t), o, eh)))
+
+# One ledger step keeps the fate, given the new `next` bound, what a held
+# claim becomes, and that an inactive, unsubscribed ID stays so.
+def fate_next(-A: Data, +r: T.Registry<A>, +cs: List<&2, T.Claim>, +r2: T.Registry<A>, +cs2: List<&2, T.Claim>, +k: String, +i: Nat, +t: String, e: {fate(A, r, cs, k, i, t) == True{} : Bool}, lt: {Nat.is_lt(i, T.next(A, r2)) == True{} : Bool}, fh: {fate_held(cs, k, i) == True{} : Bool} -> {(fate_held(cs2, k, i) || fate_gone(A, r2, i, t)) == True{} : Bool}, fg: {fate_gone(A, r, i, t) == True{} : Bool} -> {fate_gone(A, r2, i, t) == True{} : Bool}) -> {fate(A, r2, cs2, k, i, t) == True{} : Bool}:
+  and_true(Nat.is_lt(i, T.next(A, r2)), fate_held(cs2, k, i) || fate_gone(A, r2, i, t), lt, fate_split(A, r, cs, r2, cs2, k, i, t, fate_held(cs, k, i), {==}, and_r(Nat.is_lt(i, T.next(A, r)), fate_held(cs, k, i) || fate_gone(A, r, i, t), e), fh, fg))
+
+def lt_moved(-A: Data, +r: T.Registry<A>, +r2: T.Registry<A>, +i: Nat, nk: {T.next(A, r2) == T.next(A, r) : Nat}, lt: {Nat.is_lt(i, T.next(A, r)) == True{} : Bool}) -> {Nat.is_lt(i, T.next(A, r2)) == True{} : Bool}:
+  Equal.trans(Bool, Nat.is_lt(i, T.next(A, r2)), Nat.is_lt(i, T.next(A, r)), True{}, Equal.cong(Nat, Bool, m => Nat.is_lt(i, m), T.next(A, r2), T.next(A, r), nk), lt)
+
+# A registry change that keeps `next` and the claims.
+def fate_keep(-A: Data, +r: T.Registry<A>, +cs: List<&2, T.Claim>, +r2: T.Registry<A>, +k: String, +i: Nat, +t: String, +e: {fate(A, r, cs, k, i, t) == True{} : Bool}, nk: {T.next(A, r2) == T.next(A, r) : Nat}, fg: {fate_gone(A, r, i, t) == True{} : Bool} -> {fate_gone(A, r2, i, t) == True{} : Bool}) -> {fate(A, r2, cs, k, i, t) == True{} : Bool}:
+  +lt0 = and_l(Nat.is_lt(i, T.next(A, r)), fate_held(cs, k, i) || fate_gone(A, r, i, t), e)
+  fate_next(A, r, cs, r2, cs, k, i, t, e, lt_moved(A, r, r2, i, nk, lt0), eh => or_left(fate_held(cs, k, i), fate_gone(A, r2, i, t), eh), fg)
+
+def next_remove_r(-A: Data, +r: T.Registry<A>, +c: Nat) -> {T.next(A, T.remove(A, r, c)) == T.next(A, r) : Nat}:
+  match r:
+    case T.Registry{n, lv, s}: {==}
+
+def next_remove_all(-A: Data, +ids: List<&2, Nat>, +r: T.Registry<A>) -> {T.next(A, T.remove_all(A, ids, r)) == T.next(A, r) : Nat}:
+  match ids:
+    case Nil{}: {==}
+    case c <> rest: Equal.trans(Nat, T.next(A, T.remove_all(A, rest, T.remove(A, r, c))), T.next(A, T.remove(A, r, c)), T.next(A, r), next_remove_all(A, rest, T.remove(A, r, c)), next_remove_r(A, r, c))
+
+def next_admit_if(-A: Data, +n: Nat, +lv: List<&2, Nat>, +s: List<&2, T.Sub<A>>, +c: Nat, +u: String, +x: A, b: Bool) -> {T.next(A, T.admit_if(A, T.Registry{n, lv, s}, c, u, x, b)) == n : Nat}:
+  match b:
+    case True{}: {==}
+    case False{}: {==}
+
+# A join hands out `next`, which differs from i.
+def gone_join(-A: Data, +n: Nat, +lv: List<&2, Nat>, +s: List<&2, T.Sub<A>>, +i: Nat, +t: String, +lt0: {Nat.is_lt(i, n) == True{} : Bool}, +eg: {fate_gone(A, T.Registry{n, lv, s}, i, t) == True{} : Bool}) -> {fate_gone(A, T.Registry{1n+n, n <> lv, s}, i, t) == True{} : Bool}:
+  +ne = Equal.trans(Bool, Nat.is_eq(n, i), Nat.is_eq(i, n), False{}, nat_sym(n, i), lt_ne(i, n, lt0))
+  gone_mk(A, T.Registry{1n+n, n <> lv, s}, i, t, or_false(Nat.is_eq(n, i), Spec.has(lv, i), ne, gone_live(A, T.Registry{n, lv, s}, i, t, eg)), gone_zero(A, T.Registry{n, lv, s}, i, t, eg))
+
+# Only an active connection subscribes, and i is not active.
+def gone_admit(-A: Data, +n: Nat, +lv: List<&2, Nat>, +s: List<&2, T.Sub<A>>, +c: Nat, +u: String, +x: A, +i: Nat, +t: String, b: Bool, eb: {T.holds(lv, c) == b : Bool}, +eg: {fate_gone(A, T.Registry{n, lv, s}, i, t) == True{} : Bool}) -> {fate_gone(A, T.admit_if(A, T.Registry{n, lv, s}, c, u, x, b), i, t) == True{} : Bool}:
+  match b:
+    case False{}: eg
+    case True{}:
+      +out = gone_live(A, T.Registry{n, lv, s}, i, t, eg)
+      +inn = Equal.trans(Bool, Spec.has(lv, c), T.holds(lv, c), True{}, Equal.sym(Bool, T.holds(lv, c), Spec.has(lv, c), holds_has(lv, c)), eb)
+      +ci = id_out_k(c, i, lv, Nat.is_eq(c, i), {==}, inn, out)
+      +h = String.eq(u, t) && Nat.is_eq(c, i)
+      +m = Spec.count(T.members_of(A, s, t), i)
+      +z = Equal.trans(Nat, Spec.count(T.members_of(A, T.subscribe_subs(A, s, c, u, x), t), i), set_if(h, 1n, m), 0n, count_subscribe(A, s, c, u, x, i, t), Equal.trans(Nat, set_if(h, 1n, m), m, 0n, set_off(h, 1n, m, and_false_r(String.eq(u, t), Nat.is_eq(c, i), ci)), gone_zero(A, T.Registry{n, lv, s}, i, t, eg)))
+      gone_mk(A, T.Registry{n, lv, T.subscribe_subs(A, s, c, u, x)}, i, t, out, z)
+
+def gone_unsub(-A: Data, +n: Nat, +lv: List<&2, Nat>, +s: List<&2, T.Sub<A>>, +c: Nat, +u: String, +i: Nat, +t: String, +eg: {fate_gone(A, T.Registry{n, lv, s}, i, t) == True{} : Bool}) -> {fate_gone(A, T.Registry{n, lv, T.without(A, s, c, u)}, i, t) == True{} : Bool}:
+  +m = Spec.count(T.members_of(A, s, t), i)
+  gone_mk(A, T.Registry{n, lv, T.without(A, s, c, u)}, i, t, gone_live(A, T.Registry{n, lv, s}, i, t, eg), Equal.trans(Nat, Spec.count(T.members_of(A, T.without(A, s, c, u), t), i), set_if(String.eq(u, t) && Nat.is_eq(c, i), 0n, m), 0n, count_without(A, s, c, u, i, t), zero_set(String.eq(u, t) && Nat.is_eq(c, i), m, gone_zero(A, T.Registry{n, lv, s}, i, t, eg))))
+
+def gone_remove_all(-A: Data, +ids: List<&2, Nat>, +r: T.Registry<A>, +i: Nat, +t: String, +eg: {fate_gone(A, r, i, t) == True{} : Bool}) -> {fate_gone(A, T.remove_all(A, ids, r), i, t) == True{} : Bool}:
+  gone_mk(A, T.remove_all(A, ids, r), i, t, remove_all_out(A, ids, r, i, gone_live(A, r, i, t, eg)), remove_all_zero(A, ids, r, i, t, gone_zero(A, r, i, t, eg)))
+
+def fate_change(-A: Data, +r: T.Registry<A>, +cs: List<&2, T.Claim>, +ch: Spec.Change<A>, +k: String, +i: Nat, +t: String, +e: {fate(A, r, cs, k, i, t) == True{} : Bool}) -> {fate(A, Spec.change(A, r, ch), cs, k, i, t) == True{} : Bool}:
+  match r:
+    case T.Registry{n, lv, s}:
+      match ch:
+        case Spec.ChJoin{}:
+          +lt0 = and_l(Nat.is_lt(i, n), fate_held(cs, k, i) || fate_gone(A, T.Registry{n, lv, s}, i, t), e)
+          fate_next(A, T.Registry{n, lv, s}, cs, T.Registry{1n+n, n <> lv, s}, cs, k, i, t, e, lt_step(i, n, lt0), eh => or_left(fate_held(cs, k, i), fate_gone(A, T.Registry{1n+n, n <> lv, s}, i, t), eh), eg => gone_join(A, n, lv, s, i, t, lt0, eg))
+        case Spec.ChSubscribe{c, u, x}:
+          fate_keep(A, T.Registry{n, lv, s}, cs, T.admit(A, T.Registry{n, lv, s}, c, u, x), k, i, t, e, next_admit_if(A, n, lv, s, c, u, x, T.holds(lv, c)), eg => gone_admit(A, n, lv, s, c, u, x, i, t, T.holds(lv, c), {==}, eg))
+        case Spec.ChUnsubscribe{c, u}:
+          fate_keep(A, T.Registry{n, lv, s}, cs, T.unsubscribe(A, T.Registry{n, lv, s}, c, u), k, i, t, e, {==}, eg => gone_unsub(A, n, lv, s, c, u, i, t, eg))
+        case Spec.ChClose{c}:
+          fate_keep(A, T.Registry{n, lv, s}, cs, T.remove(A, T.Registry{n, lv, s}, c), k, i, t, e, {==}, eg => gone_remove_all(A, [c], T.Registry{n, lv, s}, i, t, eg))
+        case Spec.ChPrune{gone}:
+          fate_keep(A, T.Registry{n, lv, s}, cs, T.remove_all(A, gone, T.Registry{n, lv, s}), k, i, t, e, next_remove_all(A, gone, T.Registry{n, lv, s}), eg => gone_remove_all(A, gone, T.Registry{n, lv, s}, i, t, eg))
+
+def held_claim(+n: Nat, +cs: List<&2, T.Claim>, +j: String, +k: String, +i: Nat, eh: {fate_held(cs, k, i) == True{} : Bool}) -> {fate_held(T.Claim{j, n} <> cs, k, i) == True{} : Bool}:
+  Equal.trans(Bool, Spec.has(T.pick(n, T.claimed(cs, k), String.eq(j, k)), i), (String.eq(j, k) && Nat.is_eq(n, i)) || Spec.has(T.claimed(cs, k), i), True{}, has_pick(n, T.claimed(cs, k), String.eq(j, k), i), or_right(String.eq(j, k) && Nat.is_eq(n, i), Spec.has(T.claimed(cs, k), i), eh))
+
+# Any token's claim: a join, and k's claims are kept.
+def fate_claimed(-A: Data, +r: T.Registry<A>, +cs: List<&2, T.Claim>, +j: String, +k: String, +i: Nat, +t: String, +e: {fate(A, r, cs, k, i, t) == True{} : Bool}) -> {fate_l(A, T.claim(A, T.Ledger{r, cs}, j), k, i, t) == True{} : Bool}:
+  match r:
+    case T.Registry{n, lv, s}:
+      +lt0 = and_l(Nat.is_lt(i, n), fate_held(cs, k, i) || fate_gone(A, T.Registry{n, lv, s}, i, t), e)
+      fate_next(A, T.Registry{n, lv, s}, cs, T.Registry{1n+n, n <> lv, s}, T.Claim{j, n} <> cs, k, i, t, e, lt_step(i, n, lt0), eh => or_left(fate_held(T.Claim{j, n} <> cs, k, i), fate_gone(A, T.Registry{1n+n, n <> lv, s}, i, t), held_claim(n, cs, j, k, i, eh)), eg => gone_join(A, n, lv, s, i, t, lt0, eg))
+
+# A release of another token keeps k's claims; a release of k revokes and
+# unsubscribes every ID k holds.
+def release_fate(-A: Data, +r: T.Registry<A>, +cs: List<&2, T.Claim>, +j: String, +k: String, +i: Nat, +t: String, q: Bool, ej: {String.eq(j, k) == q : Bool}, +eh: {fate_held(cs, k, i) == True{} : Bool}) -> {(fate_held(T.unclaimed(cs, j), k, i) || fate_gone(A, T.remove_all(A, T.claimed(cs, j), r), i, t)) == True{} : Bool}:
+  match q:
+    case False{}:
+      or_left(fate_held(T.unclaimed(cs, j), k, i), fate_gone(A, T.remove_all(A, T.claimed(cs, j), r), i, t), Equal.trans(Bool, Spec.has(T.claimed(T.unclaimed(cs, j), k), i), Spec.has(T.claimed(cs, k), i), True{}, Equal.cong(List<&2, Nat>, Bool, xs => Spec.has(xs, i), T.claimed(T.unclaimed(cs, j), k), T.claimed(cs, k), unclaimed_other(cs, j, k, ej)), eh))
+    case True{}:
+      +same = JS.string_sound(j, k, ej)
+      +hj = Equal.trans(Bool, Spec.has(T.claimed(cs, j), i), Spec.has(T.claimed(cs, k), i), True{}, Equal.cong(String, Bool, v => Spec.has(T.claimed(cs, v), i), j, k, same), eh)
+      or_right(fate_held(T.unclaimed(cs, j), k, i), fate_gone(A, T.remove_all(A, T.claimed(cs, j), r), i, t), gone_mk(A, T.remove_all(A, T.claimed(cs, j), r), i, t, remove_all_revokes(A, T.claimed(cs, j), r, i, hj), remove_all_drops(A, T.claimed(cs, j), r, i, t, hj)))
+
+def fate_released(-A: Data, +r: T.Registry<A>, +cs: List<&2, T.Claim>, +j: String, +k: String, +i: Nat, +t: String, +e: {fate(A, r, cs, k, i, t) == True{} : Bool}) -> {fate(A, T.remove_all(A, T.claimed(cs, j), r), T.unclaimed(cs, j), k, i, t) == True{} : Bool}:
+  +lt0 = and_l(Nat.is_lt(i, T.next(A, r)), fate_held(cs, k, i) || fate_gone(A, r, i, t), e)
+  fate_next(A, r, cs, T.remove_all(A, T.claimed(cs, j), r), T.unclaimed(cs, j), k, i, t, e, lt_moved(A, r, T.remove_all(A, T.claimed(cs, j), r), i, next_remove_all(A, T.claimed(cs, j), r), lt0), eh => release_fate(A, r, cs, j, k, i, t, String.eq(j, k), {==}, eh), eg => gone_remove_all(A, T.claimed(cs, j), r, i, t, eg))
+
+# A prune of i revokes and unsubscribes it; any other prune keeps k's claim.
+def prune_fate(-A: Data, +r: T.Registry<A>, +cs: List<&2, T.Claim>, +ids: List<&2, Nat>, +k: String, +i: Nat, +t: String, b: Bool, +eb: {Spec.has(ids, i) == b : Bool}, +eh: {fate_held(cs, k, i) == True{} : Bool}) -> {(fate_held(T.unpruned(cs, ids), k, i) || fate_gone(A, T.remove_all(A, ids, r), i, t)) == True{} : Bool}:
+  match b:
+    case True{}:
+      or_right(fate_held(T.unpruned(cs, ids), k, i), fate_gone(A, T.remove_all(A, ids, r), i, t), gone_mk(A, T.remove_all(A, ids, r), i, t, remove_all_revokes(A, ids, r, i, eb), remove_all_drops(A, ids, r, i, t, eb)))
+    case False{}:
+      or_left(fate_held(T.unpruned(cs, ids), k, i), fate_gone(A, T.remove_all(A, ids, r), i, t), Equal.trans(Bool, Spec.has(T.claimed(T.unpruned(cs, ids), k), i), Spec.has(Spec.outside(T.claimed(cs, k), ids), i), True{}, Equal.cong(List<&2, Nat>, Bool, xs => Spec.has(xs, i), T.claimed(T.unpruned(cs, ids), k), Spec.outside(T.claimed(cs, k), ids), prune_claims_cs(cs, ids, k)), Equal.trans(Bool, Spec.has(Spec.outside(T.claimed(cs, k), ids), i), Spec.has(T.claimed(cs, k), i), True{}, outside_keep(T.claimed(cs, k), ids, i, eb), eh)))
+
+def fate_pruned(-A: Data, +r: T.Registry<A>, +cs: List<&2, T.Claim>, +ids: List<&2, Nat>, +k: String, +i: Nat, +t: String, +e: {fate(A, r, cs, k, i, t) == True{} : Bool}) -> {fate(A, T.remove_all(A, ids, r), T.unpruned(cs, ids), k, i, t) == True{} : Bool}:
+  +lt0 = and_l(Nat.is_lt(i, T.next(A, r)), fate_held(cs, k, i) || fate_gone(A, r, i, t), e)
+  fate_next(A, r, cs, T.remove_all(A, ids, r), T.unpruned(cs, ids), k, i, t, e, lt_moved(A, r, T.remove_all(A, ids, r), i, next_remove_all(A, ids, r), lt0), eh => prune_fate(A, r, cs, ids, k, i, t, Spec.has(ids, i), {==}, eh), eg => gone_remove_all(A, ids, r, i, t, eg))
+
+def fate_event(-A: Data, +r: T.Registry<A>, +cs: List<&2, T.Claim>, +ev: Spec.Step<A>, +k: String, +i: Nat, +t: String, +e: {fate(A, r, cs, k, i, t) == True{} : Bool}) -> {fate_l(A, Spec.event(A, T.Ledger{r, cs}, ev), k, i, t) == True{} : Bool}:
+  match ev:
+    case Spec.EvChange{ch}: fate_change(A, r, cs, ch, k, i, t, e)
+    case Spec.EvClaim{j}: fate_claimed(A, r, cs, j, k, i, t, e)
+    case Spec.EvRelease{j}: fate_released(A, r, cs, j, k, i, t, e)
+    case Spec.EvPrune{ids}: fate_pruned(A, r, cs, ids, k, i, t, e)
+
+def fate_event_l(-A: Data, +l: T.Ledger<A>, +ev: Spec.Step<A>, +k: String, +i: Nat, +t: String, e: {fate_l(A, l, k, i, t) == True{} : Bool}) -> {fate_l(A, Spec.event(A, l, ev), k, i, t) == True{} : Bool}:
+  match l:
+    case T.Ledger{r, cs}: fate_event(A, r, cs, ev, k, i, t, e)
+
+def fate_play(-A: Data, +evs: List<&2, Spec.Step<A>>, +l: T.Ledger<A>, +k: String, +i: Nat, +t: String, e: {fate_l(A, l, k, i, t) == True{} : Bool}) -> {fate_l(A, Spec.play_from(A, evs, l), k, i, t) == True{} : Bool}:
+  match evs:
+    case Nil{}: e
+    case ev <> rest: fate_play(A, rest, Spec.event(A, l, ev), k, i, t, fate_event_l(A, l, ev, k, i, t, e))
+
+def fate_claim(-A: Data, +n: Nat, +lv: List<&2, Nat>, +s: List<&2, T.Sub<A>>, +cs: List<&2, T.Claim>, +k: String, +t: String) -> {fate(A, T.Registry{1n+n, n <> lv, s}, T.Claim{k, n} <> cs, k, n, t) == True{} : Bool}:
+  +held = Equal.trans(Bool, Spec.has(T.pick(n, T.claimed(cs, k), String.eq(k, k)), n), (String.eq(k, k) && Nat.is_eq(n, n)) || Spec.has(T.claimed(cs, k), n), True{}, has_pick(n, T.claimed(cs, k), String.eq(k, k), n), or_left(String.eq(k, k) && Nat.is_eq(n, n), Spec.has(T.claimed(cs, k), n), and_true(String.eq(k, k), Nat.is_eq(n, n), string_refl(k), nat_refl(n))))
+  and_true(Nat.is_lt(n, 1n+n), fate_held(T.Claim{k, n} <> cs, k, n) || fate_gone(A, T.Registry{1n+n, n <> lv, s}, n, t), lt_succ(n), or_left(fate_held(T.Claim{k, n} <> cs, k, n), fate_gone(A, T.Registry{1n+n, n <> lv, s}, n, t), held))
+
+def fate_live_split(-A: Data, +r: T.Registry<A>, +cs: List<&2, T.Claim>, +k: String, +i: Nat, +t: String, h: Bool, eh: {fate_held(cs, k, i) == h : Bool}, o: {(fate_held(cs, k, i) || fate_gone(A, r, i, t)) == True{} : Bool}) -> {Spec.has(T.live(A, T.remove_all(A, T.claimed(cs, k), r)), i) == False{} : Bool}:
+  match h:
+    case True{}: remove_all_revokes(A, T.claimed(cs, k), r, i, eh)
+    case False{}: remove_all_out(A, T.claimed(cs, k), r, i, gone_live(A, r, i, t, or_resolve(fate_held(cs, k, i), fate_gone(A, r, i, t), o, eh)))
+
+def fate_count_split(-A: Data, +r: T.Registry<A>, +cs: List<&2, T.Claim>, +k: String, +i: Nat, +t: String, h: Bool, eh: {fate_held(cs, k, i) == h : Bool}, o: {(fate_held(cs, k, i) || fate_gone(A, r, i, t)) == True{} : Bool}) -> {Spec.count(T.members(A, T.remove_all(A, T.claimed(cs, k), r), t), i) == 0n : Nat}:
+  match h:
+    case True{}: remove_all_drops(A, T.claimed(cs, k), r, i, t, eh)
+    case False{}: remove_all_zero(A, T.claimed(cs, k), r, i, t, gone_zero(A, r, i, t, or_resolve(fate_held(cs, k, i), fate_gone(A, r, i, t), o, eh)))
+
+def fate_release_live(-A: Data, +l: T.Ledger<A>, +k: String, +i: Nat, +t: String, e: {fate_l(A, l, k, i, t) == True{} : Bool}) -> {Spec.has(T.live(A, T.registry(A, T.release(A, l, k))), i) == False{} : Bool}:
+  match l:
+    case T.Ledger{r, cs}: fate_live_split(A, r, cs, k, i, t, fate_held(cs, k, i), {==}, and_r(Nat.is_lt(i, T.next(A, r)), fate_held(cs, k, i) || fate_gone(A, r, i, t), e))
+
+def fate_release_member(-A: Data, +l: T.Ledger<A>, +k: String, +i: Nat, +t: String, e: {fate_l(A, l, k, i, t) == True{} : Bool}) -> {Spec.has(T.members(A, T.registry(A, T.release(A, l, k)), t), i) == False{} : Bool}:
+  match l:
+    case T.Ledger{r, cs}:
+      +m = T.members(A, T.remove_all(A, T.claimed(cs, k), r), t)
+      Equal.trans(Bool, Spec.has(m, i), positive(Spec.count(m, i)), False{}, has_count(m, i), Equal.cong(Nat, Bool, n => positive(n), Spec.count(m, i), 0n, fate_count_split(A, r, cs, k, i, t, fate_held(cs, k, i), {==}, and_r(Nat.is_lt(i, T.next(A, r)), fate_held(cs, k, i) || fate_gone(A, r, i, t), e))))
+
+def L.ws_topics_history_release_revokes(A, l, k, evs):
+  match l:
+    case T.Ledger{r, cs}:
+      match r:
+        case T.Registry{n, lv, s}:
+          fate_release_live(A, Spec.play_from(A, evs, T.Ledger{T.Registry{1n+n, n <> lv, s}, T.Claim{k, n} <> cs}), k, n, "", fate_play(A, evs, T.Ledger{T.Registry{1n+n, n <> lv, s}, T.Claim{k, n} <> cs}, k, n, "", fate_claim(A, n, lv, s, cs, k, "")))
+
+def L.ws_topics_history_release_leaves(A, l, k, evs, t):
+  match l:
+    case T.Ledger{r, cs}:
+      match r:
+        case T.Registry{n, lv, s}:
+          fate_release_member(A, Spec.play_from(A, evs, T.Ledger{T.Registry{1n+n, n <> lv, s}, T.Claim{k, n} <> cs}), k, n, t, fate_play(A, evs, T.Ledger{T.Registry{1n+n, n <> lv, s}, T.Claim{k, n} <> cs}, k, n, t, fate_claim(A, n, lv, s, cs, k, t)))
