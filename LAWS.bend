@@ -2,6 +2,10 @@
 # Agents may add laws. Never delete or weaken one without a written reason
 # in the pull request.
 import Base
+import ./src/mw/etag.bend as ETag
+import ./src/http/conditional.bend as Conditional
+import ./src/mw/body_limit.bend as BodyLimit
+import ./proof/limits-spec.bend as LimitsSpec
 import ./src/app/manifest.bend as Manifest
 import ./proof/manifest-spec.bend as ManifestSpec
 import ./proof/manifest-built-spec.bend as ManifestBuiltSpec
@@ -40,6 +44,9 @@ import ./proof/response-framing-spec.bend as ResponseFramingSpec
 import ./src/http/chunked.bend as Chunked
 import ./src/http/stream_framing.bend as StreamFraming
 import ./proof/stream-rfc-spec.bend as StreamRfc
+import ./src/http/sse.bend as Sse
+import ./proof/sse-spec.bend as SseSpec
+import ./proof/sse-model.bend as SseModel
 import ./src/http.bend as Http
 import ./src/http/bytes.bend as Bytes
 import ./src/http/request.bend as Request
@@ -1664,6 +1671,88 @@ law stream_rfc_last_chunk:
   for +limit: U32
   for +suffix: List<&2, U32>
   {StreamRfc.parse(48 <> 13 <> 10 <> 13 <> 10 <> suffix, limit) == StreamRfc.Decoded{[], suffix} : StreamRfc.DecodeResult}
+
+# BND-41: RFC 9110 weak If-None-Match comparison for arbitrary fields and tags.
+# The independent specification validates every list member and separately
+# asks whether any entity-tag denotes the same opaque validator.
+law conditional_if_none_match_spec:
+  for +field: Maybe<&2, String>
+  for +tag: String
+  {Conditional.matches(field, tag) == LimitsSpec.matches(field, tag) : Bool}
+
+# Exactly cache metadata, in original order (including duplicates); no body,
+# representation witness or content/framing headers survive construction.
+law conditional_304_spec:
+  for +res: Response.Res
+  {Conditional.not_modified(res) == LimitsSpec.response(res) : Response.Res}
+
+# Accept exactly the inclusive byte-length boundary, for every natural length.
+law body_limit_spec:
+  for +length: Nat
+  for +limit: Nat
+  {BodyLimit.accepts(length, limit) == LimitsSpec.within(length, limit) : Bool}
+
+# The actual middleware decision preserves every ineligible response exactly.
+# Eligible buffered 200 GET/HEAD responses carry the body validator, and become
+# exactly Conditional.not_modified iff the independent field spec matches it.
+law etag_middleware_spec:
+  for +method: Request.Method
+  for +field: Maybe<&2, String>
+  for +res: Response.Res
+  {ETag.decide(method, field, res) == LimitsSpec.etag(method, field, res) : Response.Res}
+
+# BND-49: Server-Sent Events, checked against the independent WHATWG HTML
+# event-stream parser in proof/sse-spec.bend (Base only). Over every list of
+# admissible frames, with arbitrary text data: each message reports its retry
+# value as a number, then one event with its type, its data with every CR, LF
+# and CRLF read as one LF, and the last event id in force. Comments
+# (heartbeats) report nothing. Admissible: every field is exactly the UTF-8 of
+# Unicode scalar values (so a browser's UTF-8 decoding replaces nothing and
+# the parsed octets are the UTF-8 of its text), no CR or LF in an event name,
+# id or comment, and no NUL in an id.
+law sse_roundtrip:
+  for +frames: List<&2, Sse.Frame>
+  for valid: {SseModel.admissible(frames) == True{} : Bool}
+  {SseSpec.parse(Sse.wire(frames)) == SseModel.observe(frames, []) : List<&2, SseSpec.Observed>}
+
+# The runtime sends exactly the admissible frames, unchanged, and rejects
+# every other frame whole: no stripping, escaping or truncation.
+law sse_encode_rejects_unsafe:
+  for +frame: Sse.Frame
+  {Sse.encode(frame) == SseModel.guard(frame) : Maybe<&2, List<&2, U32>>}
+
+# No injection, for any frame: whatever octets the runtime sends parse as
+# exactly that frame's observations and nothing else.
+law sse_sent_frame_exact:
+  for +frame: Sse.Frame
+  for +bytes: List<&2, U32>
+  for sent: {Sse.encode(frame) == Some{bytes} : Maybe<&2, List<&2, U32>>}
+  {SseSpec.parse(bytes) == SseModel.observe([frame], []) : List<&2, SseSpec.Observed>}
+
+# A heartbeat comment at any line start, mid-event included, leaves the
+# parser's buffers and every later observation unchanged.
+law sse_heartbeat_ignored:
+  for +buffers: SseSpec.Buffers
+  for +text: List<&2, U32>
+  for +rest: List<&2, U32>
+  for clean: {SseModel.one_line(text) == True{} : Bool}
+  {SseSpec.run(Bytes.append(Sse.render(Sse.Comment{text}), rest), SseSpec.Begin{buffers}) == SseSpec.run(rest, SseSpec.Begin{buffers}) : SseSpec.State}
+
+# Admissibility excludes no text: every String of Unicode scalar values, as
+# B.sse_message encodes it, passes the UTF-8 check.
+law sse_text_utf8:
+  for +s: String
+  for +valid: {Utf8.valid(s) == True{} : Bool}
+  {SseModel.utf8_ok(Response.utf8(s)) == True{} : Bool}
+
+# Retry renders as ASCII digits whose base-ten value is the number sent.
+law sse_retry_decimal:
+  for +ms: U32
+  {SseSpec.digits(Sse.decimal(ms)) == True{} : Bool}
+
+law sse_retry_value:
+  for +ms: U32
+  {SseSpec.decimal_value(Sse.decimal(ms), 0n) == U32.to_nat(ms) : Nat}
 
 # BND-45: static files (docs/static.md).
 #

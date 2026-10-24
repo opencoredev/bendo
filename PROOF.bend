@@ -1,5 +1,6 @@
 # Proofs of LAWS.bend. Run: bend PROOF.bend --verdict
 import Base
+import ./proof/limits.bend as LimitsProof
 import ./proof/manifest.bend as ManifestProof
 import ./proof/manifest-built.bend as ManifestBuiltProof
 import ./proof/compose.bend as ComposeProof
@@ -34,6 +35,7 @@ import ./src/http/write_response.bend as WriteResponse
 import ./src/http/chunked.bend as Chunked
 import ./proof/stream.bend as StreamProof
 import ./proof/stream-rfc.bend as StreamRfcProof
+import ./proof/sse.bend as SseProof
 import ./src/http/stream_framing.bend as StreamFraming
 import ./src/http.bend as Http
 import ./src/http/bytes.bend as Bytes
@@ -656,6 +658,35 @@ def Laws.stream_rfc_roundtrip(chunks, limit, suffix, valid):
 
 def Laws.stream_rfc_last_chunk(limit, suffix):
   StreamRfcProof.last_chunk(limit, suffix)
+
+# BND-41
+def Laws.conditional_if_none_match_spec(field, tag): LimitsProof.matches(field, tag)
+def Laws.conditional_304_spec(res): LimitsProof.response(res)
+def Laws.body_limit_spec(length, limit): LimitsProof.within(length, limit)
+
+def Laws.etag_middleware_spec(method, field, res): LimitsProof.etag(method, field, res)
+
+# BND-49
+def Laws.sse_roundtrip(frames, valid):
+  SseProof.roundtrip(frames, valid)
+
+def Laws.sse_encode_rejects_unsafe(frame):
+  SseProof.encode_guard(frame)
+
+def Laws.sse_sent_frame_exact(frame, bytes, sent):
+  SseProof.sent_frame(frame, bytes, sent)
+
+def Laws.sse_heartbeat_ignored(buffers, text, rest, clean):
+  SseProof.comment_ignored(buffers, text, rest, clean)
+
+def Laws.sse_text_utf8(s, valid):
+  SseProof.text_utf8(s, valid)
+
+def Laws.sse_retry_decimal(ms):
+  SseProof.retry_digits(ms)
+
+def Laws.sse_retry_value(ms):
+  SseProof.retry_value(ms)
 
 # BND-45: static path confinement.
 

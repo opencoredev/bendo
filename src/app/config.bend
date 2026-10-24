@@ -66,3 +66,7 @@ def port_env(value: Result<&1, &1, U32 & String, String>, fallback: U32) -> U32:
   match value:
     case Fail{error}: fallback
     case Done{text}: port(text, fallback)
+
+def body_limit(config: Config) -> U32:
+  Config{host, port, limit, headers, idle, head, body, max, keep, router} = config
+  limit
