@@ -2,6 +2,8 @@
 import Base
 import ./stream.bend as Stream
 import ./websocket.bend as WebSocket
+import ./ws/connection.bend as WsConnection
+import ./ws/message.bend as WsMessage
 import ./http/websocket.bend as Handshake
 import ./http/stream_types.bend as StreamTypes
 import ./sse.bend as Sse
@@ -258,6 +260,16 @@ def stream_config() -> StreamTypes.Config: Stream.defaults()
 def stream(~Vars: Data, ~State: Type, ~step: State -> IO(StreamTypes.Step<State>), ~cleanup: State -> IO(Unit), +c: Context.Ctx<Vars>, state: State, config: StreamTypes.Config) -> IO(Response.Res):
   Stream.register(Observation.stream(Context.observation(Vars, c)), Context.body(Vars, c, [], None{}), Stream.plan(~State, ~step, ~cleanup, state, config))
 
+# One stderr line per configured origin an allow list drops because it is not
+# an http or https URL.
+def report_rejected(+kind: String, xs: List<&2, String>) -> IO(Unit):
+  match xs:
+    case Nil{}: IO.pure(Unit, Unit{})
+    case x <> t:
+      do IO<Unit>:
+        IO.print_err("bendo: " ++ kind ++ ": ignoring allowed origin \"" ++ x ++ "\": not an http or https URL")
+        report_rejected(kind, t)
+
 # WebSocket opening handshake (RFC 6455). websocket_config accepts every
 # Origin and offers no subprotocol. After the 101, session receives the state,
 # the socket and the octets already read past the handshake, and owns the
@@ -266,10 +278,30 @@ def stream(~Vars: Data, ~State: Type, ~step: State -> IO(StreamTypes.Step<State>
 def WebSocketConfig() -> Data: Handshake.Config
 def websocket_config() -> Handshake.Config: Handshake.defaults()
 def websocket_origins(config: Handshake.Config, origins: List<&2, String>) -> Handshake.Config: Handshake.with_origins(config, origins)
+
+# websocket_origins, run once at startup, reporting each dropped entry on stderr.
+def websocket_origins_checked(config: Handshake.Config, +origins: List<&2, String>) -> IO(Handshake.Config):
+  do IO<Handshake.Config>:
+    report_rejected("websocket", Handshake.rejected(origins))
+    return Handshake.with_origins(config, origins)
+
 def websocket_protocols(config: Handshake.Config, protocols: List<&2, String>) -> Handshake.Config: Handshake.with_protocols(config, protocols)
 def websocket_timeout(config: Handshake.Config, milliseconds: U32) -> Handshake.Config: Handshake.with_timeout(config, milliseconds)
 def websocket(~Vars: Data, ~State: Type, ~session: State -> Socket -> List<&2, U32> -> IO(Unit), ~cleanup: State -> IO(Unit), +c: Context.Ctx<Vars>, state: State, config: Handshake.Config) -> IO(Response.Res):
   WebSocket.respond(~Vars, ~State, ~session, ~cleanup, c, state, config)
+
+def WebSocketHandle() -> Data: WsConnection.Handle
+def WebSocketSessionConfig() -> Data: WsConnection.Config
+def WebSocketMessage() -> Data: WsMessage.Message
+def websocket_session_config() -> WsConnection.Config: WsConnection.defaults()
+def websocket_send_text(handle: WsConnection.Handle, text: String) -> IO(Bool): WsConnection.text(handle, text)
+def websocket_send_binary(handle: WsConnection.Handle, bytes: List<&2, U32>) -> IO(Bool): WsConnection.binary(handle, bytes)
+def websocket_ping(handle: WsConnection.Handle, bytes: List<&2, U32>) -> IO(Bool): WsConnection.ping(handle, bytes)
+def websocket_close(handle: WsConnection.Handle, code: U32, reason: String) -> IO(Bool): WsConnection.close(handle, code, reason)
+
+@unsafe
+def websocket_handlers(~Vars: Data, ~User: Data, ~on_open: User -> WsConnection.Handle -> IO(User), ~on_message: User -> WsConnection.Handle -> WsMessage.Message -> IO(User), ~on_close: User -> U32 -> String -> IO(Unit), c: Context.Ctx<Vars>, user: User, handshake: Handshake.Config, config: WsConnection.Config) -> IO(Response.Res):
+  WsConnection.upgrade(~Vars, ~User, ~on_open, ~on_message, ~on_close, c, user, handshake, config)
 
 # Buffered protection and cache middleware.
 def body_limit(bytes: U32) -> Builtin.Builtin: Builtin.BodyLimit{bytes}
@@ -314,6 +346,13 @@ def cors_headers(config: CorsPolicy.Config, headers: List<&2, String>) -> CorsPo
 def cors_expose(config: CorsPolicy.Config, headers: List<&2, String>) -> CorsPolicy.Config: CorsPolicy.with_expose(config, headers)
 def cors_max_age(config: CorsPolicy.Config, seconds: Nat) -> CorsPolicy.Config: CorsPolicy.with_max_age(config, seconds)
 def cors(config: CorsPolicy.Config) -> Builtin.Builtin: Builtin.Cors{config}
+
+# cors_allow, run once at startup: it also reports each dropped entry on
+# stderr, so a typo such as "app.example" does not silently match nothing.
+def cors_allow_checked(+origins: List<&2, CorsPolicy.Entry>) -> IO(CorsPolicy.Config):
+  do IO<CorsPolicy.Config>:
+    report_rejected("cors", CorsPolicy.rejected(origins))
+    return CorsPolicy.allow(origins)
 
 # Security headers with Hono's secureHeaders defaults.
 def SecureConfig() -> Data: Secure.Config

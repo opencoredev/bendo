@@ -3,8 +3,10 @@
 `B.websocket` answers an RFC 6455 opening handshake from an ordinary route
 handler. When the handshake is valid, the server sends `101 Switching
 Protocols`, stops parsing HTTP on that connection, and hands the socket to a
-session template. Bendo does not decode frames yet; the frame codec (BND-51)
-and the open/message/close handler API (BND-52) build on this session seam.
+session template. For the open/message/close API with frame decoding,
+fragmentation, timers, and outbound mailboxes, use
+[WebSocket handlers](websocket-sessions.md). This page covers the lower-level
+handshake and socket handoff API that those handlers use.
 The complete native example is [the WebSocket fixture](../tests/servers/websocket.bend).
 
 ## Register a session
@@ -56,10 +58,13 @@ timeout; the fixture's echo loop shows one way.
 - `B.websocket_origins(config, ["https://app.example"])` requires exactly one
   `Origin` field whose serialized origin is listed. Entries are serialized with
   the same rules as CORS and CSRF (`src/http/origin.bend`): any path is ignored,
-  and entries that are not http or https URLs are dropped. A missing, repeated
+  and entries that are not http or https URLs, or whose host is not written the
+  way browsers send it, are dropped. A missing, repeated
   or unlisted Origin gets 403. Browsers always send Origin, so list your origins
   whenever a session trusts cookies; otherwise any site can open a socket with
-  the user's credentials.
+  the user's credentials. `B.websocket_origins_checked(config, origins)` does
+  the same in `IO` at startup and prints one stderr line per dropped entry
+  (`bendo: websocket: ignoring allowed origin "..."`).
 - `B.websocket_protocols(config, ["chat.v2", "chat"])` lists the subprotocols the
   server speaks, most preferred first. Bendo answers with the first listed
   protocol that the client offered in any `Sec-WebSocket-Protocol` field. Offers

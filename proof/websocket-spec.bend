@@ -1,11 +1,12 @@
 # BND-50: the RFC 6455 opening handshake, stated without the handshake
 # module's helpers. It uses only Base, the request types, the proven Base64
-# and SHA-1 primitives, and origin serialization (src/http/origin.bend).
+# and SHA-1 primitives, and the independent origin specification
+# (proof/origin-spec.bend; BND-85).
 import Base
 import ../src/http/response.bend as Response
 import ../src/http/request.bend as Request
 import ../src/http/bytes.bend as Bytes
-import ../src/http/origin.bend as Origin
+import ./origin-spec.bend as OriginSpec
 import ../src/crypto/sha1.bend as Sha1
 import ../src/data/base64.bend as Base64
 import ../src/http/websocket.bend as W
@@ -126,7 +127,7 @@ def serialized_in(+xs: List<&2, String>, o: Maybe<&2, String>) -> Bool:
 def one_origin(+xs: List<&2, String>, values: List<&2, List<&2, U32>>) -> Bool:
   match values:
     case Nil{}: False{}
-    case v <> Nil{}: serialized_in(xs, Origin.canonical(Bytes.ascii(v)))
+    case v <> Nil{}: serialized_in(xs, OriginSpec.canonical(Bytes.ascii(v)))
     case v <> (w <> rest): False{}
 
 # Section 10.2: a listed policy needs exactly one Origin field whose

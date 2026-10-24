@@ -731,6 +731,21 @@ describe("CSRF", () => {
     expect(await res.text()).toBe("Forbidden");
   });
 
+  test("a malformed Content-Type is inspected, not exempt", async () => {
+    // The check fails closed: a value it cannot read as type "/" subtype
+    // gets the same origin check as a form type.
+    for (const type of ["text", "text/", "/plain", "text/plain/x", "text /plain", "a@b/c"]) {
+      expect(await post({ origin: "https://evil.example", "content-type": type })).toBe(403);
+      expect(await post({ "content-type": type, "sec-fetch-site": "same-origin" })).toBe(200);
+    }
+    expect(
+      await rawStatus("/csrf/form", { origin: "https://evil.example", "content-type": "" }),
+    ).toBe(403);
+    expect(
+      await post({ origin: "https://evil.example", "content-type": "application/vnd.api+json" }),
+    ).toBe(200);
+  });
+
   test("same-origin, configured and safe requests pass", async () => {
     const own = new URL(server.url);
     expect(await post({ ...form, origin: `http://${own.host}` })).toBe(200);
@@ -805,6 +820,12 @@ describe("CSRF", () => {
       ["[::1]", "https://[::1]:443", 200],
       ["[::1]", "https://[::2]", 403],
       ["user@app.example", "https://app.example", 403],
+      // Invalid or non-canonical hosts never vouch, even when both fields agree.
+      ["[:::]", "https://[:::]", 403],
+      ["[abc]", "https://[abc]", 403],
+      ["[0::1]", "https://[0::1]", 403],
+      ["127.1", "https://127.1", 403],
+      ["127.0.0.1", "https://127.0.0.1", 200],
     ];
     for (const [host, origin, status] of cases) {
       expect(await rawStatus("/csrf-https/form", { host, origin })).toBe(status);

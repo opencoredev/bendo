@@ -46,6 +46,18 @@ def serialized(xs: List<&2, Entry>) -> List<&2, Entry>:
     case Nil{}: []
     case Entry{o, c} <> t: entry_kept(Origin.of_url(o), c, serialized(t))
 
+def rejected_pick(+o: String, m: Maybe<&2, String>, rest: List<&2, String>) -> List<&2, String>:
+  match m:
+    case None{}: o <> rest
+    case Some{x}: rest
+
+# The configured origins serialized drops, in order. The configuration shell
+# in src/main.bend reports them at startup.
+def rejected(xs: List<&2, Entry>) -> List<&2, String>:
+  match xs:
+    case Nil{}: []
+    case Entry{+o, c} <> t: rejected_pick(o, Origin.of_url(o), rejected(t))
+
 def listed(xs: List<&2, Entry>) -> Origins:
   Listed{serialized(xs)}
 
