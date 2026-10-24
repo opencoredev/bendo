@@ -96,7 +96,11 @@ function tokenize(source: string): Token[] {
 
 class Cursor {
   private at = 0;
-  constructor(private readonly tokens: Token[]) {}
+  // No parameter property: Node's type stripping, used by vite-plugin-bendo, rejects it.
+  private readonly tokens: Token[];
+  constructor(tokens: Token[]) {
+    this.tokens = tokens;
+  }
   peek(offset = 0): string | undefined {
     return this.tokens[this.at + offset]?.text;
   }
