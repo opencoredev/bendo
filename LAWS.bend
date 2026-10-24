@@ -20,6 +20,11 @@ import ./proof/compose-laws.bend as ComposeLaws
 import ./proof/validate-laws.bend as ValidateLaws
 import ./proof/plugin-laws.bend as PluginLaws
 
+# BND-85
+import ./proof/trim-laws.bend as TrimLaws
+import ./proof/media-laws.bend as MediaLaws
+import ./proof/origin-laws.bend as OriginLaws
+
 # BND-84
 import ./proof/review-tail-laws.bend as ReviewTailLaws
 import ./proof/tail-laws.bend as TailLaws

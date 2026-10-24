@@ -8,6 +8,7 @@ import ../src/data/json.bend as J
 import ../src/data/utf8.bend as Utf8
 import ../src/data/urlencoded.bend as Query
 import ../src/http/bytes.bend as Bytes
+import ./media-spec.bend as MediaSpec
 import ../src/http/request.bend as Request
 import ../src/router/pattern.bend as Pattern
 import ../src/app/validate.bend as V
@@ -42,14 +43,10 @@ def header_members(hs: List<&2, Request.Header>) -> List<&2, J.Field>:
     case Request.Header{k, +v} <> t: J.Field{Bytes.fold(k), J.JString{latin1(v, Utf8.decode(v))}} <> header_members(t)
 
 # The first Content-Type names a JSON media type: application/json or
-# application/*+json, in any case, with any parameters.
-def before_semicolon(parts: List<&2, String>) -> String:
-  match parts:
-    case Nil{}: ""
-    case h <> t: h
-
+# application/*+json, in any case, with any parameters. The essence comes
+# from the independent media-type specification (BND-85).
 def media(s: String) -> String:
-  Bytes.fold(Bytes.ascii(Bytes.trim(Bytes.encode(before_semicolon(String.split(s, ';'))))))
+  MediaSpec.essence(s)
 
 def json_media(+m: String) -> Bool:
   String.eq(m, "application/json") || (String.starts_with(m, "application/") && String.ends_with(m, "+json"))

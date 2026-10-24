@@ -158,10 +158,17 @@ disagree about the sender, and a repeated `Origin` must not fall back to
 Origins compare as serialized origins: scheme, host and port. Scheme and host
 are compared in lowercase, and the default port is dropped, so
 `https://App.Example:443` equals `https://app.example`, while
-`http://app.example` and `https://app.example:8443` are different origins. IPv6
-hosts keep their brackets and are compared as written, which is how browsers
-send them. Each entry of `origins` may be a full URL; only its origin counts.
-Entries that are not `http` or `https` URLs are ignored.
+`http://app.example` and `https://app.example:8443` are different origins.
+
+A host counts only in the form browsers send it: a DNS name, a dotted-quad
+IPv4 address such as `127.0.0.1`, or a bracketed IPv6 address in RFC 5952 form
+such as `[::1]`. Bendo rejects other spellings instead of rewriting them. So
+configure `http://127.0.0.1`, not `http://127.1`, and `https://[::1]`, not
+`https://[0::1]`; the rejected forms are never what a browser sends, and an
+entry written that way is dropped. A DNS name may not end in a number
+(`a.b.1`), since browsers read such a host as IPv4. Each entry of `origins` may
+be a full URL; only its origin counts. Entries that are not `http` or `https`
+URLs are ignored.
 
 `Sec-Fetch-Site: cross-site` only blocks the `Host` match. A listed origin is
 trusted even from another site, since listing it is the way to allow one.
@@ -236,13 +243,20 @@ covered.
 - `csrf_decision_spec`: the CSRF decision equals `CsrfSpec.allows` in
   `proof/csrf-spec.bend` for every policy, method and header combination. The
   spec restates the policy above without calling the middleware's helpers.
-  Origin serialization (`src/http/origin.bend`) and the media-type essence
-  (`src/http/media.bend`) are shared parsing primitives covered by the
-  integration tests, not by this law.
+  It reads origins and media types through the independent specifications in
+  `proof/origin-spec.bend` and `proof/media-spec.bend`, not through the
+  middleware's parsers.
+- `origin_canonical_spec`, `origin_of_url_spec` and `origin_of_host_spec`: for
+  every input, `src/http/origin.bend` returns what `proof/origin-spec.bend`
+  says, so the CSRF, CORS and WebSocket laws also hold for the parser the
+  middleware runs. `media_essence_spec` does the same for
+  `src/http/media.bend`.
+- `origin_read_back`: reading a serialized origin gives back the scheme, host
+  and port it was parsed into, so distinct origins never serialize alike.
 - `csrf_configured_decision_spec`: the same, for the policy the middleware
   builds from configuration with `CsrfPolicy.policy`. Configured entries become
   their URL origins (`CsrfSpec.configured`) and the scheme is lowercased
-  (`CsrfSpec.configured_scheme`). The URL-origin parser is again the shared one.
+  (`CsrfSpec.configured_scheme`).
 - The middleware's rule for repeated `Origin`, `Referer` and `Sec-Fetch-Site`
   fields lives in its IO shell and is covered by integration tests.
 

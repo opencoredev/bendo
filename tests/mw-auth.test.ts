@@ -805,6 +805,12 @@ describe("CSRF", () => {
       ["[::1]", "https://[::1]:443", 200],
       ["[::1]", "https://[::2]", 403],
       ["user@app.example", "https://app.example", 403],
+      // Invalid or non-canonical hosts never vouch, even when both fields agree.
+      ["[:::]", "https://[:::]", 403],
+      ["[abc]", "https://[abc]", 403],
+      ["[0::1]", "https://[0::1]", 403],
+      ["127.1", "https://127.1", 403],
+      ["127.0.0.1", "https://127.0.0.1", 200],
     ];
     for (const [host, origin, status] of cases) {
       expect(await rawStatus("/csrf-https/form", { host, origin })).toBe(status);

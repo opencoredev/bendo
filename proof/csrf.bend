@@ -5,6 +5,11 @@ import ../src/http/request.bend as Request
 import ../src/http/origin.bend as Origin
 import ../src/http/bytes.bend as Bytes
 import ./csrf-spec.bend as Spec
+import ../src/http/media.bend as Media
+import ./origin-spec.bend as OriginSpec
+import ./media-spec.bend as MediaSpec
+import ./origin.bend as OriginProof
+import ./media.bend as MediaProof
 
 def or_false(+a: Bool) -> {a == (a || False{}) : Bool}:
   match a:
@@ -27,7 +32,7 @@ def safe_reads(+m: Request.Method) -> {P.safe(m) == Spec.reads_only(m) : Bool}:
 def form_simple(+ct: Maybe<&2, String>) -> {P.form(ct) == Spec.simple_body(ct) : Bool}:
   match ct:
     case None{}: {==}
-    case Some{v}: {==}
+    case Some{+v}: Equal.cong(String, Bool, e => Spec.form_essence(e), Media.essence(v), MediaSpec.essence(v), MediaProof.essence(v))
 
 def member_listed(+o: String, +xs: List<&2, String>) -> {P.member(o, xs) == Spec.listed(o, xs) : Bool}:
   match xs:
@@ -39,9 +44,9 @@ def member_listed(+o: String, +xs: List<&2, String>) -> {P.member(o, xs) == Spec
 
 def claimed_source(+origin: Maybe<&2, String>, +referer: Maybe<&2, String>) -> {P.claimed(origin, referer) == Spec.source(origin, referer) : Maybe<&2, String>}:
   match origin referer:
-    case Some{o} Some{r}: {==}
-    case Some{o} None{}: {==}
-    case None{} Some{r}: {==}
+    case Some{+o} Some{r}: OriginProof.canonical_same(o)
+    case Some{+o} None{}: OriginProof.canonical_same(o)
+    case None{} Some{+r}: OriginProof.of_url_same(r)
     case None{} None{}: {==}
 
 def same_names(+o: String, +m: Maybe<&2, String>) -> {P.same(o, m) == Spec.names(m, o) : Bool}:
@@ -51,7 +56,7 @@ def same_names(+o: String, +m: Maybe<&2, String>) -> {P.same(o, m) == Spec.names
 
 def own_names(+o: String, +scheme: Maybe<&2, String>, +host: Maybe<&2, String>) -> {P.own(o, scheme, host) == Spec.names(Spec.addressed(scheme, host), o) : Bool}:
   match scheme host:
-    case Some{s} Some{h}: same_names(o, Origin.of_host(s, h))
+    case Some{+s} Some{+h}: Equal.trans(Bool, P.same(o, Origin.of_host(s, h)), Spec.names(Origin.of_host(s, h), o), Spec.names(OriginSpec.of_host(s, h), o), same_names(o, Origin.of_host(s, h)), Equal.cong(Maybe<&2, String>, Bool, m => Spec.names(m, o), Origin.of_host(s, h), OriginSpec.of_host(s, h), OriginProof.of_host_same(s, h)))
     case Some{s} None{}: {==}
     case None{} Some{h}: {==}
     case None{} None{}: {==}
@@ -129,8 +134,8 @@ def serialized(+xs: List<&2, String>) -> {P.serialized(xs) == Spec.configured(xs
   match xs:
     case Nil{}: {==}
     case +x <> +t:
-      %serialized(t) : {P.kept(Origin.of_url(x), P.serialized(t)) == List.append(&2, String, Spec.present(Origin.of_url(x)), _) : List<&2, String>}
-      kept_present(Origin.of_url(x), P.serialized(t))
+      %serialized(t) : {P.kept(Origin.of_url(x), P.serialized(t)) == List.append(&2, String, Spec.present(OriginSpec.of_url(x)), _) : List<&2, String>}
+      Equal.trans(List<&2, String>, P.kept(Origin.of_url(x), P.serialized(t)), List.append(&2, String, Spec.present(Origin.of_url(x)), P.serialized(t)), List.append(&2, String, Spec.present(OriginSpec.of_url(x)), P.serialized(t)), kept_present(Origin.of_url(x), P.serialized(t)), Equal.cong(Maybe<&2, String>, List<&2, String>, m => List.append(&2, String, Spec.present(m), P.serialized(t)), Origin.of_url(x), OriginSpec.of_url(x), OriginProof.of_url_same(x)))
 
 def scheme_of(+s: Maybe<&2, String>) -> {P.scheme_of(s) == Spec.configured_scheme(s) : Maybe<&2, String>}:
   match s:

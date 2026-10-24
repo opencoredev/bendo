@@ -185,16 +185,22 @@ print("\n".join(o))
 o2 = []; w = o2.append
 w('''# ---- Media.before_params and Auth.escape: reversed output ----
 
+def before_params_loop_equiv(t: String, +rev: String, +c: Char, stop: Bool) -> {Media.before_params_loop(t, rev, c, stop) == String.reverse.go(rev, Media.before_pick(c, Media.before_params_spec(t), stop)) : String}:
+  match t stop:
+    case _ True{}:
+      {==}
+    case SNil{} False{}:
+      {==}
+    case SCon{+d, +u} False{}:
+      before_params_loop_equiv(u, SCon{c, rev}, d, Char.is_eq(d, ';'))
+
 def before_params_go_equiv(+s: String, +rev: String) -> {Media.before_params_go(s, rev) == String.reverse.go(rev, Media.before_params_spec(s)) : String}:
   match s:
     case SNil{}:
       {==}
-    case SCon{';', t}:
-      {==}''')
-for p in bits.others([59]):
-    w('''    case SCon{Chr{%s}, t}:
-      before_params_go_equiv(t, SCon{Chr{%s}, rev})''' % (p, p))
-w('''
+    case SCon{+c, +t}:
+      before_params_loop_equiv(t, rev, c, Char.is_eq(c, ';'))
+
 def before_params_equiv(+s: String) -> {Media.before_params(s) == Media.before_params_spec(s) : String}:
   before_params_go_equiv(s, "")
 
