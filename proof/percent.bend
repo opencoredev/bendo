@@ -724,10 +724,14 @@ def encode_fit_octets(+w: Word(21n), fits: Bool) -> {octets(U.encode_fit(w, fits
     case False{}:
       {==}
 
-def char_octets(+c: U32) -> {octets(U.encode_char(c)) == True{} : Bool}:
+def char_octets_spec(+c: U32) -> {octets(U.encode_char_spec(c)) == True{} : Bool}:
   match c:
     case U32{w}:
       encode_fit_octets(U.low(21n, 11n, w), U.zero(11n, U.high(21n, 11n, w)))
+
+def char_octets(+c: U32) -> {octets(U.encode_char(c)) == True{} : Bool}:
+  %UP.encode_char_equiv(c) : {octets(_) == True{} : Bool}
+  char_octets_spec(c)
 
 def append_octets(+xs: List<&2, U32>, +ys: List<&2, U32>, +xo: {octets(xs) == True{} : Bool}, +yo: {octets(ys) == True{} : Bool}) -> {octets(List.append(&2, U32, xs, ys)) == True{} : Bool}:
   match xs:

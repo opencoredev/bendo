@@ -7,9 +7,7 @@ import ../crypto/jwt.bend as Jwt
 import ../data/json.bend as Json
 import ../effects/clock.bend as Clock
 import ./auth_common.bend as A
-
-type Config is Data:
-  Config{secret: List<&2, U32>, leeway: Nat, realm: String}
+import ./jwt_config.bend as JC
 
 def realm_param(realm: String) -> String:
   "Bearer realm=" ++ A.quoted(realm)
@@ -22,14 +20,14 @@ def verified(-Vars: Data, c: C.Ctx<Vars>, next: Json.Json -> C.Ctx<Vars> -> IO(R
     case Fail{e}: IO.pure(Response.Res, invalid(realm, e))
     case Done{claims}: next(claims, c)
 
-def timed(-Vars: Data, c: C.Ctx<Vars>, next: Json.Json -> C.Ctx<Vars> -> IO(Response.Res), config: Config, token: String, now: Result<&1, &1, U32 & String, Nat>) -> IO(Response.Res):
-  Config{secret, leeway, realm} = config
+def timed(-Vars: Data, c: C.Ctx<Vars>, next: Json.Json -> C.Ctx<Vars> -> IO(Response.Res), config: JC.Config, token: String, now: Result<&1, &1, U32 & String, Nat>) -> IO(Response.Res):
+  JC.Config{secret, leeway, realm} = config
   match now:
     case Fail{error}: IO.pure(Response.Res, Response.body(500, [], []))
     case Done{seconds}: verified(Vars, c, next, realm, Jwt.verify(secret, token, seconds, leeway))
 
-def dispatch(-Vars: Data, c: C.Ctx<Vars>, next: Json.Json -> C.Ctx<Vars> -> IO(Response.Res), +config: Config, supplied: A.Supplied) -> IO(Response.Res):
-  Config{s, l, +realm} = config
+def dispatch(-Vars: Data, c: C.Ctx<Vars>, next: Json.Json -> C.Ctx<Vars> -> IO(Response.Res), +config: JC.Config, supplied: A.Supplied) -> IO(Response.Res):
+  JC.Config{s, l, +realm} = config
   match supplied:
     case A.Missing{}: IO.pure(Response.Res, A.challenge(401, realm_param(realm)))
     case A.Other{}: IO.pure(Response.Res, A.challenge(401, realm_param(realm) ++ ", error=\"invalid_request\""))
@@ -39,8 +37,8 @@ def dispatch(-Vars: Data, c: C.Ctx<Vars>, next: Json.Json -> C.Ctx<Vars> -> IO(R
         timed(Vars, c, next, config, token, now)
 
 # Verify and pass the claim set to next, so a typed app can store it in Vars.
-def with_claims(-Vars: Data, config: Config, +c: C.Ctx<Vars>, next: Json.Json -> C.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
+def with_claims(-Vars: Data, config: JC.Config, +c: C.Ctx<Vars>, next: Json.Json -> C.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
   dispatch(Vars, c, next, config, A.supplied(C.request_header(Vars, c, "authorization"), "bearer"))
 
-def middleware(-Vars: Data, config: Config, c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
+def middleware(-Vars: Data, config: JC.Config, c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
   with_claims(Vars, config, c, claims => ctx => next(ctx))

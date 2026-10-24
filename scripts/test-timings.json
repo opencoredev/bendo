@@ -19,6 +19,7 @@
     "tests/typed-values-prototype.test.ts": 1483,
     "tests/http-parse.test.ts": 374,
     "bench/process.test.ts": 204,
+    "bench/budget.test.ts": 120,
     "tests/mw-observability.test.ts": 150000,
     "tests/mw-cors.test.ts": 150000,
     "tests/schema-compound.test.ts": 120000,

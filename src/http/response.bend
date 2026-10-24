@@ -30,8 +30,28 @@ def scalars_go(s: String, acc: String) -> String:
 def scalars(s: String) -> String:
   scalars_go(s, "")
 
-def utf8(s: String) -> List<&2, U32>:
+def utf8_spec(s: String) -> List<&2, U32>:
   Utf8.encode(scalars(s))
+
+# One pass: replace and encode each Char onto a reversed accumulator. ASCII
+# is its own code, so it skips both the scalar check and the encoder.
+def utf8_octets(+c: U32, acc: List<&2, U32>, ascii: Bool) -> List<&2, U32>:
+  match ascii:
+    case True{}:
+      c <> acc
+    case False{}:
+      List.reverse.go(&2, U32, Utf8.encode_char(scalar(c)), acc)
+
+def utf8_go(s: String, acc: List<&2, U32>) -> List<&2, U32>:
+  match s:
+    case SNil{}:
+      List.reverse(&2, U32, acc)
+    case SCon{Chr{+c}, t}:
+      utf8_go(t, utf8_octets(c, acc, (c < 128 : U32)))
+
+# Equal to utf8_spec for every String (law hot_response_utf8).
+def utf8(s: String) -> List<&2, U32>:
+  utf8_go(s, [])
 
 def octets_go(xs: List<&2, U32>, ok: Bool) -> Bool:
   match xs ok:

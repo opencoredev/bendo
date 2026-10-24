@@ -1,5 +1,6 @@
 # BND-49: Bendo's SSE wire satisfies the independent event-stream parser.
 import Base
+import ./hot-path.bend as HP
 import ../src/http/sse.bend as Sse
 import ./sse-spec.bend as Spec
 import ./sse-model.bend as Model
@@ -635,6 +636,7 @@ def same_refl(+xs: List<&2, U32>) -> {Spec.same(xs, xs) == True{} : Bool}:
 # Text frames built from Strings of Unicode scalar values pass the UTF-8 check.
 def text_utf8(+s: String, +ok: {Utf8.valid(s) == True{} : Bool}) -> {Model.utf8_ok(Response.utf8(s)) == True{} : Bool}:
   %Equal.sym(Maybe<&2, String>, Utf8.decode(Response.utf8(s)), Some{s}, ResponseRuntime.utf8(s, ok)) : {Model.scalars_of(_, Response.utf8(s)) == True{} : Bool}
-  %Equal.sym(Bool, Utf8.valid(s), True{}, ok) : {_ && Spec.same(Utf8.encode(s), Response.utf8(s)) == True{} : Bool}
+  %HP.utf8_spec_equiv(s) : {Model.scalars_of(Some{s}, _) == True{} : Bool}
+  %Equal.sym(Bool, Utf8.valid(s), True{}, ok) : {_ && Spec.same(Utf8.encode(s), Response.utf8_spec(s)) == True{} : Bool}
   %Equal.sym(String, Response.scalars(s), s, ResponseRuntime.scalars(s, ok)) : {True{} && Spec.same(Utf8.encode(s), Utf8.encode(_)) == True{} : Bool}
   same_refl(Utf8.encode(s))

@@ -45,6 +45,8 @@ The [2026-10-24 results](results/2026-10-24-full-suite.json) and [generated char
 
 Bendo's default median throughput was 5,083 req/s for hello, 4,102 for JSON, 4,587 for params, 330 for echo and 522 for middleware. Hono ranged from 100,281 to 234,624 req/s and Elysia from 129,924 to 266,165 req/s across these scenarios. These results measure the full public application pipeline, including routing and context, rather than the historical fixture's direct HTTP helper. The threads-1 variant did not close the gap. Run-to-run variation was substantial in some cases: Hono middleware ranged from 46,361 to 111,832 req/s. Three repetitions on a virtual machine support a baseline comparison, not a precise capacity estimate or a claim that overlapping ranges establish a ranking. This is the baseline for BND-68/BND-69; the suite makes no hot-path or serving changes.
 
+After BND-68's hot-path changes, the [rerun at `cacf12b`](results/2026-10-24-bnd68-full-suite.json) and its [chart](results/2026-10-24-bnd68-full-suite.svg) used the same method and the same CPU model: **60 measurements, zero errors**. Bendo's default median throughput rose to 21,883 req/s for hello, 18,905 for JSON, 12,461 for params, 2,848 for echo and 2,118 for middleware. Hono measured 93,758 to 232,684 req/s and Elysia 133,200 to 239,697. The gap is now about 10× for hello and 44–75× for echo and middleware. [Decision 0014](../docs/decisions/0014-performance.md) gives each change's own before-and-after numbers. The 2026-10-24 BND-67 files above are kept for history.
+
 A separate single-request probe after the benchmark confirmed BND-90: with `Connection: close`, the complete middleware response body arrived at **8.63 ms**, but socket EOF arrived at **1010.14 ms**. Its request and complete response are in `diagnostics.connectionClose`. This diagnostic is outside the oha samples. oha used keep-alive for every measurement; the observed closing delay should not be read as a one-second latency on every benchmark request. This suite does not isolate whether the delay affects throughput when Bendo reaches its 100-request connection cap.
 
 The JSON records CPU model, logical CPU count, RAM, architecture, kernel, CPU quota when exposed, sandbox size and ID. Source provenance includes the commit, dirty flag and SHA-256 of sorted uploaded input files; existing result files are excluded. A dirty run is identified by its input hash rather than just its base commit.
@@ -56,6 +58,39 @@ bun bench/chart.ts bench/results/<run>.json
 ```
 
 The SVG shows median throughput with min/max whiskers, and median p50/p99 latency. Schema-v1 hello-only results are historical and use a different connection policy, CPU allocation and repetition count; do not compare them directly with this suite.
+
+## Performance budget in CI
+
+The `perf` job in `.github/workflows/ci.yml` fails a commit whose hello-world throughput is more than 25% below a recorded baseline. It is separate from the test shards, and `bun run check` does not run it.
+
+`bench/perf-baseline.json` pins the baseline commit and the recipe:
+
+```json
+{
+  "commit": "<full SHA>",
+  "fixture": "bench/servers/hello.bend",
+  "threshold": 0.75,
+  "pairs": 3,
+  "warmupSeconds": 2,
+  "sampleSeconds": 5,
+  "connections": 64
+}
+```
+
+On one GitHub runner the job checks out the baseline commit into a separate worktree and builds `fixture` from it and from the candidate, with the same Bend and `clang -O3` release build as the suite above. `bun bench/budget.ts run` then splits the runner's CPUs in half, the server on the lower half and oha on the upper half (CPUs 0–1 and 2–3 on the standard 4-vCPU runner). It runs `pairs` baseline/candidate pairs in alternating order (AB, BA, AB). Each sample starts the server fresh, checks for a 200 with `Hello, world!`, discards a `warmupSeconds` oha run and measures `sampleSeconds` with `connections` keep-alive connections. Any failed request fails the job.
+
+The gate is the median of the per-pair `candidate / baseline` throughput ratios. Below `threshold`, the job measures a second round of pairs and fails only if the median over both rounds is still below it. The job summary and the `perf-budget` artifact contain every sample.
+
+Comparing against a fixed commit, rather than each pull request's base, stops a series of small regressions from adding up unnoticed. Both servers run on the same machine minutes apart, so the ratio does not depend on how fast a given runner is.
+
+After an intentional change in either direction, record a new baseline and commit the manifest with the change that justifies it:
+
+```sh
+bun bench/budget.ts pin            # HEAD
+bun bench/budget.ts pin <commit>   # must be an ancestor of HEAD
+```
+
+The pinned commit must stay reachable from the default branch, so pin a commit that lands with a merge commit, not one that a squash merge would discard. The calibration runs for the 0.75 threshold are recorded in [decision 0014](../docs/decisions/0014-performance.md).
 
 ## Cleanup and failures
 

@@ -1,0 +1,9 @@
+{
+  "commit": "853687edaa0d93de60cf80b7060314f943e37d4c",
+  "fixture": "bench/servers/hello.bend",
+  "threshold": 0.75,
+  "pairs": 3,
+  "warmupSeconds": 2,
+  "sampleSeconds": 5,
+  "connections": 64
+}
