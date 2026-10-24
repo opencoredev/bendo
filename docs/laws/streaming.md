@@ -65,7 +65,8 @@ See [accept a WebSocket upgrade](../websocket.md).
 These laws cover the frame encoder and the whole-buffer decoder (`F.decode`)
 against RFC 6455 sections 5.1 to 5.5 (`proof/ws-frame-spec.bend`). The
 connection decodes incrementally with `F.start` and `F.resume`, through
-`F.next`; `F.feed` is its read loop folded over the chunks its reads return.
+`F.next`; `F.feed` is its read loop for one frame, folded over the chunks its
+reads return.
 The incremental laws tie that loop to one decode of the concatenated bytes, so
 the decoder laws also cover the bytes a live connection reads in pieces. See
 [WebSocket frames and messages](../websocket-frames.md).
