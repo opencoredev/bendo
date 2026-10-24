@@ -37,7 +37,7 @@ if (fixedClock) {
 }
 const clockEnv: Record<string, string> = fixedClock ? { LD_PRELOAD: clockShim } : {};
 
-type Pipeline = "plain" | "checked";
+type Pipeline = "plain" | "checked" | "checked-schemas" | "stepped-schemas";
 
 async function serve(pipeline: Pipeline): Promise<RunningServer> {
   return start(binary, "127.0.0.1", { ...clockEnv, BENDO_TEST_PIPELINE: pipeline });
@@ -76,8 +76,12 @@ const upgrade = {
   "Sec-WebSocket-Version": "13",
 };
 
-const cases: readonly { name: string; line: string; fields?: Record<string, string> }[] = [
+type Case = { name: string; line: string; fields?: Record<string, string> };
+
+const cases: readonly Case[] = [
   { name: "buffered text", line: "GET / HTTP/1.1" },
+  // Middleware stores a decoded body on a route without schemas.
+  { name: "hook-stored values", line: "GET /seeded/free HTTP/1.1" },
   { name: "buffered JSON with a timing mark", line: "GET /json HTTP/1.1" },
   { name: "HEAD", line: "HEAD /json HTTP/1.1" },
   { name: "handler 500", line: "GET /failing HTTP/1.1" },
@@ -143,12 +147,12 @@ async function settled(server: RunningServer): Promise<string> {
 
 type Run = { responses: string[]; traces: string };
 
-async function drive(pipeline: Pipeline): Promise<Run> {
+async function drive(pipeline: Pipeline, driven: readonly Case[] = cases): Promise<Run> {
   await using server = await serve(pipeline);
   // Skip the traces of the harness's readiness probe.
   const before = (await settled(server)).length;
   const responses: string[] = [];
-  for (const [index, entry] of cases.entries()) {
+  for (const [index, entry] of driven.entries()) {
     const wire = await exchange(server, request(index, entry.line, entry.fields));
     responses.push(`${entry.name}\n${masked(wire.toString("latin1"))}`);
   }
@@ -162,6 +166,8 @@ test("an app without schemas answers and traces the same through both pipelines"
 
   // The cases reached what they name, so equal output is not equal silence.
   const wire = new Map(cases.map((entry, index) => [entry.name, plain.responses[index] ?? ""]));
+  // No schema, no request step: the handler sees what the hook stored.
+  expect(wire.get("hook-stored values")).toContain("x-seeded: kept");
   expect(wire.get("on_error replacement")).toContain("HTTP/1.1 503");
   expect(wire.get("thrown HTTP error")).toContain("HTTP/1.1 418");
   expect(wire.get("map_response replacement")).toContain("HTTP/1.1 201");
@@ -197,7 +203,34 @@ test("an app without schemas answers and traces the same through both pipelines"
     "pull:0",
     "stream-cleanup",
     "ws-open:ws:0",
-    "GET /rewrite 200 #ms id=diff-7",
+    "GET /rewrite 200 #ms id=diff-8",
+    "after:/seeded/free:kept",
   ])
     expect(plain.traces).toContain(trace);
+}, 60_000);
+
+// A route with only a response schema skips the request step under the
+// decoder. Values middleware stored before the step are cleared exactly as the
+// step's no-values admission cleared them, for the handler and the later
+// hooks alike.
+const schemaCases: readonly Case[] = [
+  { name: "response-only route", line: "GET /seeded/report HTTP/1.1" },
+  { name: "route without schemas", line: "GET /seeded/free HTTP/1.1" },
+  { name: "buffered JSON", line: "GET /json HTTP/1.1" },
+];
+
+test("a response-only route enters as the request step would have admitted it", async () => {
+  const [skipped, stepped] = await Promise.all([
+    drive("checked-schemas", schemaCases),
+    drive("stepped-schemas", schemaCases),
+  ]);
+  expect(skipped.responses).toEqual(stepped.responses);
+  expect(skipped.traces).toEqual(stepped.traces);
+
+  const wire = new Map(schemaCases.map((entry, index) => [entry.name, stepped.responses[index] ?? ""]));
+  expect(wire.get("response-only route")).toContain("HTTP/1.1 200");
+  expect(wire.get("response-only route")).toContain("x-seeded: cleared");
+  expect(wire.get("route without schemas")).toContain("x-seeded: kept");
+  expect(stepped.traces).toContain("after:/seeded/report:cleared");
+  expect(stepped.traces).toContain("after:/seeded/free:kept");
 }, 60_000);

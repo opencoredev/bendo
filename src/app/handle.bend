@@ -119,10 +119,13 @@ def with_params(-Vars: Data, ctx: Context.Ctx<Vars>, ps: Pattern.Params) -> Cont
 # before_handle, as one step of the same chain. A rejection answers at once;
 # the handler never runs. The chain remembers the validated context. A route
 # with any schema, a response schema alone included, takes this step, so the
-# plain entrypoints reject it before dispatch.
+# plain entrypoints reject it before dispatch. BND-96: a route whose schemas
+# check nothing in the request takes ClearValues instead, which forwards the
+# context the step would have admitted, without running the validator.
 type Step<-Tag: Data> is Data:
   Run{tag: Tag}
   Check{schemas: Validate.Schemas}
+  ClearValues{}
 
 def runs(-Tag: Data, ids: List<&2, Tag>) -> List<&2, Step<Tag>>:
   match ids:
@@ -134,18 +137,14 @@ def entered(-Vars: Data, e: Context.Entry<Vars>, next: Context.Ctx<Vars> -> IO(R
     case Context.EnterHandler{c}: next(c)
     case Context.RejectRequest{res}: IO.pure(Response.Res, res)
 
-def admitted(-Vars: Data, +ctx: Context.Ctx<Vars>, verdict: Validate.Verdict, next: Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
-  entered(Vars, Context.entry(Vars, ctx, verdict), next)
-
 def judged(-Vars: Data, +ctx: Context.Ctx<Vars>, answer: Validate.Answer, next: Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
-  match answer:
-    case Validate.Judged{verdict}: admitted(Vars, ctx, verdict, next)
-    case _: next(ctx)
+  entered(Vars, Context.answered(Vars, ctx, answer), next)
 
 def stepped(~validator: Validate.Job -> Validate.Answer, ~Vars: Data, ~Tag: Data, ~Env: Data, ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), step: Step<Tag>, +ctx: Context.Ctx<Vars>, env: Env, next: Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
   match step:
     case Run{tag}: middleware(tag, ctx, env, next)
     case Check{schemas}: judged(Vars, ctx, validator(Validate.RequestJob{schemas, Context.validation_input(Vars, ctx)}), next)
+    case ClearValues{}: next(Context.without_values(Vars, ctx))
 
 # BND-96: the schemas a request can meet. `validates` says whether the table
 # declares any schema (computed once per served table, at startup), and a
@@ -156,12 +155,19 @@ def route_checks(-Tag: Data, layers: List<&2, Table.Middleware<Tag>>, route: May
     case False{}: Validate.none()
     case True{}: Table.route_schemas(Tag, layers, route)
 
-# A route whose schemas check nothing in the request (none at all, or with a
-# decoder only a response schema) runs the same hooks without the validation
-# step.
+# A route whose schemas check nothing in the request runs the same hooks
+# without the validation step. With a decoder only a response schema, it still
+# clears the decoded values early hooks may have stored, as the admitting step
+# did (law request_free_route_enters_cleared_run). A route with no schema at
+# all never had the step and forwards its context untouched.
+def unchecked_onion(~validator: Validate.Job -> Validate.Answer, ~Vars: Data, ~Tag: Data, ~Env: Data, ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), clears: Bool, early: List<&2, Tag>, before: List<&2, Tag>, env: Env, slot: Chan(Context.Ctx<Vars>)) -> Middleware.Value(Context.Ctx<Vars>, IO(Response.Res)):
+  match clears:
+    case False{}: Hooks.chain(~Vars, ~Tag, ~Env, ~middleware, List.append(&2, Tag, early, before), env, slot)
+    case True{}: Hooks.chain(~Vars, ~Step<Tag>, ~Env, ~(step => c => e => next => stepped(~validator, ~Vars, ~Tag, ~Env, ~middleware, step, c, e, next)), List.concat(&2, Step<Tag>, [runs(Tag, early), [ClearValues{}], runs(Tag, before)]), env, slot)
+
 def onion_for(~validator: Validate.Job -> Validate.Answer, ~Vars: Data, ~Tag: Data, ~Env: Data, ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), early: List<&2, Tag>, before: List<&2, Tag>, schemas: Validate.Schemas, env: Env, slot: Chan(Context.Ctx<Vars>), declared: Bool) -> Middleware.Value(Context.Ctx<Vars>, IO(Response.Res)):
   match declared:
-    case False{}: Hooks.chain(~Vars, ~Tag, ~Env, ~middleware, List.append(&2, Tag, early, before), env, slot)
+    case False{}: unchecked_onion(~validator, ~Vars, ~Tag, ~Env, ~middleware, Validate.declares(schemas), early, before, env, slot)
     case True{}: Hooks.chain(~Vars, ~Step<Tag>, ~Env, ~(step => c => e => next => stepped(~validator, ~Vars, ~Tag, ~Env, ~middleware, step, c, e, next)), List.concat(&2, Step<Tag>, [runs(Tag, early), [Check{schemas}], runs(Tag, before)]), env, slot)
 
 def resolved_with(~validator: Validate.Job -> Validate.Answer, ~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +resolution: Methods.Resolution<Tag>, +layers: List<&2, Table.Middleware<Tag>>, ctx: Context.Ctx<Vars>, +env: Env, +slot: Chan(Context.Ctx<Vars>), +route_slot: Chan(Maybe<&2, Nat>), count: Nat, validates: Bool) -> IO(Response.Res):

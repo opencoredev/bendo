@@ -334,8 +334,29 @@ law request_free_route_is_admitted_skip:
   for +unchecked: {V.checks_request(V.enabled(V.skip(V.Probe{})), set) == False{} : Bool}
   {V.skip(V.RequestJob{set, input}) == V.Judged{V.Valid{V.no_values()}} : V.Answer}
 
-# BND-96: and admitting with no values leaves the request unchanged: a
-# context that carried no decoded values reads the same values afterwards.
+# BND-96: the request step enters through the validator's answer, and the
+# skip path forwards C.without_values. For every context, including one whose
+# early hooks stored decoded values, a route that skips the step enters with
+# exactly the context the step would have admitted.
+law request_free_route_enters_cleared_run:
+  for -Vars: Data
+  for +c: C.Ctx<Vars>
+  for +set: V.Schemas
+  for +input: V.Input
+  for +unchecked: {V.checks_request(V.enabled(V.run(V.Probe{})), set) == False{} : Bool}
+  {C.answered(Vars, c, V.run(V.RequestJob{set, input})) == C.EnterHandler{C.without_values(Vars, c)} : C.Entry<Vars>}
+
+law request_free_route_enters_cleared_skip:
+  for -Vars: Data
+  for +c: C.Ctx<Vars>
+  for +set: V.Schemas
+  for +input: V.Input
+  for +unchecked: {V.checks_request(V.enabled(V.skip(V.Probe{})), set) == False{} : Bool}
+  {C.answered(Vars, c, V.skip(V.RequestJob{set, input})) == C.EnterHandler{C.without_values(Vars, c)} : C.Entry<Vars>}
+
+# BND-96: a route that declares no schema at all never took the step, before
+# BND-96 or after, so its hooks' context reaches the handler as they left it.
+# For a fresh context that is also what admitting with no values reads.
 law no_values_entry_reads_unchanged:
   for -Vars: Data
   for +c: C.Ctx<Vars>

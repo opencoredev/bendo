@@ -123,7 +123,8 @@ independent specifications is BND-92.
 - `undeclared_table_checks_nothing`: in a table that declares no schema, every route's schema set is empty, so serving it can skip the per-route schema lookup, the request check and the response check.
 - `response_without_schema_is_sent_run`, `response_without_schema_is_sent_skip`: with or without the decoder, the response check sends a route's response unchanged when the route has no response schema, so finalization can skip building the check.
 - `request_free_route_is_admitted_run`, `request_free_route_is_admitted_skip`: when a validator's own probe says a route's schemas check nothing in the request, its request check would have admitted the request with no decoded values. With the decoder that includes a route with only a response schema; without it, only a route with no schema at all, so `B.handle` still refuses a response-only route.
-- `no_values_entry_reads_unchanged`: admitting a request with no decoded values leaves the values a handler reads as they were, so skipping the request step is invisible to the handler.
+- `request_free_route_enters_cleared_run`, `request_free_route_enters_cleared_skip`: for every context, including one where earlier middleware stored decoded values through `C.with_values`, a route that skips the request step enters with exactly the context the step would have admitted: `C.without_values`, which clears those values. The later hooks and the handler see the same context either way.
+- `no_values_entry_reads_unchanged`: for a context that carries no decoded values yet, admitting it with no values leaves the values a handler reads as they were. A route with no schema at all never ran the request step, before BND-96 or after, so values a hook stores there reach the handler unchanged.
 
 ## JSON Schema export
 

@@ -10,10 +10,13 @@ import ../../src/http/request.bend as Request
 import ../../src/http/response.bend as Response
 import ../../src/http/stream_types.bend as S
 import ../../src/router/methods.bend as Methods
+import ../../src/data/schema.bend as Schema
 
 # BND-96 differential fixture: one app without route schemas, served through
 # the plain pipeline or forced through the validating one, chosen by
-# BENDO_TEST_PIPELINE at startup. Every trace goes to stderr.
+# BENDO_TEST_PIPELINE at startup. The `-schemas` pipelines add a route with only
+# a response schema and serve it through the validating pipeline as it is, or
+# with the request step forced as before BND-96. Every trace goes to stderr.
 
 type Tag is Data:
   Hello{}
@@ -30,6 +33,8 @@ type Tag is Data:
   Map{}
   Recover{}
   Observe{}
+  Seed{}
+  Seeded{}
   Builtin{id: B.Builtin}
 
 type Chunks is Data:
@@ -54,8 +59,18 @@ def session(label: String, s: Socket, rest: List<&2, U32>) -> IO(Unit):
 def ws_cleanup(label: String) -> IO(Unit):
   IO.print_err("ws-cleanup:" ++ label)
 
+# Whether the context still carries the decoded body an early hook stored.
+def seeded_mark(found: Maybe<&2, Schema.Value>) -> String:
+  match found:
+    case Some{v}: "kept"
+    case None{}: "cleared"
+
+def seeded(c: B.Context(Unit)) -> String:
+  seeded_mark(C.valid_body(Unit, c))
+
 def handle(tag: Tag, +c: B.Context(Unit), env: Unit) -> IO(B.Res):
   match tag:
+    case Seeded{}: IO.pure(B.Res, C.body(Unit, C.header(Unit, c, "x-seeded", seeded(c)), Response.utf8("{\"count\":0}"), Some{"application/json"}))
     case Json{}:
       do IO<B.Res>:
         db : Bool <- B.timing_mark(Unit, c, "db", 4n)
@@ -98,7 +113,7 @@ def middleware_go(tag: Tag, +c: B.Context(Unit), env: Unit, next: B.Context(Unit
     case After{}:
       do IO<B.Res>:
         res : B.Res <- next(c)
-        IO.print_err("after:" ++ C.path(Unit, c))
+        IO.print_err("after:" ++ C.path(Unit, c) ++ ":" ++ seeded(c))
         return res
     case Map{}:
       do IO<B.Res>:
@@ -114,6 +129,8 @@ def middleware_go(tag: Tag, +c: B.Context(Unit), env: Unit, next: B.Context(Unit
       do IO<B.Res>:
         IO.print_err("not-found:" ++ C.path(Unit, c))
         next(c)
+    # Middleware can store decoded values through the public Context API.
+    case Seed{}: next(C.with_values(Unit, c, Validate.Values{None{}, None{}, None{}, Some{Schema.VString{"seeded"}}}))
     case Observe{}:
       do IO<B.Res>:
         res : B.Res <- next(c)
@@ -132,9 +149,24 @@ def respond_checked(req: Request.Req, body: List<&2, U32>, state: Serve.State<Ta
     result : Response.Res & (S.Transport & IO(Unit)) <- Handle.transport_routed(~Validate.run, ~Unit, ~Tag, ~Unit, ~handler, ~middleware, router, mode, table, env, req, body, peer, True{})
     return Serve.prepare_transport(result, close)
 
+# The decoder, with a probe that says it decodes nothing, so every route that
+# declares a schema runs the request step, as every one did before BND-96.
+def stepping(job: Validate.Job) -> Validate.Answer:
+  match job:
+    case Validate.Probe{}: Validate.Enabled{False{}}
+    case _: Validate.run(job)
+
+def respond_stepped(req: Request.Req, body: List<&2, U32>, state: Serve.State<Tag, Unit>, close: Bool, peer: Maybe<&2, Conn.ConnInfo>) -> IO(Serve.Reply):
+  Serve.State{table, env, router, limit, mode, validates} = state
+  do IO<Serve.Reply>:
+    result : Response.Res & (S.Transport & IO(Unit)) <- Handle.transport_routed(~stepping, ~Unit, ~Tag, ~Unit, ~handler, ~middleware, router, mode, table, env, req, body, peer, True{})
+    return Serve.prepare_transport(result, close)
+
 def serving(table: Table.Table<Tag>, pipeline: String) -> IO(Unit):
   match pipeline:
     case "checked": Serve.startup_serving(~Validate.run, ~Tag, ~(tag => None{}), ~Unit, ~(req => body => state => close => peer => respond_checked(req, body, state, close, peer)), table, Unit{}, B.config(), False{})
+    case "checked-schemas": Serve.startup_serving(~Validate.run, ~Tag, ~(tag => None{}), ~Unit, ~(req => body => state => close => peer => respond_checked(req, body, state, close, peer)), table, Unit{}, B.config(), False{})
+    case "stepped-schemas": Serve.startup_serving(~Validate.run, ~Tag, ~(tag => None{}), ~Unit, ~(req => body => state => close => peer => respond_stepped(req, body, state, close, peer)), table, Unit{}, B.config(), False{})
     case _: Serve.startup_plain(~Unit, ~Tag, ~(tag => None{}), ~Unit, ~handler, ~middleware, table, Unit{}, B.config(), False{})
 
 def pipeline_of(found: Result<&1, &1, U32 & String, String>) -> String:
@@ -142,16 +174,23 @@ def pipeline_of(found: Result<&1, &1, U32 & String, String>) -> String:
     case Done{value}: value
     case Fail{e}: "plain"
 
-def ready(result: Result<&2, &2, Methods.BuildError, B.Routes(Tag)>) -> IO(Unit):
+def ready(+pipeline: String, result: Result<&2, &2, Methods.BuildError, B.Routes(Tag)>) -> IO(Unit):
   match result:
     case Fail{error}: IO.die(Unit, 1, "invalid routes")
-    case Done{table}:
-      do IO<Unit>:
-        found : Result<&1, &1, U32 & String, String> <- IO.get_env("BENDO_TEST_PIPELINE")
-        serving(table, pipeline_of(found))
+    case Done{table}: serving(table, pipeline)
 
-def main() -> IO(Unit):
-  ready(B.routes(Tag, [
+def report_schema() -> Schema.Schema:
+  Schema.ObjectSchema{[Schema.Field{"count", Schema.IntegerSchema{Some{"0"}, None{}}, Schema.Required{}}], Schema.Strict{}}
+
+# The route with only a response schema, in the `-schemas` pipelines only.
+def schema_routes(pipeline: String) -> List<&2, Table.Entry<Tag>>:
+  match pipeline:
+    case "checked-schemas": [B.with_schemas(Tag, B.get(Tag, "/seeded/report", Seeded{}), B.schemas([B.response_schema(report_schema())]))]
+    case "stepped-schemas": [B.with_schemas(Tag, B.get(Tag, "/seeded/report", Seeded{}), B.schemas([B.response_schema(report_schema())]))]
+    case _: []
+
+def entries(+pipeline: String) -> List<&2, Table.Entry<Tag>>:
+  List.append(&2, Table.Entry<Tag>, schema_routes(pipeline), [
     B.on_request(Tag, Builtin{B.request_id()}),
     B.on_request(Tag, Builtin{B.server_timing()}),
     B.on_request(Tag, Builtin{B.logger()}),
@@ -165,6 +204,8 @@ def main() -> IO(Unit):
     B.use_path(Tag, "/policy/*", Builtin{B.cors(B.cors_allow([B.cors_origin_credentials("https://app.example")]))}),
     B.use_path(Tag, "/policy/*", Builtin{B.secure_headers()}),
     B.use(Tag, Builtin{B.pretty_json()}),
+    B.use_path(Tag, "/seeded/*", Seed{}),
+    B.get(Tag, "/seeded/free", Seeded{}),
     B.get(Tag, "/", Hello{}),
     B.get(Tag, "/json", Json{}),
     B.get(Tag, "/failing", Failing{}),
@@ -180,4 +221,10 @@ def main() -> IO(Unit):
     B.get(Tag, "/policy/recover", Failing{}),
     B.get(Tag, "/ws", Socket{}),
     B.get(Tag, "/policy/ws", Socket{})
-  ]))
+  ])
+
+def main() -> IO(Unit):
+  do IO<Unit>:
+    found : Result<&1, &1, U32 & String, String> <- IO.get_env("BENDO_TEST_PIPELINE")
+    +pipeline : String = pipeline_of(found)
+    ready(pipeline, B.routes(Tag, entries(pipeline)))

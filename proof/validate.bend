@@ -915,6 +915,12 @@ def L.request_free_route_is_admitted_run(set, input, unchecked):
 def L.request_free_route_is_admitted_skip(set, input, unchecked):
   Equal.cong(Bool, V.Answer, d => V.Judged{V.skipped(Bool.not(d))}, V.declares(set), False{}, unchecked)
 
+def L.request_free_route_enters_cleared_run(Vars, c, set, input, unchecked):
+  Equal.cong(V.Answer, C.Entry<Vars>, a => C.answered(Vars, c, a), V.run(V.RequestJob{set, input}), V.Judged{V.Valid{V.no_values()}}, request_free_run(set, input, unchecked))
+
+def L.request_free_route_enters_cleared_skip(Vars, c, set, input, unchecked):
+  Equal.cong(V.Answer, C.Entry<Vars>, a => C.answered(Vars, c, a), V.skip(V.RequestJob{set, input}), V.Judged{V.Valid{V.no_values()}}, L.request_free_route_is_admitted_skip(set, input, unchecked))
+
 def L.no_values_entry_reads_unchanged(Vars, c, fresh):
   match c:
     case C.Ctx{+r, +p, +b, +q, +s, +hs, +vars, Obs.State{+id, +timing, +finalized, +policies, +stream, +peer, +access, +valid}}:
