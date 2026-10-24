@@ -20,7 +20,8 @@ type Config is Data:
     max_requests: U32,
     keep_alive: Bool,
     router: Router.RouterKind,
-    mode: Mode
+    mode: Mode,
+    workers: U32
   }
 
 # host: 127.0.0.1 (IPv4 literal); bound by BND-12.
@@ -34,8 +35,11 @@ type Config is Data:
 # keep_alive: True; enables HTTP/1.1 connection reuse.
 # router: Trie, proven equal to Spec (BND-17); B.serve resolves methods with it.
 # mode: Development; $BENDO_ENV=production selects Production at startup (BND-36).
+# workers: 1 process; 0 is one per CPU, and a valid $BENDO_WORKERS overrides it.
+#   Workers share no memory, so stores and rate limits are per worker (BND-69,
+#   decision 0016).
 def defaults() -> Config:
-  Config{"127.0.0.1", 8787, 1048576, 65536, 5000, 10000, 30000, 100, True{}, Router.default_kind(), Development{}}
+  Config{"127.0.0.1", 8787, 1048576, 65536, 5000, 10000, 30000, 100, True{}, Router.default_kind(), Development{}, 1}
 
 # Validate decimal syntax before Base U32.read, which only checks arithmetic.
 def digits(s: String) -> Bool:
@@ -76,15 +80,38 @@ def port_env(value: Result<&1, &1, U32 & String, String>, fallback: U32) -> U32:
     case Done{text}: port(text, fallback)
 
 def body_limit(config: Config) -> U32:
-  Config{host, port, limit, headers, idle, head, body, max, keep, router, mode} = config
+  Config{host, port, limit, headers, idle, head, body, max, keep, router, mode, workers} = config
   limit
 
 def with_mode(config: Config, mode: Mode) -> Config:
-  Config{host, port, limit, headers, idle, head, body, max, keep, router, old} = config
-  Config{host, port, limit, headers, idle, head, body, max, keep, router, mode}
+  Config{host, port, limit, headers, idle, head, body, max, keep, router, old, workers} = config
+  Config{host, port, limit, headers, idle, head, body, max, keep, router, mode, workers}
 
 # $BENDO_ENV=production selects Production; anything else keeps the config's mode.
 def mode_env(value: Result<&1, &1, U32 & String, String>, fallback: Mode) -> Mode:
   match value:
     case Done{"production"}: Production{}
     case _: fallback
+
+def with_workers(config: Config, workers: U32) -> Config:
+  Config{host, port, limit, headers, idle, head, body, max, keep, router, mode, old} = config
+  Config{host, port, limit, headers, idle, head, body, max, keep, router, mode, workers}
+
+def workers_read(parsed: Maybe<&2, U32>, fallback: U32) -> U32:
+  match parsed:
+    case None{}: fallback
+    case Some{+count}:
+      port_range(count, fallback, (count <= 256 : U32))
+
+def workers_decimal(text: String, fallback: U32, valid: Bool) -> U32:
+  match valid:
+    case False{}: fallback
+    case True{}: workers_read(U32.read(text), fallback)
+
+# $BENDO_WORKERS: decimal 0 to 256 overrides the config; anything else keeps it.
+def workers_env(value: Result<&1, &1, U32 & String, String>, fallback: U32) -> U32:
+  match value:
+    case Fail{error}: fallback
+    case Done{text}:
+      +s = text
+      workers_decimal(s, fallback, decimal(s))

@@ -158,6 +158,8 @@ def valid_headers_in(-Vars: Data, c: Context.Ctx<Vars>) -> Maybe<&2, SchemaLang.
 def valid_body_in(-Vars: Data, c: Context.Ctx<Vars>) -> Maybe<&2, SchemaLang.Value>: Context.valid_body(Vars, c)
 def field(value: Maybe<&2, SchemaLang.Value>, key: String) -> Maybe<&2, SchemaLang.Value>: Validate.field(value, key)
 def production(config: Config.Config) -> Config.Config: Config.with_mode(config, Config.Production{})
+# Worker processes; 0 is one per CPU. Workers share no memory (decision 0016).
+def workers(config: Config.Config, count: U32) -> Config.Config: Config.with_workers(config, count)
 
 # BND-26 plugins: functions from a Builder to a Builder. See docs/guides/plugins.md.
 def Builder(-Tag: Data) -> Data: Plugin.Builder<Tag>
