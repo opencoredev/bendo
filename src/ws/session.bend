@@ -149,9 +149,13 @@ def action_of(t: Transition) -> Action:
   match t:
     case Transition{assembly, action}: action
 
+def phase_of(a: Action) -> Phase:
+  match a:
+    case Action{phase, frame, notice}: phase
+
 def after(t: Transition) -> Session:
   match t:
-    case Transition{assembly, Action{phase, frame, notice}}: Session{phase, assembly}
+    case Transition{assembly, action}: Session{phase_of(action), assembly}
 
 # Folds of `step` over an event history, for the trace laws.
 def trace(+max: U32, events: List<&2, WsEvent>, +session: Session) -> List<&2, Action>:
