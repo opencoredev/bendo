@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { parseManifest } from "../packages/bendo/src/manifest.ts";
 import { build, start, type RunningServer } from "./harness.ts";
 
 // BND-36: route schemas for params, query, headers, body and response.
@@ -38,6 +39,26 @@ function issue(path: (string | number)[], code: string, message: string): Issue 
 const MISSING = "missing required key";
 const SCALAR = "value does not satisfy scalar checks";
 const KIND = "expected schema scalar kind";
+
+/** Waits for the production server to log a line containing `needle`. */
+async function logged(needle: string): Promise<string | undefined> {
+  const deadline = Date.now() + 2000;
+  while (!production.stderr().includes(needle) && Date.now() < deadline) await Bun.sleep(10);
+  return production
+    .stderr()
+    .split("\n")
+    .find((l) => l.includes(needle));
+}
+
+/** The slot (first path part) of each error in a rejection body, in order. */
+function errorSlots(body: unknown): unknown[] {
+  if (typeof body !== "object" || body === null || !("errors" in body)) return [];
+  const { errors } = body;
+  if (!Array.isArray(errors)) return [];
+  return errors.map((e: unknown) =>
+    typeof e === "object" && e !== null && "path" in e && Array.isArray(e.path) ? e.path[0] : null,
+  );
+}
 
 /** A rejection must be JSON naming its status and every failing path. */
 async function rejected(response: Response, status: number, errors: Issue[]): Promise<void> {
@@ -196,18 +217,79 @@ describe("response", () => {
     const response = await send("/report-bad", {}, production);
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ count: "three", secret: "internal" });
-    const deadline = Date.now() + 2000;
-    while (!production.stderr().includes("/report-bad") && Date.now() < deadline)
-      await Bun.sleep(10);
-    const line = production
-      .stderr()
-      .split("\n")
-      .find((l) => l.includes("/report-bad"));
-    expect(line).toBe(
+    expect(await logged("/report-bad")).toBe(
       'bendo: response schema violation: GET /report-bad [{"path":["body","secret"],"code":"constraint","message":"object has an undeclared key"},{"path":["body","count"],"code":"type_mismatch","message":"expected schema scalar kind"}]',
     );
     const good = await send("/report", {}, production);
     expect(good.status).toBe(200);
+  });
+});
+
+describe("response after hooks", () => {
+  test("a before_handle hook's own response is checked", async () => {
+    const response = await send("/hooked/before");
+    expect(response.status).toBe(500);
+    expect(await response.text()).toBe("Internal Server Error");
+  });
+  test("a map_response hook that replaces a conforming response is checked", async () => {
+    const response = await send("/hooked/map");
+    expect(response.status).toBe(500);
+    expect(await response.text()).not.toContain("mapped");
+  });
+  test("production logs the route pattern, never the captured values", async () => {
+    const secret = "s3cr3t-reset-token-0123456789";
+    const response = await send(`/leak/${secret}`, {}, production);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ count: "three" });
+    const line = await logged("/leak/");
+    expect(line).toBe(
+      'bendo: response schema violation: GET /leak/:token [{"path":["body","count"],"code":"type_mismatch","message":"expected schema scalar kind"}]',
+    );
+    expect(production.stderr()).not.toContain(secret);
+  });
+});
+
+describe("error budget", () => {
+  test("a request reports at most 100 errors across all its slots", async () => {
+    // 60 missing query keys and 60 missing headers: 120 failures, 100 reported.
+    const response = await send("/flood");
+    expect(response.status).toBe(400);
+    const body: unknown = await response.json();
+    expect(body).toEqual({ error: "Bad Request", status: 400, errors: expect.any(Array) });
+    const slots = errorSlots(body);
+    expect(slots).toHaveLength(100);
+    expect(slots.filter((s) => s === "query")).toHaveLength(60);
+    expect(slots.filter((s) => s === "headers")).toHaveLength(40);
+    expect(slots.indexOf("headers")).toBe(60);
+  });
+});
+
+describe("manifest", () => {
+  test("--bendo-routes prints every route's effective schemas", () => {
+    const run = Bun.spawnSync([binary, "--bendo-routes"], {
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 20_000,
+    });
+    expect(run.stderr.toString()).toBe("");
+    expect(run.exitCode).toBe(0);
+    const manifest = parseManifest(run.stdout.toString());
+    const slots = (path: string, method = "GET"): string[] => {
+      const row = manifest.routes.find((r) => r.path === path && r.method === method);
+      expect(row).toBeDefined();
+      return Object.keys(row?.schemas ?? {}).sort();
+    };
+    expect(slots("/items/:id")).toEqual(["params"]);
+    expect(slots("/todos", "POST")).toEqual(["body", "response"]);
+    expect(slots("/report")).toEqual(["response"]);
+    expect(slots("/plain")).toEqual([]);
+    // A guard's schema reaches every member; a member's own schema wins.
+    expect(slots("/guarded/a")).toEqual(["query"]);
+    const guarded = (path: string) => manifest.routes.find((r) => r.path === path)?.schemas.query;
+    expect(JSON.stringify(guarded("/guarded/a"))).toContain('"string"');
+    expect(JSON.stringify(guarded("/guarded/b"))).toContain('"integer"');
+    // A mounted sub-app keeps its schemas under the mount prefix.
+    expect(slots("/api/thing/:n")).toEqual(["params"]);
   });
 });
 
@@ -285,7 +367,7 @@ describe("prepared schemas", () => {
 });
 
 describe("plain entrypoints", () => {
-  test("B.handle answers a schema route 500 and B.serve refuses to start", () => {
+  test("B.handle answers any schema route 500 and B.serve refuses to start", () => {
     const run = Bun.spawnSync([unchecked], {
       env: { ...process.env, PORT: "1" },
       stdout: "pipe",
@@ -293,9 +375,11 @@ describe("plain entrypoints", () => {
       timeout: 20_000,
     });
     expect(run.exitCode).toBe(1);
-    expect(run.stdout.toString()).toBe(
-      'handle 500 {"error":"Internal Server Error","status":500,"errors":[{"path":[],"code":"invalid_schema","message":"route schemas need the validating entrypoints in src/validated.bend"}]}\n',
-    );
+    const refusal =
+      '500 {"error":"Internal Server Error","status":500,"errors":[{"path":[],"code":"invalid_schema","message":"route schemas need the validating entrypoints in src/validated.bend"}]}';
+    // A route with only a response schema is refused too, before its handler
+    // runs (the fixture's handler for it exits the process).
+    expect(run.stdout.toString()).toBe(`handle ${refusal}\nresponse-only ${refusal}\n`);
     expect(run.stderr.toString()).toContain("serve it with the entrypoints in src/validated.bend");
   });
 });

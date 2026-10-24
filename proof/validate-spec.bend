@@ -11,6 +11,10 @@ import ../src/http/bytes.bend as Bytes
 import ../src/http/request.bend as Request
 import ../src/router/pattern.bend as Pattern
 import ../src/app/validate.bend as V
+import ../src/app/table.bend as T
+import ../src/app/config.bend as Config
+import ../src/data/schema-prepared.bend as SP
+import ./scoped-selection-spec.bend as Routes
 
 # Each text slot is an object of strings: params and query pairs in order,
 # header names lowercased, header values UTF-8 or else ISO-8859-1.
@@ -153,14 +157,18 @@ def body_status(b: Body) -> U32:
     case Decoded{r}: 422
 
 # Combining the four slots. The request is admitted exactly when every slot
-# decodes; a rejection lists every failing path of every slot, in the order
+# decodes; a rejection lists the failing paths of the slots in the order
 # params, query, headers, body, with status 400 when a text slot fails and
-# otherwise 415, 400 or 422 by what happened to the body.
+# otherwise 415, 400 or 422 by what happened to the body. The list is the
+# first 100 of those paths: one budget for the whole request, not per slot.
 def all_decode(+p: Maybe<&2, Result<&2, &2, S.Errors(), S.Value>>, +q: Maybe<&2, Result<&2, &2, S.Errors(), S.Value>>, +h: Maybe<&2, Result<&2, &2, S.Errors(), S.Value>>, +b: Body) -> Bool:
   text_decodes(p) && text_decodes(q) && text_decodes(h) && body_decodes(b)
 
 def all_errors(+p: Maybe<&2, Result<&2, &2, S.Errors(), S.Value>>, +q: Maybe<&2, Result<&2, &2, S.Errors(), S.Value>>, +h: Maybe<&2, Result<&2, &2, S.Errors(), S.Value>>, +b: Body) -> List<&2, S.Error>:
   List.concat(&2, S.Error, [text_errors("params", p), text_errors("query", q), text_errors("headers", h), body_errors(b)])
+
+def reported(+p: Maybe<&2, Result<&2, &2, S.Errors(), S.Value>>, +q: Maybe<&2, Result<&2, &2, S.Errors(), S.Value>>, +h: Maybe<&2, Result<&2, &2, S.Errors(), S.Value>>, +b: Body) -> List<&2, S.Error>:
+  List.take(&2, S.Error, all_errors(p, q, h, b), 100n)
 
 def status_when(text_ok: Bool, b: Body) -> U32:
   match text_ok:
@@ -170,7 +178,7 @@ def status_when(text_ok: Bool, b: Body) -> U32:
 def decide(+p: Maybe<&2, Result<&2, &2, S.Errors(), S.Value>>, +q: Maybe<&2, Result<&2, &2, S.Errors(), S.Value>>, +h: Maybe<&2, Result<&2, &2, S.Errors(), S.Value>>, +b: Body, yes: Bool) -> V.Verdict:
   match yes:
     case True{}: V.Valid{V.Values{text_value(p), text_value(q), text_value(h), body_value(b)}}
-    case False{}: V.Invalid{status_when(text_decodes(p) && text_decodes(q) && text_decodes(h), b), all_errors(p, q, h, b)}
+    case False{}: V.Invalid{status_when(text_decodes(p) && text_decodes(q) && text_decodes(h), b), reported(p, q, h, b)}
 
 def combine(+p: Maybe<&2, Result<&2, &2, S.Errors(), S.Value>>, +q: Maybe<&2, Result<&2, &2, S.Errors(), S.Value>>, +h: Maybe<&2, Result<&2, &2, S.Errors(), S.Value>>, +b: Body) -> V.Verdict:
   decide(p, q, h, b, all_decode(p, q, h, b))
@@ -186,7 +194,7 @@ def admitted(+params: Maybe<&2, S.Schema>, +query: Maybe<&2, S.Schema>, +headers
 
 def errors(+params: Maybe<&2, S.Schema>, +query: Maybe<&2, S.Schema>, +headers: Maybe<&2, S.Schema>, +schema: Maybe<&2, S.Schema>, input: V.Input) -> List<&2, S.Error>:
   V.Input{ps, qs, +hs, bytes} = input
-  all_errors(text_state(params, params_members(ps)), text_state(query, query_members(qs)), text_state(headers, header_members(hs)), body(schema, hs, bytes))
+  reported(text_state(params, params_members(ps)), text_state(query, query_members(qs)), text_state(headers, header_members(hs)), body(schema, hs, bytes))
 
 # A 2xx response other than 204 must carry a JSON body its schema decodes.
 def response_result(r: Result<&2, &2, S.Errors(), S.Value>) -> V.Check:
@@ -216,3 +224,93 @@ def response(m: Maybe<&2, S.Schema>, +code: U32, hs: List<&2, Request.Header>, b
   match m:
     case None{}: V.Unchecked{}
     case Some{s}: response_when(s, hs, bytes, checked_status(code))
+
+# What the runtime does with a response, by mode and delivery. A streamed or
+# upgraded response is sent as it is: its body is never buffered, so there is
+# nothing to check. A buffered response that violates its schema is replaced
+# by a 500 in development; production sends it and owes one log line listing
+# the errors. Every other response is sent.
+def verdict_for(c: V.Check, mode: Config.Mode) -> V.Action:
+  match c mode:
+    case V.Unchecked{} _: V.Send{}
+    case V.Conforms{} _: V.Send{}
+    case V.Violates{es} Config.Development{}: V.Replace{}
+    case V.Violates{es} Config.Production{}: V.Report{es}
+
+def act(mode: Config.Mode, delivery: V.Delivery, c: V.Check) -> V.Action:
+  match delivery:
+    case V.Streamed{}: V.Send{}
+    case V.Buffered{}: verdict_for(c, mode)
+
+def action(mode: Config.Mode, delivery: V.Delivery, m: Maybe<&2, S.Schema>, +code: U32, hs: List<&2, Request.Header>, bytes: List<&2, U32>) -> V.Action:
+  act(mode, delivery, response(m, code, hs, bytes))
+
+# Entrypoints without a decoder: a route that declares a schema in any slot,
+# the response slot included, is rejected with a 500; any other route is
+# admitted with no decoded values.
+def present(m: Maybe<&2, SP.Checked>) -> Bool:
+  match m:
+    case None{}: False{}
+    case Some{c}: True{}
+
+def any_declared(set: V.Schemas) -> Bool:
+  match set:
+    case V.Schemas{p, q, h, b, r}: present(p) || present(q) || present(h) || present(b) || present(r)
+
+def plain_when(declared: Bool) -> V.Verdict:
+  match declared:
+    case True{}: V.Invalid{500, [S.Error{S.InvalidSchema{}, "route schemas need the validating entrypoints in src/validated.bend", []}]}
+    case False{}: V.Valid{V.Values{None{}, None{}, None{}, None{}}}
+
+def plain(set: V.Schemas) -> V.Verdict:
+  plain_when(any_declared(set))
+
+# Which schema a route uses, slot by slot (BND-36). A route's placements list
+# its scopes outer to inner: guards, groups, mounts and plugins prepend theirs
+# before a route's own (proof/scoped-assembly-spec.bend). For each slot the
+# effective schema is the last declaration of that slot in the list; a scope
+# that does not declare a slot leaves the outer one in force.
+type Which is Data:
+  InParams{}
+  InQuery{}
+  InHeaders{}
+  InBody{}
+  InResponse{}
+
+def slot(w: Which, set: V.Schemas) -> Maybe<&2, SP.Checked>:
+  match w set:
+    case InParams{} V.Schemas{p, q, h, b, r}: p
+    case InQuery{} V.Schemas{p, q, h, b, r}: q
+    case InHeaders{} V.Schemas{p, q, h, b, r}: h
+    case InBody{} V.Schemas{p, q, h, b, r}: b
+    case InResponse{} V.Schemas{p, q, h, b, r}: r
+
+def first_present(a: Maybe<&2, SP.Checked>, b: Maybe<&2, SP.Checked>) -> Maybe<&2, SP.Checked>:
+  match a:
+    case None{}: b
+    case Some{x}: Some{x}
+
+def last_declared(-Tag: Data, +w: Which, ps: List<&2, T.Placement<Tag>>) -> Maybe<&2, SP.Checked>:
+  match ps:
+    case Nil{}: None{}
+    case T.Placement{scope, hook} <> tail: last_declared(Tag, w, tail)
+    case T.Checks{scope, set} <> tail: first_present(last_declared(Tag, w, tail), slot(w, set))
+
+# Route identities are unique in a built table, so at most one route is here.
+def chosen(here: Bool, mine: Maybe<&2, SP.Checked>, rest: Maybe<&2, SP.Checked>) -> Maybe<&2, SP.Checked>:
+  match here:
+    case True{}: first_present(mine, rest)
+    case False{}: rest
+
+# The route whose identity, the number of routes after it in the source
+# entries, is n (scoped-selection-spec.bend).
+def find(-Tag: Data, +w: Which, xs: List<&2, T.Entry<Tag>>, +n: Nat) -> Maybe<&2, SP.Checked>:
+  match xs:
+    case Nil{}: None{}
+    case T.ScopedRoute{r, ps} <> +tail: chosen(Nat.is_eq(Routes.route_count(Tag, tail), n), last_declared(Tag, w, ps), find(Tag, w, tail, n))
+    case _ <> tail: find(Tag, w, tail, n)
+
+def effective(-Tag: Data, w: Which, xs: List<&2, T.Entry<Tag>>, route: Maybe<&2, Nat>) -> Maybe<&2, SP.Checked>:
+  match route:
+    case None{}: None{}
+    case Some{n}: find(Tag, w, xs, n)

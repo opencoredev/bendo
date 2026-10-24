@@ -354,3 +354,20 @@ def validation_input(-Vars: Data, c: Ctx<Vars>) -> V.Input:
 # The request validation failed: a JSON list of every failing path.
 def rejected(-Vars: Data, c: Ctx<Vars>, +code: U32, errors: List<&2, Schema.Error>) -> Response.Res:
   json_rejected(Vars, c, code, Json.stringify(V.rejection(code, Response.reason(code), errors)))
+
+# How a request enters its handler (BND-36). A valid verdict dispatches with
+# exactly the verdict's values in the context; an invalid one answers the
+# rejection, and nothing is dispatched.
+type Entry<-Vars: Data> is Data:
+  EnterHandler{ctx: Ctx<Vars>}
+  RejectRequest{res: Response.Res}
+
+def entry(-Vars: Data, +c: Ctx<Vars>, verdict: V.Verdict) -> Entry<Vars>:
+  match verdict:
+    case V.Valid{values}: EnterHandler{with_values(Vars, c, values)}
+    case V.Invalid{code, errors}: RejectRequest{rejected(Vars, c, code, errors)}
+
+def enters(-Vars: Data, e: Entry<Vars>) -> Bool:
+  match e:
+    case EnterHandler{c}: True{}
+    case RejectRequest{res}: False{}

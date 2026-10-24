@@ -1,5 +1,6 @@
-# BND-36 route validation: one route per slot, a guard, a mounted sub-app and
-# a route whose hooks show where validation runs in the lifecycle.
+# BND-36 route validation: one route per slot, a guard, a mounted sub-app,
+# a route whose hooks show where validation runs in the lifecycle, and routes
+# whose hooks produce or replace the response the response schema checks.
 import Base
 import ../../src/main.bend as B
 import ../../src/app/table.bend as T
@@ -26,6 +27,11 @@ type Tag is Data:
   Mounted{}
   Stamp{}
   Stop{}
+  Flood{}
+  Hooked{}
+  BadBefore{}
+  BadMap{}
+  Leak{}
 
 def text() -> S.Schema:
   S.StringSchema{1n, Some{80n}, None{}, S.Plain{}}
@@ -71,6 +77,15 @@ def todo_response() -> S.Schema:
 def report_response() -> S.Schema:
   S.ObjectSchema{[S.Field{"count", S.IntegerSchema{Some{"0"}, None{}}, S.Required{}}], S.Strict{}}
 
+# 60 required keys, k0 to k59, so 60 errors when all are missing.
+def required(+prefix: String, n: Nat) -> List<&2, S.Field>:
+  match n:
+    case 0n: []
+    case 1n+(+k): S.Field{prefix ++ Nat.show(k), text(), S.Required{}} <> required(prefix, k)
+
+def flood(prefix: String) -> S.Schema:
+  S.ObjectSchema{required(prefix, 60n), S.Strip{}}
+
 def token(schema: S.Schema) -> S.Schema:
   S.ObjectSchema{[S.Field{"token", schema, S.Required{}}], S.Strip{}}
 
@@ -108,6 +123,9 @@ def answer(tag: Tag, +c: B.Ctx) -> IO(B.Res):
     case Ordered{}: IO.pure(B.Res, B.text(c, "handler"))
     case Combo{}: IO.pure(B.Res, B.text(c, "combo"))
     case Wide{}: IO.pure(B.Res, B.text(c, string(B.field(B.valid_headers(c), "x-wide"))))
+    case Flood{}: IO.pure(B.Res, B.text(c, "flood"))
+    case Hooked{}: IO.pure(B.Res, B.json(c, J.JObject{[J.Field{"count", J.JNumber{"3"}}]}))
+    case Leak{}: IO.pure(B.Res, B.json(c, J.JObject{[J.Field{"count", J.JString{"three"}}]}))
     case Plain{}: IO.pure(B.Res, B.text(c, none(B.valid_params(c)) ++ "," ++ none(B.valid_query(c)) ++ "," ++ none(B.valid_headers(c)) ++ "," ++ none(B.valid_body(c))))
     case _: IO.pure(B.Res, B.not_found(c))
 
@@ -118,6 +136,8 @@ def hook(tag: Tag, +c: B.Ctx, next: B.Ctx -> IO(B.Res)) -> IO(B.Res):
   match tag:
     case Stamp{}: next(B.header(c, "x-stamp", "transform"))
     case Stop{}: IO.pure(B.Res, B.text(c, "before-handle:" ++ string(B.field(B.valid_body(c), "title"))))
+    case BadBefore{}: IO.pure(B.Res, B.json(c, J.JObject{[J.Field{"count", J.JNumber{"-1"}}]}))
+    case BadMap{}: IO.pure(B.Res, B.json(c, J.JObject{[J.Field{"count", J.JNumber{"3"}}, J.Field{"mapped", J.JBool{True{}}}]}))
     case _: next(c)
 
 def handler(tag: Tag, c: B.Ctx, env: Unit) -> IO(B.Res):
@@ -142,7 +162,11 @@ def entries() -> List<&2, B.Registration(Tag)>:
      B.with_schemas(Tag, B.post(Tag, "/combo/:id", Combo{}), B.schemas([B.params_schema(id_params("id")), B.query_schema(search_query()), B.headers_schema(whoami_headers()), B.body_schema(todo_body())])),
      B.with_schemas(Tag, B.get(Tag, "/wide", Wide{}), one(B.headers_schema(wide_headers(Some{wide_pattern()})))),
      B.with_schemas(Tag, B.get(Tag, "/narrow", Wide{}), one(B.headers_schema(wide_headers(None{})))),
-     B.get(Tag, "/plain", Plain{})],
+     B.get(Tag, "/plain", Plain{}),
+     B.with_schemas(Tag, B.get(Tag, "/flood", Flood{}), B.schemas([B.query_schema(flood("k")), B.headers_schema(flood("h"))])),
+     B.route_schemas(Tag, M.get(Tag, "/hooked/before", Hooked{}), [B.hook(Tag, T.BeforeHandle{}, BadBefore{})], one(B.response_schema(report_response()))),
+     B.route_schemas(Tag, M.get(Tag, "/hooked/map", Hooked{}), [B.hook(Tag, T.MapResponse{}, BadMap{})], one(B.response_schema(report_response()))),
+     B.with_schemas(Tag, B.get(Tag, "/leak/:token", Leak{}), one(B.response_schema(report_response())))],
     B.guard(Tag, B.guard_schemas(Tag, [], one(B.query_schema(token(text())))), [
       B.get(Tag, "/guarded/a", Member{}),
       B.with_schemas(Tag, B.get(Tag, "/guarded/b", Member{}), one(B.query_schema(token(S.IntegerSchema{None{}, None{}}))))]),

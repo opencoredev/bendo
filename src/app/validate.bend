@@ -11,6 +11,7 @@ import ../data/urlencoded.bend as Query
 import ../http/bytes.bend as Bytes
 import ../http/request.bend as Request
 import ../router/pattern.bend as Pattern
+import ./config.bend as Config
 
 # A route's schemas, one optional prepared schema per slot.
 type Schemas is Data:
@@ -253,12 +254,15 @@ def status_of(text: Bool, b: Body) -> U32:
     case False{}: 400
     case True{}: body_status(b)
 
+# One reporting budget for the whole request: the first `S.error_cap()` errors
+# of the slots in order. Every slot still decides admission and the status.
 def verdict(+p: Outcome, +q: Outcome, +h: Outcome, +b: Body) -> Verdict:
   match p q h b:
     case Passed{vp} Passed{vq} Passed{vh} BodyPassed{vb}: Valid{Values{vp, vq, vh, vb}}
-    case _ _ _ _: Invalid{status_of(text_ok(p) && text_ok(q) && text_ok(h), b), List.concat(&2, S.Error, [errors_of(p), errors_of(q), errors_of(h), body_errors(b)])}
+    case _ _ _ _: Invalid{status_of(text_ok(p) && text_ok(q) && text_ok(h), b), List.take(&2, S.Error, List.concat(&2, S.Error, [errors_of(p), errors_of(q), errors_of(h), body_errors(b)]), S.error_cap())}
 
-# Every slot is checked, so a rejection lists every failing path of every slot.
+# Every slot is checked, so a rejection lists the failing paths of every slot,
+# up to the request's budget.
 def request(set: Schemas, input: Input) -> Verdict:
   Schemas{p, q, h, b, r} = set
   Input{ps, qs, +hs, body} = input
@@ -307,6 +311,31 @@ def response(c: Maybe<&2, SP.Checked>, +status: U32, +hs: List<&2, Request.Heade
     case None{}: Unchecked{}
     case Some{k}: response_checked(k, status, hs, bytes, (status >= 200 : U32) && (status <= 299 : U32) && Bool.not(U32.is_eq(status, 204)))
 
+# How the response leaves the server. A streamed or upgraded response has no
+# buffered body to check, so it is sent as it is.
+type Delivery is Data:
+  Buffered{}
+  Streamed{}
+
+# What the runtime does with a checked response: send it, replace it with a
+# 500, or send it and write the violation to stderr.
+type Action is Data:
+  Send{}
+  Replace{}
+  Report{errors: List<&2, S.Error>}
+
+def violation(mode: Config.Mode, errors: List<&2, S.Error>) -> Action:
+  match mode:
+    case Config.Development{}: Replace{}
+    case Config.Production{}: Report{errors}
+
+def policy(mode: Config.Mode, delivery: Delivery, check: Check) -> Action:
+  match delivery check:
+    case Streamed{} _: Send{}
+    case Buffered{} Unchecked{}: Send{}
+    case Buffered{} Conforms{}: Send{}
+    case Buffered{} Violates{es}: violation(mode, es)
+
 # The response body for a rejected request:
 # {"error": reason, "status": code, "errors": [{"path", "code", "message"}...]}.
 def rejection(+status: U32, reason: String, errors: List<&2, S.Error>) -> J.Json:
@@ -340,12 +369,14 @@ def skipped(empty: Bool) -> Verdict:
     case True{}: Valid{no_values()}
     case False{}: Invalid{500, [unvalidated()]}
 
-def skip(job: Job) -> Answer:
-  match job:
-    case RequestJob{+s, i}: Judged{skipped(requests_nothing(s))}
-    case ResponseJob{c, code, hs, bytes}: Inspected{Unchecked{}}
-    case Probe{}: Enabled{False{}}
-
 def declares(set: Schemas) -> Bool:
   Schemas{p, q, h, b, r} = set
   Bool.not(requests_nothing(Schemas{p, q, h, b, None{}})) || Maybe.is_some(&2, SP.Checked, r)
+
+# Without a decoder, a route that declares any schema, a response schema
+# included, is rejected before its handler runs.
+def skip(job: Job) -> Answer:
+  match job:
+    case RequestJob{+s, i}: Judged{skipped(Bool.not(declares(s)))}
+    case ResponseJob{c, code, hs, bytes}: Inspected{Unchecked{}}
+    case Probe{}: Enabled{False{}}

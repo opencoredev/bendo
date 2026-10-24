@@ -118,7 +118,8 @@ and exits 1 when:
 
 Starting the server does not check the list, and the list is not validated
 at request time. [Route validation](validation.md) (BND-36) reads schemas that
-the route table itself declares and serves through `src/validated.bend`.
+the route table itself declares and serves through `src/validated.bend`, whose
+`--bendo-routes` derives this list from the table.
 
 ### Slot interface
 
@@ -138,9 +139,14 @@ returns `Done{List<Attached>}` with `Attached{route, row, schemas}`, or the
 
 Route validation (BND-36) keeps its schemas in the table instead: on the route
 (`B.route_schemas`) and in `GuardOptions.schemas`, prepared as
-`Validate.Schemas`. The manifest does not read them yet. A list derived from the
-table should still feed `ManifestSchemas.attach` as positional `RouteSchemas`,
-so the laws below keep covering the manifest.
+`Validate.Schemas`. `TableSchemas.effective(Tag, table)` in
+`src/app/table-schemas.bend` projects them into this list: one `RouteSchemas`
+per registration in forward order, each the route's effective schemas after
+guards, groups, mounts and plugins, converted back to raw schemas with
+`SP.schema`. The `V.serve*` entrypoints of `src/validated.bend` print it through
+`ManifestSchemas.json_schemas` for `--bendo-routes`, so the laws below cover
+validated apps too. Law `table_schemas_one_per_route` states the list has one
+entry per registration.
 
 ### Guarantees
 

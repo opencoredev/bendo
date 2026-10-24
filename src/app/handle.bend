@@ -28,6 +28,7 @@ import ./config.bend as Config
 import ./errors.bend as Errors
 import ../data/schema.bend as Schema
 import ../data/json.bend as Json
+import ../http/stream_marker.bend as StreamMarker
 
 def Ctx() -> Data: Context.Ctx<Unit>
 
@@ -45,48 +46,66 @@ def finish_valid(method: Request.Method, res: Response.Res, valid: Bool) -> Resp
 def finish(method: Request.Method, +res: Response.Res) -> Response.Res:
   finish_valid(method, res, Response.valid(res))
 
-# Routing failures are terminals inside the onion, just like user handlers.
 # BND-36: a response that breaks the route's response schema. Development
 # answers a 500 with the BND-25 public body; Production logs the failing paths
-# to stderr and sends the handler's response unchanged.
-def violation_line(-Vars: Data, +c: Context.Ctx<Vars>, text: Result<&2, &2, Json.Error, String>) -> String:
+# to stderr and sends the response unchanged. The log names the registered
+# route pattern, never the request path, so captured values such as tokens
+# stay out of it.
+def violation_line(-Vars: Data, +c: Context.Ctx<Vars>, +route: String, text: Result<&2, &2, Json.Error, String>) -> String:
   match text:
-    case Done{s}: "bendo: response schema violation: " ++ Request.method_text(Context.method(Vars, c)) ++ " " ++ Context.path(Vars, c) ++ " " ++ s
-    case Fail{e}: "bendo: response schema violation: " ++ Request.method_text(Context.method(Vars, c)) ++ " " ++ Context.path(Vars, c)
+    case Done{s}: "bendo: response schema violation: " ++ Request.method_text(Context.method(Vars, c)) ++ " " ++ route ++ " " ++ s
+    case Fail{e}: "bendo: response schema violation: " ++ Request.method_text(Context.method(Vars, c)) ++ " " ++ route
 
-def violated(-Vars: Data, c: Context.Ctx<Vars>, res: Response.Res, errors: List<&2, Schema.Error>, mode: Config.Mode) -> IO(Response.Res):
-  match mode:
-    case Config.Development{}: IO.pure(Response.Res, Context.error(Vars, c, Errors.HttpError{500, "response schema violation", False{}}))
-    case Config.Production{}:
+def acted(-Vars: Data, +c: Context.Ctx<Vars>, res: Response.Res, action: Validate.Action, route: String) -> IO(Response.Res):
+  match action:
+    case Validate.Send{}: IO.pure(Response.Res, res)
+    case Validate.Replace{}: IO.pure(Response.Res, Context.error(Vars, c, Errors.HttpError{500, "response schema violation", False{}}))
+    case Validate.Report{errors}:
       do IO<Response.Res>:
-        IO.print_err(violation_line(Vars, c, Json.stringify(Schema.errors_json(errors))))
+        IO.print_err(violation_line(Vars, c, route, Json.stringify(Schema.errors_json(errors))))
         return res
 
-def response_checked(-Vars: Data, c: Context.Ctx<Vars>, res: Response.Res, check: Validate.Check, mode: Config.Mode) -> IO(Response.Res):
-  match check:
-    case Validate.Unchecked{}: IO.pure(Response.Res, res)
-    case Validate.Conforms{}: IO.pure(Response.Res, res)
-    case Validate.Violates{errors}: violated(Vars, c, res, errors, mode)
-
-def inspected(-Vars: Data, c: Context.Ctx<Vars>, res: Response.Res, answer: Validate.Answer, mode: Config.Mode) -> IO(Response.Res):
+def inspected(-Vars: Data, c: Context.Ctx<Vars>, res: Response.Res, answer: Validate.Answer, mode: Config.Mode, delivery: Validate.Delivery, route: String) -> IO(Response.Res):
   match answer:
-    case Validate.Inspected{check}: response_checked(Vars, c, res, check, mode)
+    case Validate.Inspected{check}: acted(Vars, c, res, Validate.policy(mode, delivery, check), route)
     case _: IO.pure(Response.Res, res)
 
-def check_response(~validator: Validate.Job -> Validate.Answer, -Vars: Data, c: Context.Ctx<Vars>, schema: Maybe<&2, SP.Checked>, +res: Response.Res, mode: Config.Mode) -> IO(Response.Res):
-  Response.Res{+code, +hs, body, rep} = res
-  inspected(Vars, c, res, validator(Validate.ResponseJob{schema, code, hs, body}), mode)
+# A response that registered a stream still carries the private marker field.
+def stream_marked(hs: List<&2, Request.Header>) -> Bool:
+  match hs:
+    case Nil{}: False{}
+    case Request.Header{name, value} <> t: String.eq(Bytes.fold(name), StreamMarker.marker()) || stream_marked(t)
 
-def terminal(~validator: Validate.Job -> Validate.Answer, ~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), missing: List<&2, Tag>, resolution: Methods.Resolution<Tag>, +ctx: Context.Ctx<Vars>, env: Env, slot: Chan(Context.Ctx<Vars>), schemas: Validate.Schemas, mode: Config.Mode) -> IO(Response.Res):
+def delivered(streamed: Bool) -> Validate.Delivery:
+  match streamed:
+    case True{}: Validate.Streamed{}
+    case False{}: Validate.Buffered{}
+
+def check_response(~validator: Validate.Job -> Validate.Answer, -Vars: Data, c: Context.Ctx<Vars>, schema: Maybe<&2, SP.Checked>, +res: Response.Res, mode: Config.Mode, route: String) -> IO(Response.Res):
+  Response.Res{+code, +hs, body, rep} = res
+  inspected(Vars, c, res, validator(Validate.ResponseJob{schema, code, hs, body}), mode, delivered(stream_marked(hs)), route)
+
+# The registered pattern of the route with this reversed ordinal.
+def route_source(-Tag: Data, xs: List<&2, Methods.Registration(Tag)>, k: Nat) -> String:
+  match xs:
+    case Nil{}: "(unknown route)"
+    case Spec.Registration{source, binding} <> t:
+      match k:
+        case 0n: source
+        case 1n+j: route_source(Tag, t, j)
+
+def route_label(-Tag: Data, xs: List<&2, Methods.Registration(Tag)>, count: Nat, route: Maybe<&2, Nat>) -> String:
+  match route:
+    case None{}: "(no route)"
+    case Some{n}: route_source(Tag, xs, Nat.sub(Nat.sub(count, 1n), n))
+
+def terminal(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), missing: List<&2, Tag>, resolution: Methods.Resolution<Tag>, +ctx: Context.Ctx<Vars>, env: Env, slot: Chan(Context.Ctx<Vars>)) -> IO(Response.Res):
   match resolution:
     case Methods.NotFound{}:
       Hooks.chain(~Vars, ~Tag, ~Env, ~middleware, missing, env, slot, ctx, c => IO.pure(Response.Res, Context.not_found(Vars, c)))
     case Methods.MethodNotAllowed{allow}:
       IO.pure(Response.Res, Context.body(Vars, Context.header(Vars, Context.status(Vars, ctx, 405), "allow", Methods.allow_text(allow)), [], None{}))
-    case Methods.Found{Spec.Match{index, tag, params}, head_from_get}:
-      do IO<Response.Res>:
-        res : Response.Res <- dispatch(tag, ctx, env)
-        check_response(~validator, Vars, ctx, Validate.response_schema(schemas), res, mode)
+    case Methods.Found{Spec.Match{index, tag, params}, head_from_get}: dispatch(tag, ctx, env)
 
 def params(-Tag: Data, resolution: Methods.Resolution<Tag>) -> Pattern.Params:
   match resolution:
@@ -100,7 +119,9 @@ def with_params(-Vars: Data, ctx: Context.Ctx<Vars>, ps: Pattern.Params) -> Cont
 
 # BND-36: request validation runs after parse and transform hooks and before
 # before_handle, as one step of the same chain. A rejection answers at once;
-# the handler never runs. The chain remembers the validated context.
+# the handler never runs. The chain remembers the validated context. A route
+# with any schema, a response schema alone included, takes this step, so the
+# plain entrypoints reject it before dispatch.
 type Step<-Tag: Data> is Data:
   Run{tag: Tag}
   Check{schemas: Validate.Schemas}
@@ -115,10 +136,13 @@ def checks(-Tag: Data, schemas: Validate.Schemas, empty: Bool) -> List<&2, Step<
     case True{}: []
     case False{}: [Check{schemas}]
 
+def entered(-Vars: Data, e: Context.Entry<Vars>, next: Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
+  match e:
+    case Context.EnterHandler{c}: next(c)
+    case Context.RejectRequest{res}: IO.pure(Response.Res, res)
+
 def admitted(-Vars: Data, +ctx: Context.Ctx<Vars>, verdict: Validate.Verdict, next: Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
-  match verdict:
-    case Validate.Valid{values}: next(Context.with_values(Vars, ctx, values))
-    case Validate.Invalid{code, errors}: IO.pure(Response.Res, Context.rejected(Vars, ctx, code, errors))
+  entered(Vars, Context.entry(Vars, ctx, verdict), next)
 
 def judged(-Vars: Data, +ctx: Context.Ctx<Vars>, answer: Validate.Answer, next: Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
   match answer:
@@ -130,23 +154,23 @@ def stepped(~validator: Validate.Job -> Validate.Answer, ~Vars: Data, ~Tag: Data
     case Run{tag}: middleware(tag, ctx, env, next)
     case Check{schemas}: judged(Vars, ctx, validator(Validate.RequestJob{schemas, Context.validation_input(Vars, ctx)}), next)
 
-def resolved_with(~validator: Validate.Job -> Validate.Answer, ~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +resolution: Methods.Resolution<Tag>, +layers: List<&2, Table.Middleware<Tag>>, ctx: Context.Ctx<Vars>, +env: Env, +slot: Chan(Context.Ctx<Vars>), +route_slot: Chan(Maybe<&2, Nat>), count: Nat, +mode: Config.Mode) -> IO(Response.Res):
+def resolved_with(~validator: Validate.Job -> Validate.Answer, ~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +resolution: Methods.Resolution<Tag>, +layers: List<&2, Table.Middleware<Tag>>, ctx: Context.Ctx<Vars>, +env: Env, +slot: Chan(Context.Ctx<Vars>), +route_slot: Chan(Maybe<&2, Nat>), count: Nat) -> IO(Response.Res):
   +route = RouteSlot.identity(Tag, count, resolution)
   +routed = with_params(Vars, ctx, params(Tag, resolution))
   +schemas = Table.route_schemas(Tag, layers, route)
   early = List.concat(&2, Tag, [Table.selected(Tag, layers, Context.path(Vars, routed)), Table.scoped_stage_ids(Tag, layers, route, Table.Parse{}), Table.scoped_stage_ids(Tag, layers, route, Table.Transform{})])
-  steps = List.concat(&2, Step<Tag>, [runs(Tag, early), checks(Tag, schemas, Validate.requests_nothing(schemas)), runs(Tag, Table.scoped_stage_ids(Tag, layers, route, Table.BeforeHandle{}))])
+  steps = List.concat(&2, Step<Tag>, [runs(Tag, early), checks(Tag, schemas, Bool.not(Validate.declares(schemas))), runs(Tag, Table.scoped_stage_ids(Tag, layers, route, Table.BeforeHandle{}))])
   onion = Hooks.chain(~Vars, ~Step<Tag>, ~Env, ~(step => c => e => next => stepped(~validator, ~Vars, ~Tag, ~Env, ~middleware, step, c, e, next)), steps, env, slot)
   do IO<Response.Res>:
     RouteSlot.remember(route_slot, route)
     Hooks.remember(Vars, slot, routed)
-    onion(routed, changed => terminal(~validator, ~Vars, ~Tag, ~Env, ~dispatch, ~middleware, Table.stage_ids(Tag, layers, Table.NotFound{}), resolution, changed, env, slot, schemas, mode))
+    onion(routed, changed => terminal(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, Table.stage_ids(Tag, layers, Table.NotFound{}), resolution, changed, env, slot))
 
 # Route the context on_request produced, through the configured router. Every
 # kind returns Methods.resolve's result (law methods_router_resolve).
-def route_with(~validator: Validate.Job -> Validate.Answer, ~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), kind: Router.RouterKind, table: Table.Table<Tag>, +ctx: Context.Ctx<Vars>, env: Env, slot: Chan(Context.Ctx<Vars>), route_slot: Chan(Maybe<&2, Nat>), mode: Config.Mode) -> IO(Response.Res):
+def route_with(~validator: Validate.Job -> Validate.Answer, ~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), kind: Router.RouterKind, table: Table.Table<Tag>, +ctx: Context.Ctx<Vars>, env: Env, slot: Chan(Context.Ctx<Vars>), route_slot: Chan(Maybe<&2, Nat>)) -> IO(Response.Res):
   Table.Table{entries, compiled, layers, count} = table
-  resolved_with(~validator, ~Vars, ~Tag, ~Env, ~dispatch, ~middleware, Methods.resolve_with(Tag, kind, compiled, Context.path(Vars, ctx), Context.method(Vars, ctx), Methods.defaults()), layers, ctx, env, slot, route_slot, count, mode)
+  resolved_with(~validator, ~Vars, ~Tag, ~Env, ~dispatch, ~middleware, Methods.resolve_with(Tag, kind, compiled, Context.path(Vars, ctx), Context.method(Vars, ctx), Methods.defaults()), layers, ctx, env, slot, route_slot, count)
 
 def recover(~Vars: Data, ~Tag: Data, ~Env: Data, ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), ids: List<&2, Tag>, ctx: Context.Ctx<Vars>, env: Env, res: Response.Res, failed: Bool) -> IO(Response.Res):
   match failed:
@@ -170,7 +194,7 @@ def transport_selected(~Vars: Data, ~Tag: Data, ~Env: Data, ~middleware: Tag -> 
     return (res, (stream, Hooks.observe(~Vars, ~Tag, ~Env, ~middleware, ids, Context.with_observation(Vars, ctx, Obs.without_access(Context.observation(Vars, ctx))), env, res)))
 
 def parsed_transport(~validator: Validate.Job -> Validate.Answer, ~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +kind: Router.RouterKind, +table: Table.Table<Tag>, +env: Env, +req: Request.Req, body: List<&2, U32>, network: Bool, +mode: Config.Mode, peer: Maybe<&2, Conn.ConnInfo>, parsed_query: Result<&2, &2, Query.Error, List<&2, Query.Entry>>) -> IO(Response.Res & (StreamTypes.Transport & IO(Unit))):
-  Table.Table{entries, +compiled, +layers, +count} = table
+  Table.Table{+entries, +compiled, +layers, +count} = table
   Request.Req{+method, path, query, version, headers} = req
   match parsed_query:
     case Fail{error}: IO.pure(Response.Res & (StreamTypes.Transport & IO(Unit)), (finish(method, Response.text(400, "Bad Request")), (StreamTypes.Buffered{}, IO.pure(Unit, Unit{}))))
@@ -192,15 +216,18 @@ def parsed_transport(~validator: Validate.Job -> Validate.Answer, ~Vars: Data, ~
         +slot : Chan(Context.Ctx<Vars>) <- Chan.new(Context.Ctx<Vars>, 1)
         seeded : Result<&1, &1, Context.Ctx<Vars>, Unit> <- Chan.send(Context.Ctx<Vars>, slot, ctx)
         Hooks.sent(Context.Ctx<Vars>, seeded)
-        res : Response.Res <- Hooks.chain(~Vars, ~Tag, ~Env, ~middleware, request_ids, env, slot, ctx, changed => route_with(~validator, ~Vars, ~Tag, ~Env, ~dispatch, ~middleware, kind, table, changed, env, slot, route_slot, mode))
-        route : Maybe<&2, Nat> <- RouteSlot.recall(route_slot)
+        res : Response.Res <- Hooks.chain(~Vars, ~Tag, ~Env, ~middleware, request_ids, env, slot, ctx, changed => route_with(~validator, ~Vars, ~Tag, ~Env, ~dispatch, ~middleware, kind, table, changed, env, slot, route_slot))
+        +route : Maybe<&2, Nat> <- RouteSlot.recall(route_slot)
         +latest : Context.Ctx<Vars> <- Hooks.recall(Vars, slot)
         +plan : Table.Lifecycle<Tag> = Table.scoped_lifecycle(Tag, layers, Context.path(Vars, latest), route)
         after : Response.Res <- Hooks.post(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_after(Tag, plan), latest, env, res)
         +mapped : Response.Res <- Hooks.post(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_map(Tag, plan), latest, env, after)
         +checked : Response.Res = validated(mapped, Response.valid(mapped))
         +recovered : Response.Res <- recover(~Vars, ~Tag, ~Env, ~middleware, Table.lifecycle_errors(Tag, plan), latest, env, checked, error_response(checked))
-        dated : Response.Res <- DateResponse.ensure(validated(recovered, Response.valid(recovered)))
+        # BND-36: the response schema checks the response every hook produced
+        # or replaced, for the route the request resolved to.
+        +answered : Response.Res <- check_response(~validator, Vars, latest, Validate.response_schema(Table.route_schemas(Tag, layers, route)), validated(recovered, Response.valid(recovered)), mode, route_label(Tag, entries, count, route))
+        dated : Response.Res <- DateResponse.ensure(validated(answered, Response.valid(answered)))
         decorated : Response.Res <- Obs.finalize(Context.observation(Vars, latest), dated)
         +final : Response.Res = finish(method, decorated)
         registration : Maybe<&1, StreamTypes.Registration> <- Stream.take(stream_slot)

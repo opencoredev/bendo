@@ -14,6 +14,18 @@ import ../src/data/urlencoded.bend as Query
 import ../src/http/bytes.bend as Bytes
 import ../src/http/request.bend as Request
 import ../src/router/pattern.bend as Pattern
+import ../src/app/context.bend as C
+import ../src/app/config.bend as Config
+import ../src/app/table.bend as Table
+import ../src/app/table-schemas.bend as TableSchemas
+import ../src/app/route-schemas.bend as RS
+import ../src/router/methods.bend as Methods
+import ./validate-scopes.bend as Scopes
+import ./scoped-selection.bend as Sel
+import ./scoped-selection-spec.bend as ScopedSpec
+import ./scoped-assembly.bend as Assembly
+import ./scoped-assembly-spec.bend as AssemblySpec
+import ../src/app/scopes.bend as RuntimeScopes
 
 def Res() -> Data:
   Result<&2, &2, S.Errors(), S.Value>
@@ -258,7 +270,7 @@ def combine_eq(+p: State(), +q: State(), +h: State(), +b: Spec.Body) -> {V.verdi
     case Some{Fail{e1}} Some{Fail{e2}} Some{Fail{e3}} Spec.Decoded{Done{x4}}: {==}
     case Some{Fail{e1}} Some{Fail{e2}} Some{Fail{e3}} Spec.Decoded{Fail{e4}}: {==}
 
-def errors_eq(+p: State(), +q: State(), +h: State(), +b: Spec.Body) -> {V.rejection_errors(Spec.combine(p, q, h, b)) == Spec.all_errors(p, q, h, b) : List<&2, S.Error>}:
+def errors_eq(+p: State(), +q: State(), +h: State(), +b: Spec.Body) -> {V.rejection_errors(Spec.combine(p, q, h, b)) == Spec.reported(p, q, h, b) : List<&2, S.Error>}:
   match p q h b:
     case None{} None{} None{} Spec.NoBody{}: {==}
     case None{} None{} None{} Spec.NotJsonType{}: {==}
@@ -454,3 +466,105 @@ def L.route_response_matches_spec(response, code, headers, bytes):
   match response:
     case None{}: {==}
     case Some{s}: resp_when_eq(s, code, headers, bytes, Spec.checked_status(code))
+
+# The request budget.
+def take_within(xs: List<&2, S.Error>, n: Nat) -> {Nat.is_le(List.length(&2, S.Error, List.take(&2, S.Error, xs, n)), n) == True{} : Bool}:
+  match xs n:
+    case Nil{} 0n: {==}
+    case Nil{} 1n+k: {==}
+    case h <> t 0n: {==}
+    case h <> t 1n+k: take_within(t, k)
+
+def L.route_rejection_within_budget(params, query, headers, body, response, input):
+  match input:
+    case V.Input{ps, qs, hs, bytes}:
+      %Equal.sym(List<&2, S.Error>, V.rejection_errors(V.request(V.prepared(params, query, headers, body, response), V.Input{ps, qs, hs, bytes})), Spec.errors(params, query, headers, body, V.Input{ps, qs, hs, bytes}), L.route_rejection_lists_slot_errors(params, query, headers, body, response, V.Input{ps, qs, hs, bytes})) : {Nat.is_le(List.length(&2, S.Error, _), 100n) == True{} : Bool}
+      take_within(Spec.all_errors(Spec.text_state(params, Spec.params_members(ps)), Spec.text_state(query, Spec.query_members(qs)), Spec.text_state(headers, Spec.header_members(hs)), Spec.body(body, hs, bytes)), 100n)
+
+# Plain admission: every combination of declared slots.
+def L.plain_admission_rejects_declared(schemas, input):
+  match schemas:
+    case V.Schemas{None{}, None{}, None{}, None{}, None{}}: {==}
+    case V.Schemas{None{}, None{}, None{}, None{}, Some{c4}}: {==}
+    case V.Schemas{None{}, None{}, None{}, Some{c3}, None{}}: {==}
+    case V.Schemas{None{}, None{}, None{}, Some{c3}, Some{c4}}: {==}
+    case V.Schemas{None{}, None{}, Some{c2}, None{}, None{}}: {==}
+    case V.Schemas{None{}, None{}, Some{c2}, None{}, Some{c4}}: {==}
+    case V.Schemas{None{}, None{}, Some{c2}, Some{c3}, None{}}: {==}
+    case V.Schemas{None{}, None{}, Some{c2}, Some{c3}, Some{c4}}: {==}
+    case V.Schemas{None{}, Some{c1}, None{}, None{}, None{}}: {==}
+    case V.Schemas{None{}, Some{c1}, None{}, None{}, Some{c4}}: {==}
+    case V.Schemas{None{}, Some{c1}, None{}, Some{c3}, None{}}: {==}
+    case V.Schemas{None{}, Some{c1}, None{}, Some{c3}, Some{c4}}: {==}
+    case V.Schemas{None{}, Some{c1}, Some{c2}, None{}, None{}}: {==}
+    case V.Schemas{None{}, Some{c1}, Some{c2}, None{}, Some{c4}}: {==}
+    case V.Schemas{None{}, Some{c1}, Some{c2}, Some{c3}, None{}}: {==}
+    case V.Schemas{None{}, Some{c1}, Some{c2}, Some{c3}, Some{c4}}: {==}
+    case V.Schemas{Some{c0}, None{}, None{}, None{}, None{}}: {==}
+    case V.Schemas{Some{c0}, None{}, None{}, None{}, Some{c4}}: {==}
+    case V.Schemas{Some{c0}, None{}, None{}, Some{c3}, None{}}: {==}
+    case V.Schemas{Some{c0}, None{}, None{}, Some{c3}, Some{c4}}: {==}
+    case V.Schemas{Some{c0}, None{}, Some{c2}, None{}, None{}}: {==}
+    case V.Schemas{Some{c0}, None{}, Some{c2}, None{}, Some{c4}}: {==}
+    case V.Schemas{Some{c0}, None{}, Some{c2}, Some{c3}, None{}}: {==}
+    case V.Schemas{Some{c0}, None{}, Some{c2}, Some{c3}, Some{c4}}: {==}
+    case V.Schemas{Some{c0}, Some{c1}, None{}, None{}, None{}}: {==}
+    case V.Schemas{Some{c0}, Some{c1}, None{}, None{}, Some{c4}}: {==}
+    case V.Schemas{Some{c0}, Some{c1}, None{}, Some{c3}, None{}}: {==}
+    case V.Schemas{Some{c0}, Some{c1}, None{}, Some{c3}, Some{c4}}: {==}
+    case V.Schemas{Some{c0}, Some{c1}, Some{c2}, None{}, None{}}: {==}
+    case V.Schemas{Some{c0}, Some{c1}, Some{c2}, None{}, Some{c4}}: {==}
+    case V.Schemas{Some{c0}, Some{c1}, Some{c2}, Some{c3}, None{}}: {==}
+    case V.Schemas{Some{c0}, Some{c1}, Some{c2}, Some{c3}, Some{c4}}: {==}
+
+# Handler entry.
+def L.handler_entry_valid(Vars, ctx, values): {==}
+
+def L.handler_entry_invalid(Vars, ctx, code, errors): {==}
+
+def enters_decide(-Vars: Data, +ctx: C.Ctx<Vars>, +p: State(), +q: State(), +h: State(), +b: Spec.Body, yes: Bool) -> {C.enters(Vars, C.entry(Vars, ctx, Spec.decide(p, q, h, b, yes))) == yes : Bool}:
+  match yes:
+    case True{}: {==}
+    case False{}: {==}
+
+def L.handler_enters_iff_admitted(Vars, ctx, params, query, headers, body, response, input):
+  match input:
+    case V.Input{ps, qs, hs, bytes}:
+      %Equal.sym(V.Verdict, V.request(V.prepared(params, query, headers, body, response), V.Input{ps, qs, hs, bytes}), Spec.verdict(params, query, headers, body, V.Input{ps, qs, hs, bytes}), L.route_validation_matches_spec(params, query, headers, body, response, V.Input{ps, qs, hs, bytes})) : {C.enters(Vars, C.entry(Vars, ctx, _)) == Spec.admitted(params, query, headers, body, V.Input{ps, qs, hs, bytes}) : Bool}
+      enters_decide(Vars, ctx, Spec.text_state(params, Spec.params_members(ps)), Spec.text_state(query, Spec.query_members(qs)), Spec.text_state(headers, Spec.header_members(hs)), Spec.body(body, hs, bytes), Spec.all_decode(Spec.text_state(params, Spec.params_members(ps)), Spec.text_state(query, Spec.query_members(qs)), Spec.text_state(headers, Spec.header_members(hs)), Spec.body(body, hs, bytes)))
+
+# The response policy.
+def act_eq(delivery: V.Delivery, c: V.Check, mode: Config.Mode) -> {V.policy(mode, delivery, c) == Spec.act(mode, delivery, c) : V.Action}:
+  match delivery c mode:
+    case V.Streamed{} _ _: {==}
+    case V.Buffered{} V.Unchecked{} _: {==}
+    case V.Buffered{} V.Conforms{} _: {==}
+    case V.Buffered{} V.Violates{es} Config.Development{}: {==}
+    case V.Buffered{} V.Violates{es} Config.Production{}: {==}
+
+def L.route_response_policy(mode, delivery, response, code, headers, bytes):
+  %Equal.sym(V.Check, V.response(V.checked(response), code, headers, bytes), Spec.response(response, code, headers, bytes), L.route_response_matches_spec(response, code, headers, bytes)) : {V.policy(mode, delivery, _) == Spec.action(mode, delivery, response, code, headers, bytes) : V.Action}
+  act_eq(delivery, Spec.response(response, code, headers, bytes), mode)
+
+# Innermost wins (proof/validate-scopes.bend).
+def L.route_schemas_innermost(Tag, entries, routes, compiled, layers, count, route, which, built):
+  Scopes.innermost(Tag, entries, routes, compiled, layers, count, route, which, built)
+
+def L.route_schemas_guard_innermost(Tag, options, inside, outside, routes, compiled, layers, count, route, which, built):
+  Equal.trans(Maybe<&2, SP.Checked>, Spec.slot(which, Table.route_schemas(Tag, layers, route)), Spec.effective(Tag, which, List.append(&2, Table.Entry<Tag>, RuntimeScopes.guard(Tag, options, inside), outside), route), Spec.effective(Tag, which, List.append(&2, Table.Entry<Tag>, AssemblySpec.guard(Tag, options, inside), outside), route),
+    Scopes.innermost(Tag, List.append(&2, Table.Entry<Tag>, RuntimeScopes.guard(Tag, options, inside), outside), routes, compiled, layers, count, route, which, built),
+    Equal.cong(List<&2, Table.Entry<Tag>>, Maybe<&2, SP.Checked>, xs => Spec.effective(Tag, which, List.append(&2, Table.Entry<Tag>, xs, outside), route), RuntimeScopes.guard(Tag, options, inside), AssemblySpec.guard(Tag, options, inside), Assembly.guard(Tag, options, inside)))
+
+def L.route_schemas_group_innermost(Tag, prefix, hooks, inside, outside, routes, compiled, layers, count, route, which, built):
+  Equal.trans(Maybe<&2, SP.Checked>, Spec.slot(which, Table.route_schemas(Tag, layers, route)), Spec.effective(Tag, which, List.append(&2, Table.Entry<Tag>, RuntimeScopes.group(Tag, prefix, hooks, inside), outside), route), Spec.effective(Tag, which, List.append(&2, Table.Entry<Tag>, AssemblySpec.group(Tag, prefix, hooks, inside), outside), route),
+    Scopes.innermost(Tag, List.append(&2, Table.Entry<Tag>, RuntimeScopes.group(Tag, prefix, hooks, inside), outside), routes, compiled, layers, count, route, which, built),
+    Equal.cong(List<&2, Table.Entry<Tag>>, Maybe<&2, SP.Checked>, xs => Spec.effective(Tag, which, List.append(&2, Table.Entry<Tag>, xs, outside), route), RuntimeScopes.group(Tag, prefix, hooks, inside), AssemblySpec.group(Tag, prefix, hooks, inside), Assembly.group(Tag, prefix, hooks, inside)))
+
+# One manifest entry per route.
+def effective_length(-Tag: Data, +layers: List<&2, Table.Middleware<Tag>>, k: Nat) -> {List.length(&2, RS.RouteSchemas, TableSchemas.effective_go(Tag, layers, k)) == k : Nat}:
+  match k:
+    case 0n: {==}
+    case 1n+(+j): Equal.cong(Nat, Nat, z => 1n+z, List.length(&2, RS.RouteSchemas, TableSchemas.effective_go(Tag, layers, j)), j, effective_length(Tag, layers, j))
+
+def L.table_schemas_one_per_route(Tag, entries, routes, compiled, layers, count, built):
+  Equal.trans(Nat, List.length(&2, RS.RouteSchemas, TableSchemas.effective_go(Tag, layers, count)), count, ScopedSpec.route_count(Tag, entries), effective_length(Tag, layers, count), Sel.successful_count(Tag, entries, routes, compiled, layers, count, built))

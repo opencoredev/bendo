@@ -53,7 +53,8 @@ ignore schemas, though: `B.serve`, `B.serve_with` and `B.serve_limits_with` exit
 at startup with a
 message naming `src/validated.bend` when any route declares a schema, and
 `B.handle` and `B.handle_with` answer such a route's requests with a 500 whose
-single error says the same.
+single error says the same, before the handler runs. That includes a route
+whose only schema is a response schema.
 
 ## Declare schemas
 
@@ -112,15 +113,17 @@ hook can therefore set response headers or variables first, and a
 `before_handle` hook already sees the decoded values. A rejection skips the
 `before_handle` hooks and the handler. Like any response, it then passes through
 `after_handle`, `map_response` and, being a 4xx, `on_error` hooks. A route that
-declares no params, query, headers or body schema skips this stage.
+declares no schema at all skips this stage.
 
 ## Rejections
 
 A rejection lists the errors of every failing slot, in the order params, query,
 headers, body. Within a slot the errors are exactly the
 [schema error list](data/schema.md#errors), with the slot name in front of each
-path, so a query error for `page` has the path `["query","page"]`. Each slot
-reports at most 100 errors.
+path, so a query error for `page` has the path `["query","page"]`. A request
+reports at most 100 errors in all: the first 100 in slot order. Every slot is
+still checked, so the status follows the table below even when the list is
+cut before the body's errors.
 
 | What failed | Status |
 | --- | --- |
@@ -162,12 +165,17 @@ def page_number(c: B.Ctx) -> String:
 
 ## Response schemas
 
-A response schema checks the handler's own response, before `before_handle`
-hooks unwind and before `after_handle` and `map_response` hooks run. Only a 2xx
-response other than 204 is checked; it must have a JSON media type and a body
-its schema decodes, without coercion. Error responses and routes without a
-response schema are not checked. Streamed responses carry no buffered body, so
-do not declare a response schema on a streaming route.
+A response schema checks the response the client would get: after middleware
+and `before_handle` hooks unwind and after `after_handle`, `map_response` and
+`on_error` hooks, and before the `Date` field, request ID and transport
+framing are added. So a `before_handle` hook that answers by itself, or a
+`map_response` hook that replaces the handler's response, is checked like the
+handler's own response. The check uses the route the request resolved to. Only
+a 2xx response other than 204 is checked; it must have a JSON media type and a
+body its schema decodes, without coercion. Error responses, 304s and routes
+without a response schema are not checked. A streamed or upgraded response has
+no buffered body, so it is never checked and is sent as it is; do not rely on a
+response schema for a streaming route.
 
 What a violation does depends on the server's mode:
 
@@ -181,6 +189,9 @@ What a violation does depends on the server's mode:
   ```text
   bendo: response schema violation: GET /report [{"path":["body","count"],"code":"type_mismatch","message":"expected schema scalar kind"}]
   ```
+
+  The line names the registered route pattern, such as `/reset/:token`, never
+  the request path, so captured values like tokens stay out of logs.
 
 Choose production with `V.serve(..., B.production(B.config()))`, or start the
 server with `BENDO_ENV=production`, which overrides the configured mode at
@@ -203,14 +214,39 @@ so the BND-33/34/35 schema laws describe what each slot accepts and reports.
   slots' errors with slot-prefixed paths, and an admitted request lists none.
 - `route_response_matches_spec`: which responses are checked and when one
   conforms.
+- `route_rejection_within_budget`: a rejection lists at most 100 errors.
+- `plain_admission_rejects_declared`: the plain entrypoints reject every route
+  that declares any schema, a response schema alone included.
+- `handler_entry_valid`, `handler_entry_invalid` and
+  `handler_enters_iff_admitted`: a valid verdict enters the handler with exactly
+  its values in the context, an invalid one answers its rejection without
+  dispatch, and with the decoding validator the handler is entered exactly when
+  every declared slot decodes.
+- `route_response_policy`: in either mode and for either delivery, a streamed
+  response is sent as is, a violating buffered response is replaced in
+  development and sent with a log line in production, and every other response
+  is sent.
+- `route_schemas_innermost`, `route_schemas_guard_innermost` and
+  `route_schemas_group_innermost`: for every built table, route and slot, the
+  schema used is the last declaration of that slot among the route's scopes,
+  outer to inner; undeclared slots keep the outer schema.
+- `table_schemas_one_per_route`: the manifest's schema list has one entry per
+  registration.
+
+These laws rely on the JSON parser, `Bytes.fold` and the raw query parser
+that the implementation and the specification share; BND-92 tracks proving
+those independently.
 
 The lifecycle wiring is IO and is covered by `tests/validate.test.ts` instead:
 it checks that the handler does not run on a rejection, that transform hooks run
-before validation and `before_handle` hooks after it, both response modes, and
-that the plain entrypoints refuse schemas.
+before validation and `before_handle` hooks after it, both response modes,
+responses produced or replaced by hooks, the request-wide error budget, the
+manifest, and that the plain entrypoints refuse schemas.
 
-[JSON Schema export](manifest.md#route-schemas) (BND-37) takes its own
-positional `RouteSchemas` list and does not read the table's schemas yet. A
-route's validation schemas are `Table.route_schemas(Tag, layers, route)` for
-its reversed ordinal, and `SP.schema(checked)` returns each prepared slot's raw
-schema, so the manifest list could be derived from the table later.
+## Export the schemas
+
+A binary served with `V.serve`, `V.serve_with` or `V.serve_limits_with` prints
+its [route manifest](manifest.md#route-schemas) with every route's effective
+schemas when run with `--bendo-routes`: the schemas each route validates with,
+after guards, groups, mounts and plugins, as JSON Schema. The TypeScript
+toolkit reads them for type generation.
