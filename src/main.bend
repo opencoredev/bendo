@@ -259,6 +259,10 @@ def StreamStep(-State: Type) -> Type: StreamTypes.Step<State>
 def stream_config() -> StreamTypes.Config: Stream.defaults()
 def stream(~Vars: Data, ~State: Type, ~step: State -> IO(StreamTypes.Step<State>), ~cleanup: State -> IO(Unit), +c: Context.Ctx<Vars>, state: State, config: StreamTypes.Config) -> IO(Response.Res):
   Stream.register(Observation.stream(Context.observation(Vars, c)), Context.body(Vars, c, [], None{}), Stream.plan(~State, ~step, ~cleanup, state, config))
+# A stream whose body has exactly length octets: Content-Length instead of
+# chunked framing, also over HTTP/1.0. Sending more or fewer aborts.
+def stream_sized(~Vars: Data, ~State: Type, ~step: State -> IO(StreamTypes.Step<State>), ~cleanup: State -> IO(Unit), +c: Context.Ctx<Vars>, state: State, config: StreamTypes.Config, length: Nat) -> IO(Response.Res):
+  Stream.register(Observation.stream(Context.observation(Vars, c)), Context.body(Vars, c, [], None{}), Stream.plan_sized(~State, ~step, ~cleanup, state, config, length))
 
 # One stderr line per configured origin an allow list drops because it is not
 # an http or https URL.

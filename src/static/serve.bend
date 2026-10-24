@@ -320,36 +320,28 @@ def buffered(-Vars: Data, +c: C.Ctx<Vars>, +media: String, file: File, +start: N
     sent(Vars, c, media, read)
 
 # Hand the file to the stream transport, which pulls one 64 KiB chunk per
-# send and never runs ahead of the socket.
+# send and never runs ahead of the socket. fstat gave the length, so the
+# stream is sized: Content-Length, no chunked framing, and HTTP/1.0 works.
 def streamed(-Vars: Data, +c: C.Ctx<Vars>, +media: String, file: File, +start: Nat, +length: Nat) -> IO(Response.Res):
-  Stream.register(Observation.stream(C.observation(Vars, c)), C.body(Vars, c, [], Some{media}), Stream.plan(~Pump, ~pump_step, ~pump_close, Pump{file, start, length}, Stream.defaults()))
+  Stream.register(Observation.stream(C.observation(Vars, c)), C.body(Vars, c, [], Some{media}), Stream.plan_sized(~Pump, ~pump_step, ~pump_close, Pump{file, start, length}, Stream.defaults(), length))
 
 def body_by(-Vars: Data, +c: C.Ctx<Vars>, +media: String, file: File, +start: Nat, +length: Nat, stream: Bool) -> IO(Response.Res):
   match stream:
     case True{}: streamed(Vars, c, media, file, start, length)
     case False{}: buffered(Vars, c, media, file, start, length)
 
-def http11(v: Request.Version) -> Bool:
-  match v:
-    case Request.Http11{}: True{}
-    case Request.Http10{}: False{}
-
 def is_head(m: Request.Method) -> Bool:
   match m:
     case Request.Head{}: True{}
     case _: False{}
 
-def head_request(r: Request.Req) -> Bool:
-  Request.Req{m, p, q, v, hs} = r
-  is_head(m) && http11(v)
-
 # A body up to buffer_bytes is read and sent with Content-Length. A longer
-# one streams with chunked encoding, so memory stays at one chunk whatever
-# the file size. HEAD over HTTP/1.1 also goes through the stream, which the
-# transport never pulls for HEAD, so its body is never read. HTTP/1.0 cannot
-# carry a stream: a body above buffer_bytes is answered 505 there.
+# one streams with the same Content-Length and no chunked framing, so memory
+# stays at one chunk whatever the file size, over HTTP/1.1 and HTTP/1.0
+# alike. HEAD also goes through the stream, which the transport never pulls
+# for HEAD, so its body is never read but its length is still sent.
 def body(-Vars: Data, +c: C.Ctx<Vars>, +max: Nat, +media: String, file: File, +start: Nat, +length: Nat) -> IO(Response.Res):
-  body_by(Vars, c, media, file, start, length, head_request(C.request(Vars, c)) || Nat.is_lt(max, length))
+  body_by(Vars, c, media, file, start, length, is_head(C.method(Vars, c)) || Nat.is_lt(max, length))
 
 def content_range(+first: Nat, +last: Nat, +size: Nat) -> String:
   "bytes " ++ Nat.show(first) ++ "-" ++ Nat.show(last) ++ "/" ++ Nat.show(size)

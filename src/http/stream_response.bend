@@ -7,33 +7,49 @@ import ./response.bend as Response
 import ./write_response.bend as Write
 import ./bytes.bend as Bytes
 import ./stream_marker.bend as Marker
+import ./stream_framing.bend as Frame
 
-def frame(+method: Request.Method, res: Response.Res, body: Bool) -> Response.Res:
+def frame(+method: Request.Method, res: Response.Res, +length: Maybe<&2, Nat>, body: Bool) -> Response.Res:
   match res body:
     case Response.Res{status, hs, bytes, rep} True{}:
-      Response.Res{status, Request.Header{"transfer-encoding", Bytes.encode("chunked")} <> Write.headers(hs), [], None{}}
+      Response.Res{status, Frame.body_fields(length, hs), [], None{}}
     case Response.Res{+status, hs, bytes, rep} False{}:
-      Response.Res{status, Write.framing_headers(status, [], None{}, Write.headers(hs), Bool.not(U32.is_eq(status, 205)) || Write.tunnel(method, status)), [], None{}}
+      Response.Res{status, Frame.bodyless_fields(method, status, length, hs), [], None{}}
 
-def body_allowed(req: Request.Req, res: Response.Res, plan: T.Plan, body: Bool) -> IO(Response.Res & Maybe<&1, T.Plan>):
-  match req body:
-    case Request.Req{method, path, query, version, hs} True{}: IO.pure(Response.Res & Maybe<&1, T.Plan>, (frame(method, Stream.strip(res), True{}), Some{plan}))
-    case Request.Req{method, path, query, version, hs} False{}:
+def plan_length(plan: T.Plan) -> Maybe<&2, Nat> & T.Plan:
+  T.Plan{timeout, +length, action} = plan
+  (length, T.Plan{timeout, length, action})
+
+def body_with(known: Maybe<&2, Nat> & T.Plan, req: Request.Req, res: Response.Res, body: Bool) -> IO(Response.Res & Maybe<&1, T.Plan>):
+  match known req body:
+    case (length, plan) Request.Req{method, path, query, version, hs} True{}: IO.pure(Response.Res & Maybe<&1, T.Plan>, (frame(method, Stream.strip(res), length, True{}), Some{plan}))
+    case (length, plan) Request.Req{method, path, query, version, hs} False{}:
       do IO<Response.Res & Maybe<&1, T.Plan>>:
         Stream.cancel(plan)
-        return (frame(method, Stream.strip(res), False{}), None{})
+        return (frame(method, Stream.strip(res), length, False{}), None{})
+
+def body_allowed(req: Request.Req, res: Response.Res, plan: T.Plan, body: Bool) -> IO(Response.Res & Maybe<&1, T.Plan>):
+  body_with(plan_length(plan), req, res, body)
 
 def unsupported(res: Response.Res, code: U32) -> Response.Res:
   Response.Res{old, hs, body, rep} = res
   Response.Res{code, Write.length_header(0n) <> Write.headers(List.filter(~Request.Header, ~Stream.keep, hs)), [], None{}}
 
-def version_allowed(req: Request.Req, res: Response.Res, plan: T.Plan, version: Request.Version, suppress: Bool) -> IO(Response.Res & Maybe<&1, T.Plan>):
-  match version:
-    case Request.Http10{}:
+def version_checked(req: Request.Req, res: Response.Res, plan: T.Plan, ok: Bool, suppress: Bool) -> IO(Response.Res & Maybe<&1, T.Plan>):
+  match ok:
+    case False{}:
       do IO<Response.Res & Maybe<&1, T.Plan>>:
         Stream.cancel(plan)
         return (unsupported(res, 505), None{})
-    case Request.Http11{}: body_allowed(req, res, plan, Bool.not(suppress))
+    case True{}: body_allowed(req, res, plan, Bool.not(suppress))
+
+# HTTP/1.0 cannot carry chunked encoding; a stream of known length needs none.
+def version_known(req: Request.Req, res: Response.Res, version: Request.Version, known: Maybe<&2, Nat> & T.Plan, suppress: Bool) -> IO(Response.Res & Maybe<&1, T.Plan>):
+  (+length, plan) = known
+  version_checked(req, res, plan, Frame.version_ok(version, length), suppress)
+
+def version_allowed(req: Request.Req, res: Response.Res, plan: T.Plan, version: Request.Version, suppress: Bool) -> IO(Response.Res & Maybe<&1, T.Plan>):
+  version_known(req, res, version, plan_length(plan), suppress)
 
 def allowed(+req: Request.Req, res: Response.Res, plan: T.Plan, matched: Bool) -> IO(Response.Res & Maybe<&1, T.Plan>):
   match req res matched:

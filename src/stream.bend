@@ -49,63 +49,84 @@ def bounded(xs: List<&2, U32>, left: Nat) -> Bool:
     case +c <> tail 1n+n: (c <= 255 : U32) && bounded(tail, n)
 
 type DriveEvent<-State: Type> is Type:
-  Pull{socket: Socket, state: State}
-  Pulled{socket: Socket, step: T.Step<State>}
-  Checked{socket: Socket, bytes: List<&2, U32>, state: State, valid: Bool}
-  Wrote{result: Socket & Bool, state: State}
+  Pull{socket: Socket, state: State, budget: Frame.Budget}
+  Pulled{socket: Socket, step: T.Step<State>, budget: Frame.Budget}
+  Checked{socket: Socket, bytes: List<&2, U32>, state: State, budget: Frame.Budget, valid: Bool}
+  Wrote{result: Socket & Bool, state: State, budget: Frame.Budget}
+  Ended{socket: Socket, last: Maybe<&2, List<&2, U32>>}
   Finished{result: Socket & Bool}
 
+# The budget is Open for chunked streams. A sized stream checks each chunk
+# against the octets still owed before sending it, and aborts at End unless
+# it sent exactly its declared length.
 @unsafe
 def drive(~State: Type, ~step: State -> IO(T.Step<State>), ~cleanup: State -> IO(Unit), event: DriveEvent<State>, +timeout: U32, +limit: U32) -> IO(T.Outcome):
   match event:
-    case Pull{s, state}:
+    case Pull{s, state, budget}:
       do IO<T.Outcome>:
         next : T.Step<State> <- step(state)
-        drive(~State, ~step, ~cleanup, Pulled{s, next}, timeout, limit)
-    case Pulled{s, T.Chunk{Nil{}, state}}:
-      drive(~State, ~step, ~cleanup, Pull{s, state}, timeout, limit)
-    case Pulled{s, T.Chunk{+bytes, state}}:
-      drive(~State, ~step, ~cleanup, Checked{s, bytes, state, bounded(bytes, U32.to_nat(limit))}, timeout, limit)
-    case Checked{s, bytes, state, False{}}:
+        drive(~State, ~step, ~cleanup, Pulled{s, next, budget}, timeout, limit)
+    case Pulled{s, T.Chunk{Nil{}, state}, budget}:
+      drive(~State, ~step, ~cleanup, Pull{s, state, budget}, timeout, limit)
+    case Pulled{s, T.Chunk{+bytes, state}, +budget}:
+      +next = Frame.charge(bytes, budget)
+      drive(~State, ~step, ~cleanup, Checked{s, bytes, state, next, bounded(bytes, U32.to_nat(limit)) && Frame.within(next)}, timeout, limit)
+    case Checked{s, bytes, state, budget, False{}}:
       do IO<T.Outcome>:
         cleanup(state)
         return T.Written{s, False{}}
-    case Checked{s, bytes, state, True{}}:
+    # A valid chunk left the budget Open exactly when it started Open, so
+    # the remaining budget picks the same framing.
+    case Checked{s, bytes, state, +budget, True{}}:
       do IO<T.Outcome>:
-        result : Socket & Bool <- send(s, Frame.chunk(bytes), timeout)
-        drive(~State, ~step, ~cleanup, Wrote{result, state}, timeout, limit)
-    case Wrote{(s, True{}), state}:
-      drive(~State, ~step, ~cleanup, Pull{s, state}, timeout, limit)
-    case Wrote{(s, False{}), state}:
+        result : Socket & Bool <- send(s, Frame.encoded(bytes, budget), timeout)
+        drive(~State, ~step, ~cleanup, Wrote{result, state, budget}, timeout, limit)
+    case Wrote{(s, True{}), state, budget}:
+      drive(~State, ~step, ~cleanup, Pull{s, state, budget}, timeout, limit)
+    case Wrote{(s, False{}), state, budget}:
       do IO<T.Outcome>:
         cleanup(state)
         return T.Written{s, False{}}
-    case Pulled{s, T.End{state}}:
+    case Pulled{s, T.End{state}, budget}:
       do IO<T.Outcome>:
         cleanup(state)
-        result : Socket & Bool <- send(s, Frame.end(), timeout)
+        drive(~State, ~step, ~cleanup, Ended{s, Frame.last(budget)}, timeout, limit)
+    case Ended{s, None{}}: IO.pure(T.Outcome, T.Written{s, False{}})
+    case Ended{s, Some{Nil{}}}: IO.pure(T.Outcome, T.Written{s, True{}})
+    case Ended{s, Some{bytes}}:
+      do IO<T.Outcome>:
+        result : Socket & Bool <- send(s, bytes, timeout)
         drive(~State, ~step, ~cleanup, Finished{result}, timeout, limit)
-    case Pulled{s, T.Failed{state}}:
+    case Pulled{s, T.Failed{state}, budget}:
       do IO<T.Outcome>:
         cleanup(state)
         return T.Written{s, False{}}
     case Finished{(s, complete)}: IO.pure(T.Outcome, T.Written{s, complete})
 
-def command(~State: Type, ~step: State -> IO(T.Step<State>), ~cleanup: State -> IO(Unit), state: State, config: T.Config, command: T.Command) -> IO(T.Outcome):
+def command(~State: Type, ~step: State -> IO(T.Step<State>), ~cleanup: State -> IO(Unit), state: State, config: T.Config, length: Maybe<&2, Nat>, command: T.Command) -> IO(T.Outcome):
   match config command:
     case T.Config{timeout, limit} T.Cancel{}:
       do IO<T.Outcome>:
         cleanup(state)
         return T.Cancelled{}
     case T.Config{timeout, limit} T.Start{s}:
-      drive(~State, ~step, ~cleanup, Pull{s, state}, timeout, limit)
+      drive(~State, ~step, ~cleanup, Pull{s, state, Frame.budget(length)}, timeout, limit)
 
-def plan(~State: Type, ~step: State -> IO(T.Step<State>), ~cleanup: State -> IO(Unit), state: State, +config: T.Config) -> T.Plan:
+def planned(~State: Type, ~step: State -> IO(T.Step<State>), ~cleanup: State -> IO(Unit), state: State, +config: T.Config, +length: Maybe<&2, Nat>) -> T.Plan:
   T.Config{timeout, limit} = config
-  T.Plan{timeout, cmd => command(~State, ~step, ~cleanup, state, config, cmd)}
+  T.Plan{timeout, length, cmd => command(~State, ~step, ~cleanup, state, config, length, cmd)}
+
+def plan(~State: Type, ~step: State -> IO(T.Step<State>), ~cleanup: State -> IO(Unit), state: State, config: T.Config) -> T.Plan:
+  planned(~State, ~step, ~cleanup, state, config, None{})
+
+# A producer that knows its body's exact length up front. The response
+# carries Content-Length and no chunked framing, also over HTTP/1.0; a
+# producer that sends more or fewer octets aborts the connection.
+def plan_sized(~State: Type, ~step: State -> IO(T.Step<State>), ~cleanup: State -> IO(Unit), state: State, config: T.Config, length: Nat) -> T.Plan:
+  planned(~State, ~step, ~cleanup, state, config, Some{length})
 
 def cancel(plan: T.Plan) -> IO(Unit):
-  T.Plan{timeout, action} = plan
+  T.Plan{timeout, length, action} = plan
   do IO<Unit>:
     outcome : T.Outcome <- action(T.Cancel{})
     return Unit{}
