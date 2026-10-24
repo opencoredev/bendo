@@ -43,8 +43,11 @@ all percent-encoded (the format Hono uses). Keys rotate: Bendo signs with the fi
 listed key. These laws say verification accepts exactly what a reference
 verifier accepts, for every wire string, tampered or not; that unusable keys
 sign and verify nothing; and that a cookie Bendo set reads back through a real
-`Cookie` header. The reference verifier shares the percent and base64
-decoders with the implementation. See [cookies](../cookies.md).
+`Cookie` header. The reference verifier in `signed_cookie_wire_spec` calls the
+library's percent and base64 decoders, so a second group of laws specifies those
+decoders independently and restates verification without them. Those laws
+turn strings into octets with Bendo's UTF-8 encoder, which has its own laws.
+See [cookies](../cookies.md).
 
 - `signed_cookie_wire_spec`: for every key set and every wire string, `verify` accepts exactly what the reference verifier accepts: bad keys, malformed escapes or UTF-8, no dot, non-canonical base64, or a tag unequal to every listed key's HMAC all fail; a match under any listed key succeeds.
 - `signed_cookie_wire_first`, `signed_cookie_wire_member`: a value signed with the first key, or with any listed key, verifies back to the value.
@@ -66,6 +69,15 @@ decoders with the implementation. See [cookies](../cookies.md).
 - `signed_cookie_context_read`: the context reader takes the first cookie with that name and verifies it.
 - `signed_cookie_request_roundtrip`: a `Cookie` header carrying the signed pair, after differently named valid pairs and before any others (later duplicates included), verifies under every key list that contains the signing key.
 - `signed_cookie_context_request`: the same end to end through the request context, with any other request headers around the field as long as none is named `cookie`.
+- `signed_cookie_base64_canonical`: when strict padded standard base64 decoding returns bytes, the input is exactly the independent RFC 4648 encoding of those bytes and every byte is an octet. Wrong alphabet, misplaced or missing padding and nonzero unused bits are all rejected, so no two strings decode to the same tag.
+- `signed_cookie_percent_spec`: the percent stage of `Url.decode` equals an independent RFC 3986 decoder for every octet list: `%HH` with hex digits in either case becomes one octet, a `%` without two hex digits fails with `InvalidPercent`, and every other octet, `+` included, stays literal.
+- `signed_cookie_utf8_sound`: when strict UTF-8 decoding returns a string, that string holds only Unicode scalars and encodes back to exactly the input octets. Overlong forms, surrogates, values above U+10FFFF, stray continuation bytes and non-octets cannot decode.
+- `signed_cookie_url_decode_sound`: a value `Url.decode` returns is a Unicode scalar string whose UTF-8 octets are the independent percent decoding of the wire's octets.
+- `signed_cookie_url_decode_complete`: conversely, every scalar string whose UTF-8 octets are that percent decoding is returned.
+- `signed_cookie_url_decode_percent_error`: a wire the independent percent decoder rejects fails with the same error.
+- `signed_cookie_url_decode_utf8_error`: a failure after a successful percent stage is always `InvalidUtf8`. With the three laws above, this fixes the result of `Url.decode` for every wire string.
+- `signed_cookie_verify_sound`: verification restated against the independent decoders. If `verify` returns a value, the keys are usable, the value is a Unicode scalar string, and some listed key signed it: the wire percent decodes to the UTF-8 octets of the value, a dot, and the canonical base64 of that key's HMAC of the value.
+- `signed_cookie_verify_complete`: every wire of that form verifies to its value, under usable keys and any listed signing key, however its octets are escaped (either hex case, or unreserved characters escaped or not).
 
 ## Schemas
 
