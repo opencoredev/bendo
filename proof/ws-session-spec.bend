@@ -446,3 +446,34 @@ def message_of(text: Bool, bytes: List<&2, U32>) -> M.Message:
 # for a frame over the limit.
 def decoder_code(+c: U32) -> Bool:
   U32.is_eq(c, 1002) || U32.is_eq(c, 1009)
+
+# BND-101: data commands waiting in a mailbox ahead of a close.
+type Queued is Data:
+  QueuedText{text: String}
+  QueuedBinary{bytes: List<&2, U32>}
+  QueuedPing{bytes: List<&2, U32>}
+
+def queued_command(q: Queued) -> S.Command:
+  match q:
+    case QueuedText{t}: S.SendText{t}
+    case QueuedBinary{b}: S.SendBinary{b}
+    case QueuedPing{b}: S.SendPing{b}
+
+def queued_frame(q: Queued) -> F.Frame:
+  match q:
+    case QueuedText{t}: F.Frame{True{}, F.OpText{}, Utf8.encode(t)}
+    case QueuedBinary{b}: F.Frame{True{}, F.OpBinary{}, b}
+    case QueuedPing{b}: F.Frame{True{}, F.OpPing{}, b}
+
+# The queue's commands in order, then the close.
+def drain(queue: List<&2, Queued>, +code: U32, +reason: String) -> List<&2, S.WsEvent>:
+  match queue:
+    case Nil{}: [S.Outbound{S.SendClose{code, reason}}]
+    case q <> rest: S.Outbound{queued_command(q)} <> drain(rest, code, reason)
+
+# Each queued frame written while open, then the close frame, which begins
+# closing.
+def drained(queue: List<&2, Queued>, +code: U32, +reason: String) -> List<&2, S.Action>:
+  match queue:
+    case Nil{}: [S.Action{S.WsClosing{}, Some{F.Frame{True{}, F.OpClose{}, payload(Some{code}, reason)}}, S.WsSilent{}}]
+    case q <> rest: S.Action{S.WsOpen{}, Some{queued_frame(q)}, S.WsSilent{}} <> drained(rest, code, reason)

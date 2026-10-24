@@ -41,8 +41,10 @@ def publish(hub: P.Hub, topic: String, text: String) -> IO(Unit):
     got : Result<&2, &2, Store.Error, P.Delivery> <- P.publish(hub, topic, text)
     return Unit{}
 
-# Tells the client why, then closes with 1011. A seat with ID 0 never
-# entered the lobby, so its close records nothing.
+# Tells the client why, then closes with 1011. Room traffic can fill the
+# mailbox during the join and crowd out the error, but W.close is admitted
+# even then. A seat with ID 0 never entered the lobby, so its close records
+# nothing.
 def refuse(+peer: P.Peer, seat: Seat, reason: String) -> IO(Seat):
   do IO<Seat>:
     told : Bool <- W.text(P.handle(peer), Chat.error(reason))

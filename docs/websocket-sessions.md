@@ -59,6 +59,16 @@ mean the peer received it. `False` means full, closed, or invalid. A command
 accepted behind a close is discarded after that close; no data is written
 after closing begins. Check admission when delivery matters.
 
+A valid close is never refused for a full mailbox. When the mailbox is full,
+`B.websocket_close` takes a reserved slot and shuts the mailbox: it returns
+`True`, every later send to the connection returns `False`, and the connection
+writes the commands already queued (at most `mailbox_capacity`), then the
+close. So a handler can always end its connection, even while publications
+crowd its mailbox during `open`. The first close wins: a second close returns
+`False` once the slot is taken or the mailbox is shut, and a close queued
+behind another close is ignored. `False` from `B.websocket_close` means the
+code or reason is invalid, or the connection is already closing or closed.
+
 Store the copyable handle in application state to send from another route or
 connection. Bendo polls it alongside timed socket reads. Queued commands go out
 back to back; a command sent to an idle connection waits at most `poll_max_ms`

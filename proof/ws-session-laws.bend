@@ -265,3 +265,23 @@ law ws_session_admit_close:
   for +code: U32
   for +reason: String
   {S.admissible(max, S.SendClose{code, reason}) == Spec.close_ok(code, reason) : Bool}
+
+# BND-101. A close behind queued sends, as when the close was reserved while
+# the mailbox was full: from an open session, at any point in a message's
+# assembly, every queued text, binary and ping is written in order, then the
+# close, and the session is closing with its assembly untouched.
+law ws_session_close_after_queue:
+  for +max: U32
+  for +assembly: M.State
+  for +queue: List<&2, Spec.Queued>
+  for +code: U32
+  for +reason: String
+  {S.trace(max, Spec.drain(queue, code, reason), S.Session{S.WsOpen{}, assembly}) == Spec.drained(queue, code, reason) : List<&2, S.Action>}
+
+law ws_session_close_after_queue_end:
+  for +max: U32
+  for +assembly: M.State
+  for +queue: List<&2, Spec.Queued>
+  for +code: U32
+  for +reason: String
+  {S.settle(max, Spec.drain(queue, code, reason), S.Session{S.WsOpen{}, assembly}) == S.Session{S.WsClosing{}, assembly} : S.Session}

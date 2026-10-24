@@ -318,6 +318,21 @@ test("another HTTP request can send through the connection mailbox", async () =>
   expect(await (await fetch(`${server.url}/push`)).text()).toBe("rejected");
 });
 
+test("a close is admitted when the mailbox is full and follows what was queued", async () => {
+  // /crowded fills its 4-command mailbox inside open, then closes with 1011.
+  using wire = await raw("/crowded");
+  for (let i = 0; i < 4; i++) {
+    expect(await wire.next()).toEqual({ opcode: 1, payload: Buffer.from("m") });
+  }
+  expect(await wire.next()).toEqual({ opcode: 8, payload: closePayload(1011, "crowded") });
+  // Sends after the close, and a second close, were refused.
+  await closedLog("4:no:yes:no:no");
+  wire.socket.write(frame(8, closePayload(1011, "crowded")));
+  await until(() => wire.ended);
+  expect(wire.bytes.length).toBe(0);
+  await closedLog("1011:crowded");
+});
+
 test("a queued burst drains without one poll wait per command", async () => {
   // /many polls every 250 ms with backoff off. When each queued send waited
   // for a timed socket read, 100 sends took about 99 poll intervals.

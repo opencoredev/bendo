@@ -145,16 +145,18 @@ def late(kept: Store.Store<Maybe<&2, P.Peer>>, topic: String) -> IO(Bool):
     late_peer(got, topic)
 
 # A subscriber whose connection has closed but is still registered, as when
-# its close-path removal failed: a closed mailbox and liveness channel, and a
-# `max_message` of 20 bytes.
+# its close-path removal failed: a closed mailbox, liveness channel and close
+# slot, and a `max_message` of 20 bytes.
 def ghost(+hub: P.Hub, +topic: String) -> IO(Bool):
   do IO<Bool>:
     +outbound : Chan(S.Command) <- Chan.new(S.Command, 1)
     +alive : Chan(Unit) <- Chan.new(Unit, 0)
+    +slot : Chan(S.Command) <- Chan.new(S.Command, 1)
     Chan.close(S.Command, outbound)
     Chan.close(Unit, alive)
+    Chan.close(S.Command, slot)
     id : Nat <- P.join(hub, "ghost:" ++ topic)
-    P.subscribe(P.Peer{W.Handle{outbound, 20, alive}, id, hub}, topic)
+    P.subscribe(P.Peer{W.Handle{outbound, 20, alive, slot}, id, hub}, topic)
 
 def Request() -> Type:
   Store.Message<T.Ledger<W.Handle>>

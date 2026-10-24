@@ -72,6 +72,14 @@ admission validation; applications should use the helpers.
 
 ## Close ordering
 
+A close is the one command a full mailbox does not refuse. `W.close` first
+offers it like any other command; if the mailbox is full, it puts the close in
+a separate one-command slot and closes the mailbox. The connection drains the
+closed mailbox as usual, and when a poll finds it closed and empty it takes
+the close from the slot. A shut mailbox admits nothing, so the close goes out
+after at most `mailbox_capacity` commands. While the mailbox is open the slot
+is never polled, so the hot path is unchanged.
+
 A successful local close write moves the pure policy to closing. Later queued
 data and ping commands are ignored. Incoming pings still get a pong until the
 peer's close arrives; those pong writes use the remaining close budget. The
