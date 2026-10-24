@@ -6,11 +6,16 @@ import { findBend } from "../packages/bendo/src/bend.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 
-/** Wall-clock budget for one `bend` compile. CI runners are slower than ms-a2. */
-const BEND_COMPILE_TIMEOUT_MS = 180_000;
+/**
+ * Wall-clock budget for one `bend` compile. GitHub's runners compile about
+ * twice as slowly as ms-a2 or Boat: mw-ip.bend takes 105-128 s on Boat and
+ * passed 180 s on a cold CI shard, so CI gets a separate ceiling.
+ */
+const ON_CI = process.env.CI === "true";
+const BEND_COMPILE_TIMEOUT_MS = ON_CI ? 360_000 : 180_000;
 export const BEND_COMPILE_TIMEOUT = `${BEND_COMPILE_TIMEOUT_MS / 1000}s`;
 /** Per-test timeout for a test whose body runs one `bend` compile. Above BEND_COMPILE_TIMEOUT. */
-export const COMPILE_TEST_TIMEOUT_MS = 200_000;
+export const COMPILE_TEST_TIMEOUT_MS = BEND_COMPILE_TIMEOUT_MS + 20_000;
 /** Per-test timeout for tests that push megabyte inputs through `.mjs` builds. */
 export const SLOW_TEST_TIMEOUT_MS = 120_000;
 
