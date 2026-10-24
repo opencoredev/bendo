@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -196,8 +197,13 @@ export function create(directory: string, template: Template, toolkit = locateTo
     );
     // Recheck: the directory may have been filled while the app was written.
     checkTarget(target);
+    // mkdtemp makes the staging directory 0700. Keep the mode of an empty
+    // directory the user prepared (group access, setgid), or give a new one
+    // the mode mkdir would have.
+    const mode = existsSync(target) ? statSync(target).mode & 0o7777 : 0o777 & ~process.umask();
     if (existsSync(target)) rmdirSync(target);
     renameSync(staging, target);
+    chmodSync(target, mode);
     return { target, template, bendVersion: bendVersion.trim() };
   } catch (error) {
     rmSync(staging, { recursive: true, force: true });

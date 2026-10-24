@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { main, parseArgs, UsageError, type Io } from "./cli.ts";
@@ -126,6 +135,19 @@ describe("main", () => {
     mkdirSync(join(cwd, "empty"));
     expect(await main([join(cwd, "empty"), "-t", "api"], fakeIo(false), cwd)).toBe(0);
     expect(existsSync(join(cwd, "empty/main.bend"))).toBe(true);
+  });
+
+  test("keeps the mode of an existing empty directory, and gives a new one mkdir's", async () => {
+    const cwd = directory();
+    mkdirSync(join(cwd, "shared"));
+    chmodSync(join(cwd, "shared"), 0o2770);
+    expect(await main([join(cwd, "shared"), "-t", "api"], fakeIo(false), cwd)).toBe(0);
+    expect(statSync(join(cwd, "shared")).mode & 0o7777).toBe(0o2770);
+    mkdirSync(join(cwd, "probe"));
+    expect(await main([join(cwd, "fresh"), "-t", "api"], fakeIo(false), cwd)).toBe(0);
+    expect(statSync(join(cwd, "fresh")).mode & 0o7777).toBe(
+      statSync(join(cwd, "probe")).mode & 0o7777,
+    );
   });
 
   test("refuses a file", async () => {
