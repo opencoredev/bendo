@@ -767,3 +767,13 @@ textarea {
   text-underline-offset: 2px;
   cursor: pointer;
 }
+
+.tick:disabled,
+.row-delete:disabled,
+.done-toggle input:disabled {
+  cursor: progress;
+}
+
+.edit textarea:read-only {
+  color: var(--ink-2);
+}

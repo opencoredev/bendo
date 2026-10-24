@@ -106,11 +106,12 @@ function EditForm({ todo }: { todo: Todo }) {
     save.mutate(
       { body },
       {
-        // The mutation's own onSuccess has already refetched the todo. Drop
-        // only the drafts this save sent: anything typed since stays.
+        // The fields are read-only while the save is in flight, and the
+        // mutation's own onSuccess has already refetched the todo, so the
+        // drafts are exactly what was saved.
         onSuccess: () => {
-          setTitleDraft((draft) => (draft === body.title ? undefined : draft));
-          setDoneDraft((draft) => (draft === body.done ? undefined : draft));
+          setTitleDraft(undefined);
+          setDoneDraft(undefined);
           setSaved(true);
         },
         onError: (error) => setVerdict({ kind: "server", rejection: describeFailure(error) }),
@@ -143,6 +144,7 @@ function EditForm({ todo }: { todo: Todo }) {
           name="title"
           rows={3}
           value={title}
+          readOnly={save.isPending}
           aria-invalid={invalid ? true : undefined}
           aria-describedby={invalid ? verdictId : undefined}
           onChange={(event) => onTitle(event.currentTarget.value)}
@@ -154,6 +156,7 @@ function EditForm({ todo }: { todo: Todo }) {
           type="checkbox"
           name="done"
           checked={done}
+          disabled={save.isPending}
           onChange={(event) => {
             const checked = event.currentTarget.checked;
             setDoneDraft(checked === todo.done ? undefined : checked);

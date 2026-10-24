@@ -101,7 +101,9 @@ function Composer() {
     create.mutate(
       { body },
       {
-        onSuccess: () => setTitle(""),
+        // Clear the box only if it still holds what was sent: a title typed
+        // while the request was in flight stays.
+        onSuccess: () => setTitle((current) => (current === body.title ? "" : current)),
         onError: (error) => setVerdict({ kind: "server", rejection: describeFailure(error) }),
       },
     );
@@ -165,6 +167,9 @@ function TodoRow({ todo }: { todo: Todo }) {
   const remove = useMutation(
     mutationOptions(item.delete, { invalidates: [todos], onSuccess: leave }),
   );
+  // One write per row at a time, so a slower earlier request can't settle
+  // after a later one and replace its outcome.
+  const busy = toggle.isPending || remove.isPending;
   // Each attempt replaces the row's failure, so Try again repeats the last
   // action. A 404 means the todo is already gone elsewhere: refresh the list.
   function run(action: RowAction): void {
@@ -205,6 +210,7 @@ function TodoRow({ todo }: { todo: Todo }) {
         role="checkbox"
         aria-checked={done}
         aria-label={`${todo.title}: ${done ? "done" : "not done"}`}
+        disabled={busy}
         onClick={() => run({ kind: "toggle", done: !done })}
       >
         <CheckIcon />
@@ -221,7 +227,7 @@ function TodoRow({ todo }: { todo: Todo }) {
         type="button"
         className="icon-button row-delete"
         aria-label={`Delete “${todo.title}”`}
-        disabled={remove.isPending}
+        disabled={busy}
         onClick={() => run({ kind: "delete" })}
       >
         <TrashIcon />
