@@ -47,7 +47,7 @@ Serve an app that declares schemas with the entrypoints in
 `src/validated.bend`: `V.serve`, `V.serve_with`, `V.serve_limits_with`,
 `V.handle` and `V.handle_with` take the same arguments as their `B.` namesakes
 and add validation. The `B.` entrypoints link no schema decoder, which keeps
-apps without schemas small: linking the decoder adds about 1 MB (27%) to a
+apps without schemas small: linking the decoder adds about 0.85 MB (21%) to a
 hello app's generated C and 0.5 GB to its peak compile memory. They never
 ignore schemas, though: `B.serve`, `B.serve_with` and `B.serve_limits_with` exit
 at startup with a
