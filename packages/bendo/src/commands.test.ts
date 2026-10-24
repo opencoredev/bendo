@@ -40,15 +40,15 @@ for (const command of ["routes", "prove", "gen", "doctor"]) {
   });
 }
 
-test("routes builds a real app and shares the build cache; gen validates without writing types", () => {
+test("routes builds a real app and shares the build cache; gen writes route types", () => {
   expect(created.code).toBe(0);
   expect(routes.code).toBe(0);
   expect(routes.out).toContain("METHOD  PATH\nGET     /");
   expect(run(["routes"]).out).toContain("compile: cache hit");
   const gen = run(["gen"]);
   expect(gen.code).toBe(0);
-  expect(gen.out).toContain("validated 1 routes; type generation lands in BND-56");
-  expect(existsSync(join(app, ".bendo"))).toBe(false);
+  expect(gen.out).toContain("wrote .bendo/routes.ts (1 routes)");
+  expect(readFileSync(join(app, ".bendo/routes.ts"), "utf8")).toContain("export type Routes");
   expect(run(["build"]).out).toContain("compile: cache hit");
 });
 
@@ -335,5 +335,40 @@ else { await Bun.write(process.argv[4], '#!${process.execPath}\\nconsole.log(pro
   });
   expect(extension.code).toBe(0);
   expect(extension.out).toContain("get     /extension");
+  const field = (required: string[]) =>
+    JSON.stringify({
+      bendo: 1,
+      routes: [
+        {
+          method: "GET",
+          path: "/flags",
+          schemas: {
+            query: {
+              type: "object",
+              properties: { level: { enum: [1, 2] } },
+              required,
+              additionalProperties: false,
+            },
+          },
+        },
+      ],
+    });
+  const gen = (manifest: string) =>
+    run(["gen"], project, {
+      ...process.env,
+      PATH: `${project}:${process.env.PATH}`,
+      MANIFEST: manifest,
+    });
+  const uncallable = gen(field(["level"]));
+  expect(uncallable.code).toBe(1);
+  expect(uncallable.err).toContain(
+    'route 1 GET /flags query: required property "level" accepts no text input',
+  );
+  expect(existsSync(join(project, ".bendo/routes.ts"))).toBe(false);
+  const omissionOnly = gen(field([]));
+  expect(omissionOnly.code).toBe(0);
+  expect(readFileSync(join(project, ".bendo/routes.ts"), "utf8")).toContain(
+    'query: { "level"?: never; };',
+  );
   expect(readFileSync(join(project, "main.bend"), "utf8")).toContain("def main");
 });

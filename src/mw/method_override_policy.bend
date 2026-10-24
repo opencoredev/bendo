@@ -4,6 +4,7 @@
 import Base
 import ../http/request.bend as Request
 import ../http/bytes.bend as Bytes
+import ../http/text.bend as Text
 
 # Form: a field of an application/x-www-form-urlencoded or multipart/form-data
 # body. Header: a request header.
@@ -44,7 +45,7 @@ def member(+m: Request.Method, xs: List<&2, Request.Method>) -> Bool:
     case x <> t: same(m, x) || member(m, t)
 
 def parse(s: String) -> Request.Method:
-  Request.method(String.to_upper(String.trim(s)))
+  Request.method(Text.upper(String.trim(s)))
 
 def kept(+m: Request.Method, rest: List<&2, Request.Method>, ok: Bool) -> List<&2, Request.Method>:
   match ok:
@@ -88,7 +89,7 @@ def chosen(+allowed: List<&2, Request.Method>, m: Request.Method) -> Outcome:
 def named(+allowed: List<&2, Request.Method>, v: String) -> Outcome:
   match v:
     case SNil{}: Keep{}
-    case SCon{h, t}: chosen(allowed, Request.method(String.to_upper(SCon{h, t})))
+    case SCon{h, t}: chosen(allowed, Request.method(Text.upper(SCon{h, t})))
 
 def single(+allowed: List<&2, Request.Method>, v: String, rest: List<&2, String>) -> Outcome:
   match rest:

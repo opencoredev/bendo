@@ -4,6 +4,7 @@
 import Base
 import ./request.bend as Request
 import ./bytes.bend as Bytes
+import ./text.bend as Text
 import ./write.bend as Write
 import ./framing.bend as Framing
 import ./chunked.bend as Chunked
@@ -174,10 +175,18 @@ def star_target(+path: String, base: String, rule: Rewrite, q: Maybe<&2, String>
 def target(+path: String, base: String, rule: Rewrite, q: Maybe<&2, String>) -> Maybe<&2, String>:
   star_target(path, base, rule, q, String.eq(path, "*"))
 
-def named(+name: String, names: List<&2, String>) -> Bool:
+def named_spec(+name: String, names: List<&2, String>) -> Bool:
   match names:
     case Nil{}: False{}
-    case n <> rest: String.eq(name, n) || named(name, rest)
+    case n <> rest: String.eq(name, n) || named_spec(name, rest)
+
+def named_go(xs: List<&2, String>, +name: String, acc: Bool) -> Bool:
+  match xs:
+    case Nil{}: acc
+    case n <> t: named_go(t, name, String.eq(name, n) || acc)
+
+def named(+name: String, xs: List<&2, String>) -> Bool:
+  named_go(List.reverse(&2, String, xs), name, False{})
 
 def forwarding_names() -> List<&2, String>:
   ["forwarded", "x-forwarded-for", "x-forwarded-proto", "x-forwarded-host"]
@@ -193,15 +202,31 @@ def keep_pick(h: Request.Header, rest: List<&2, Request.Header>, keep: Bool) -> 
     case True{}: h <> rest
     case False{}: rest
 
-def without(+names: List<&2, String>, hs: List<&2, Request.Header>) -> List<&2, Request.Header>:
+def without_spec(+names: List<&2, String>, hs: List<&2, Request.Header>) -> List<&2, Request.Header>:
   match hs:
     case Nil{}: []
-    case Request.Header{+n, v} <> t: keep_pick(Request.Header{n, v}, without(names, t), Bool.not(named(Bytes.fold(n), names)))
+    case Request.Header{+n, v} <> t: keep_pick(Request.Header{n, v}, without_spec(names, t), Bool.not(named(Bytes.fold(n), names)))
 
-def ascii_values(vs: List<&2, List<&2, U32>>) -> List<&2, String>:
+def without_go(xs: List<&2, Request.Header>, +names: List<&2, String>, acc: List<&2, Request.Header>) -> List<&2, Request.Header>:
+  match xs:
+    case Nil{}: acc
+    case Request.Header{+n, v} <> t: without_go(t, names, keep_pick(Request.Header{n, v}, acc, Bool.not(named(Bytes.fold(n), names))))
+
+def without(+names: List<&2, String>, xs: List<&2, Request.Header>) -> List<&2, Request.Header>:
+  without_go(List.reverse(&2, Request.Header, xs), names, [])
+
+def ascii_values_spec(vs: List<&2, List<&2, U32>>) -> List<&2, String>:
   match vs:
     case Nil{}: []
-    case v <> t: Bytes.ascii(v) <> ascii_values(t)
+    case v <> t: Bytes.ascii(v) <> ascii_values_spec(t)
+
+def ascii_values_go(xs: List<&2, List<&2, U32>>, acc: List<&2, String>) -> List<&2, String>:
+  match xs:
+    case Nil{}: acc
+    case v <> t: ascii_values_go(t, Bytes.ascii(v) <> acc)
+
+def ascii_values(xs: List<&2, List<&2, U32>>) -> List<&2, String>:
+  ascii_values_go(List.reverse(&2, List<&2, U32>, xs), [])
 
 def first_or(vs: List<&2, List<&2, U32>>, fallback: Maybe<&2, String>) -> Maybe<&2, String>:
   match vs:
@@ -211,11 +236,16 @@ def first_or(vs: List<&2, List<&2, U32>>, fallback: Maybe<&2, String>) -> Maybe<
 def first_value(vs: List<&2, List<&2, U32>>) -> Maybe<&2, String>:
   first_or(vs, None{})
 
-def chain(old: List<&2, String>, mine: Maybe<&2, String>) -> Maybe<&2, String>:
+def chain_spec(old: List<&2, String>, mine: Maybe<&2, String>) -> Maybe<&2, String>:
   match old mine:
     case Nil{} None{}: None{}
     case old None{}: Some{String.join(old, ", ")}
     case old Some{m}: Some{String.join(List.append(&2, String, old, [m]), ", ")}
+def chain(old: List<&2, String>, mine: Maybe<&2, String>) -> Maybe<&2, String>:
+  match old mine:
+    case Nil{} None{}: None{}
+    case old None{}: Some{Text.join(old, ", ")}
+    case old Some{m}: Some{Text.join(Text.list_append(String, old, [m]), ", ")}
 
 def trusted(+trust: Bool, vs: List<&2, List<&2, U32>>) -> List<&2, String>:
   match trust:
@@ -223,12 +253,26 @@ def trusted(+trust: Bool, vs: List<&2, List<&2, U32>>) -> List<&2, String>:
     case False{}: []
 
 # RFC 7230 quoted-string: backslash-escape '"' and '\'.
-def quote_chars(s: String) -> String:
+def quote_chars_spec(s: String) -> String:
   match s:
     case SNil{}: ""
-    case SCon{Chr{34}, t}: "\\\"" ++ quote_chars(t)
-    case SCon{Chr{92}, t}: "\\\\" ++ quote_chars(t)
-    case SCon{c, t}: SCon{c, quote_chars(t)}
+    case SCon{Chr{34}, t}: "\\\"" ++ quote_chars_spec(t)
+    case SCon{Chr{92}, t}: "\\\\" ++ quote_chars_spec(t)
+    case SCon{c, t}: SCon{c, quote_chars_spec(t)}
+
+def quote_step(c: Char, acc: String) -> String:
+  match c:
+    case Chr{34}: "\\\"" ++ acc
+    case Chr{92}: "\\\\" ++ acc
+    case c: SCon{c, acc}
+
+def quote_chars_go(xs: String, acc: String) -> String:
+  match xs:
+    case SNil{}: acc
+    case SCon{c, t}: quote_chars_go(t, quote_step(c, acc))
+
+def quote_chars(xs: String) -> String:
+  quote_chars_go(String.reverse(xs), "")
 
 def quoted(s: String) -> String:
   "\"" ++ quote_chars(s) ++ "\""
@@ -275,22 +319,31 @@ def sane(h: Request.Header) -> Bool:
   Request.Header{n, v} = h
   Bytes.token(n) && Bytes.value(v)
 
-def sane_all(hs: List<&2, Request.Header>) -> List<&2, Request.Header>:
+def sane_all_spec(hs: List<&2, Request.Header>) -> List<&2, Request.Header>:
   match hs:
     case Nil{}: []
-    case +h <> t: keep_pick(h, sane_all(t), sane(h))
+    case +h <> t: keep_pick(h, sane_all_spec(t), sane(h))
 
 # The upstream header list. Hop-by-hop and Connection-listed fields of the
 # original request are removed first, so a client naming Host,
 # Content-Length or X-Forwarded-For in Connection cannot remove a field
 # Bendo adds afterwards.
+
+def sane_all_go(xs: List<&2, Request.Header>, acc: List<&2, Request.Header>) -> List<&2, Request.Header>:
+  match xs:
+    case Nil{}: acc
+    case +h <> t: sane_all_go(t, keep_pick(h, acc, sane(h)))
+
+def sane_all(xs: List<&2, Request.Header>) -> List<&2, Request.Header>:
+  sane_all_go(List.reverse(&2, Request.Header, xs), [])
+
 def request_headers(+o: Options, +up: Upstream, +hs: List<&2, Request.Header>, +info: Maybe<&2, Conn.ConnInfo>, +body_len: Nat) -> List<&2, Request.Header>:
   Options{url, +preserve, +trust, +fwd, rule, cms, sms, hms, rms, sc} = o
   Upstream{host, port, +authority, base} = up
   +end = Hop.forward(hs)
   +client = first_value(Request.lookup(end, "host"))
   +framed = Bool.not(Nat.is_eq(body_len, 0n)) || Bool.not(List.is_empty(&2, List<&2, U32>, Request.lookup(hs, "content-length"))) || Bool.not(List.is_empty(&2, List<&2, U32>, Request.lookup(hs, "transfer-encoding")))
-  sane_all(List.concat(&2, Request.Header, [
+  sane_all(Text.concat(Request.Header, [
     [Request.Header{"host", Bytes.encode(host_value(preserve, client, authority))}],
     without(own_names(), end),
     field("x-forwarded-for", chain(trusted(trust, Request.lookup(end, "x-forwarded-for")), peer_text(info))),
@@ -426,33 +479,67 @@ def list_digits(xs: List<&2, U32>) -> Maybe<&2, U32>:
     case Nil{}: None{}
     case +c <> t: Framing.decimal(c <> t, 0)
 
-def lengths(parts: List<&2, List<&2, U32>>) -> List<&2, Maybe<&2, U32>>:
+def lengths_spec(parts: List<&2, List<&2, U32>>) -> List<&2, Maybe<&2, U32>>:
   match parts:
     case Nil{}: []
-    case p <> t: list_digits(Bytes.trim(p)) <> lengths(t)
+    case p <> t: list_digits(Bytes.trim(p)) <> lengths_spec(t)
 
-def all_values(vs: List<&2, List<&2, U32>>) -> List<&2, Maybe<&2, U32>>:
+def lengths_go(xs: List<&2, List<&2, U32>>, acc: List<&2, Maybe<&2, U32>>) -> List<&2, Maybe<&2, U32>>:
+  match xs:
+    case Nil{}: acc
+    case p <> t: lengths_go(t, list_digits(Bytes.trim(p)) <> acc)
+
+def lengths(xs: List<&2, List<&2, U32>>) -> List<&2, Maybe<&2, U32>>:
+  lengths_go(List.reverse(&2, List<&2, U32>, xs), [])
+
+def all_values_spec(vs: List<&2, List<&2, U32>>) -> List<&2, Maybe<&2, U32>>:
   match vs:
     case Nil{}: []
-    case v <> t: List.append(&2, Maybe<&2, U32>, lengths(Hop.commas(v)), all_values(t))
+    case v <> t: List.append(&2, Maybe<&2, U32>, lengths(Hop.commas(v)), all_values_spec(t))
 
-def same_length(+n: U32, xs: List<&2, Maybe<&2, U32>>) -> Bool:
+def all_values_go(xs: List<&2, List<&2, U32>>, acc: List<&2, Maybe<&2, U32>>) -> List<&2, Maybe<&2, U32>>:
+  match xs:
+    case Nil{}: acc
+    case v <> t: all_values_go(t, Text.list_append( Maybe<&2, U32>, lengths(Hop.commas(v)), acc))
+
+def all_values(xs: List<&2, List<&2, U32>>) -> List<&2, Maybe<&2, U32>>:
+  all_values_go(List.reverse(&2, List<&2, U32>, xs), [])
+
+def same_length_spec(+n: U32, xs: List<&2, Maybe<&2, U32>>) -> Bool:
   match xs:
     case Nil{}: True{}
     case None{} <> t: False{}
-    case Some{m} <> t: U32.is_eq(n, m) && same_length(n, t)
+    case Some{m} <> t: U32.is_eq(n, m) && same_length_spec(n, t)
 
 # RFC 9110 8.6: a list of identical valid lengths is that length.
+
+def same_length_go(xs: List<&2, Maybe<&2, U32>>, +n: U32, acc: Bool) -> Bool:
+  match xs:
+    case Nil{}: acc
+    case None{} <> t: same_length_go(t, n, False{})
+    case Some{m} <> t: same_length_go(t, n, U32.is_eq(n, m) && acc)
+
+def same_length(+n: U32, xs: List<&2, Maybe<&2, U32>>) -> Bool:
+  same_length_go(List.reverse(&2, Maybe<&2, U32>, xs), n, True{})
+
 def agreed(xs: List<&2, Maybe<&2, U32>>) -> Framing:
   match xs:
     case Nil{}: Invalid{}
     case None{} <> t: Invalid{}
     case Some{+n} <> t: Bool.pick(Framing, same_length(n, t), Fixed{U32.to_nat(n)}, Invalid{})
 
-def coding(vs: List<&2, List<&2, U32>>) -> List<&2, String>:
+def coding_spec(vs: List<&2, List<&2, U32>>) -> List<&2, String>:
   match vs:
     case Nil{}: []
-    case v <> t: List.append(&2, String, Hop.token_names(Hop.commas(v)), coding(t))
+    case v <> t: List.append(&2, String, Hop.token_names(Hop.commas(v)), coding_spec(t))
+
+def coding_go(xs: List<&2, List<&2, U32>>, acc: List<&2, String>) -> List<&2, String>:
+  match xs:
+    case Nil{}: acc
+    case v <> t: coding_go(t, Text.list_append( String, Hop.token_names(Hop.commas(v)), acc))
+
+def coding(xs: List<&2, List<&2, U32>>) -> List<&2, String>:
+  coding_go(List.reverse(&2, List<&2, U32>, xs), [])
 
 def only_chunked(codings: List<&2, String>) -> Framing:
   match codings:

@@ -31,7 +31,7 @@ Consumers must check `bendo`, accept unknown object fields and preserve route
 order. `params` lists compiled capture names in segment order, including optional
 captures, spans and terminal wildcards. Interior and prefix wildcards have no names.
 See [composition](router-compose.md) for base paths, mounting and `B.show_routes`.
-BND-56 consumes this envelope for TypeScript generation. Additive fields keep version 1;
+[TypeScript generation](route-types.md) consumes this envelope. Additive fields keep version 1;
 a change to existing field meanings requires a new version.
 
 ## Route schemas

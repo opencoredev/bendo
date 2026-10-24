@@ -5,6 +5,8 @@ import ./encoding.bend as E
 import ./constraint.bend as C
 import ./proofs.bend as Core
 import ../../proof/router-match-spec.bend as S
+import ./pattern-stack-proofs.bend as PS
+import ../http/text-proofs.bend as TP
 
 def prefer_or_else(a: Maybe<&2, P.Params>, +b: Maybe<&2, P.Params>) ->
     {P.prefer(a, u => b) == S.or_else(a, u => b) : Maybe<&2, P.Params>}:
@@ -88,15 +90,19 @@ def join_more(+h: String, +t: List<&2, String>, dp: Maybe<&2, String>, dh: Maybe
       {==}
 
 # Decoding a wildcard one segment at a time is the spec's decode-then-join.
-def decode_eq(+ps: List<&2, String>) -> {P.decode_segments(ps) == joined(S.decoded_all(ps)) : Maybe<&2, String>}:
+def decode_spec_eq(+ps: List<&2, String>) -> {P.decode_segments_spec(ps) == joined(S.decoded_all(ps)) : Maybe<&2, String>}:
   match ps:
     case Nil{}:
       {==}
     case +p <> Nil{}:
       join_last(E.decode(p))
     case +p <> +h <> +t:
-      %Equal.sym(Maybe<&2, String>, P.decode_segments(h <> t), joined(S.decoded_all(h <> t)), decode_eq(h <> t)) : {P.join_value(E.decode(p), h <> t, _) == joined(S.decoded_all(p <> h <> t)) : Maybe<&2, String>}
+      %Equal.sym(Maybe<&2, String>, P.decode_segments_spec(h <> t), joined(S.decoded_all(h <> t)), decode_spec_eq(h <> t)) : {P.join_value(E.decode(p), h <> t, _) == joined(S.decoded_all(p <> h <> t)) : Maybe<&2, String>}
       join_more(h, t, E.decode(p), E.decode(h), S.decoded_all(t))
+
+def decode_eq(+ps: List<&2, String>) -> {P.decode_segments(ps) == joined(S.decoded_all(ps)) : Maybe<&2, String>}:
+  %PS.decode_segments_equiv(ps) : {_ == joined(S.decoded_all(ps)) : Maybe<&2, String>}
+  decode_spec_eq(ps)
 
 def wildcard_eq(+name: String, m: Maybe<&2, List<&2, String>>) ->
     {P.wildcard_param(name, joined(m)) == S.wildcard(name, m) : Maybe<&2, P.Params>}:
@@ -135,6 +141,7 @@ def span_eq(+name: String, +taken: List<&2, String>, r: Maybe<&2, P.Params>) ->
     case None{}:
       {==}
     case Some{+ps}:
+      %PS.join_taken_equiv(taken) : {Maybe.bind(&2, String, P.Params, E.decode(_), +v => E.choose(Maybe<&2, P.Params>, P.value_ok(C.Any{}, v), u => Some{P.Param{name, v} <> ps}, u => None{})) == S.span_here(name, taken, Some{ps}) : Maybe<&2, P.Params>}
       span_choice(name, ps, E.decode(String.join(List.reverse(&2, String, taken), "/")))
 
 # Span cells are scanned with the accumulated raw prefix; other heads match directly.
@@ -225,6 +232,7 @@ def segments_spec(segs, paths, taken):
       {==}
     case P.Span{+name} <> +rest +h <> +t:
       %Equal.sym(Core.Rows, P.match_rows(~String.eq, ~String.starts_with, rest, h <> t), P.search_segments(rest, h <> t) <> P.match_rows(~String.eq, ~String.starts_with, rest, t), Core.rows_cons(rest, h, t)) : {P.span_scan(h <> t, _, name, taken) == S.or_else(S.matches(P.Span{name} <> rest, t, h <> taken), u => S.span_here(name, h <> taken, S.matches(rest, t, Nil{}))) : Maybe<&2, P.Params>}
+      %PS.span_scan_cons(h, t, P.search_segments(rest, h <> t), P.match_rows(~String.eq, ~String.starts_with, rest, t), name, taken) : {_ == S.or_else(S.matches(P.Span{name} <> rest, t, h <> taken), u => S.span_here(name, h <> taken, S.matches(rest, t, Nil{}))) : Maybe<&2, P.Params>}
       %Equal.sym(Maybe<&2, P.Params>, lhs(P.Span{name} <> rest, t, h <> taken), S.matches(P.Span{name} <> rest, t, h <> taken), segments_spec(P.Span{name} <> rest, t, h <> taken)) : {P.prefer(_, u => P.span_value(name, h <> taken, P.row_head(P.match_rows(~String.eq, ~String.starts_with, rest, t)))) == S.or_else(S.matches(P.Span{name} <> rest, t, h <> taken), u => S.span_here(name, h <> taken, S.matches(rest, t, Nil{}))) : Maybe<&2, P.Params>}
       %Equal.sym(Maybe<&2, P.Params>, P.search_segments(rest, t), S.matches(rest, t, Nil{}), Equal.trans(Maybe<&2, P.Params>, P.search_segments(rest, t), P.match_segments(rest, t), S.matches(rest, t, Nil{}), Core.search_equal(rest, t), Equal.trans(Maybe<&2, P.Params>, P.match_segments(rest, t), lhs(rest, t, Nil{}), S.matches(rest, t, Nil{}), Equal.sym(Maybe<&2, P.Params>, lhs(rest, t, Nil{}), P.match_segments(rest, t), lhs_nil(rest, t)), segments_spec(rest, t, Nil{})))) : {P.prefer(S.matches(P.Span{name} <> rest, t, h <> taken), u => P.span_value(name, h <> taken, _)) == S.or_else(S.matches(P.Span{name} <> rest, t, h <> taken), u => S.span_here(name, h <> taken, S.matches(rest, t, Nil{}))) : Maybe<&2, P.Params>}
       %Equal.sym(Maybe<&2, P.Params>, P.span_value(name, h <> taken, S.matches(rest, t, Nil{})), S.span_here(name, h <> taken, S.matches(rest, t, Nil{})), span_eq(name, h <> taken, S.matches(rest, t, Nil{}))) : {P.prefer(S.matches(P.Span{name} <> rest, t, h <> taken), u => _) == S.or_else(S.matches(P.Span{name} <> rest, t, h <> taken), u => S.span_here(name, h <> taken, S.matches(rest, t, Nil{}))) : Maybe<&2, P.Params>}
@@ -272,20 +280,28 @@ def root_eq(+pattern: P.Pattern, +t: String) -> {P.match_root(pattern, t) == S.m
       %Equal.sym(Bool, P.all_optional(rest), S.only_optional(rest), optional_same(rest)) : {E.choose(Maybe<&2, P.Params>, _, u => Some{Nil{}}, u => P.match_segments(P.Capture{name, c, True{}} <> rest, [""])) == S.match_rest(P.Pattern{P.Capture{name, c, True{}} <> rest}, SNil{}) : Maybe<&2, P.Params>}
       root_choice(S.only_optional(rest), P.match_segments(P.Capture{name, c, True{}} <> rest, [""]), {==})
     case P.Pattern{P.Capture{+name, +c, True{}} <> +rest} SCon{+x, +y}:
+      %TP.split_equiv(SCon{x, y}, '/') : {P.match_root(P.Pattern{P.Capture{name, c, True{}} <> rest}, SCon{x, y}) == S.or_else(S.matches(P.Capture{name, c, True{}} <> rest, _, Nil{}), u => None{}) : Maybe<&2, P.Params>}
       rest_eq(P.Capture{name, c, True{}} <> rest, P.path_segments(SCon{x, y}), None{}, {==})
     case P.Pattern{Nil{}} +s:
+      %TP.split_equiv(s, '/') : {P.match_root(P.Pattern{Nil{}}, s) == S.or_else(S.matches(Nil{}, _, Nil{}), u => None{}) : Maybe<&2, P.Params>}
       rest_eq(Nil{}, P.path_segments(s), None{}, {==})
     case P.Pattern{P.Capture{+name, +c, False{}} <> +rest} +s:
+      %TP.split_equiv(s, '/') : {P.match_root(P.Pattern{P.Capture{name, c, False{}} <> rest}, s) == S.or_else(S.matches(P.Capture{name, c, False{}} <> rest, _, Nil{}), u => None{}) : Maybe<&2, P.Params>}
       rest_eq(P.Capture{name, c, False{}} <> rest, P.path_segments(s), None{}, {==})
     case P.Pattern{P.Static{+raw} <> +rest} +s:
+      %TP.split_equiv(s, '/') : {P.match_root(P.Pattern{P.Static{raw} <> rest}, s) == S.or_else(S.matches(P.Static{raw} <> rest, _, Nil{}), u => None{}) : Maybe<&2, P.Params>}
       rest_eq(P.Static{raw} <> rest, P.path_segments(s), None{}, {==})
     case P.Pattern{P.Wildcard{+name} <> +rest} +s:
+      %TP.split_equiv(s, '/') : {P.match_root(P.Pattern{P.Wildcard{name} <> rest}, s) == S.or_else(S.matches(P.Wildcard{name} <> rest, _, Nil{}), u => None{}) : Maybe<&2, P.Params>}
       rest_eq(P.Wildcard{name} <> rest, P.path_segments(s), None{}, {==})
     case P.Pattern{P.InteriorWildcard{} <> +rest} +s:
+      %TP.split_equiv(s, '/') : {P.match_root(P.Pattern{P.InteriorWildcard{} <> rest}, s) == S.or_else(S.matches(P.InteriorWildcard{} <> rest, _, Nil{}), u => None{}) : Maybe<&2, P.Params>}
       rest_eq(P.InteriorWildcard{} <> rest, P.path_segments(s), None{}, {==})
     case P.Pattern{P.PrefixWildcard{+prefix} <> +rest} +s:
+      %TP.split_equiv(s, '/') : {P.match_root(P.Pattern{P.PrefixWildcard{prefix} <> rest}, s) == S.or_else(S.matches(P.PrefixWildcard{prefix} <> rest, _, Nil{}), u => None{}) : Maybe<&2, P.Params>}
       rest_eq(P.PrefixWildcard{prefix} <> rest, P.path_segments(s), None{}, {==})
     case P.Pattern{P.Span{+name} <> +rest} +s:
+      %TP.split_equiv(s, '/') : {P.match_root(P.Pattern{P.Span{name} <> rest}, s) == S.or_else(S.matches(P.Span{name} <> rest, _, Nil{}), u => None{}) : Maybe<&2, P.Params>}
       rest_eq(P.Span{name} <> rest, P.path_segments(s), None{}, {==})
 
 def path_spec(+pattern: P.Pattern, +path: String) -> {P.match_path(pattern, path) == S.match_path(pattern, path) : Maybe<&2, P.Params>}:

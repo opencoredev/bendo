@@ -4,6 +4,7 @@ import ../LAWS.bend as Laws
 import ./support.bend as Support
 import ./equality.bend as E
 import ../src/http/bytes.bend as B
+import ./bytes-tail.bend as BT
 import ../src/http/request.bend as R
 
 def tchar_space_case(+c: U32, ok: {B.tchar(c) == True{} : Bool}, same: Bool, e: {U32.is_eq(c, 32) == same : Bool}) -> {same == False{} : Bool}:
@@ -18,14 +19,18 @@ def tchar_space_case(+c: U32, ok: {B.tchar(c) == True{} : Bool}, same: Bool, e: 
 def Laws.tchar_not_space(c, ok):
   tchar_space_case(c, ok, U32.is_eq(c, 32), {==})
 
-def Laws.split_token_tail(s, rest, ok):
+# Induction runs on the direct-recursion spec; the law converts at the boundary.
+def split_token_tail_spec(+s: String, +rest: String, +ok: {B.token_tail_spec(s) == True{} : Bool}) -> {String.split(s ++ " " ++ rest, ' ') == s <> String.split(rest, ' ') : List<&2, String>}:
   match s:
     case SNil{}:
       {==}
     case SCon{Chr{c}, t}:
-      e1 = Laws.tchar_not_space(c, Laws.and_left(B.tchar(c), B.token_tail(t), ok))
-      e2 = Laws.split_token_tail(t, rest, Laws.and_right(B.tchar(c), B.token_tail(t), ok))
+      e1 = Laws.tchar_not_space(c, Laws.and_left(B.tchar(c), B.token_tail_spec(t), ok))
+      e2 = split_token_tail_spec(t, rest, Laws.and_right(B.tchar(c), B.token_tail_spec(t), ok))
       Equal.trans(List<&2, String>, String.split.fin(Chr{c}, String.split(t ++ " " ++ rest, ' '), Char.is_eq(Chr{c}, ' ')), String.split.fin(Chr{c}, String.split(t ++ " " ++ rest, ' '), False{}), SCon{Chr{c}, t} <> String.split(rest, ' '), Equal.cong(Bool, List<&2, String>, same => String.split.fin(Chr{c}, String.split(t ++ " " ++ rest, ' '), same), Char.is_eq(Chr{c}, ' '), False{}, e1), Equal.cong(List<&2, String>, List<&2, String>, parts => String.split.push(Chr{c}, parts), String.split(t ++ " " ++ rest, ' '), t <> String.split(rest, ' '), e2))
+
+def Laws.split_token_tail(s, rest, ok):
+  split_token_tail_spec(s, rest, Equal.trans(Bool, B.token_tail_spec(s), B.token_tail(s), True{}, Equal.sym(Bool, B.token_tail(s), B.token_tail_spec(s), BT.token_tail_equiv(s)), ok))
 
 def Laws.method_text_token(method, ok):
   match method:
@@ -55,7 +60,7 @@ def Laws.token_tail_valid(s, ok):
     case SNil{}:
       {==}
     case SCon{Chr{c}, t}:
-      ok
+      Equal.trans(Bool, B.token_tail(SCon{Chr{c}, t}), B.tchar(c) && B.token_tail(t), True{}, Equal.trans(Bool, B.token_tail(SCon{Chr{c}, t}), B.tchar(c) && B.token_tail_spec(t), B.tchar(c) && B.token_tail(t), BT.token_tail_equiv(SCon{Chr{c}, t}), Equal.cong(Bool, Bool, x => B.tchar(c) && x, B.token_tail_spec(t), B.token_tail(t), Equal.sym(Bool, B.token_tail(t), B.token_tail_spec(t), BT.token_tail_equiv(t)))), ok)
 
 def Laws.split_method(method, rest, ok):
   Laws.split_token_tail(R.method_text(method), rest, Laws.token_tail_valid(R.method_text(method), Laws.method_text_token(method, ok)))

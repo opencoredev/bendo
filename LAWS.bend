@@ -20,6 +20,12 @@ import ./proof/manifest-built-spec.bend as ManifestBuiltSpec
 import ./proof/compose-laws.bend as ComposeLaws
 import ./proof/plugin-laws.bend as PluginLaws
 
+# BND-84
+import ./proof/review-tail-laws.bend as ReviewTailLaws
+import ./proof/tail-laws.bend as TailLaws
+import ./proof/routing-stack-laws.bend as RoutingStackLaws
+import ./proof/legacy-http-tail.bend as LegacyHttpTail
+import ./proof/methods-tail.bend as MethodsTail
 # BND-47
 import ./proof/proxy-laws.bend as ProxyLaws
 

@@ -1,8 +1,12 @@
 # BND-45: static path confinement. Every lemma is over variables; the final
 # check in Path.guard carries the whole argument, so no lemma looks at
-# percent decoding.
+# percent decoding. The lemmas reason about the recursive model (P); the
+# six at the end carry them to the stack-safe resolver through
+# static-path-equiv.bend (BND-84).
 import Base
-import ../src/static/path.bend as P
+import ./static-path-model.bend as P
+import ../src/static/path.bend as Path
+import ./static-path-equiv.bend as PE
 import ./static-spec.bend as S
 
 def distinguish(b: Bool) -> Type:
@@ -181,13 +185,13 @@ def accept_ok(+raw: String, +first: String, +rest: List<&2, String>, b: Bool, +e
       %Equal.sym(Nat, List.length(&2, String, String.split(raw, '/')), 1n+P.slashes(raw), pieces_count(raw)) : {S.all_safe(first <> rest) && Nat.is_eq(1n+List.length(&2, String, first <> rest), _) == True{} : Bool}
       and_intro(S.all_safe(first <> rest), Nat.is_eq(1n+List.length(&2, String, rest), P.slashes(raw)), all_safe(first <> rest, segs), count)
 
-def guard_ok(+raw: String, m: Maybe<&2, P.Segments>) -> {S.confined(raw, P.guard(raw, m)) == True{} : Bool}:
+def guard_ok(+raw: String, m: Maybe<&2, Path.Segments>) -> {S.confined(raw, P.guard(raw, m)) == True{} : Bool}:
   match m:
     case None{}: {==}
-    case Some{P.Segments{+first, +rest}}:
+    case Some{Path.Segments{+first, +rest}}:
       accept_ok(raw, first, rest, P.check(raw, first, rest), {==})
 
-def confined(+raw: String, +index: String) -> {S.confined(raw, P.resolve(raw, index)) == True{} : Bool}:
+def confined_model(+raw: String, +index: String) -> {S.confined(raw, P.resolve(raw, index)) == True{} : Bool}:
   guard_ok(raw, P.segments(raw, index))
 
 def under_opened(root: String, m: Maybe<&2, String>) -> {P.under(root, m) == S.opened(root, m) : Maybe<&2, String>}:
@@ -195,7 +199,7 @@ def under_opened(root: String, m: Maybe<&2, String>) -> {P.under(root, m) == S.o
     case None{}: {==}
     case Some{rel}: {==}
 
-def target(root: String, +raw: String, +index: String) -> {P.target(root, raw, index) == S.opened(root, P.resolve(raw, index)) : Maybe<&2, String>}:
+def target_model(root: String, +raw: String, +index: String) -> {P.target(root, raw, index) == S.opened(root, P.resolve(raw, index)) : Maybe<&2, String>}:
   under_opened(root, P.resolve(raw, index))
 
 # Per-segment decoding (static_path_segments). The resolver's plain test and
@@ -274,7 +278,7 @@ def go_eq(rest: List<&2, String>, +raw: String, +index: String) -> {P.decode_go(
       %go_eq(t, h, index) : {P.prepend(P.decode_segment(raw), P.decode_go(t, h, index)) == S.cons_decoded(P.decode_segment(raw), _) : Maybe<&2, List<&2, String>>}
       prepend_eq(P.decode_segment(raw), P.decode_go(t, h, index))
 
-def split_eq(ps: List<&2, String>, +index: String) -> {P.split_raw(ps, index) == P.segments_of(S.after_root(ps, index)) : Maybe<&2, P.Segments>}:
+def split_eq(ps: List<&2, String>, +index: String) -> {P.split_raw(ps, index) == P.segments_of(S.after_root(ps, index)) : Maybe<&2, Path.Segments>}:
   match ps:
     case Nil{}: {==}
     case h <> t:
@@ -283,7 +287,7 @@ def split_eq(ps: List<&2, String>, +index: String) -> {P.split_raw(ps, index) ==
           match t:
             case Nil{}: {==}
             case +r <> +u:
-              %go_eq(u, r, index) : {P.segments_of(P.decode_go(u, r, index)) == P.segments_of(_) : Maybe<&2, P.Segments>}
+              %go_eq(u, r, index) : {P.segments_of(P.decode_go(u, r, index)) == P.segments_of(_) : Maybe<&2, Path.Segments>}
               {==}
         case SCon{c, s}: {==}
 
@@ -305,9 +309,9 @@ def guard_pieces(+raw: String, x: Maybe<&2, List<&2, String>>) -> {S.resolved_pi
         case Nil{}: {==}
         case +h <> +t: accept_pieces(raw, h, t, P.check(raw, h, t), {==})
 
-def segments(+raw: String, +index: String) -> {S.resolved_pieces(P.resolve(raw, index)) == S.when_resolved(P.resolve(raw, index), S.decoded(raw, index)) : Maybe<&2, List<&2, String>>}:
+def segments_model(+raw: String, +index: String) -> {S.resolved_pieces(P.resolve(raw, index)) == S.when_resolved(P.resolve(raw, index), S.decoded(raw, index)) : Maybe<&2, List<&2, String>>}:
   +ps = String.split(raw, '/')
-  %Equal.sym(Maybe<&2, P.Segments>, P.split_raw(ps, index), P.segments_of(S.after_root(ps, index)), split_eq(ps, index)) : {S.resolved_pieces(P.guard(raw, _)) == S.when_resolved(P.guard(raw, _), S.after_root(ps, index)) : Maybe<&2, List<&2, String>>}
+  %Equal.sym(Maybe<&2, Path.Segments>, P.split_raw(ps, index), P.segments_of(S.after_root(ps, index)), split_eq(ps, index)) : {S.resolved_pieces(P.guard(raw, _)) == S.when_resolved(P.guard(raw, _), S.after_root(ps, index)) : Maybe<&2, List<&2, String>>}
   guard_pieces(raw, S.after_root(ps, index))
 
 # Dotfiles (static_path_no_dotfiles).
@@ -335,13 +339,13 @@ def accept_visible(+raw: String, +first: String, +rest: List<&2, String>, b: Boo
       %Equal.sym(List<&2, String>, String.split(P.join(rest, first), '/'), first <> rest, joined) : {S.all_visible(_) == True{} : Bool}
       all_visible(first <> rest, segs)
 
-def guard_visible(+raw: String, m: Maybe<&2, P.Segments>) -> {S.no_dotfiles(P.guard(raw, m)) == True{} : Bool}:
+def guard_visible(+raw: String, m: Maybe<&2, Path.Segments>) -> {S.no_dotfiles(P.guard(raw, m)) == True{} : Bool}:
   match m:
     case None{}: {==}
-    case Some{P.Segments{+first, +rest}}:
+    case Some{Path.Segments{+first, +rest}}:
       accept_visible(raw, first, rest, P.check(raw, first, rest), {==})
 
-def no_dotfiles(+raw: String, +index: String) -> {S.no_dotfiles(P.resolve(raw, index)) == True{} : Bool}:
+def no_dotfiles_model(+raw: String, +index: String) -> {S.no_dotfiles(P.resolve(raw, index)) == True{} : Bool}:
   guard_visible(raw, P.segments(raw, index))
 
 # Completeness (static_path_complete, static_path_index).
@@ -482,7 +486,7 @@ def request_check(+first: String, +rest: List<&2, String>, +ok: {S.servable(firs
   %Equal.sym(Nat, P.slashes(String.append(first, S.request(rest))), List.length(&2, String, rest), count) : {P.segment_ok(first) && P.segments_ok(rest) && Nat.is_eq(1n+List.length(&2, String, rest), 1n+_) == True{} : Bool}
   and_intro(P.segment_ok(first) && P.segments_ok(rest), Nat.is_eq(1n+List.length(&2, String, rest), 1n+List.length(&2, String, rest)), segs, nat_refl(1n+List.length(&2, String, rest)))
 
-def complete(+first: String, +rest: List<&2, String>, +index: String, +ok: {S.servable(first <> rest) == True{} : Bool}) -> {P.resolve(S.request(first <> rest), index) == Some{S.joined(rest, first)} : Maybe<&2, String>}:
+def complete_model(+first: String, +rest: List<&2, String>, +index: String, +ok: {S.servable(first <> rest) == True{} : Bool}) -> {P.resolve(S.request(first <> rest), index) == Some{S.joined(rest, first)} : Maybe<&2, String>}:
   +raw = S.request(first <> rest)
   +split = request_split(rest, first, ok)
   %Equal.sym(List<&2, String>, String.split(String.append(first, S.request(rest)), '/'), first <> rest, split) : {P.guard(raw, P.split_raw(SNil{} <> _, index)) == Some{S.joined(rest, first)} : Maybe<&2, String>}
@@ -576,7 +580,37 @@ def index_under(+first: String, +rest: List<&2, String>, +index: String, +ok: {S
   %join_index(rest, first, index) : {Some{P.join(with_index(rest, index), first)} == Some{_} : Maybe<&2, String>}
   {==}
 
-def index_law(xs: List<&2, String>, +index: String, +ok: {S.servable(xs) == True{} : Bool}, +named: {S.servable_segment(index) == True{} : Bool}) -> {P.resolve(S.directory(xs), index) == Some{S.joined_index(xs, index)} : Maybe<&2, String>}:
+def index_law_model(xs: List<&2, String>, +index: String, +ok: {S.servable(xs) == True{} : Bool}, +named: {S.servable_segment(index) == True{} : Bool}) -> {P.resolve(S.directory(xs), index) == Some{S.joined_index(xs, index)} : Maybe<&2, String>}:
   match xs:
     case Nil{}: index_root(index, named)
     case +h <> +t: index_under(h, t, index, ok, named)
+
+# The laws, over the production resolver.
+def confined(+raw: String, +index: String) -> {S.confined(raw, Path.resolve(raw, index)) == True{} : Bool}:
+  %PE.resolve_equiv(raw, index) : {S.confined(raw, _) == True{} : Bool}
+  confined_model(raw, index)
+
+def path_under_opened(root: String, m: Maybe<&2, String>) -> {Path.under(root, m) == S.opened(root, m) : Maybe<&2, String>}:
+  match m:
+    case None{}: {==}
+    case Some{rel}: {==}
+
+def target(root: String, +raw: String, +index: String) -> {Path.target(root, raw, index) == S.opened(root, Path.resolve(raw, index)) : Maybe<&2, String>}:
+  %PE.resolve_equiv(raw, index) : {Path.under(root, _) == S.opened(root, _) : Maybe<&2, String>}
+  path_under_opened(root, P.resolve(raw, index))
+
+def segments(+raw: String, +index: String) -> {S.resolved_pieces(Path.resolve(raw, index)) == S.when_resolved(Path.resolve(raw, index), S.decoded(raw, index)) : Maybe<&2, List<&2, String>>}:
+  %PE.resolve_equiv(raw, index) : {S.resolved_pieces(_) == S.when_resolved(_, S.decoded(raw, index)) : Maybe<&2, List<&2, String>>}
+  segments_model(raw, index)
+
+def no_dotfiles(+raw: String, +index: String) -> {S.no_dotfiles(Path.resolve(raw, index)) == True{} : Bool}:
+  %PE.resolve_equiv(raw, index) : {S.no_dotfiles(_) == True{} : Bool}
+  no_dotfiles_model(raw, index)
+
+def complete(+first: String, +rest: List<&2, String>, +index: String, +ok: {S.servable(first <> rest) == True{} : Bool}) -> {Path.resolve(S.request(first <> rest), index) == Some{S.joined(rest, first)} : Maybe<&2, String>}:
+  %PE.resolve_equiv(S.request(first <> rest), index) : {_ == Some{S.joined(rest, first)} : Maybe<&2, String>}
+  complete_model(first, rest, index, ok)
+
+def index_law(+xs: List<&2, String>, +index: String, +ok: {S.servable(xs) == True{} : Bool}, +named: {S.servable_segment(index) == True{} : Bool}) -> {Path.resolve(S.directory(xs), index) == Some{S.joined_index(xs, index)} : Maybe<&2, String>}:
+  %PE.resolve_equiv(S.directory(xs), index) : {_ == Some{S.joined_index(xs, index)} : Maybe<&2, String>}
+  index_law_model(xs, index, ok, named)

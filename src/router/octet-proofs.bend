@@ -2,6 +2,7 @@
 import Base
 import ./encoding.bend as E
 import ./utf8-code.bend as Code
+import ./encoding-proofs.bend as EP
 
 def no_slash(s: String) -> Bool:
   match s:
@@ -23,8 +24,10 @@ def word_value(n: Nat, +prefix: U32, w: Word(n)) -> U32:
 def octet(w: Word(8n)) -> U32:
   word_value(8n, 0, w)
 
+# The leaves compute with unescape_spec; unescape_byte carries the result to
+# the stack-safe unescape through EP.unescape_equiv.
 def byte_claim(+n: U32) -> Type:
-  (@tail: String -> {E.unescape(E.byte(n) ++ tail) == Maybe.bind(&2, List<&2, U32>, List<&2, U32>, E.unescape(tail), bs => Some{n <> bs}) : Maybe<&2, List<&2, U32>>}) & {no_slash(E.byte(n)) == True{} : Bool}
+  (@tail: String -> {E.unescape_spec(E.byte(n) ++ tail) == Maybe.bind(&2, List<&2, U32>, List<&2, U32>, E.unescape_spec(tail), bs => Some{n <> bs}) : Maybe<&2, List<&2, U32>>}) & {no_slash(E.byte(n)) == True{} : Bool}
 
 # A binary tree of evidence contains a leaf for every remaining bit assignment.
 def ByteTree(n: Nat, +prefix: U32) -> Type:
@@ -143,7 +146,7 @@ def byte_cases() -> ByteTree(8n, 0):
   )
 
 def decoded_byte(+w: Word(8n), +tail: String, evidence: byte_claim(octet(w))) ->
-    {E.unescape(E.byte(octet(w)) ++ tail) == Maybe.bind(&2, List<&2, U32>, List<&2, U32>, E.unescape(tail), bs => Some{octet(w) <> bs}) : Maybe<&2, List<&2, U32>>}:
+    {E.unescape_spec(E.byte(octet(w)) ++ tail) == Maybe.bind(&2, List<&2, U32>, List<&2, U32>, E.unescape_spec(tail), bs => Some{octet(w) <> bs}) : Maybe<&2, List<&2, U32>>}:
   (decoded, clean) = evidence
   decoded(tail)
 
@@ -158,6 +161,8 @@ law unescape_byte:
   {E.unescape(E.byte(octet(w)) ++ tail) == Maybe.bind(&2, List<&2, U32>, List<&2, U32>, E.unescape(tail), bs => Some{octet(w) <> bs}) : Maybe<&2, List<&2, U32>>}
 
 def unescape_byte(w, tail):
+  %EP.unescape_equiv(E.byte(octet(w)) ++ tail) : {_ == Maybe.bind(&2, List<&2, U32>, List<&2, U32>, E.unescape(tail), bs => Some{octet(w) <> bs}) : Maybe<&2, List<&2, U32>>}
+  %EP.unescape_equiv(tail) : {E.unescape_spec(E.byte(octet(w)) ++ tail) == Maybe.bind(&2, List<&2, U32>, List<&2, U32>, _, bs => Some{octet(w) <> bs}) : Maybe<&2, List<&2, U32>>}
   decoded_byte(w, tail, byte_case(8n, 0, w, byte_cases()))
 
 # No encoded octet introduces a path separator.

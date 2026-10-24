@@ -2,6 +2,7 @@ node_modules/
 dist/
 *.mjs
 !packages/**/*.mjs
+!tests/fixtures/review-stack/run.mjs
 /tmp/
 .DS_Store
 

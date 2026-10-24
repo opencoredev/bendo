@@ -6,6 +6,9 @@ import ../src/app/context.bend as C
 import ../src/http/request.bend as Request
 import ../src/http/bytes.bend as Bytes
 import ./accept-spec.bend as A
+import ./fold-tail.bend as FoldTail
+import ./parse-tail.bend as PT
+import ./bytes-tail.bend as BT
 
 def and_false(a: Bool) -> {a && False{} == False{} : Bool}:
   match a:
@@ -261,26 +264,32 @@ def parameter_spec(+parts: List<&2, String>) -> {Errors.parameter(parts) == A.pa
     case +k <> +v <> Nil{}: Equal.cong(Bool, Bool, x => Bool.not(String.eq(Errors.trim(k), "q")) || x, Errors.quality(Errors.trim(v)), A.positive_qvalue(A.strip(v)), quality_spec(Errors.trim(v)))
     case k <> v <> w <> t: {==}
 
-def parameters_spec(+xs: List<&2, String>) -> {Errors.parameters(xs) == A.parameters(xs) : Bool}:
+def parameters_spec_inner(+xs: List<&2, String>) -> {Errors.parameters_spec(xs) == A.parameters(xs) : Bool}:
   match xs:
     case Nil{}: {==}
     case +x <> t:
-      %Equal.sym(List<&2, String>, Errors.split(Errors.trim(x), '='), A.pieces(A.strip(x), '='), split_spec(Errors.trim(x), '=')) : {Errors.parameter(_) && Errors.parameters(t) == A.parameters(x <> t) : Bool}
-      %Equal.sym(Bool, Errors.parameter(A.pieces(A.strip(x), '=')), A.parameter(A.pieces(A.strip(x), '=')), parameter_spec(A.pieces(A.strip(x), '='))) : {_ && Errors.parameters(t) == A.parameters(x <> t) : Bool}
-      Equal.cong(Bool, Bool, y => A.parameter(A.pieces(A.strip(x), '=')) && y, Errors.parameters(t), A.parameters(t), parameters_spec(t))
+      %Equal.sym(List<&2, String>, Errors.split(Errors.trim(x), '='), A.pieces(A.strip(x), '='), split_spec(Errors.trim(x), '=')) : {Errors.parameter(_) && Errors.parameters_spec(t) == A.parameters(x <> t) : Bool}
+      %Equal.sym(Bool, Errors.parameter(A.pieces(A.strip(x), '=')), A.parameter(A.pieces(A.strip(x), '=')), parameter_spec(A.pieces(A.strip(x), '='))) : {_ && Errors.parameters_spec(t) == A.parameters(x <> t) : Bool}
+      Equal.cong(Bool, Bool, y => A.parameter(A.pieces(A.strip(x), '=')) && y, Errors.parameters_spec(t), A.parameters(t), parameters_spec_inner(t))
+
+def parameters_spec(+xs: List<&2, String>) -> {Errors.parameters(xs) == A.parameters(xs) : Bool}:
+  Equal.trans(Bool, Errors.parameters(xs), Errors.parameters_spec(xs), A.parameters(xs), FoldTail.e_parameters_equiv(xs), parameters_spec_inner(xs))
 
 def media_spec(+parts: List<&2, String>) -> {Errors.media(parts) == A.json_range(parts) : Bool}:
   match parts:
     case Nil{}: {==}
     case +name <> rest: Equal.cong(Bool, Bool, y => String.eq(Errors.trim(name), "application/json") && y, Errors.parameters(rest), A.parameters(rest), parameters_spec(rest))
 
-def tokens_spec(+xs: List<&2, String>) -> {Errors.accepts_json_tokens(xs) == A.any_json(xs) : Bool}:
+def tokens_spec_inner(+xs: List<&2, String>) -> {Errors.accepts_json_tokens_spec(xs) == A.any_json(xs) : Bool}:
   match xs:
     case Nil{}: {==}
     case +x <> t:
-      %Equal.sym(List<&2, String>, Errors.split(Bytes.fold(x), ';'), A.pieces(Bytes.fold(x), ';'), split_spec(Bytes.fold(x), ';')) : {Errors.media(_) || Errors.accepts_json_tokens(t) == A.any_json(x <> t) : Bool}
-      %Equal.sym(Bool, Errors.media(A.pieces(Bytes.fold(x), ';')), A.json_range(A.pieces(Bytes.fold(x), ';')), media_spec(A.pieces(Bytes.fold(x), ';'))) : {_ || Errors.accepts_json_tokens(t) == A.any_json(x <> t) : Bool}
-      Equal.cong(Bool, Bool, y => A.json_range(A.pieces(Bytes.fold(x), ';')) || y, Errors.accepts_json_tokens(t), A.any_json(t), tokens_spec(t))
+      %Equal.sym(List<&2, String>, Errors.split(Bytes.fold(x), ';'), A.pieces(Bytes.fold(x), ';'), split_spec(Bytes.fold(x), ';')) : {Errors.media(_) || Errors.accepts_json_tokens_spec(t) == A.any_json(x <> t) : Bool}
+      %Equal.sym(Bool, Errors.media(A.pieces(Bytes.fold(x), ';')), A.json_range(A.pieces(Bytes.fold(x), ';')), media_spec(A.pieces(Bytes.fold(x), ';'))) : {_ || Errors.accepts_json_tokens_spec(t) == A.any_json(x <> t) : Bool}
+      Equal.cong(Bool, Bool, y => A.json_range(A.pieces(Bytes.fold(x), ';')) || y, Errors.accepts_json_tokens_spec(t), A.any_json(t), tokens_spec_inner(t))
+
+def tokens_spec(+xs: List<&2, String>) -> {Errors.accepts_json_tokens(xs) == A.any_json(xs) : Bool}:
+  Equal.trans(Bool, Errors.accepts_json_tokens(xs), Errors.accepts_json_tokens_spec(xs), A.any_json(xs), FoldTail.e_accepts_json_tokens_equiv(xs), tokens_spec_inner(xs))
 
 def accepts_spec(+field: Maybe<&2, String>) -> {Errors.accepts_json(field) == A.accepts_json(field) : Bool}:
   match field:
@@ -296,11 +305,14 @@ def values_step(+v: List<&2, U32>, +a: List<&2, List<&2, U32>>, +b: List<&2, Lis
     case True{}: Equal.cong(List<&2, List<&2, U32>>, List<&2, List<&2, U32>>, x => v <> x, a, b, ih)
     case False{}: ih
 
-def values_spec(+hs: List<&2, Request.Header>) -> {Request.lookup_folded(hs, "accept") == A.accept_values(hs) : List<&2, List<&2, U32>>}:
+def values_spec_inner(+hs: List<&2, Request.Header>) -> {Request.lookup_folded_spec(hs, "accept") == A.accept_values(hs) : List<&2, List<&2, U32>>}:
   match hs:
     case Nil{}: {==}
     case Request.Header{+n, +v} <> t:
-      values_step(v, Request.lookup_folded(t, "accept"), A.accept_values(t), String.eq(n, "accept"), values_spec(t))
+      values_step(v, Request.lookup_folded_spec(t, "accept"), A.accept_values(t), String.eq(n, "accept"), values_spec_inner(t))
+
+def values_spec(+hs: List<&2, Request.Header>) -> {Request.lookup_folded(hs, "accept") == A.accept_values(hs) : List<&2, List<&2, U32>>}:
+  Equal.trans(List<&2, List<&2, U32>>, Request.lookup_folded(hs, "accept"), Request.lookup_folded_spec(hs, "accept"), A.accept_values(hs), PT.lookup_equiv(hs, "accept"), values_spec_inner(hs))
 
 def first_spec(+values: List<&2, List<&2, U32>>) -> {C.first_text(values) == A.first_utf8(values) : Maybe<&2, String>}:
   match values:

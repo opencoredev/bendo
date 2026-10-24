@@ -7,6 +7,8 @@ import ../src/http/request.bend as Request
 import ../src/http/response.bend as Response
 import ../src/mw/body_limit.bend as Limit
 import ./limits-spec.bend as Spec
+import ./misc-tail.bend as MiscTail
+import ./fold-tail.bend as FoldTail
 
 # Byte length is accepted exactly when it is at most the limit.
 def within(+length: Nat, +limit: Nat) -> {Limit.accepts(length, limit) == Spec.within(length, limit) : Bool}:
@@ -48,12 +50,15 @@ def opaque_step(+acc: String, +c: Char, +parsed: Maybe<&2, String>, +end: Bool, 
     case Some{s} False{} True{}: {==}
     case Some{s} False{} False{}: {==}
 
-def opaque(+s: String, +acc: String) -> {P.opaque(s, acc) == Spec.opaque(s, acc) : Maybe<&2, String>}:
+def opaque_inner(+s: String, +acc: String) -> {P.opaque_spec(s, acc) == Spec.opaque(s, acc) : Maybe<&2, String>}:
   match s:
     case SNil{}: {==}
     case SCon{Chr{+c}, +t}:
-      %Equal.sym(Maybe<&2, String>, P.opaque(t, SCon{Chr{c}, acc}), Spec.opaque(t, SCon{Chr{c}, acc}), opaque(t, SCon{Chr{c}, acc})) : {P.opaque_step(_, acc, U32.is_eq(c, 34) && String.is_empty(t), Lex.etagc(c)) == Spec.opaque(SCon{Chr{c}, t}, acc) : Maybe<&2, String>}
+      %Equal.sym(Maybe<&2, String>, P.opaque_spec(t, SCon{Chr{c}, acc}), Spec.opaque(t, SCon{Chr{c}, acc}), opaque_inner(t, SCon{Chr{c}, acc})) : {P.opaque_step(_, acc, U32.is_eq(c, 34) && String.is_empty(t), Lex.etagc(c)) == Spec.opaque(SCon{Chr{c}, t}, acc) : Maybe<&2, String>}
       opaque_step(acc, Chr{c}, Spec.tag_tail(t), U32.is_eq(c, 34) && String.is_empty(t), Lex.etagc(c))
+
+def opaque(+s: String, +acc: String) -> {P.opaque(s, acc) == Spec.opaque(s, acc) : Maybe<&2, String>}:
+  Equal.trans(Maybe<&2, String>, P.opaque(s, acc), P.opaque_spec(s, acc), Spec.opaque(s, acc), MiscTail.opaque_equiv(s, acc), opaque_inner(s, acc))
 
 def quoted(+p: Maybe<&2, String>, +q: Bool) -> {P.quoted(p, q) == Spec.quoted(p, q) : Maybe<&2, String>}:
   match q:
@@ -83,14 +88,17 @@ def split_step(+c: Char, +acc: String, +parts: Spec.Elements, +cut: Bool) -> {P.
     case Spec.Elements{h, t} True{}: {==}
     case Spec.Elements{h, t} False{}: {==}
 
-def segments(+s: String, +q: Bool, +acc: String) -> {P.segments(s, q, acc) == Spec.segments(s, q, acc) : List<&2, String>}:
+def segments_inner(+s: String, +q: Bool, +acc: String) -> {P.segments_spec(s, q, acc) == Spec.segments(s, q, acc) : List<&2, String>}:
   match s:
     case SNil{}: {==}
     case SCon{Chr{+c}, +t}:
       +cut = U32.is_eq(c, 44) && Bool.not(q)
-      %Equal.sym(List<&2, String>, P.segments(t, P.toggled(q, U32.is_eq(c, 34)), P.accumulated(Chr{c}, acc, cut)), Spec.segments(t, P.toggled(q, U32.is_eq(c, 34)), P.accumulated(Chr{c}, acc, cut)), segments(t, P.toggled(q, U32.is_eq(c, 34)), P.accumulated(Chr{c}, acc, cut))) : {P.prepended(_, acc, cut) == Spec.segments(SCon{Chr{c}, t}, q, acc) : List<&2, String>}
+      %Equal.sym(List<&2, String>, P.segments_spec(t, P.toggled(q, U32.is_eq(c, 34)), P.accumulated(Chr{c}, acc, cut)), Spec.segments(t, P.toggled(q, U32.is_eq(c, 34)), P.accumulated(Chr{c}, acc, cut)), segments_inner(t, P.toggled(q, U32.is_eq(c, 34)), P.accumulated(Chr{c}, acc, cut))) : {P.prepended(_, acc, cut) == Spec.segments(SCon{Chr{c}, t}, q, acc) : List<&2, String>}
       %toggled(q, U32.is_eq(c, 34)) : {P.prepended(Spec.segments(t, P.toggled(q, U32.is_eq(c, 34)), P.accumulated(Chr{c}, acc, cut)), acc, cut) == Spec.prefix_parts(acc, Spec.list_char(Chr{c}, Spec.parts(t, _), cut)) : List<&2, String>}
       split_step(Chr{c}, acc, Spec.parts(t, P.toggled(q, U32.is_eq(c, 34))), cut)
+
+def segments(+s: String, +q: Bool, +acc: String) -> {P.segments(s, q, acc) == Spec.segments(s, q, acc) : List<&2, String>}:
+  Equal.trans(List<&2, String>, P.segments(s, q, acc), P.segments_spec(s, q, acc), Spec.segments(s, q, acc), MiscTail.segments_equiv(s, q, acc), segments_inner(s, q, acc))
 
 def equal(+a: Maybe<&2, String>, +b: Maybe<&2, String>) -> {P.equal(a, b) == Spec.equal(a, b) : Bool}:
   match a b:
@@ -126,12 +134,15 @@ def combined(+s: String, +tag: Maybe<&2, String>, +valid: Bool, +hit: Bool) -> {
   %and_commutes(valid, Spec.valid_token(s)) : {(valid && Spec.valid_token(s), Spec.equal(Spec.entity(s), tag) || hit) == (_, Spec.equal(Spec.entity(s), tag) || hit) : Sigma<&2, &2, Bool, _ => Bool>}
   {==}
 
-def members(+xs: List<&2, String>, +tag: Maybe<&2, String>) -> {P.members(xs, tag) == Spec.members(xs, tag) : Sigma<&2, &2, Bool, _ => Bool>}:
+def members_inner(+xs: List<&2, String>, +tag: Maybe<&2, String>) -> {P.members_spec(xs, tag) == Spec.members(xs, tag) : Sigma<&2, &2, Bool, _ => Bool>}:
   match xs:
     case Nil{}: {==}
     case +h <> +t:
-      %Equal.sym(Sigma<&2, &2, Bool, _ => Bool>, P.members(t, tag), Spec.members(t, tag), members(t, tag)) : {P.combine_member(P.trim(h), tag, _) == Spec.members(h <> t, tag) : Sigma<&2, &2, Bool, _ => Bool>}
+      %Equal.sym(Sigma<&2, &2, Bool, _ => Bool>, P.members_spec(t, tag), Spec.members(t, tag), members_inner(t, tag)) : {P.combine_member(P.trim(h), tag, _) == Spec.members(h <> t, tag) : Sigma<&2, &2, Bool, _ => Bool>}
       combined(P.trim(h), tag, Spec.all_valid(t), Spec.any_match(t, tag))
+
+def members(+xs: List<&2, String>, +tag: Maybe<&2, String>) -> {P.members(xs, tag) == Spec.members(xs, tag) : Sigma<&2, &2, Bool, _ => Bool>}:
+  Equal.trans(Sigma<&2, &2, Bool, _ => Bool>, P.members(xs, tag), P.members_spec(xs, tag), Spec.members(xs, tag), FoldTail.cond_members_equiv(xs, tag), members_inner(xs, tag))
 
 def decision(+pair: Sigma<&2, &2, Bool, _ => Bool>) -> {P.decision(pair) == Spec.decision(pair) : Bool}:
   (valid, hit) = pair
