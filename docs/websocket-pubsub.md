@@ -58,6 +58,9 @@ assigned, because each connection joins and leaves under its own random token.
 To send to one connection, use `P.handle(peer)` with the usual
 `B.websocket_send_text` helpers, or keep the handle to send from elsewhere.
 
+For a complete app, see [the chat example](../examples/chat/README.md): one
+topic per room, with arrivals, departures and room counts.
+
 ## Operations
 
 | Call | Result | Behavior |

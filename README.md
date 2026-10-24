@@ -17,6 +17,10 @@ bend examples/hello/main.bend -o hello && ./hello
 curl http://127.0.0.1:8787/todos/42
 ```
 
+## Examples
+
+- [`examples/chat`](examples/chat/README.md): chat rooms over WebSocket publish and subscribe, with a React client.
+
 ## Develop
 
 ```sh
