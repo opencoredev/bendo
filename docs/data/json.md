@@ -2,8 +2,9 @@
 
 Import `src/data/json.bend` to parse UTF-8 body octets into a copyable value
 tree or serialize that tree. Both operations are pure and compile to native
-code and `.mjs`. The round-trip law (parsing written JSON gives back the same
-value) is being proved in BND-79 and is not in `LAWS.bend` yet.
+code and `.mjs`. The round-trip law `json_roundtrip` in `LAWS.bend` says parsing
+written JSON gives back the same value; see
+[the data laws](../laws/data.md#json).
 
 ## Values and precision
 
@@ -134,7 +135,7 @@ The test compiles `tests/fixtures/json/native.bend`; reproduce the measurement
 with its `bench <path>` arguments and `+RTS --threads 1 -RTS`. It prints
 `accept:<milliseconds>`. The test enforces the issue's 200 ms threshold.
 
-BND-79 will add this law to `LAWS.bend` once its proof checks with `--verdict`:
+BND-79 proved this law in `LAWS.bend`:
 
 ```python
 law json_roundtrip:
@@ -147,5 +148,5 @@ law json_roundtrip:
   {Json.parse(Utf8.encode(output)) == Done{value} : Result<&2, &2, Json.Error, Json.Json>}
 ```
 
-Until then the parser and writer are covered by the JSONTestSuite and the
-tests in `tests/json.test.ts`, not by a proof.
+The JSONTestSuite and the tests in `tests/json.test.ts` also cover the parser
+on inputs the law does not reach, such as malformed documents.
