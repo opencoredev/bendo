@@ -2,6 +2,12 @@
 import Base
 import ../router/router.bend as Router
 
+# Development answers a response that breaks its route's response schema
+# with a 500; Production logs it to stderr and sends it unchanged (BND-36).
+type Mode is Data:
+  Development{}
+  Production{}
+
 type Config is Data:
   Config{
     host: String,
@@ -13,7 +19,8 @@ type Config is Data:
     body_timeout_ms: U32,
     max_requests: U32,
     keep_alive: Bool,
-    router: Router.RouterKind
+    router: Router.RouterKind,
+    mode: Mode
   }
 
 # host: 127.0.0.1 (IPv4 literal); bound by BND-12.
@@ -26,8 +33,9 @@ type Config is Data:
 # max_requests: 100 requests per connection; enforced by BND-11.
 # keep_alive: True; enables HTTP/1.1 connection reuse.
 # router: Trie, proven equal to Spec (BND-17); B.serve resolves methods with it.
+# mode: Development; $BENDO_ENV=production selects Production at startup (BND-36).
 def defaults() -> Config:
-  Config{"127.0.0.1", 8787, 1048576, 65536, 5000, 10000, 30000, 100, True{}, Router.default_kind()}
+  Config{"127.0.0.1", 8787, 1048576, 65536, 5000, 10000, 30000, 100, True{}, Router.default_kind(), Development{}}
 
 # Validate decimal syntax before Base U32.read, which only checks arithmetic.
 def digits(s: String) -> Bool:
@@ -68,5 +76,15 @@ def port_env(value: Result<&1, &1, U32 & String, String>, fallback: U32) -> U32:
     case Done{text}: port(text, fallback)
 
 def body_limit(config: Config) -> U32:
-  Config{host, port, limit, headers, idle, head, body, max, keep, router} = config
+  Config{host, port, limit, headers, idle, head, body, max, keep, router, mode} = config
   limit
+
+def with_mode(config: Config, mode: Mode) -> Config:
+  Config{host, port, limit, headers, idle, head, body, max, keep, router, old} = config
+  Config{host, port, limit, headers, idle, head, body, max, keep, router, mode}
+
+# $BENDO_ENV=production selects Production; anything else keeps the config's mode.
+def mode_env(value: Result<&1, &1, U32 & String, String>, fallback: Mode) -> Mode:
+  match value:
+    case Done{"production"}: Production{}
+    case _: fallback

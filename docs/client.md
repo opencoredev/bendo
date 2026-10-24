@@ -130,7 +130,7 @@ Pass `validate: false` to switch validation off, for example in production or
 under a Content Security Policy without `unsafe-eval`. Then the body is
 returned as `data` unchecked. Error responses are never validated.
 
-The validator is Ajv, loaded on first use. [Decision 0013](decisions/0013-client-response-validation.md)
+The validator is Ajv, loaded on first use. [Decision 0014](decisions/0014-client-response-validation.md)
 explains the choice and its limits, and
 [the validator differences](data/json-schema.md#decoder-policy-and-validator-differences)
 list where Ajv and Bendo's decoder disagree.

@@ -1,4 +1,4 @@
-# 0013: How response schemas reach the typed client
+# 0014: How response schemas reach the typed client
 
 Date: 2026-10-24. Issue: BND-57. Status: accepted for M7.
 

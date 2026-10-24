@@ -476,7 +476,8 @@ differs from the schema. `Constraint` means a value fails a check, literal
 membership, or scalar validity.
 Even an otherwise matching enum rejects if another member is malformed.
 
-There is no route validation yet (BND-36). [JSON Schema export](json-schema.md)
+[Route validation](../validation.md) (BND-36) decodes params, query and headers
+with coercion and bodies without it. [JSON Schema export](json-schema.md)
 (BND-37) exports `Strict{}` as `additionalProperties: false`, `Optional{}` by
 omission from `required`, and nullables and unions as `anyOf`. It records the
 duplicate-key, first-match, lexical-integer, default and coercion rules as

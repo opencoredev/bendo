@@ -20,6 +20,7 @@ def hooks(-Tag: Data, xs: List<&2, T.Placement<Tag>>, +stage: T.Stage) -> List<&
     case Nil{}: []
     case T.Placement{scope, T.HookSpec{kind, tag}} <> tail:
       Global.keep(Tag, tag, hooks(Tag, tail, stage), Global.same_stage(kind, stage))
+    case T.Checks{scope, schemas} <> tail: hooks(Tag, tail, stage)
 
 def at(-Tag: Data, placements: List<&2, T.Placement<Tag>>, stage: T.Stage, yes: Bool) -> List<&2, Tag>:
   match yes:
