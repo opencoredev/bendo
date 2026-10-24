@@ -149,6 +149,13 @@ function socketUrl(room: RoomId, name: string): string {
 const NOTICE_MS = 5000;
 
 /**
+ * How long an open socket may go without its welcome. The server sends the
+ * welcome first, but a refusal it can't deliver (BND-101) would otherwise leave
+ * the socket open and silent; closing it lands in the usual retry.
+ */
+const WELCOME_MS = 10_000;
+
+/**
  * One WebSocket to `room`, reopened with backoff (0.5 s doubling to 8 s)
  * whenever it drops. Switching rooms or names closes it and opens another.
  */
@@ -162,20 +169,26 @@ export function useChat({ room, name }: { room: RoomId; name: string }) {
     let attempt = 0;
     let opened = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let welcomeTimer: ReturnType<typeof setTimeout> | undefined;
 
     function connect() {
       dispatch({ kind: "connecting", fresh: !opened });
       opened = true;
       const ws = new WebSocket(socketUrl(room, name));
       socket.current = ws;
+      welcomeTimer = setTimeout(() => ws.close(4000, "no welcome"), WELCOME_MS);
       ws.onmessage = (message) => {
         if (typeof message.data !== "string") return;
         const event = parseEvent(message.data);
         if (event === null) return;
-        if (event.kind === "welcome") attempt = 0;
+        if (event.kind === "welcome") {
+          attempt = 0;
+          clearTimeout(welcomeTimer);
+        }
         dispatch({ kind: "event", room, event });
       };
       ws.onclose = () => {
+        clearTimeout(welcomeTimer);
         if (disposed) return;
         socket.current = null;
         const delay = Math.min(8000, 500 * 2 ** attempt);
@@ -205,6 +218,7 @@ export function useChat({ room, name }: { room: RoomId; name: string }) {
     return () => {
       disposed = true;
       clearTimeout(timer);
+      clearTimeout(welcomeTimer);
       window.removeEventListener("online", retry);
       document.removeEventListener("visibilitychange", onVisible);
       socket.current?.close(1000, "switching");
