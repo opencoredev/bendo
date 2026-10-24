@@ -4,6 +4,7 @@
     "correctness": "warn"
   },
   "ignorePatterns": [
+    "docs/.vitepress/cache/**",
     "node_modules/",
     "dist/",
     "**/*.d.bend.ts",

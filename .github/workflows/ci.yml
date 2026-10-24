@@ -49,6 +49,21 @@ jobs:
       - name: Proofs, lint and typechecks
         run: timeout --foreground 12m bun run check:static
 
+  # Builds the docs site (BND-70). Fails on a broken internal link, a page
+  # missing from the sidebar, or a broken include. See docs/SITE.md.
+  docs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.4"
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Build the docs site
+        run: timeout --foreground 5m bun run check:docs
+
   tests:
     strategy:
       fail-fast: false

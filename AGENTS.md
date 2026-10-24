@@ -12,7 +12,8 @@ Bend v2 is newer than most model training data. Read `~/.bend/guide/GUIDE.md` an
 
 ## Commands
 
-- `bun run check`: `check:static`, then `test`. It must pass before work lands.
+- `bun run check`: `check:static`, then `check:docs`, then `test`. It must pass before work lands.
+- `bun run check:docs`: installs the docs site's dependencies (`docs/bun.lock`), typechecks its config and builds it with VitePress. It fails on a dead link or a published page missing from `docs/.vitepress/sidebar.ts`. CI runs it as the `docs` job.
 - `bun run check:static`: `check:bend`, `prove`, `lint`, `format:check`, `typecheck` and `typecheck:bench`. CI runs this as its own job.
 - `bun run prove`: every proof on the Lean-backed kernel (`bend PROOF.bend --verdict`). It must print `ALL PROOFS CHECK`.
 - `bun run lint` (oxlint, warnings are errors), `bun run format` and `bun run format:check` (oxfmt).
@@ -23,7 +24,7 @@ Bend v2 is newer than most model training data. Read `~/.bend/guide/GUIDE.md` an
 
 ## Test budgets and sharding
 
-The full local `bun run check` was measured at 7.5 minutes warm on 16 GB and four CPUs. On smaller machines, or with a cold fixture cache, run `bun run check:static` and then each shard with `CI=true BENDO_TEST_SHARD=<n> bun run test:ci`, as `docs/test-runners.md` describes. New test files are assigned to a shard automatically (90 seconds of estimated cost until `scripts/test-timings.json` has a measurement).
+The full local `bun run check` was measured at 7.5 minutes warm on 16 GB and four CPUs. On smaller machines, or with a cold fixture cache, run `bun run check:static`, `bun run check:docs` and then each shard with `CI=true BENDO_TEST_SHARD=<n> bun run test:ci`, as `docs/test-runners.md` describes. New test files are assigned to a shard automatically (90 seconds of estimated cost until `scripts/test-timings.json` has a measurement).
 
 One `bend` compile of a fixture has a 180-second ceiling, or 360 seconds with `CI=true` (`tests/harness.ts`), because GitHub runners compile about twice as slowly. A test whose body compiles gets `COMPILE_TEST_TIMEOUT_MS`. The runner allows 6 GiB of memory per test worker and at most four workers; `BENDO_TEST_WORKERS` lowers that. `tests/json.test.ts`, `tests/multipart.test.ts` and `tests/schema-compound.test.ts` run alone in their own process because of their memory peaks. Every import added to `src/main.bend` or the serving modules slows every fixture compile, so keep new features in opt-in modules.
 

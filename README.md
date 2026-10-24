@@ -91,6 +91,7 @@ development, `bun run dev` rebuilds the server on every `.bend` save. The
 | [`examples/store`](examples/store/main.bend) | Shared state in a `B.Store`: a counter and a todo list behind JSON routes. |
 | [`examples/mandelbrot`](examples/mandelbrot/README.md) | A handler that renders the Mandelbrot set on one core, every core or the GPU. |
 | [`examples/todo`](examples/todo/README.md) | A fullstack todo list. A Bend API with route validation, a store and CORS, and a React app that uses the typed client, the TanStack Query helpers and the same Bend validators in the browser. |
+| [`examples/chat`](examples/chat/README.md) | Chat rooms over WebSocket publish and subscribe, with presence, bounded history and a React client that reconnects. |
 | [`create-bendo` templates](packages/create-bendo/README.md) | `api` and `fullstack` starter apps. |
 
 Compile a Bend example with `bend examples/<name>/main.bend -o <name>`, as in
@@ -139,7 +140,7 @@ baseline.
 ## Proofs
 
 [`LAWS.bend`](LAWS.bend) and the law modules it imports under `proof/` state
-661 laws about Bendo's pure code as of 2026-10-24, and
+more than 650 laws about Bendo's pure code, and
 [`PROOF.bend`](PROOF.bend) proves every one. `bun scripts/laws-index.ts` prints
 the current count. Bend's proof checker runs on a Lean-backed kernel. The laws cover, among
 other things:

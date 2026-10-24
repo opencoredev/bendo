@@ -57,7 +57,8 @@ copy syntax from Bend v1 or HVM examples.
 
 | Command | What it runs |
 | --- | --- |
-| `bun run check` | `check:static`, then `test`. It must pass before a change lands. |
+| `bun run check` | `check:static`, then `check:docs`, then `test`. It must pass before a change lands. |
+| `bun run check:docs` | Installs the docs site's own dependencies, typechecks its config and builds it. The build fails on a dead link or a page missing from the sidebar. |
 | `bun run check:static` | The Bend version check, proofs, lint, format check and both typechecks. |
 | `bun run check:bend` | Compares the installed Bend with `.bend-version`. |
 | `bun run prove` | `bend PROOF.bend --verdict`: every proof, on the Lean-backed kernel. |
@@ -70,11 +71,12 @@ copy syntax from Bend v1 or HVM examples.
 | `bun run test:shards` | Prints and validates the assignment of test files to the four shards. |
 
 The full `bun run check` took 7.5 minutes warm on a 16 GB, four-CPU machine.
-On a smaller machine, or with a cold fixture cache, run the static checks and
-then one shard at a time:
+On a smaller machine, or with a cold fixture cache, run the static checks, the
+docs build and then one shard at a time:
 
 ```sh
 bun run check:static
+bun run check:docs
 for shard in 1 2 3 4; do CI=true BENDO_TEST_SHARD=$shard bun run test:ci; done
 ```
 
