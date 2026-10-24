@@ -35,6 +35,7 @@ import ./src/http/write_response.bend as WriteResponse
 import ./src/http/chunked.bend as Chunked
 import ./proof/stream.bend as StreamProof
 import ./proof/stream-rfc.bend as StreamRfcProof
+import ./proof/sse.bend as SseProof
 import ./src/http/stream_framing.bend as StreamFraming
 import ./src/http.bend as Http
 import ./src/http/bytes.bend as Bytes
@@ -662,3 +663,25 @@ def Laws.conditional_304_spec(res): LimitsProof.response(res)
 def Laws.body_limit_spec(length, limit): LimitsProof.within(length, limit)
 
 def Laws.etag_middleware_spec(method, field, res): LimitsProof.etag(method, field, res)
+
+# BND-49
+def Laws.sse_roundtrip(frames, valid):
+  SseProof.roundtrip(frames, valid)
+
+def Laws.sse_encode_rejects_unsafe(frame):
+  SseProof.encode_guard(frame)
+
+def Laws.sse_sent_frame_exact(frame, bytes, sent):
+  SseProof.sent_frame(frame, bytes, sent)
+
+def Laws.sse_heartbeat_ignored(buffers, text, rest, clean):
+  SseProof.comment_ignored(buffers, text, rest, clean)
+
+def Laws.sse_text_utf8(s, valid):
+  SseProof.text_utf8(s, valid)
+
+def Laws.sse_retry_decimal(ms):
+  SseProof.retry_digits(ms)
+
+def Laws.sse_retry_value(ms):
+  SseProof.retry_value(ms)
