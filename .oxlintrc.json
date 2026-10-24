@@ -3,5 +3,10 @@
   "categories": {
     "correctness": "warn"
   },
-  "ignorePatterns": ["node_modules/", "dist/", "tests/fixtures/static/vite-app/build/**"]
+  "ignorePatterns": [
+    "node_modules/",
+    "dist/",
+    "**/*.d.bend.ts",
+    "tests/fixtures/static/vite-app/build/**"
+  ]
 }

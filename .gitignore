@@ -7,3 +7,6 @@ dist/
 .DS_Store
 
 .cache/
+
+# vite-plugin-bendo writes these beside each imported .bend file.
+*.d.bend.ts

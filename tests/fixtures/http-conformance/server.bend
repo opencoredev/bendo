@@ -34,7 +34,7 @@ def dispatch(tag: Tag, ctx: B.Ctx, env: Unit) -> IO(B.Res):
 def ready(result: Result<&2, &2, Methods.BuildError, B.Routes(Tag)>) -> IO(Unit):
   match result:
     case Done{table}:
-      B.serve(~Tag, ~Unit, ~dispatch, table, Unit{}, Config.Config{"127.0.0.1", 8787, 16384, 8192, 500, 700, 700, 100, True{}, Router.Spec{}, Config.Development{}})
+      B.serve(~Tag, ~Unit, ~dispatch, table, Unit{}, Config.Config{"127.0.0.1", 8787, 16384, 8192, 500, 700, 700, 100, True{}, Router.Spec{}, Config.Development{}, 1})
     case Fail{e}: IO.die(Unit, 1, "invalid routes")
 
 def main() -> IO(Unit):

@@ -10,7 +10,7 @@ Run `bun run test:shards` to print and validate the assignment. Set
 shard. Without that variable, both test commands run the complete suite.
 
 The planner discovers `.test`, `_test`, `.spec` and `_spec` JavaScript and
-TypeScript files under `tests`, `bench` and `packages/bendo`. It assigns the
+TypeScript files under `tests`, `bench`, `packages/bendo` and `packages/vite-plugin-bendo`. It assigns the
 largest estimated costs first to the lightest shard, with stable filename and
 shard-ID tie breaks. Costs come from the committed `scripts/test-timings.json`;
 new files default to 90 seconds. Restored `.cache/test-timings.json` only controls

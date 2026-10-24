@@ -1,0 +1,23 @@
+{
+  "name": "vite-plugin-bendo",
+  "version": "0.0.0",
+  "description": "Import Bend files from a Vite app, compiled to JavaScript with types and hot reload",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "bendo": "workspace:*"
+  },
+  "peerDependencies": {
+    "vite": "^7.0.0 || ^8.0.0"
+  },
+  "devDependencies": {
+    "vite": "8.3.5"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/opencoredev/bendo"
+  }
+}
