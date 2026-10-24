@@ -2,6 +2,7 @@
 import Base
 import ../src/net/ip.bend as Ip
 import ../src/net/conn_info.bend as Conn
+import ./conn-tail.bend as ConnTail
 import ./ip-spec.bend as Spec
 import ./ip-laws.bend as Laws
 import ./conn-entries.bend as Entries
@@ -225,7 +226,7 @@ def client_untrusted(+peer: Ip.Addr, +fields: List<&2, List<&2, U32>>, +trusted:
 
 def client_chain(+peer: Ip.Addr, +fields: List<&2, List<&2, U32>>, +trusted: List<&2, Ip.Cidr>, inside: {Ip.any(peer, trusted) == True{} : Bool}) -> {Conn.client(Some{peer}, fields, trusted) == Some{Conn.walk(Conn.hops(List.reverse(&2, String, Conn.entries(fields)), trusted), peer)} : Maybe<&2, Ip.Addr>}:
   %Equal.sym(Bool, Ip.any(peer, trusted), True{}, inside) : {Some{Conn.forwarded(peer, fields, trusted, _)} == Some{Conn.walk(Conn.hops(List.reverse(&2, String, Conn.entries(fields)), trusted), peer)} : Maybe<&2, Ip.Addr>}
-  {==}
+  Equal.cong(Ip.Addr, Maybe<&2, Ip.Addr>, a => Some{a}, Conn.walk_entries(List.reverse(&2, String, Conn.entries(fields)), trusted, Conn.Going{peer}), Conn.walk(Conn.hops(List.reverse(&2, String, Conn.entries(fields)), trusted), peer), ConnTail.walk_equiv(List.reverse(&2, String, Conn.entries(fields)), trusted, peer))
 
 def chain_skip(+x: String, +rest: List<&2, String>, +trusted: List<&2, Ip.Cidr>, +current: Ip.Addr, +a: Ip.Addr, parsed: {Ip.parse(x) == Some{a} : Maybe<&2, Ip.Addr>}, proxy: {Ip.any(a, trusted) == True{} : Bool}) -> {Conn.walk(Conn.hops(x <> rest, trusted), current) == Conn.walk(Conn.hops(rest, trusted), a) : Ip.Addr}:
   %Equal.sym(Maybe<&2, Ip.Addr>, Ip.parse(x), Some{a}, parsed) : {Conn.walk(Conn.hop(_, trusted) <> Conn.hops(rest, trusted), current) == Conn.walk(Conn.hops(rest, trusted), a) : Ip.Addr}

@@ -2,6 +2,7 @@
 import Base
 import ../src/data/signed-cookie.bend as S
 import ../src/data/utf8.bend as Utf8
+import ./utf8.bend as Utf8Proof
 import ./signed-cookie-spec.bend as Spec
 
 def distinguish(b: Bool) -> Type:
@@ -31,18 +32,18 @@ def and_right(+a: Bool, +b: Bool, ok: {a && b == True{} : Bool}) -> {b == True{}
     case False{}: absurd({b == True{} : Bool}, false_true(ok))
     case True{}: ok
 
-def scalar_go(+s: String, +ok: Bool) -> {S.scalar_valid_go(s, ok) == ok && Utf8.valid(s) : Bool}:
+def scalar_go(+s: String, +ok: Bool) -> {S.scalar_valid_go(s, ok) == ok && Utf8.valid_spec(s) : Bool}:
   match s:
     case SNil{}:
       match ok:
         case False{}: {==}
         case True{}: {==}
     case SCon{Chr{+c}, +t}:
-      Equal.trans(Bool, S.scalar_valid_go(t, ok && Utf8.scalar(c)), (ok && Utf8.scalar(c)) && Utf8.valid(t), ok && (Utf8.scalar(c) && Utf8.valid(t)), scalar_go(t, ok && Utf8.scalar(c)), and_assoc(ok, Utf8.scalar(c), Utf8.valid(t)))
+      Equal.trans(Bool, S.scalar_valid_go(t, ok && Utf8.scalar(c)), (ok && Utf8.scalar(c)) && Utf8.valid_spec(t), ok && (Utf8.scalar(c) && Utf8.valid_spec(t)), scalar_go(t, ok && Utf8.scalar(c)), and_assoc(ok, Utf8.scalar(c), Utf8.valid_spec(t)))
 
 # The public scalar check is the structural Unicode-scalar predicate.
 def scalar(+s: String) -> {S.scalar_valid(s) == Utf8.valid(s) : Bool}:
-  scalar_go(s, True{})
+  Equal.trans(Bool, S.scalar_valid(s), Utf8.valid_spec(s), Utf8.valid(s), scalar_go(s, True{}), Equal.sym(Bool, Utf8.valid(s), Utf8.valid_spec(s), Utf8Proof.valid_equiv(s)))
 
 def key(+s: String) -> {S.key_valid(s) == Spec.secret(s) : Bool}:
   match s:

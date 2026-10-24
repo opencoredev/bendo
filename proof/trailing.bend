@@ -4,6 +4,8 @@ import ../src/mw/trailing_slash_policy.bend as P
 import ../src/http/request.bend as Request
 import ./trailing-spec.bend as Spec
 import ./csrf-spec.bend as CsrfSpec
+import ./fold-tail.bend as FoldTail
+import ./misc-tail.bend as MiscTail
 
 def distinguish(b: Bool) -> Type:
   match b:
@@ -29,12 +31,15 @@ def and_right(+a: Bool, +b: Bool, e: {a && b == True{} : Bool}) -> {b == True{} 
 
 # ---- The guard is the specification ----
 
-def clean(+s: String) -> {P.clean(s) == Spec.plain(s) : Bool}:
+def clean_inner(+s: String) -> {P.clean_spec(s) == Spec.plain(s) : Bool}:
   match s:
     case SNil{}: {==}
     case SCon{Chr{+x}, +t}:
-      %clean(t) : {Bool.not(P.unsafe_char(Chr{x})) && P.clean(t) == Bool.not(Spec.resolver_char(Chr{x})) && _ : Bool}
+      %clean_inner(t) : {Bool.not(P.unsafe_char(Chr{x})) && P.clean_spec(t) == Bool.not(Spec.resolver_char(Chr{x})) && _ : Bool}
       {==}
+
+def clean(+s: String) -> {P.clean(s) == Spec.plain(s) : Bool}:
+  Equal.trans(Bool, P.clean(s), P.clean_spec(s), Spec.plain(s), FoldTail.ts_clean_equiv(s), clean_inner(s))
 
 def second(+s: String) -> {P.second(s) == Spec.not_slash(s) : Bool}:
   match s:
@@ -134,17 +139,22 @@ def root(+m: Request.Method, +q: Maybe<&2, String>) -> {P.target(P.Trim{}, m, "/
     case Request.Patch{}: {==}
     case Request.Extension{t}: {==}
 
-def trim_step(+c: Char, +t: String, ih: {P.trim_last(t ++ "/") == Some{t} : Maybe<&2, String>}) -> {P.trim_last(SCon{c, t} ++ "/") == Some{SCon{c, t}} : Maybe<&2, String>}:
+def trim_step_spec(+c: Char, +t: String, ih: {P.trim_last_spec(t ++ "/") == Some{t} : Maybe<&2, String>}) -> {P.trim_last_spec(SCon{c, t} ++ "/") == Some{SCon{c, t}} : Maybe<&2, String>}:
   match t:
     case SNil{}: {==}
     case SCon{+d, +u}:
-      %Equal.sym(Maybe<&2, String>, P.trim_last(SCon{d, u} ++ "/"), Some{SCon{d, u}}, ih) : {P.prefixed(c, _) == Some{SCon{c, SCon{d, u}}} : Maybe<&2, String>}
+      %Equal.sym(Maybe<&2, String>, P.trim_last_spec(SCon{d, u} ++ "/"), Some{SCon{d, u}}, ih) : {P.prefixed(c, _) == Some{SCon{c, SCon{d, u}}} : Maybe<&2, String>}
       {==}
 
-def trim_last(+base: String) -> {P.trim_last(base ++ "/") == Some{base} : Maybe<&2, String>}:
+
+
+def trim_last_inner(+base: String) -> {P.trim_last_spec(base ++ "/") == Some{base} : Maybe<&2, String>}:
   match base:
     case SNil{}: {==}
-    case SCon{+c, +t}: trim_step(c, t, trim_last(t))
+    case SCon{+c, +t}: trim_step_spec(c, t, trim_last_inner(t))
+
+def trim_last(+base: String) -> {P.trim_last(base ++ "/") == Some{base} : Maybe<&2, String>}:
+  Equal.trans(Maybe<&2, String>, P.trim_last(base ++ "/"), P.trim_last_spec(base ++ "/"), Some{base}, MiscTail.trim_last_equiv(base ++ "/"), trim_last_inner(base))
 
 def checked_some(+loc: String, ok: {Spec.same_origin_path(loc) == True{} : Bool}) -> {P.checked(loc) == Some{loc} : Maybe<&2, String>}:
   +e = Equal.trans(Bool, P.safe(loc), Spec.same_origin_path(loc), True{}, safe(loc), ok)
@@ -175,12 +185,15 @@ def step_eq(+c: Char, +t: String, +x: Bool) -> {P.slash_step(c, t, x) == Spec.en
     case SNil{}: {==}
     case SCon{d, u}: {==}
 
-def final_eq(+s: String) -> {P.final_slash(s) == Spec.final_slash(s) : Bool}:
+def final_eq_inner(+s: String) -> {P.final_slash_spec(s) == Spec.final_slash(s) : Bool}:
   match s:
     case SNil{}: {==}
     case SCon{+c, +t}:
-      %final_eq(t) : {P.slash_step(c, t, P.final_slash(t)) == Spec.ends_here(c, t, _) : Bool}
-      step_eq(c, t, P.final_slash(t))
+      %final_eq_inner(t) : {P.slash_step(c, t, P.final_slash_spec(t)) == Spec.ends_here(c, t, _) : Bool}
+      step_eq(c, t, P.final_slash_spec(t))
+
+def final_eq(+s: String) -> {P.final_slash(s) == Spec.final_slash(s) : Bool}:
+  Equal.trans(Bool, P.final_slash(s), P.final_slash_spec(s), Spec.final_slash(s), MiscTail.final_slash_equiv(s), final_eq_inner(s))
 
 def appended(+path: String, +q: Maybe<&2, String>, ends: {Spec.final_slash(path) == False{} : Bool}, ok: {Spec.same_origin_path(path ++ ("/" ++ Request.query_text(q))) == True{} : Bool}) -> {P.moved(P.Append{}, path, q) == Some{path ++ ("/" ++ Request.query_text(q))} : Maybe<&2, String>}:
   +e = Equal.trans(Bool, P.final_slash(path), Spec.final_slash(path), False{}, final_eq(path), ends)
@@ -219,12 +232,15 @@ def drop_eq(+c: Char, +t: String, +x: Maybe<&2, String>) -> {P.trim_step(c, t, x
     case SNil{}: only_eq(Char.is_eq(c, '/'))
     case SCon{+d, +u}: prefix_eq(c, d, u, x)
 
-def init_eq(+s: String) -> {P.trim_last(s) == Spec.before_final_slash(s) : Maybe<&2, String>}:
+def init_eq_inner(+s: String) -> {P.trim_last_spec(s) == Spec.before_final_slash(s) : Maybe<&2, String>}:
   match s:
     case SNil{}: {==}
     case SCon{+c, +t}:
-      %init_eq(t) : {P.trim_step(c, t, P.trim_last(t)) == Spec.last_dropped(c, t, _) : Maybe<&2, String>}
-      drop_eq(c, t, P.trim_last(t))
+      %init_eq_inner(t) : {P.trim_step(c, t, P.trim_last_spec(t)) == Spec.last_dropped(c, t, _) : Maybe<&2, String>}
+      drop_eq(c, t, P.trim_last_spec(t))
+
+def init_eq(+s: String) -> {P.trim_last(s) == Spec.before_final_slash(s) : Maybe<&2, String>}:
+  Equal.trans(Maybe<&2, String>, P.trim_last(s), P.trim_last_spec(s), Spec.before_final_slash(s), MiscTail.trim_last_equiv(s), init_eq_inner(s))
 
 def guard_eq(+loc: String, +b: Bool) -> {P.guarded(loc, b) == Spec.offered(loc, b) : Maybe<&2, String>}:
   match b:

@@ -7,6 +7,7 @@ import ../src/mw/response_fields.bend as Fields
 import ../src/mw/response_policy.bend as Policy
 import ../src/mw/vary.bend as Vary
 import ./response-policy-spec.bend as RS
+import ./bytes-tail.bend as BT
 
 # ---- Field filtering ----
 
@@ -174,17 +175,25 @@ def missing(+names: List<&2, String>, +e: List<&2, String>, +values: List<&2, Li
     case Nil{}: {==}
     case +n <> +t: pick(n, Vary.missing(t, Bytes.fold(n) <> List.append(&2, String, e, Vary.all_items(values))), RS.fresh_go(t, RS.members(values), Bytes.fold(n) <> e), Vary.has(Bytes.fold(n), List.append(&2, String, e, Vary.all_items(values))), RS.member(Bytes.fold(n), RS.members(values)) || RS.member(Bytes.fold(n), e), missing(t, Bytes.fold(n) <> e, values), seen_has(Bytes.fold(n), e, values))
 
-def encode_append(+a: String, +b: String) -> {Bytes.encode(String.append(a, b)) == List.append(&2, U32, Bytes.encode(a), Bytes.encode(b)) : List<&2, U32>}:
+def encode_spec_append(+a: String, +b: String) -> {Bytes.encode_spec(String.append(a, b)) == List.append(&2, U32, Bytes.encode_spec(a), Bytes.encode_spec(b)) : List<&2, U32>}:
   match a:
     case SNil{}: {==}
-    case SCon{Chr{+c}, +t}: Equal.cong(List<&2, U32>, List<&2, U32>, l => c <> l, Bytes.encode(String.append(t, b)), List.append(&2, U32, Bytes.encode(t), Bytes.encode(b)), encode_append(t, b))
+    case SCon{Chr{+c}, +t}: Equal.cong(List<&2, U32>, List<&2, U32>, l => c <> l, Bytes.encode_spec(String.append(t, b)), List.append(&2, U32, Bytes.encode_spec(t), Bytes.encode_spec(b)), encode_spec_append(t, b))
+
+def encode_append(+a: String, +b: String) -> {Bytes.encode(String.append(a, b)) == List.append(&2, U32, Bytes.encode(a), Bytes.encode(b)) : List<&2, U32>}:
+  %Equal.sym(List<&2, U32>, Bytes.encode(a), Bytes.encode_spec(a), BT.encode_equiv(a)) : {Bytes.encode(String.append(a, b)) == List.append(&2, U32, _, Bytes.encode(b)) : List<&2, U32>}
+  %Equal.sym(List<&2, U32>, Bytes.encode(b), Bytes.encode_spec(b), BT.encode_equiv(b)) : {Bytes.encode(String.append(a, b)) == List.append(&2, U32, Bytes.encode_spec(a), _) : List<&2, U32>}
+  Equal.trans(List<&2, U32>, Bytes.encode(String.append(a, b)), Bytes.encode_spec(String.append(a, b)), List.append(&2, U32, Bytes.encode_spec(a), Bytes.encode_spec(b)), BT.encode_equiv(String.append(a, b)), encode_spec_append(a, b))
+
 
 def join_go(+t: List<&2, String>, +x: String) -> {Bytes.encode(String.join.go(t, x, ", ")) == RS.separated(Bytes.encode(x) <> RS.encoded(t)) : List<&2, U32>}:
   match t:
     case Nil{}: {==}
     case +y <> +r:
       tail = Equal.cong(List<&2, U32>, List<&2, U32>, l => List.append(&2, U32, Bytes.encode(x), 44 <> 32 <> l), Bytes.encode(String.join.go(r, y, ", ")), RS.separated(Bytes.encode(y) <> RS.encoded(r)), join_go(r, y))
-      Equal.trans(List<&2, U32>, Bytes.encode(String.append(x, String.append(", ", String.join.go(r, y, ", ")))), List.append(&2, U32, Bytes.encode(x), Bytes.encode(String.append(", ", String.join.go(r, y, ", ")))), RS.separated(Bytes.encode(x) <> RS.encoded(y <> r)), encode_append(x, String.append(", ", String.join.go(r, y, ", "))), tail)
+      +j = String.join.go(r, y, ", ")
+      sep = Equal.cong(List<&2, U32>, List<&2, U32>, l => List.append(&2, U32, Bytes.encode(x), l), Bytes.encode(String.append(", ", j)), 44 <> 32 <> Bytes.encode(j), encode_append(", ", j))
+      Equal.trans(List<&2, U32>, Bytes.encode(String.append(x, String.append(", ", j))), List.append(&2, U32, Bytes.encode(x), Bytes.encode(String.append(", ", j))), RS.separated(Bytes.encode(x) <> RS.encoded(y <> r)), encode_append(x, String.append(", ", j)), Equal.trans(List<&2, U32>, List.append(&2, U32, Bytes.encode(x), Bytes.encode(String.append(", ", j))), List.append(&2, U32, Bytes.encode(x), 44 <> 32 <> Bytes.encode(j)), RS.separated(Bytes.encode(x) <> RS.encoded(y <> r)), sep, tail))
 
 def join(+xs: List<&2, String>) -> {Bytes.encode(String.join(xs, ", ")) == RS.separated(RS.encoded(xs)) : List<&2, U32>}:
   match xs:
@@ -196,7 +205,9 @@ def joined(+t: List<&2, List<&2, U32>>, +v: List<&2, U32>, +added: List<&2, Stri
     case Nil{}:
       match added:
         case Nil{}: {==}
-        case +a <> +r: Equal.cong(List<&2, U32>, List<&2, U32>, l => List.append(&2, U32, v, 44 <> 32 <> l), Bytes.encode(String.join(a <> r, ", ")), RS.separated(RS.encoded(a <> r)), join(a <> r))
+        case +a <> +r:
+          +j = String.join(a <> r, ", ")
+          Equal.cong(List<&2, U32>, List<&2, U32>, l => List.append(&2, U32, v, l), Bytes.encode(String.append(", ", j)), 44 <> 32 <> RS.separated(RS.encoded(a <> r)), Equal.trans(List<&2, U32>, Bytes.encode(String.append(", ", j)), 44 <> 32 <> Bytes.encode(j), 44 <> 32 <> RS.separated(RS.encoded(a <> r)), encode_append(", ", j), Equal.cong(List<&2, U32>, List<&2, U32>, l => 44 <> 32 <> l, Bytes.encode(j), RS.separated(RS.encoded(a <> r)), join(a <> r))))
     case +w <> +r: Equal.cong(List<&2, U32>, List<&2, U32>, l => List.append(&2, U32, v, 44 <> 32 <> l), Vary.joined(w <> r, added), RS.separated(List.append(&2, List<&2, U32>, w <> r, RS.encoded(added))), joined(r, w, added))
 
 def append_nil(+hs: List<&2, Request.Header>) -> {List.append(&2, Request.Header, hs, []) == hs : List<&2, Request.Header>}:

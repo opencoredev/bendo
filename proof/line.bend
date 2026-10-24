@@ -9,6 +9,9 @@ import ../src/http/bytes.bend as B
 import ../src/http/request.bend as R
 import ../src/http/parse.bend as P
 import ../src/http/write.bend as W
+import ../src/http/text.bend as Text
+import ./bytes-tail.bend as BT
+import ./text.bend as TP
 
 # Appending valid query text introduces no spaces.
 def query_free(+q: Maybe<&2, String>, ok: {R.query_valid(q) == True{} : Bool}) -> {Support.free(R.query_text(q)) == True{} : Bool}:
@@ -197,12 +200,15 @@ def split_version(v: R.Version) -> {String.split(R.version_text(v), ' ') == [R.v
     case R.Http11{}:
       {==}
 
-def ascii_encode(+s: String) -> {B.ascii(B.encode(s)) == s : String}:
+def ascii_encode_spec(+s: String) -> {B.ascii_spec(B.encode_spec(s)) == s : String}:
   match s:
     case SNil{}:
       {==}
     case SCon{Chr{c}, t}:
-      Equal.cong(String, String, s => SCon{Chr{c}, s}, B.ascii(B.encode(t)), t, ascii_encode(t))
+      Equal.cong(String, String, s => SCon{Chr{c}, s}, B.ascii_spec(B.encode_spec(t)), t, ascii_encode_spec(t))
+
+def ascii_encode(+s: String) -> {B.ascii(B.encode(s)) == s : String}:
+  Equal.trans(String, B.ascii(B.encode(s)), B.ascii_spec(B.encode_spec(s)), s, Equal.trans(String, B.ascii(B.encode(s)), B.ascii_spec(B.encode(s)), B.ascii_spec(B.encode_spec(s)), BT.ascii_equiv(B.encode(s)), Equal.cong(List<&2, U32>, String, l => B.ascii_spec(l), B.encode(s), B.encode_spec(s), BT.encode_equiv(s))), ascii_encode_spec(s))
 
 # Canonical request-line serialization reconstructs every original field.
 def string_assoc(+a: String, +b: String, +c: String) -> {(a ++ b) ++ c == a ++ (b ++ c) : String}:
@@ -216,7 +222,8 @@ def line_finish(+m: R.Method, +p: String, +q: Maybe<&2, String>, +v: R.Version, 
   (freeproof, more) = facts
   (split, target) = more
   +content = R.method_text(m) ++ " " ++ p ++ R.query_text(q) ++ " " ++ R.version_text(v)
-  %Equal.sym(String, B.ascii(B.encode(content)), content, ascii_encode(content)) : {P.request_line_parts(String.split(_, ' ')) == P.Headers{R.Req{m, p, q, v, []}, [], False{}} : P.State}
+  %Equal.sym(String, B.ascii(B.encode(content)), content, ascii_encode(content)) : {P.request_line_parts(Text.split(_, ' ')) == P.Headers{R.Req{m, p, q, v, []}, [], False{}} : P.State}
+  %Equal.sym(List<&2, String>, Text.split(content, ' '), String.split(content, ' '), TP.split_equiv(content, ' ')) : {P.request_line_parts(_) == P.Headers{R.Req{m, p, q, v, []}, [], False{}} : P.State}
   %Equal.sym(List<&2, String>, String.split(content, ' '), R.method_text(m) <> String.split(p ++ R.query_text(q) ++ " " ++ R.version_text(v), ' '), Laws.split_method(m, p ++ R.query_text(q) ++ " " ++ R.version_text(v), mv)) : {P.request_line_parts(_) == P.Headers{R.Req{m, p, q, v, []}, [], False{}} : P.State}
   %string_assoc(p, R.query_text(q), " " ++ R.version_text(v)) : {P.request_line_parts(R.method_text(m) <> String.split(_, ' ')) == P.Headers{R.Req{m, p, q, v, []}, [], False{}} : P.State}
   %Equal.sym(List<&2, String>, String.split((p ++ R.query_text(q)) ++ " " ++ R.version_text(v), ' '), (p ++ R.query_text(q)) <> String.split(R.version_text(v), ' '), Laws.split_free(p ++ R.query_text(q), R.version_text(v), freeproof)) : {P.request_line_parts(R.method_text(m) <> _) == P.Headers{R.Req{m, p, q, v, []}, [], False{}} : P.State}

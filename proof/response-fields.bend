@@ -8,6 +8,7 @@ import ../src/http/write_response.bend as W
 import ./tokens.bend as Tokens
 import ./response-runtime.bend as Runtime
 import ./response-framing-spec.bend as Spec
+import ./parse-tail.bend as PT
 
 def key(length: Bool) -> String:
   match length:
@@ -23,20 +24,30 @@ def retained(+n: String, v: List<&2, U32>, length: Bool, keep: {W.user_header(R.
     case False{}:
       Tokens.or_false_right(String.eq(n, "content-length"), String.eq(n, "transfer-encoding"), Tokens.not_true_false(String.eq(n, "content-length") || String.eq(n, "transfer-encoding"), keep))
 
-def filtered_step(+h: R.Header, +rest: List<&2, R.Header>, +length: Bool, keep: Bool, eq: {W.user_header(h) == keep : Bool}, absent: {R.lookup_folded(rest, key(length)) == [] : List<&2, List<&2, U32>>}) -> {R.lookup_folded(List.filter.put(R.Header, h, rest, keep), key(length)) == [] : List<&2, List<&2, U32>>}:
+def filtered_step(+h: R.Header, +rest: List<&2, R.Header>, +length: Bool, keep: Bool, eq: {W.user_header(h) == keep : Bool}, absent: {R.lookup_folded_spec(rest, key(length)) == [] : List<&2, List<&2, U32>>}) -> {R.lookup_folded_spec(List.filter.put(R.Header, h, rest, keep), key(length)) == [] : List<&2, List<&2, U32>>}:
   match h keep:
     case R.Header{n, v} False{}:
       absent
     case R.Header{n, v} True{}:
-      %Equal.sym(Bool, String.eq(n, key(length)), False{}, retained(n, v, length, eq)) : {R.lookup_step(v, R.lookup_folded(rest, key(length)), _) == [] : List<&2, List<&2, U32>>}
+      %Equal.sym(Bool, String.eq(n, key(length)), False{}, retained(n, v, length, eq)) : {R.lookup_step(v, R.lookup_folded_spec(rest, key(length)), _) == [] : List<&2, List<&2, U32>>}
       absent
 
-def filtered(+hs: List<&2, R.Header>, +length: Bool) -> {R.lookup_folded(W.headers(hs), key(length)) == [] : List<&2, List<&2, U32>>}:
+def filtered_spec(+hs: List<&2, R.Header>, +length: Bool) -> {R.lookup_folded_spec(W.headers(hs), key(length)) == [] : List<&2, List<&2, U32>>}:
   match hs:
     case Nil{}:
       {==}
     case h <> t:
-      filtered_step(h, W.headers(t), length, W.user_header(h), {==}, filtered(t, length))
+      filtered_step(h, W.headers(t), length, W.user_header(h), {==}, filtered_spec(t, length))
+
+# lookup_folded is a tail loop over the reversed fields (BND-84); the
+# induction above runs on its spec.
+def filtered(+hs: List<&2, R.Header>, +length: Bool) -> {R.lookup_folded(W.headers(hs), key(length)) == [] : List<&2, List<&2, U32>>}:
+  Equal.trans(List<&2, List<&2, U32>>, R.lookup_folded(W.headers(hs), key(length)), R.lookup_folded_spec(W.headers(hs), key(length)), [], PT.lookup_equiv(W.headers(hs), key(length)), filtered_spec(hs, length))
+
+# One lookup step at the head field, as the spec's right fold.
+def lookup_cons(+n: String, +v: List<&2, U32>, +t: List<&2, R.Header>, +k: String) -> {R.lookup_folded(R.Header{n, v} <> t, k) == R.lookup_step(v, R.lookup_folded(t, k), String.eq(n, k)) : List<&2, List<&2, U32>>}:
+  Equal.trans(List<&2, List<&2, U32>>, R.lookup_folded(R.Header{n, v} <> t, k), R.lookup_folded_spec(R.Header{n, v} <> t, k), R.lookup_step(v, R.lookup_folded(t, k), String.eq(n, k)), PT.lookup_equiv(R.Header{n, v} <> t, k), Equal.cong(List<&2, List<&2, U32>>, List<&2, List<&2, U32>>, l => R.lookup_step(v, l, String.eq(n, k)), R.lookup_folded_spec(t, k), R.lookup_folded(t, k), Equal.sym(List<&2, List<&2, U32>>, R.lookup_folded(t, k), R.lookup_folded_spec(t, k), PT.lookup_equiv(t, k))))
+
 
 def length(+hs: List<&2, R.Header>) -> {R.lookup(W.headers(hs), "content-length") == [] : List<&2, List<&2, U32>>}:
   filtered(hs, True{})
@@ -45,11 +56,14 @@ def transfer(+hs: List<&2, R.Header>) -> {R.lookup(W.headers(hs), "transfer-enco
   filtered(hs, False{})
 
 def added_length(+n: Nat, +hs: List<&2, R.Header>) -> {R.lookup(W.length_header(n) <> W.headers(hs), "content-length") == [B.encode(Nat.show(n))] : List<&2, List<&2, U32>>}:
-  %length(hs) : {B.encode(Nat.show(n)) <> R.lookup(W.headers(hs), "content-length") == B.encode(Nat.show(n)) <> _ : List<&2, List<&2, U32>>}
-  {==}
+  +k = B.fold("content-length")
+  Equal.trans(List<&2, List<&2, U32>>, R.lookup(W.length_header(n) <> W.headers(hs), "content-length"), R.lookup_step(B.encode(Nat.show(n)), R.lookup_folded(W.headers(hs), k), String.eq("content-length", k)), [B.encode(Nat.show(n))], lookup_cons("content-length", B.encode(Nat.show(n)), W.headers(hs), k), Equal.cong(List<&2, List<&2, U32>>, List<&2, List<&2, U32>>, l => B.encode(Nat.show(n)) <> l, R.lookup(W.headers(hs), "content-length"), [], length(hs)))
+
 
 def added_transfer(+n: Nat, +hs: List<&2, R.Header>) -> {R.lookup(W.length_header(n) <> W.headers(hs), "transfer-encoding") == [] : List<&2, List<&2, U32>>}:
-  transfer(hs)
+  +k = B.fold("transfer-encoding")
+  Equal.trans(List<&2, List<&2, U32>>, R.lookup(W.length_header(n) <> W.headers(hs), "transfer-encoding"), R.lookup_step(B.encode(Nat.show(n)), R.lookup_folded(W.headers(hs), k), String.eq("content-length", k)), [], lookup_cons("content-length", B.encode(Nat.show(n)), W.headers(hs), k), transfer(hs))
+
 
 
 def representation_length(+rep: Maybe<&2, List<&2, U32>>, +hs: List<&2, R.Header>) -> {R.lookup(W.representation_length(rep, W.headers(hs)), "content-length") == Spec.representation_lengths(rep) : List<&2, List<&2, U32>>}:

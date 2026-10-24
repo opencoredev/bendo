@@ -288,10 +288,19 @@ def compare_path(pattern: P.Pattern, path: String, sensitive: Bool) -> Maybe<&2,
     case False{}:
       P.match_path_with(~folded_equal, ~folded_starts, pattern, path)
 
-def adapted_path(pattern: P.Pattern, path: String, opts: Options) -> Maybe<&2, P.Params>:
+def adapted_path_spec(pattern: P.Pattern, path: String, opts: Options) -> Maybe<&2, P.Params>:
   match pattern path opts:
     case P.Pattern{segs} SCon{'/', tail} Options{+strict, sensitive}:
       compare_path(P.Pattern{slash_pattern(segs, strict)}, "/" ++ String.join(slash_segments(P.path_segments(tail), strict), "/"), sensitive)
+    case _ _ _:
+      None{}
+
+
+# Joining reversed segments prepends each piece in a tail loop on both targets.
+def adapted_path(pattern: P.Pattern, path: String, opts: Options) -> Maybe<&2, P.Params>:
+  match pattern path opts:
+    case P.Pattern{segs} SCon{'/', tail} Options{+strict, sensitive}:
+      compare_path(P.Pattern{slash_pattern(segs, strict)}, "/" ++ P.join_taken(List.reverse(&2, String, slash_segments(P.path_segments(tail), strict))), sensitive)
     case _ _ _:
       None{}
 

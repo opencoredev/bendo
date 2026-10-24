@@ -6,6 +6,7 @@ import ./response.bend as Response
 import ./request.bend as Request
 import ./origin.bend as Origin
 import ./bytes.bend as Bytes
+import ./text.bend as Text
 import ../crypto/sha1.bend as Sha1
 import ../data/base64.bend as Base64
 
@@ -77,21 +78,47 @@ def timeout(config: Config) -> U32:
 def element(part: String) -> String:
   Bytes.ascii(Bytes.trim(Bytes.encode(part)))
 
-def has_element(parts: List<&2, String>, +wanted: String) -> Bool:
+def has_element_spec(parts: List<&2, String>, +wanted: String) -> Bool:
   match parts:
     case Nil{}: False{}
-    case p <> t: String.eq(Bytes.fold(element(p)), wanted) || has_element(t, wanted)
+    case p <> t: String.eq(Bytes.fold(element(p)), wanted) || has_element_spec(t, wanted)
+
+# Every fold over request lists and octets is a tail loop over the reversed
+# input (BND-84).
+def has_element_go(rev: List<&2, String>, +wanted: String, acc: Bool) -> Bool:
+  match rev:
+    case Nil{}: acc
+    case p <> r: has_element_go(r, wanted, String.eq(Bytes.fold(element(p)), wanted) || acc)
+
+def has_element(parts: List<&2, String>, +wanted: String) -> Bool:
+  has_element_go(List.reverse(&2, String, parts), wanted, False{})
+
+def listed_spec(values: List<&2, List<&2, U32>>, +wanted: String) -> Bool:
+  match values:
+    case Nil{}: False{}
+    case v <> t: has_element(Text.split(Bytes.ascii(v), ','), wanted) || listed_spec(t, wanted)
+
+def listed_go(rev: List<&2, List<&2, U32>>, +wanted: String, acc: Bool) -> Bool:
+  match rev:
+    case Nil{}: acc
+    case v <> r: listed_go(r, wanted, has_element(Text.split(Bytes.ascii(v), ','), wanted) || acc)
 
 # Some field value lists wanted, without ASCII case.
 def listed(values: List<&2, List<&2, U32>>, +wanted: String) -> Bool:
-  match values:
-    case Nil{}: False{}
-    case v <> t: has_element(String.split(Bytes.ascii(v), ','), wanted) || listed(t, wanted)
+  listed_go(List.reverse(&2, List<&2, U32>, values), wanted, False{})
 
-def zeros(xs: List<&2, U32>) -> Bool:
+def zeros_spec(xs: List<&2, U32>) -> Bool:
   match xs:
     case Nil{}: True{}
-    case +c <> t: U32.is_eq(c, 48) && zeros(t)
+    case +c <> t: U32.is_eq(c, 48) && zeros_spec(t)
+
+def zeros_go(rev: List<&2, U32>, acc: Bool) -> Bool:
+  match rev:
+    case Nil{}: acc
+    case +c <> r: zeros_go(r, U32.is_eq(c, 48) && acc)
+
+def zeros(xs: List<&2, U32>) -> Bool:
+  zeros_go(List.reverse(&2, U32, xs), True{})
 
 # A Content-Length of zero, in any number of digits.
 def zero_length(v: List<&2, U32>) -> Bool:
@@ -115,7 +142,7 @@ def bodyless(+hs: List<&2, Request.Header>) -> Bool:
 def key_sized(+key: String, decoded: Maybe<&2, List<&2, U32>>) -> Bool:
   match decoded:
     case None{}: False{}
-    case Some{+xs}: Nat.is_eq(List.length(&2, U32, xs), 16n) && String.eq(Base64.encode(xs, False{}, True{}), key)
+    case Some{+xs}: Nat.is_eq(Text.length(U32, xs), 16n) && String.eq(Base64.encode(xs, False{}, True{}), key)
 
 # Exactly one key field: padded standard base64 of 16 octets, in its one
 # canonical spelling.
@@ -163,15 +190,31 @@ def origin_allowed(origins: Origins, +hs: List<&2, Request.Header>) -> Bool:
     case AnyOrigin{}: True{}
     case Listed{xs}: origin_sent(xs, Request.lookup(hs, "origin"))
 
-def has_offer(parts: List<&2, String>, +p: String) -> Bool:
+def has_offer_spec(parts: List<&2, String>, +p: String) -> Bool:
   match parts:
     case Nil{}: False{}
-    case x <> t: String.eq(element(x), p) || has_offer(t, p)
+    case x <> t: String.eq(element(x), p) || has_offer_spec(t, p)
 
-def offered_any(values: List<&2, List<&2, U32>>, +p: String) -> Bool:
+def has_offer_go(rev: List<&2, String>, +p: String, acc: Bool) -> Bool:
+  match rev:
+    case Nil{}: acc
+    case x <> r: has_offer_go(r, p, String.eq(element(x), p) || acc)
+
+def has_offer(parts: List<&2, String>, +p: String) -> Bool:
+  has_offer_go(List.reverse(&2, String, parts), p, False{})
+
+def offered_any_spec(values: List<&2, List<&2, U32>>, +p: String) -> Bool:
   match values:
     case Nil{}: False{}
-    case v <> t: has_offer(String.split(Bytes.ascii(v), ','), p) || offered_any(t, p)
+    case v <> t: has_offer(Text.split(Bytes.ascii(v), ','), p) || offered_any_spec(t, p)
+
+def offered_any_go(rev: List<&2, List<&2, U32>>, +p: String, acc: Bool) -> Bool:
+  match rev:
+    case Nil{}: acc
+    case v <> r: offered_any_go(r, p, has_offer(Text.split(Bytes.ascii(v), ','), p) || acc)
+
+def offered_any(values: List<&2, List<&2, U32>>, +p: String) -> Bool:
+  offered_any_go(List.reverse(&2, List<&2, U32>, values), p, False{})
 
 def chosen(+p: String, rest: Maybe<&2, String>, offered: Bool) -> Maybe<&2, String>:
   match offered:

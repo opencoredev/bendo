@@ -2,6 +2,7 @@
 import Base
 import ./encoding.bend as E
 import ./constraint.bend as C
+import ../http/text.bend as Text
 
 type Param is Data:
   Param{name: String, value: String}
@@ -282,8 +283,10 @@ def compile_segments(xs: List<&2, String>, +names: List<&2, String>) -> Result<&
           ))
         ))
 
+# Text.split is Base String.split as a tail loop (BND-84), so a long request
+# path cannot exhaust the JavaScript stack.
 def path_segments(s: String) -> List<&2, String>:
-  String.split(s, '/')
+  Text.split(s, '/')
 
 def no_percent(s: String) -> Bool:
   match s:
@@ -381,12 +384,56 @@ def join_value(+first: Maybe<&2, String>, tail: List<&2, String>, rest: Maybe<&2
         b : String <- rest
         return a ++ "/" ++ b
 
-def decode_segments(ps: List<&2, String>) -> Maybe<&2, String>:
+def decode_segments_spec(ps: List<&2, String>) -> Maybe<&2, String>:
   match ps:
     case Nil{}:
       Some{""}
     case p <> +tail:
-      join_value(E.decode(p), tail, decode_segments(tail))
+      join_value(E.decode(p), tail, decode_segments_spec(tail))
+
+# Joins segments held most recent first, so the result is
+# String.join(List.reverse(xs), "/"). Each step prepends one segment: linear
+# on both targets, and a tail call.
+def join_rev(xs: List<&2, String>, acc: String) -> String:
+  match xs:
+    case Nil{}:
+      acc
+    case h <> t:
+      join_rev(t, h ++ ("/" ++ acc))
+
+def join_taken(xs: List<&2, String>) -> String:
+  match xs:
+    case Nil{}:
+      ""
+    case h <> t:
+      join_rev(t, h)
+
+def push_value(acc: Maybe<&2, List<&2, String>>, v: Maybe<&2, String>) -> Maybe<&2, List<&2, String>>:
+  match acc v:
+    case Some{xs} Some{x}:
+      Some{x <> xs}
+    case _ _:
+      None{}
+
+# Decoded segments, most recent first, or None once one fails to decode.
+def decoded_go(ps: List<&2, String>, acc: Maybe<&2, List<&2, String>>) -> Maybe<&2, List<&2, String>>:
+  match ps:
+    case Nil{}:
+      acc
+    case p <> t:
+      decoded_go(t, push_value(acc, E.decode(p)))
+
+def joined_rev(m: Maybe<&2, List<&2, String>>) -> Maybe<&2, String>:
+  match m:
+    case None{}:
+      None{}
+    case Some{xs}:
+      Some{join_taken(xs)}
+
+# Every segment decoded on its own and joined with `/`: decode_segments_spec
+# as one tail-recursive pass (BND-84).
+def decode_segments(ps: List<&2, String>) -> Maybe<&2, String>:
+  joined_rev(decoded_go(ps, Some{Nil{}}))
 
 def wildcard_param(+name: String, value: Maybe<&2, String>) -> Maybe<&2, Params>:
   match value:
@@ -421,12 +468,22 @@ def row_head(hits: List<&2, Maybe<&2, Params>>) -> Maybe<&2, Params>:
     case h <> t:
       h
 
-def empty_rows(paths: List<&2, String>) -> List<&2, Maybe<&2, Params>>:
+def empty_rows_spec(paths: List<&2, String>) -> List<&2, Maybe<&2, Params>>:
   match paths:
     case Nil{}:
       [Some{Nil{}}]
     case h <> t:
-      None{} <> empty_rows(t)
+      None{} <> empty_rows_spec(t)
+
+def empty_rows_go(paths: List<&2, String>, acc: List<&2, Maybe<&2, Params>>) -> List<&2, Maybe<&2, Params>>:
+  match paths:
+    case Nil{}:
+      acc
+    case h <> t:
+      empty_rows_go(t, None{} <> acc)
+
+def empty_rows(paths: List<&2, String>) -> List<&2, Maybe<&2, Params>>:
+  empty_rows_go(paths, [Some{Nil{}}])
 
 # A span keeps its raw segments most recent first. Only a span whose
 # remainder already matched is joined and decoded.
@@ -436,17 +493,49 @@ def span_value(+name: String, +taken: List<&2, String>, tail: Maybe<&2, Params>)
       None{}
     case Some{ps}:
       do Maybe<&2, Params>:
-        +value : String <- E.decode(String.join(List.reverse(&2, String, taken), "/"))
+        +value : String <- E.decode(join_taken(taken))
         E.choose(Maybe<&2, Params>, value_ok(C.Any{}, value), u => Some{Param{name, value} <> ps}, u => None{})
 
 # Spans are greedy: the longest raw prefix whose remainder matches wins.
 # `cells` holds the remainder's result for `paths` and for each suffix.
-def span_scan(paths: List<&2, String>, cells: List<&2, Maybe<&2, Params>>, +name: String, +taken: List<&2, String>) -> Maybe<&2, Params>:
+def span_scan_spec(paths: List<&2, String>, cells: List<&2, Maybe<&2, Params>>, +name: String, +taken: List<&2, String>) -> Maybe<&2, Params>:
   match paths cells:
     case +raw <> tail old <> +next:
-      prefer(span_scan(tail, next, name, raw <> taken), u => span_value(name, raw <> taken, row_head(next)))
+      prefer(span_scan_spec(tail, next, name, raw <> taken), u => span_value(name, raw <> taken, row_head(next)))
     case _ _:
       None{}
+
+# A span candidate: its raw segments, most recent first, and the result of
+# matching the rest of the pattern after it.
+type Candidate is Data:
+  Candidate{taken: List<&2, String>, rest: Maybe<&2, Params>}
+
+# Candidates for every span length, longest first.
+def span_candidates(paths: List<&2, String>, cells: List<&2, Maybe<&2, Params>>, +taken: List<&2, String>, acc: List<&2, Candidate>) -> List<&2, Candidate>:
+  match paths cells:
+    case +raw <> tail old <> +next:
+      span_candidates(tail, next, raw <> taken, Candidate{raw <> taken, row_head(next)} <> acc)
+    case _ _:
+      acc
+
+def span_keep(+name: String, found: Maybe<&2, Params>, c: Candidate) -> Maybe<&2, Params>:
+  match found c:
+    case Some{ps} _:
+      Some{ps}
+    case None{} Candidate{taken, rest}:
+      span_value(name, taken, rest)
+
+# The first candidate that matches wins. Later ones are skipped, never decoded.
+def span_pick(cs: List<&2, Candidate>, +name: String, found: Maybe<&2, Params>) -> Maybe<&2, Params>:
+  match cs:
+    case Nil{}:
+      found
+    case c <> t:
+      span_pick(t, name, span_keep(name, found, c))
+
+# span_scan_spec without recursion beneath `prefer` (BND-84).
+def span_scan(paths: List<&2, String>, cells: List<&2, Maybe<&2, Params>>, +name: String, +taken: List<&2, String>) -> Maybe<&2, Params>:
+  span_pick(span_candidates(paths, cells, taken, Nil{}), name, None{})
 
 # `below` is this row's result for the next suffix.
 def row_one(~equal: String -> String -> Bool, ~starts: String -> String -> Bool, seg: Segment, +last: Bool, +paths: List<&2, String>, +hits: List<&2, Maybe<&2, Params>>, below: List<&2, Maybe<&2, Params>>) -> Maybe<&2, Params>:
@@ -472,15 +561,49 @@ def row_one(~equal: String -> String -> Bool, ~starts: String -> String -> Bool,
     case _ _ _:
       None{}
 
-def rows_for(~equal: String -> String -> Bool, ~starts: String -> String -> Bool, +seg: Segment, +last: Bool, +paths: List<&2, String>, +hits: List<&2, Maybe<&2, Params>>) -> List<&2, Maybe<&2, Params>>:
+def rows_for_spec(~equal: String -> String -> Bool, ~starts: String -> String -> Bool, +seg: Segment, +last: Bool, +paths: List<&2, String>, +hits: List<&2, Maybe<&2, Params>>) -> List<&2, Maybe<&2, Params>>:
   match paths hits:
     case Nil{} cells:
       [row_one(~equal, ~starts, seg, last, Nil{}, cells, Nil{})]
     case h <> +tail old <> +next:
-      +below = rows_for(~equal, ~starts, seg, last, tail, next)
+      +below = rows_for_spec(~equal, ~starts, seg, last, tail, next)
       row_one(~equal, ~starts, seg, last, paths, hits, below) <> below
     case h <> tail Nil{}:
       Nil{}
+
+# One suffix of the path with the next segment's rows for it.
+type Frame is Data:
+  Frame{paths: List<&2, String>, hits: List<&2, Maybe<&2, Params>>}
+
+# The row for the empty suffix, and every longer suffix's frame, longest last.
+type Plan is Data:
+  Plan{start: List<&2, Maybe<&2, Params>>, frames: List<&2, Frame>}
+
+def rows_plan(~equal: String -> String -> Bool, ~starts: String -> String -> Bool, +seg: Segment, +last: Bool, paths: List<&2, String>, hits: List<&2, Maybe<&2, Params>>, frames: List<&2, Frame>) -> Plan:
+  match paths hits:
+    case Nil{} cells:
+      Plan{[row_one(~equal, ~starts, seg, last, Nil{}, cells, Nil{})], frames}
+    case +h <> +tail +old <> +next:
+      rows_plan(~equal, ~starts, seg, last, tail, next, Frame{h <> tail, old <> next} <> frames)
+    case h <> tail Nil{}:
+      Plan{Nil{}, frames}
+
+def rows_build(~equal: String -> String -> Bool, ~starts: String -> String -> Bool, +seg: Segment, +last: Bool, frames: List<&2, Frame>, +below: List<&2, Maybe<&2, Params>>) -> List<&2, Maybe<&2, Params>>:
+  match frames:
+    case Nil{}:
+      below
+    case Frame{ps, hs} <> rest:
+      rows_build(~equal, ~starts, seg, last, rest, row_one(~equal, ~starts, seg, last, ps, hs, below) <> below)
+
+def rows_run(~equal: String -> String -> Bool, ~starts: String -> String -> Bool, +seg: Segment, +last: Bool, plan: Plan) -> List<&2, Maybe<&2, Params>>:
+  match plan:
+    case Plan{start, frames}:
+      rows_build(~equal, ~starts, seg, last, frames, start)
+
+# rows_for_spec computed from the shortest suffix up, as two tail loops
+# (BND-84). Each row still reads the row below it.
+def rows_for(~equal: String -> String -> Bool, ~starts: String -> String -> Bool, +seg: Segment, +last: Bool, +paths: List<&2, String>, +hits: List<&2, Maybe<&2, Params>>) -> List<&2, Maybe<&2, Params>>:
+  rows_run(~equal, ~starts, seg, last, rows_plan(~equal, ~starts, seg, last, paths, hits, Nil{}))
 
 def match_rows(~equal: String -> String -> Bool, ~starts: String -> String -> Bool, segs: List<&2, Segment>, +paths: List<&2, String>) -> List<&2, Maybe<&2, Params>>:
   match segs:

@@ -3,6 +3,7 @@ import Base
 import ./body.bend as Body
 import ./request.bend as R
 import ./bytes.bend as Bytes
+import ./text.bend as Text
 import ./response.bend as Response
 import ../app/config.bend as Config
 
@@ -107,18 +108,41 @@ def next_rest(rest: List<&2, U32>, count: U32, at: Nat, now: Nat, +config: Confi
 def next(state: State, rest: List<&2, U32>, now: Nat, +config: Config.Config) -> State & Bool:
   next_policy(~Config.Config, ~(req => cfg => Config.body_limit(cfg)), config, state, rest, now, config)
 
-# Connection options are comma-separated, case-insensitive tokens across fields.
-def tokens(parts: List<&2, String>, +wanted: String) -> Bool:
+def token_hit(p: String, +wanted: String) -> Bool:
+  String.eq(Bytes.fold(Bytes.ascii(Bytes.trim(Bytes.encode(p)))), wanted)
+
+def tokens_spec(parts: List<&2, String>, +wanted: String) -> Bool:
   match parts:
     case Nil{}: False{}
     case p <> t:
-      String.eq(Bytes.fold(Bytes.ascii(Bytes.trim(Bytes.encode(p)))), wanted) || tokens(t, wanted)
+      token_hit(p, wanted) || tokens_spec(t, wanted)
 
-def has_token(hs: List<&2, R.Header>, +wanted: String) -> Bool:
+# Right folds as tail loops over the reversed list (BND-84).
+def tokens_go(rev: List<&2, String>, +wanted: String, acc: Bool) -> Bool:
+  match rev:
+    case Nil{}: acc
+    case p <> r: tokens_go(r, wanted, token_hit(p, wanted) || acc)
+
+# Connection options are comma-separated, case-insensitive tokens across fields.
+def tokens(parts: List<&2, String>, +wanted: String) -> Bool:
+  tokens_go(List.reverse(&2, String, parts), wanted, False{})
+
+def header_hit(n: String, v: List<&2, U32>, +wanted: String) -> Bool:
+  String.eq(Bytes.fold(n), "connection") && tokens(Text.split(Bytes.ascii(v), ','), wanted)
+
+def has_token_spec(hs: List<&2, R.Header>, +wanted: String) -> Bool:
   match hs:
     case Nil{}: False{}
     case R.Header{n, v} <> t:
-      (String.eq(Bytes.fold(n), "connection") && tokens(String.split(Bytes.ascii(v), ','), wanted)) || has_token(t, wanted)
+      header_hit(n, v, wanted) || has_token_spec(t, wanted)
+
+def has_token_go(rev: List<&2, R.Header>, +wanted: String, acc: Bool) -> Bool:
+  match rev:
+    case Nil{}: acc
+    case R.Header{n, v} <> r: has_token_go(r, wanted, header_hit(n, v, wanted) || acc)
+
+def has_token(hs: List<&2, R.Header>, +wanted: String) -> Bool:
+  has_token_go(List.reverse(&2, R.Header, hs), wanted, False{})
 
 def closing(req: R.Req, count: U32, config: Config.Config) -> Bool:
   match req:

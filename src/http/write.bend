@@ -9,12 +9,20 @@ def header(h: R.Header, tail: List<&2, U32>) -> List<&2, U32>:
     case R.Header{n, v}:
       Bytes.append(Bytes.encode(n), 58 <> 32 <> Bytes.append(v, 13 <> 10 <> tail))
 
-def headers(hs: List<&2, R.Header>) -> List<&2, U32>:
+def headers_spec(hs: List<&2, R.Header>) -> List<&2, U32>:
   match hs:
     case Nil{}:
       [13, 10]
     case h <> t:
-      header(h, headers(t))
+      header(h, headers_spec(t))
+
+def headers_go(hs: List<&2, R.Header>, acc: List<&2, U32>) -> List<&2, U32>:
+  match hs:
+    case Nil{}: acc
+    case h <> t: headers_go(t, header(h, acc))
+
+def headers(hs: List<&2, R.Header>) -> List<&2, U32>:
+  headers_go(List.reverse(&2, R.Header, hs), [13, 10])
 
 def line_content(m: R.Method, p: String, q: Maybe<&2, String>, v: R.Version) -> List<&2, U32>:
   Bytes.encode(R.method_text(m) ++ " " ++ p ++ R.query_text(q) ++ " " ++ R.version_text(v))
