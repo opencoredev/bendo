@@ -115,6 +115,7 @@ import ./proof/response-policy.bend as ResponsePolicyProof
 import ./proof/secure-headers.bend as SecureHeadersProof
 import ./proof/override.bend as OverrideProof
 import ./proof/trailing.bend as TrailingProof
+import ./proof/review-tail.bend as ReviewTailProof
 import ./proof/tail.bend as TailProof
 import ./proof/parse-tail.bend as ParseTail
 import ./proof/bytes-tail.bend as BytesTail

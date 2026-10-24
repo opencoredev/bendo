@@ -109,8 +109,8 @@ def cut(s: String, +sep: Char) -> Maybe<&2, Cut>:
 def list_append(-A: Data, xs: List<&2, A>, ys: List<&2, A>) -> List<&2, A>:
   List.reverse.go(&2, A, List.reverse(&2, A, xs), ys)
 
-# String.join's recursion is not a tail call; this one appends on the left
-# (String ++ is native concatenation in the JavaScript target).
+# Retained for the existing tail_text_join_go law only. No production caller
+# uses this left-growing, quadratic native concatenation; join uses join_rev_go.
 def join_go(xs: List<&2, String>, +sep: String, acc: String) -> String:
   match xs:
     case Nil{}:
@@ -132,3 +132,21 @@ def join_reversed(xs: List<&2, String>, +sep: String) -> String:
 
 def join(xs: List<&2, String>, +sep: String) -> String:
   join_reversed(List.reverse(&2, String, xs), sep)
+
+# List.concat's inner append can traverse request-sized lists.
+def concat_go(-A: Data, xs: List<&2, List<&2, A>>, acc: List<&2, A>) -> List<&2, A>:
+  match xs:
+    case Nil{}: acc
+    case h <> t: concat_go(A, t, list_append(A, h, acc))
+
+def concat(-A: Data, xs: List<&2, List<&2, A>>) -> List<&2, A>:
+  concat_go(A, List.reverse(&2, List<&2, A>, xs), [])
+
+def take_go(s: String, n: Nat, acc: String) -> String:
+  match s n:
+    case SNil{} _: String.reverse(acc)
+    case SCon{h, t} 0n: String.reverse(acc)
+    case SCon{h, t} 1n+p: take_go(t, p, SCon{h, acc})
+
+def take(s: String, n: Nat) -> String:
+  take_go(s, n, "")

@@ -1,5 +1,6 @@
 # Scanner reconstruction with arbitrary suffixes and partial line buffers.
 import Base
+import ./review-tail.bend as ReviewTail
 import ../LAWS.bend as Laws
 import ./support.bend as Support
 import ./equality.bend as E
@@ -107,6 +108,7 @@ def Laws.scan_headers_octets(hs, m, p, q, v, acc, tail, ok, bytes):
     case Nil{}:
       {==}
     case h <> t:
+      %Equal.sym(List<&2, U32>, W.headers(h <> t), W.header(h, W.headers(t)), ReviewTail.write_headers_unfold(h, t)) : {P.feed(B.append(_, tail), P.Headers{R.Req{m, p, q, v, acc}, [], False{}}) == P.feed(tail, P.finish(R.Req{m, p, q, v, List.reverse.go(&2, R.Header, h <> t, acc)})) : P.State & R.ParseResult}
       +r = {R.Req{m, p, q, v, acc} : R.Req}
       +suffix = B.append(W.headers(t), tail)
       e1 = Laws.scan_header_octets(r, h, suffix, Laws.and_left(R.header_valid(h), R.headers_valid(t), ok), Laws.and_left(B.value(Support.header_content(h)), Support.headers_scannable(t), bytes))

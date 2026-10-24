@@ -255,12 +255,20 @@ def strip_zeros(s: String) -> String:
     case _:
       s
 
-def nonzero(s: String) -> Bool:
+def nonzero_spec(s: String) -> Bool:
   match s:
     case SNil{}:
       False{}
     case SCon{+c, t}:
-      Bool.not(Char.is_eq(c, '0')) || nonzero(t)
+      Bool.not(Char.is_eq(c, '0')) || nonzero_spec(t)
+
+def nonzero_go(xs: String, acc: Bool) -> Bool:
+  match xs:
+    case SNil{}: acc
+    case SCon{+c, t}: nonzero_go(t, Bool.not(Char.is_eq(c, '0')) || acc)
+
+def nonzero(xs: String) -> Bool:
+  nonzero_go(String.reverse(xs), False{})
 
 type Lexeme is Data:
   Lexeme{negative: Bool, whole: String, fraction: String, exp_negative: Bool, exp: String}
@@ -306,12 +314,20 @@ def lex(s: String) -> Lexeme:
     case _:
       lex_whole(s, "", False{})
 
-def zeros(n: Nat) -> String:
+def zeros_spec(n: Nat) -> String:
   match n:
     case 0n:
       ""
     case 1n+p:
-      SCon{'0', zeros(p)}
+      SCon{'0', zeros_spec(p)}
+
+def zeros_go(n: Nat, acc: String) -> String:
+  match n:
+    case 0n: acc
+    case 1n+p: zeros_go(p, SCon{'0', acc})
+
+def zeros(n: Nat) -> String:
+  zeros_go(n, "")
 
 # Exponents beyond four significant digits are clamped to 9999. The result
 # is then far outside any clock value, which is what the checks need.
@@ -330,7 +346,7 @@ def shift_left(+whole: String, +fraction: String, +e: Nat, inside: Bool) -> Stri
   match inside:
     case True{}:
       +keep = Nat.sub(String.length(whole), e)
-      (String.take(whole, keep), nonzero(String.drop(whole, keep)) || nonzero(fraction))
+      (Text.take(whole, keep), nonzero(String.drop(whole, keep)) || nonzero(fraction))
     case False{}:
       ("", nonzero(whole) || nonzero(fraction))
 
@@ -339,7 +355,7 @@ def shifted(+whole: String, +fraction: String, +e: Nat, left: Bool) -> String & 
     case True{}:
       shift_left(whole, fraction, e, Nat.is_le(e, String.length(whole)))
     case False{}:
-      (whole ++ String.take(fraction ++ zeros(e), e), nonzero(String.drop(fraction, e)))
+      (whole ++ Text.take(fraction ++ zeros(e), e), nonzero(String.drop(fraction, e)))
 
 def numeric_parts(negative: Bool, parts: String & Bool) -> Numeric:
   (w, f) = parts
