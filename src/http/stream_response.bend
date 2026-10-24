@@ -49,6 +49,10 @@ def select(req: Request.Req, +res: Response.Res, selected: Maybe<&1, T.Registrat
     case res None{}: IO.pure(Response.Res & Maybe<&1, T.Plan>, (Stream.strip(res), None{}))
     case Response.Res{code, hs, bytes, rep} Some{T.Registration{id, plan}}:
       allowed(req, res, plan, Stream.marked(hs, id))
+    case res Some{T.Upgrade{id, config, session}}:
+      do IO<Response.Res & Maybe<&1, T.Plan>>:
+        Stream.abort(session)
+        return (Stream.strip(res), None{})
 
 # Network-free handlers cannot consume an affine transport response.
 def network(selected: Response.Res & Maybe<&1, T.Plan>, enabled: Bool) -> IO(Response.Res & Maybe<&1, T.Plan>):

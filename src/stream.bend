@@ -1,6 +1,7 @@
 # Thin IO shell. Producer state is affine; no producer task runs ahead of TCP.
 import Base
 import ./http/stream_types.bend as T
+import ./http/websocket.bend as WebSocket
 import ./http/stream_framing.bend as Frame
 import ./http/response.bend as Response
 import ./http/bytes.bend as Bytes
@@ -130,41 +131,69 @@ def mark(res: Response.Res, id: String) -> Response.Res:
   Response.Res{code, hs, body, rep} = res
   Response.Res{code, Request.Header{marker(), Bytes.encode(id)} <> hs, [], None{}}
 
+# What a handler asks the transport to do with its response.
+type Claim is Type:
+  Body{plan: T.Plan}
+  Handshake{config: WebSocket.Config, session: T.Session}
+
+def abort(session: T.Session) -> IO(Unit):
+  T.Session{timeout, action} = session
+  action(T.Abort{})
+
+def release(claim: Claim) -> IO(Unit):
+  match claim:
+    case Body{plan}: cancel(plan)
+    case Handshake{config, session}: abort(session)
+
+def released(registration: T.Registration) -> IO(Unit):
+  match registration:
+    case T.Registration{id, plan}: cancel(plan)
+    case T.Upgrade{id, config, session}: abort(session)
+
+def claimed(id: String, claim: Claim) -> T.Registration:
+  match claim:
+    case Body{plan}: T.Registration{id, plan}
+    case Handshake{config, session}: T.Upgrade{id, config, session}
+
+def refused(registration: T.Registration) -> IO(Response.Res):
+  do IO<Response.Res>:
+    released(registration)
+    return Response.body(500, [], [])
+
 def registered(res: Response.Res, id: String, result: Poll<&1, &1, Result<&1, &1, T.Registration, Unit>, T.Registration>) -> IO(Response.Res):
   match result:
     case Ready{Done{u}}:
       IO.pure(Response.Res, mark(res, id))
-    case Ready{Fail{T.Registration{old, plan}}}:
-      do IO<Response.Res>:
-        cancel(plan)
-        return Response.body(500, [], [])
-    case Wait{T.Registration{old, plan}}:
-      do IO<Response.Res>:
-        cancel(plan)
-        return Response.body(500, [], [])
+    case Ready{Fail{registration}}: refused(registration)
+    case Wait{registration}: refused(registration)
 
-def identified(slot: Chan(T.Registration), res: Response.Res, plan: T.Plan, entropy: Result<&1, &1, Random.RandomError(), List<&2, U32>>) -> IO(Response.Res):
+def identified(slot: Chan(T.Registration), res: Response.Res, claim: Claim, entropy: Result<&1, &1, Random.RandomError(), List<&2, U32>>) -> IO(Response.Res):
   match entropy:
     case Fail{error}:
       do IO<Response.Res>:
-        cancel(plan)
+        release(claim)
         return Response.body(500, [], [])
     case Done{bytes}:
       +id = Hex.encode(bytes)
       do IO<Response.Res>:
-        result : Poll<&1, &1, Result<&1, &1, T.Registration, Unit>, T.Registration> <- Chan.try_send(T.Registration, slot, T.Registration{id, plan}, 0)
+        result : Poll<&1, &1, Result<&1, &1, T.Registration, Unit>, T.Registration> <- Chan.try_send(T.Registration, slot, claimed(id, claim), 0)
         registered(res, id, result)
 
-def register(slot: Maybe<&2, Chan(T.Registration)>, res: Response.Res, plan: T.Plan) -> IO(Response.Res):
+# The slot holds one registration per request; a second (or one after the
+# handler finished) is released and answered with an empty 500.
+def register_claim(slot: Maybe<&2, Chan(T.Registration)>, res: Response.Res, claim: Claim) -> IO(Response.Res):
   match slot:
     case None{}:
       do IO<Response.Res>:
-        cancel(plan)
+        release(claim)
         return Response.body(500, [], [])
     case Some{channel}:
       do IO<Response.Res>:
         entropy : Result<&1, &1, Random.RandomError(), List<&2, U32>> <- Random.random_bytes(16n)
-        identified(channel, strip(res), plan, entropy)
+        identified(channel, strip(res), claim, entropy)
+
+def register(slot: Maybe<&2, Chan(T.Registration)>, res: Response.Res, plan: T.Plan) -> IO(Response.Res):
+  register_claim(slot, res, Body{plan})
 
 def take(slot: Chan(T.Registration)) -> IO(Maybe<&1, T.Registration>):
   +channel = slot

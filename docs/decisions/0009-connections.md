@@ -23,7 +23,9 @@ closes, even with `Connection: keep-alive`; HTTP/1.0 persistence is unsupported.
 
 400, 413, 417, and 431 responses close, including those returned by handlers.
 Read timeouts during an incomplete request return 408 and close. Informational
-handler responses, including 101, close until M6 adds upgrade handoff. Buffered
+handler responses close, including a bare 101. An accepted `B.websocket` 101
+instead hands the socket and every buffered octet to its session, and HTTP
+parsing stops ([the WebSocket guide](../websocket.md)). Buffered
 requests after a closing response are discarded without dispatch.
 
 Every intentional final close replaces all application Connection fields with

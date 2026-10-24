@@ -1,6 +1,8 @@
 # Public Bendo entrypoint. Route tags and startup environments are app-owned Data.
 import Base
 import ./stream.bend as Stream
+import ./websocket.bend as WebSocket
+import ./http/websocket.bend as Handshake
 import ./http/stream_types.bend as StreamTypes
 import ./app/observability.bend as Observation
 import ./mw/builtin.bend as Builtin
@@ -214,6 +216,19 @@ def StreamStep(-State: Type) -> Type: StreamTypes.Step<State>
 def stream_config() -> StreamTypes.Config: Stream.defaults()
 def stream(~Vars: Data, ~State: Type, ~step: State -> IO(StreamTypes.Step<State>), ~cleanup: State -> IO(Unit), +c: Context.Ctx<Vars>, state: State, config: StreamTypes.Config) -> IO(Response.Res):
   Stream.register(Observation.stream(Context.observation(Vars, c)), Context.body(Vars, c, [], None{}), Stream.plan(~State, ~step, ~cleanup, state, config))
+
+# WebSocket opening handshake (RFC 6455). websocket_config accepts every
+# Origin and offers no subprotocol. After the 101, session receives the state,
+# the socket and the octets already read past the handshake, and owns the
+# socket; cleanup receives the state instead when the handshake is refused or
+# the response is replaced. See docs/websocket.md.
+def WebSocketConfig() -> Data: Handshake.Config
+def websocket_config() -> Handshake.Config: Handshake.defaults()
+def websocket_origins(config: Handshake.Config, origins: List<&2, String>) -> Handshake.Config: Handshake.with_origins(config, origins)
+def websocket_protocols(config: Handshake.Config, protocols: List<&2, String>) -> Handshake.Config: Handshake.with_protocols(config, protocols)
+def websocket_timeout(config: Handshake.Config, milliseconds: U32) -> Handshake.Config: Handshake.with_timeout(config, milliseconds)
+def websocket(~Vars: Data, ~State: Type, ~session: State -> Socket -> List<&2, U32> -> IO(Unit), ~cleanup: State -> IO(Unit), +c: Context.Ctx<Vars>, state: State, config: Handshake.Config) -> IO(Response.Res):
+  WebSocket.respond(~Vars, ~State, ~session, ~cleanup, c, state, config)
 
 # Buffered protection and cache middleware.
 def body_limit(bytes: U32) -> Builtin.Builtin: Builtin.BodyLimit{bytes}

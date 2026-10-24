@@ -92,6 +92,8 @@ import ./src/mw/trailing_slash_policy.bend as TrailingPolicy
 import ./proof/trailing-spec.bend as TrailingSpec
 
 import ./src/http/date.bend as HttpDate
+import ./src/http/websocket.bend as WebSocket
+import ./proof/websocket-spec.bend as WebSocketSpec
 import ./proof/date-spec.bend as HttpDateSpec
 
 # LAW: a text response is a head with no blank line in it, then a blank
@@ -1944,3 +1946,30 @@ law trailing_append_target:
   for ends: {TrailingSpec.final_slash(path) == False{} : Bool}
   for ok: {TrailingSpec.same_origin_path(path ++ ("/" ++ Request.query_text(q))) == True{} : Bool}
   {TrailingPolicy.target(TrailingPolicy.Append{}, m, path, q) == Some{path ++ ("/" ++ Request.query_text(q))} : Maybe<&2, String>}
+
+# BND-50: the WebSocket opening handshake (RFC 6455 section 4).
+
+# For every key, Sec-WebSocket-Accept is the padded standard base64 of the
+# SHA-1 of the key's octets followed by the RFC's GUID, which the spec spells
+# out as literal octets.
+law websocket_accept_spec:
+  for +key: List<&2, U32>
+  {WebSocket.accept(key) == WebSocketSpec.accept(key) : String}
+
+# The worked example of RFC 6455 section 1.3.
+law websocket_accept_rfc:
+  {WebSocket.accept(Bytes.encode("dGhlIHNhbXBsZSBub25jZQ==")) == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=" : String}
+
+# For every configuration and request, the handshake decision equals
+# WebSocketSpec.decide: 400 unless the request is a GET over HTTP/1.1 with no
+# Transfer-Encoding and at most one zero Content-Length, a "websocket" Upgrade
+# element and an "upgrade" Connection element (ASCII case ignored), and exactly
+# one key that is the canonical padded base64 of 16 octets; then 400 for a
+# missing or repeated version and 426 for one that is not "13"; then 403 when
+# a listed origin policy does not list the single Origin field's
+# serialization; otherwise accept with the computed key and the first
+# configured subprotocol the client offered, or none.
+law websocket_decision_spec:
+  for +config: WebSocket.Config
+  for +req: Request.Req
+  {WebSocket.decide(config, req) == WebSocketSpec.decide(config, req) : WebSocket.Decision}

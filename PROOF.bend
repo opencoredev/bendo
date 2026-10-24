@@ -42,6 +42,7 @@ import ./src/http/request.bend as Request
 import ./src/http/parse.bend as Parse
 import ./src/http/write.bend as Write
 import ./LAWS.bend as Laws
+import ./proof/websocket.bend as WebSocketProof
 import ./proof/equality.bend as Equality
 import ./proof/tokens.bend as Tokens
 import ./proof/headers.bend as Headers
@@ -749,3 +750,12 @@ def Laws.trailing_trim_target(base, q, m, r, ok):
 
 def Laws.trailing_append_target(path, q, m, r, ends, ok):
   TrailingProof.append_target(path, q, m, r, ends, ok)
+
+def Laws.websocket_accept_spec(key):
+  WebSocketProof.accept(key)
+
+def Laws.websocket_accept_rfc():
+  WebSocketProof.rfc()
+
+def Laws.websocket_decision_spec(config, req):
+  WebSocketProof.decide(config, req)
