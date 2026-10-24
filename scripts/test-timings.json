@@ -1,11 +1,11 @@
 {
   "version": 1,
   "files": {
-    "tests/multipart.test.ts": 90940,
+    "tests/multipart.test.ts": 240000,
     "tests/http-body.test.ts": 59598,
     "tests/http-connection.test.ts": 54611,
     "tests/mandelbrot.test.ts": 51000,
-    "tests/json.test.ts": 44463,
+    "tests/json.test.ts": 120000,
     "tests/router-methods.test.ts": 42719,
     "tests/handle.test.ts": 35694,
     "tests/crypto.test.ts": 25417,
@@ -18,6 +18,11 @@
     "tests/router-patterns.test.ts": 3813,
     "tests/typed-values-prototype.test.ts": 1483,
     "tests/http-parse.test.ts": 374,
-    "bench/process.test.ts": 204
+    "bench/process.test.ts": 204,
+    "tests/mw-observability.test.ts": 150000,
+    "tests/mw-cors.test.ts": 150000,
+    "tests/schema-compound.test.ts": 120000,
+    "tests/fuzz/http.test.ts": 180000,
+    "tests/errors.test.ts": 120000
   }
 }

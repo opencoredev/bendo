@@ -35,6 +35,7 @@ import ./src/http/write_response.bend as WriteResponse
 import ./src/http/chunked.bend as Chunked
 import ./proof/stream.bend as StreamProof
 import ./proof/stream-rfc.bend as StreamRfcProof
+import ./proof/sse.bend as SseProof
 import ./src/http/stream_framing.bend as StreamFraming
 import ./src/http.bend as Http
 import ./src/http/bytes.bend as Bytes
@@ -102,6 +103,8 @@ import ./proof/response-policy.bend as ResponsePolicyProof
 import ./proof/secure-headers.bend as SecureHeadersProof
 import ./proof/override.bend as OverrideProof
 import ./proof/trailing.bend as TrailingProof
+
+import ./proof/static-path.bend as StaticProof
 
 # Check the pure crypto implementations with the strict kernel as well.
 import ./src/crypto/sha1.bend as SHA1
@@ -671,6 +674,28 @@ def Laws.body_limit_spec(length, limit): LimitsProof.within(length, limit)
 
 def Laws.etag_middleware_spec(method, field, res): LimitsProof.etag(method, field, res)
 
+# BND-49
+def Laws.sse_roundtrip(frames, valid):
+  SseProof.roundtrip(frames, valid)
+
+def Laws.sse_encode_rejects_unsafe(frame):
+  SseProof.encode_guard(frame)
+
+def Laws.sse_sent_frame_exact(frame, bytes, sent):
+  SseProof.sent_frame(frame, bytes, sent)
+
+def Laws.sse_heartbeat_ignored(buffers, text, rest, clean):
+  SseProof.comment_ignored(buffers, text, rest, clean)
+
+def Laws.sse_text_utf8(s, valid):
+  SseProof.text_utf8(s, valid)
+
+def Laws.sse_retry_decimal(ms):
+  SseProof.retry_digits(ms)
+
+def Laws.sse_retry_value(ms):
+  SseProof.retry_value(ms)
+
 # BND-40: CORS, method override and trailing-slash decisions.
 
 def Laws.cors_grant_spec(origins, sent):
@@ -750,6 +775,26 @@ def Laws.trailing_trim_target(base, q, m, r, ok):
 
 def Laws.trailing_append_target(path, q, m, r, ends, ok):
   TrailingProof.append_target(path, q, m, r, ends, ok)
+
+# BND-45: static path confinement.
+
+def Laws.static_path_confined(raw, index):
+  StaticProof.confined(raw, index)
+
+def Laws.static_path_target(root, raw, index):
+  StaticProof.target(root, raw, index)
+
+def Laws.static_path_segments(raw, index):
+  StaticProof.segments(raw, index)
+
+def Laws.static_path_no_dotfiles(raw, index):
+  StaticProof.no_dotfiles(raw, index)
+
+def Laws.static_path_complete(first, rest, index, servable):
+  StaticProof.complete(first, rest, index, servable)
+
+def Laws.static_path_index(xs, index, servable, named):
+  StaticProof.index_law(xs, index, servable, named)
 
 def Laws.websocket_accept_spec(key):
   WebSocketProof.accept(key)

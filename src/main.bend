@@ -4,6 +4,9 @@ import ./stream.bend as Stream
 import ./websocket.bend as WebSocket
 import ./http/websocket.bend as Handshake
 import ./http/stream_types.bend as StreamTypes
+import ./sse.bend as Sse
+import ./http/sse.bend as SseCodec
+import ./http/sse_types.bend as SseTypes
 import ./app/observability.bend as Observation
 import ./mw/builtin.bend as Builtin
 import ./mw/cache.bend as Cache
@@ -37,6 +40,7 @@ import ./http/request.bend as Request
 import ./http/response.bend as Response
 import ./router/methods.bend as Methods
 import ./router/router.bend as Router
+import ./static/serve.bend as Static
 
 def HttpError() -> Data: Errors.HttpError
 def http_error(status: U32, message: String) -> Errors.HttpError: Errors.http_error(status, message)
@@ -245,6 +249,20 @@ def builtin_body_limit(id: Builtin.Builtin) -> Maybe<&2, U32>: Builtin.body_limi
 def serve_limits_with(~Vars: Data, ~Tag: Data, ~select: Tag -> Maybe<&2, U32>, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config) -> IO(Unit):
   Serve.run_limits_with(~Vars, ~Tag, ~select, ~Env, ~dispatch, ~middleware, table, env, config)
 
+# Server-Sent Events over the same pull producer transport.
+def SseConfig() -> Data: SseTypes.Config
+def SseStep(-State: Type) -> Type: SseTypes.Step<State>
+def SseFrame() -> Data: SseCodec.Frame
+def sse_config() -> SseTypes.Config: Sse.defaults()
+def sse_message(event: Maybe<&2, String>, data: String, id: Maybe<&2, String>, retry: Maybe<&2, U32>) -> SseCodec.Frame: Sse.message(event, data, id, retry)
+def sse_data(data: String) -> SseCodec.Frame: Sse.message(None{}, data, None{}, None{})
+def sse_comment(text: String) -> SseCodec.Frame: Sse.comment_frame(text)
+def last_event_id(-Vars: Data, c: Context.Ctx<Vars>) -> Maybe<&2, String>: Sse.last_event_id(Vars, c)
+def stream_sse(~Vars: Data, ~State: Type, ~step: State -> IO(SseTypes.Step<State>), ~cleanup: State -> IO(Unit), c: Context.Ctx<Vars>, state: State, +config: SseTypes.Config) -> IO(Response.Res):
+  do IO<Response.Res>:
+    now : Nat <- IO.now()
+    stream(~Vars, ~SseTypes.Pump<State>, ~(p => Sse.pull(~State, ~step, p)), ~(p => Sse.release(~State, ~cleanup, p)), Sse.headers(Vars, c), SseTypes.Pump{state, config, now}, Sse.stream_config(config))
+
 # CORS. cors_defaults answers every origin with "*" and never allows
 # credentials. cors_allow lists origins; each entry says whether its
 # responses may carry credentials. See docs/web-middleware.md.
@@ -282,3 +300,14 @@ def trim_trailing_slash() -> Builtin.Builtin: Builtin.TrailingSlash{Trailing.Con
 def trim_trailing_slash_always() -> Builtin.Builtin: Builtin.TrailingSlash{Trailing.Config{TrailingPolicy.Trim{}, True{}}}
 def append_trailing_slash() -> Builtin.Builtin: Builtin.TrailingSlash{Trailing.Config{TrailingPolicy.Append{}, False{}}}
 def append_trailing_slash_always() -> Builtin.Builtin: Builtin.TrailingSlash{Trailing.Config{TrailingPolicy.Append{}, True{}}}
+
+# Static files (BND-45). Register a GET wildcard route and call serve_static
+# from its handler; docs/static.md describes paths, caching and ranges.
+def StaticOptions() -> Data: Static.Options
+def static_options(root: String) -> Static.Options: Static.defaults(root)
+def static_mounted(options: Static.Options, prefix: String) -> Static.Options: Static.mounted(options, prefix)
+def static_index(options: Static.Options, index: String) -> Static.Options: Static.with_index(options, index)
+def static_buffer_bytes(options: Static.Options, max: Nat) -> Static.Options: Static.with_buffer_bytes(options, max)
+def static_cache_control(options: Static.Options, value: String) -> Static.Options: Static.with_cache_control(options, value)
+def serve_static(c: Handle.Ctx, options: Static.Options) -> IO(Response.Res): Static.serve(Unit, c, options)
+def serve_static_with(-Vars: Data, c: Context.Ctx<Vars>, options: Static.Options) -> IO(Response.Res): Static.serve(Vars, c, options)
