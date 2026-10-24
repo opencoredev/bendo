@@ -899,3 +899,23 @@ def route_undeclared(-Tag: Data, +layers: List<&2, Table.Middleware<Tag>>, +rout
 
 def L.undeclared_table_checks_nothing(Tag, layers, route, undeclared):
   route_undeclared(Tag, layers, route, undeclared)
+
+# BND-96: a set with no request slot is admitted with no values.
+def request_free_run(+set: V.Schemas, +input: V.Input, e: {Bool.not(V.requests_nothing(set)) == False{} : Bool}) -> {V.run(V.RequestJob{set, input}) == V.Judged{V.Valid{V.no_values()}} : V.Answer}:
+  match set input:
+    case V.Schemas{None{}, None{}, None{}, None{}, +r} V.Input{+ps, +qs, +hs, +body}: {==}
+    case V.Schemas{Some{c}, sq, sh, sb, sr} +i: never({V.run(V.RequestJob{V.Schemas{Some{c}, sq, sh, sb, sr}, i}) == V.Judged{V.Valid{V.no_values()}} : V.Answer}, true_false(e))
+    case V.Schemas{None{}, Some{c}, sh, sb, sr} +i: never({V.run(V.RequestJob{V.Schemas{None{}, Some{c}, sh, sb, sr}, i}) == V.Judged{V.Valid{V.no_values()}} : V.Answer}, true_false(e))
+    case V.Schemas{None{}, None{}, Some{c}, sb, sr} +i: never({V.run(V.RequestJob{V.Schemas{None{}, None{}, Some{c}, sb, sr}, i}) == V.Judged{V.Valid{V.no_values()}} : V.Answer}, true_false(e))
+    case V.Schemas{None{}, None{}, None{}, Some{c}, sr} +i: never({V.run(V.RequestJob{V.Schemas{None{}, None{}, None{}, Some{c}, sr}, i}) == V.Judged{V.Valid{V.no_values()}} : V.Answer}, true_false(e))
+
+def L.request_free_route_is_admitted_run(set, input, unchecked):
+  request_free_run(set, input, unchecked)
+
+def L.request_free_route_is_admitted_skip(set, input, unchecked):
+  Equal.cong(Bool, V.Answer, d => V.Judged{V.skipped(Bool.not(d))}, V.declares(set), False{}, unchecked)
+
+def L.no_values_entry_reads_unchanged(Vars, c, fresh):
+  match c:
+    case C.Ctx{+r, +p, +b, +q, +s, +hs, +vars, Obs.State{+id, +timing, +finalized, +policies, +stream, +peer, +access, +valid}}:
+      Equal.cong(Maybe<&2, V.Values>, V.Values, x => C.values_of(x), None{}, valid, Equal.sym(Maybe<&2, V.Values>, valid, None{}, fresh))

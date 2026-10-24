@@ -61,8 +61,9 @@ works out once, at startup, whether the table declares any schema. When it
 declares none, which is always the case under the `B.` entrypoints, requests
 skip the schema lookup, the validation step and the response check, and the
 binary does not contain the validating request pipeline at all. In a table that
-does declare schemas, a route with no request schema skips the validation step,
-and a route with no response schema skips the response check.
+does declare schemas, a route with no params, query, headers or body schema
+skips the validation step, even when it declares a response schema, and a route
+with no response schema skips the response check.
 
 ## Declare schemas
 
@@ -273,6 +274,15 @@ so the BND-33/34/35 schema laws describe what each slot accepts and reports.
 - `response_without_schema_is_sent_run` and `response_without_schema_is_sent_skip`:
   with or without the decoder, a route without a response schema sends the
   response the retained policies produced, so finalization skips the check.
+- `request_free_route_is_admitted_run` and `request_free_route_is_admitted_skip`:
+  when a validator's own probe says a route's schemas check nothing in the
+  request, its request check would have admitted the request with no decoded
+  values. With the decoder that covers a route with only a response schema;
+  without it, only a route with no schema at all, so `B.handle` still refuses a
+  response-only route.
+- `no_values_entry_reads_unchanged`: admitting a request with no decoded values
+  leaves the values a handler reads as they were, so skipping the step is
+  invisible.
 
 These laws rely on the JSON parser, `Bytes.fold` and the raw query parser
 that the implementation and the specification share; BND-92 tracks proving

@@ -315,3 +315,29 @@ law undeclared_table_checks_nothing:
   for +route: Maybe<&2, Nat>
   for +undeclared: {Table.declares_schemas(Tag, layers) == False{} : Bool}
   {Table.route_schemas(Tag, layers, route) == V.none() : V.Schemas}
+
+# BND-96: a route whose schemas check nothing in the request skips the
+# request step. For every schema set and request input, when the validator's
+# own probe says the step need not run, the step would have admitted the
+# request with no decoded values: with the decoder, a set with only a response
+# schema (or none); without it, a set with no schema at all, so a
+# response-only route still reaches the step that refuses it.
+law request_free_route_is_admitted_run:
+  for +set: V.Schemas
+  for +input: V.Input
+  for +unchecked: {V.checks_request(V.enabled(V.run(V.Probe{})), set) == False{} : Bool}
+  {V.run(V.RequestJob{set, input}) == V.Judged{V.Valid{V.no_values()}} : V.Answer}
+
+law request_free_route_is_admitted_skip:
+  for +set: V.Schemas
+  for +input: V.Input
+  for +unchecked: {V.checks_request(V.enabled(V.skip(V.Probe{})), set) == False{} : Bool}
+  {V.skip(V.RequestJob{set, input}) == V.Judged{V.Valid{V.no_values()}} : V.Answer}
+
+# BND-96: and admitting with no values leaves the request unchanged: a
+# context that carried no decoded values reads the same values afterwards.
+law no_values_entry_reads_unchanged:
+  for -Vars: Data
+  for +c: C.Ctx<Vars>
+  for +fresh: {Obs.valid(C.observation(Vars, c)) == None{} : Maybe<&2, V.Values>}
+  {C.values(Vars, C.with_values(Vars, c, V.no_values())) == C.values(Vars, c) : V.Values}

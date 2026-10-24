@@ -156,8 +156,9 @@ def route_checks(-Tag: Data, layers: List<&2, Table.Middleware<Tag>>, route: May
     case False{}: Validate.none()
     case True{}: Table.route_schemas(Tag, layers, route)
 
-# A route that declares no schema runs the same hooks without the
-# validation step.
+# A route whose schemas check nothing in the request (none at all, or with a
+# decoder only a response schema) runs the same hooks without the validation
+# step.
 def onion_for(~validator: Validate.Job -> Validate.Answer, ~Vars: Data, ~Tag: Data, ~Env: Data, ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), early: List<&2, Tag>, before: List<&2, Tag>, schemas: Validate.Schemas, env: Env, slot: Chan(Context.Ctx<Vars>), declared: Bool) -> Middleware.Value(Context.Ctx<Vars>, IO(Response.Res)):
   match declared:
     case False{}: Hooks.chain(~Vars, ~Tag, ~Env, ~middleware, List.append(&2, Tag, early, before), env, slot)
@@ -168,7 +169,7 @@ def resolved_with(~validator: Validate.Job -> Validate.Answer, ~Vars: Data, ~Tag
   +routed = with_params(Vars, ctx, params(Tag, resolution))
   +schemas = route_checks(Tag, layers, route, validates)
   early = List.concat(&2, Tag, [Table.selected(Tag, layers, Context.path(Vars, routed)), Table.scoped_stage_ids(Tag, layers, route, Table.Parse{}), Table.scoped_stage_ids(Tag, layers, route, Table.Transform{})])
-  onion = onion_for(~validator, ~Vars, ~Tag, ~Env, ~middleware, early, Table.scoped_stage_ids(Tag, layers, route, Table.BeforeHandle{}), schemas, env, slot, Validate.declares(schemas))
+  onion = onion_for(~validator, ~Vars, ~Tag, ~Env, ~middleware, early, Table.scoped_stage_ids(Tag, layers, route, Table.BeforeHandle{}), schemas, env, slot, Validate.checks_request(Validate.enabled(validator(Validate.Probe{})), schemas))
   do IO<Response.Res>:
     RouteSlot.remember(route_slot, route)
     Hooks.remember(Vars, slot, routed)
@@ -268,7 +269,8 @@ def parsed_checked(~validator: Validate.Job -> Validate.Answer, ~Vars: Data, ~Ta
 # validation: no route's schemas are looked up (law
 # undeclared_table_checks_nothing), no request is checked, and finalization
 # sends what the retained policies produce, as BND-36's check does for a route
-# without a response schema. This repeats parsed_checked's setup on purpose.
+# without a response schema. This repeats parsed_checked's setup on purpose;
+# tests/pipelines.test.ts checks the two answer and trace alike.
 # Measured on Boat, either splitting finalization into its own IO-returning
 # def or giving the lifecycle functions a second caller in the same binary
 # (which stops the compiler inlining them) cost hello 5,000 to 8,000
