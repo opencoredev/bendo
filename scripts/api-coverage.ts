@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import ts from "typescript";
 
@@ -497,10 +505,43 @@ export function writeBendPrograms(pages = referencePages()): BendProgram[] {
 export type TsCheck = { readonly files: number; readonly problems: Problem[] };
 
 /**
+ * Links the packages' installed dependencies into `dir/node_modules`, so an
+ * example resolves `vite` or `@types/react` the way an app would, through
+ * their `exports` and `types`. The first package to provide a name wins.
+ */
+function linkDependencies(dir: string): void {
+  const linked = (target: string) => existsSync(target) || isLink(target);
+  for (const pkg of tsEntryPackages) {
+    const modules = join(root, pkg, "node_modules");
+    if (!existsSync(modules)) continue;
+    for (const name of readdirSync(modules)) {
+      if (name.startsWith(".")) continue;
+      const scoped = name.startsWith("@") ? readdirSync(join(modules, name)) : [undefined];
+      for (const inner of scoped) {
+        const relativeName = inner === undefined ? name : `${name}/${inner}`;
+        const target = join(dir, "node_modules", relativeName);
+        if (linked(target)) continue;
+        mkdirSync(dirname(target), { recursive: true });
+        symlinkSync(join(modules, relativeName), target);
+      }
+    }
+  }
+}
+
+function isLink(path: string): boolean {
+  try {
+    return lstatSync(path).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Writes every TypeScript example as its own module beside a copy of the
  * client fixture's generated `.bendo/` files, then typechecks them together
- * with the repo's compiler options. Package imports resolve to the workspace
- * sources through their `exports` maps.
+ * with the repo's compiler options. Bendo's own imports resolve to the
+ * workspace sources through their `exports` maps; other packages resolve
+ * from the dependencies the Bendo packages install.
  */
 export function checkTsExamples(pages = referencePages()): TsCheck {
   const dir = join(examplesDir, "ts");
@@ -521,9 +562,9 @@ export function checkTsExamples(pages = referencePages()): TsCheck {
       origins.set(file, `${page}:${block.line}`);
     }
   }
+  linkDependencies(dir);
   const paths: Record<string, string[]> = {};
   for (const [specifier, file] of tsEntryPoints()) paths[specifier] = [join(root, file)];
-  paths["*"] = tsEntryPackages.map((pkg) => join(root, pkg, "node_modules/*"));
   const program = ts.createProgram([...origins.keys()], {
     ...compilerOptions(),
     noEmit: true,
