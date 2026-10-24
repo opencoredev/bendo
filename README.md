@@ -77,10 +77,11 @@ curl http://127.0.0.1:8787/hello/Ada
 kill %1
 ```
 
-The curl prints `{"message":"Hello, Ada!"}`. `bun run build` writes the
-native binary to `dist/server` (51 seconds on the same machine). During development,
-`bun run dev` rebuilds the server on every `.bend` save. The `fullstack`
-template adds a React app; see [create-bendo](packages/create-bendo/README.md).
+The curl prints `{"message":"Hello, Ada!"}`. `bun run build` writes the native
+binary to `dist/server`; it took 51 seconds on the same machine. During
+development, `bun run dev` rebuilds the server on every `.bend` save. The
+`fullstack` template adds a React app; see
+[create-bendo](packages/create-bendo/README.md).
 
 ## Examples
 
