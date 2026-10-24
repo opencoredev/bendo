@@ -20,12 +20,18 @@ type Route is Data:
   GhostRoute{}
   ConnectionsRoute{}
   DelayedRoute{}
+  JammedRoute{}
+  HoldRoute{}
+  FillRoute{}
+  FreeRoute{}
+  ClaimsRoute{}
 
 # `kept` holds the Peer of the latest /keep connection, so a request can
 # subscribe it after that connection has closed. `slow` reaches the same
-# registry through `relay`.
+# registry through `relay`, and `jam` through `gate`, which holds requests
+# while `held` is True.
 type Shared is Data:
-  Shared{hub: P.Hub, slow: P.Hub, kept: Store.Store<Maybe<&2, P.Peer>>}
+  Shared{hub: P.Hub, slow: P.Hub, jam: P.Hub, held: Store.Store<Bool>, kept: Store.Store<Maybe<&2, P.Peer>>}
 
 def flag(ok: Bool) -> String:
   match ok:
@@ -180,6 +186,72 @@ def delayed(hub: P.Hub) -> IO(P.Hub):
     IO.spawn(Unit, relay_start(from, to))
     return P.Hub{Store.Store{from, 100}}
 
+# Waits while `held` is True.
+@unsafe
+def wait_free(+held: Store.Store<Bool>, flag: Result<&2, &2, Store.Error, Bool>) -> IO(Unit):
+  match flag:
+    case Done{True{}}:
+      do IO<Unit>:
+        IO.sleep(5)
+        next : Result<&2, &2, Store.Error, Bool> <- Store.get(Bool, held)
+        wait_free(held, next)
+    case _: IO.pure(Unit, Unit{})
+
+# Forwards each request to the hub's actor in order, but holds the next one
+# while `held` is True, so the 128-slot queue in front fills up behind it.
+@unsafe
+def gate(+from: Chan(Request()), +to: Chan(Request()), +held: Store.Store<Bool>, got: Maybe<&1, Request()>) -> IO(Unit):
+  match got:
+    case None{}: IO.pure(Unit, Unit{})
+    case Some{message}:
+      do IO<Unit>:
+        flag : Result<&2, &2, Store.Error, Bool> <- Store.get(Bool, held)
+        wait_free(held, flag)
+        sent : Result<&1, &1, Request(), Unit> <- Chan.send(Request(), to, message)
+        next : Maybe<&1, Request()> <- Chan.recv(Request(), from)
+        gate(from, to, held, next)
+
+@unsafe
+def gate_start(+from: Chan(Request()), +to: Chan(Request()), +held: Store.Store<Bool>) -> IO(Unit):
+  do IO<Unit>:
+    first : Maybe<&1, Request()> <- Chan.recv(Request(), from)
+    gate(from, to, held, first)
+
+# A hub over the same registry whose requests give up after 100 ms.
+@unsafe
+def jammed(hub: P.Hub, +held: Store.Store<Bool>) -> IO(P.Hub):
+  P.Hub{Store.Store{to, ms}} = hub
+  do IO<P.Hub>:
+    +from : Chan(Request()) <- Chan.new(Request(), 128)
+    IO.spawn(Unit, gate_start(from, to, held))
+    return P.Hub{Store.Store{from, 100}}
+
+def front_of(hub: P.Hub) -> Chan(Request()):
+  P.Hub{Store.Store{front, ms}} = hub
+  front
+
+# Offers throwaway reads to `front` without waiting until one is refused, and
+# counts those accepted. `last` is the previous offer; the first call passes a
+# stand-in, which `previous` takes back off the count.
+def fill(+front: Chan(Request()), left: Nat, count: Nat, last: Poll<&1, &1, Result<&1, &1, Request(), Unit>, Request()>) -> IO(Nat):
+  match left last:
+    case 1n+k Ready{Done{u}}:
+      do IO<Nat>:
+        reply : Chan(T.Ledger<W.Handle>) <- Chan.new(T.Ledger<W.Handle>, 1)
+        sent : Poll<&1, &1, Result<&1, &1, Request(), Unit>, Request()> <- Chan.try_send(Request(), front, Store.Get{reply}, 0)
+        fill(front, k, 1n+count, sent)
+    case _ _: IO.pure(Nat, T.previous(count))
+
+def claims_text(got: Result<&2, &2, Store.Error, T.Ledger<W.Handle>>) -> String:
+  match got:
+    case Done{l}: Nat.show(List.length(&2, T.Claim, T.claims(W.Handle, l)))
+    case Fail{e}: "unavailable"
+
+def set_text(got: Result<&2, &2, Store.Error, Unit>, text: String) -> String:
+  match got:
+    case Done{u}: text
+    case Fail{e}: "unavailable"
+
 # Fields: max_message, mailbox_capacity, poll_ms, poll_max_ms, idle_ms,
 # ping_ms, close_ms, write_ms. /slow holds one queued message and polls its
 # mailbox only once a minute unless bytes arrive; /ws keeps the default
@@ -240,7 +312,7 @@ def text_param(param: Maybe<&2, String>) -> String:
     case None{}: "m"
 
 @unsafe
-def handler(route: Route, +c: B.Context(Unit), +hub: P.Hub, slow: P.Hub, +kept: Store.Store<Maybe<&2, P.Peer>>) -> IO(B.Res):
+def handler(route: Route, +c: B.Context(Unit), +hub: P.Hub, slow: P.Hub, +jam: P.Hub, +held: Store.Store<Bool>, +kept: Store.Store<Maybe<&2, P.Peer>>) -> IO(B.Res):
   match route:
     case SocketRoute{}:
       P.handlers(~Unit, ~String, ~opened, ~message, ~closed, c, hub, topic_of(B.param(c, "topic")), B.websocket_config(), session_config(mode(B.query(c, "mode"))))
@@ -273,11 +345,29 @@ def handler(route: Route, +c: B.Context(Unit), +hub: P.Hub, slow: P.Hub, +kept: 
         return B.text(c, size_text(got))
     case DelayedRoute{}:
       P.handlers(~Unit, ~String, ~opened, ~message, ~closed, c, slow, "none", B.websocket_config(), W.defaults())
+    case JammedRoute{}:
+      P.handlers(~Unit, ~String, ~opened, ~message, ~closed, c, jam, "none", B.websocket_config(), W.defaults())
+    case HoldRoute{}:
+      do IO<B.Res>:
+        got : Result<&2, &2, Store.Error, Unit> <- Store.set(Bool, held, True{})
+        return B.text(c, set_text(got, "held"))
+    case FillRoute{}:
+      do IO<B.Res>:
+        n : Nat <- fill(front_of(jam), 1000n, 0n, Ready{Done{Unit{}}})
+        return B.text(c, Nat.show(n))
+    case FreeRoute{}:
+      do IO<B.Res>:
+        got : Result<&2, &2, Store.Error, Unit> <- Store.set(Bool, held, False{})
+        return B.text(c, set_text(got, "free"))
+    case ClaimsRoute{}:
+      do IO<B.Res>:
+        got : Result<&2, &2, Store.Error, T.Ledger<W.Handle>> <- Store.get(T.Ledger<W.Handle>, P.registry(hub))
+        return B.text(c, claims_text(got))
 
 @unsafe
 def dispatch(route: Route, c: B.Context(Unit), shared: Shared) -> IO(B.Res):
-  Shared{hub, slow, kept} = shared
-  handler(route, c, hub, slow, kept)
+  Shared{hub, slow, jam, held, kept} = shared
+  handler(route, c, hub, slow, jam, held, kept)
 
 @unsafe
 def ready(shared: Shared, result: Result<&2, &2, Methods.BuildError, B.Routes(Route)>) -> IO(Unit):
@@ -290,5 +380,7 @@ def main() -> IO(Unit):
   do IO<Unit>:
     +hub : P.Hub <- P.hub()
     slow : P.Hub <- delayed(hub)
+    +held : Store.Store<Bool> <- B.store(Bool, False{})
+    jam : P.Hub <- jammed(hub, held)
     kept : Store.Store<Maybe<&2, P.Peer>> <- B.store(Maybe<&2, P.Peer>, None{})
-    ready(Shared{hub, slow, kept}, B.routes(Route, [B.get(Route, "/", HealthRoute{}), B.get(Route, "/ws/:topic", SocketRoute{}), B.post(Route, "/publish/:topic", PublishRoute{}), B.get(Route, "/size", SizeRoute{}), B.get(Route, "/members/:topic", MembersRoute{}), B.get(Route, "/keep", KeepRoute{}), B.post(Route, "/late/:topic", LateRoute{}), B.post(Route, "/ghost/:topic", GhostRoute{}), B.get(Route, "/connections", ConnectionsRoute{}), B.get(Route, "/delayed", DelayedRoute{})]))
+    ready(Shared{hub, slow, jam, held, kept}, B.routes(Route, [B.get(Route, "/", HealthRoute{}), B.get(Route, "/ws/:topic", SocketRoute{}), B.post(Route, "/publish/:topic", PublishRoute{}), B.get(Route, "/size", SizeRoute{}), B.get(Route, "/members/:topic", MembersRoute{}), B.get(Route, "/keep", KeepRoute{}), B.post(Route, "/late/:topic", LateRoute{}), B.post(Route, "/ghost/:topic", GhostRoute{}), B.get(Route, "/connections", ConnectionsRoute{}), B.get(Route, "/delayed", DelayedRoute{}), B.get(Route, "/jammed", JammedRoute{}), B.post(Route, "/jam/hold", HoldRoute{}), B.post(Route, "/jam/fill", FillRoute{}), B.post(Route, "/jam/free", FreeRoute{}), B.get(Route, "/claims", ClaimsRoute{})]))
