@@ -7,6 +7,7 @@ import ../data/utf8.bend as Utf8
 import ../data/json.bend as Json
 import ./hmac.bend as HMAC
 import ./compare.bend as Compare
+import ../http/text.bend as Text
 
 type Error is Data:
   Malformed{}
@@ -38,12 +39,23 @@ def decode(s: String) -> Maybe<&2, List<&2, U32>>:
   Base64.decode(s, True{}, False{})
 
 # True when no character is '.', the compact-serialization separator.
-def dotfree(s: String) -> Bool:
+def dotfree_spec(s: String) -> Bool:
   match s:
     case SNil{}:
       True{}
     case SCon{+c, t}:
-      Bool.not(Char.is_eq(c, '.')) && dotfree(t)
+      Bool.not(Char.is_eq(c, '.')) && dotfree_spec(t)
+
+# Tail calls throughout (BND-84): tokens may be as long as a header.
+def dotfree_go(s: String, acc: Bool) -> Bool:
+  match s:
+    case SNil{}:
+      acc
+    case SCon{+c, t}:
+      dotfree_go(t, acc && Bool.not(Char.is_eq(c, '.')))
+
+def dotfree(s: String) -> Bool:
+  dotfree_go(s, True{})
 
 def prepend(c: Char, r: Maybe<&2, Cut>) -> Maybe<&2, Cut>:
   match r:
@@ -59,20 +71,40 @@ def split_pick(c: Char, t: String, rest: Maybe<&2, Cut>, dot: Bool) -> Maybe<&2,
     case False{}:
       prepend(c, rest)
 
-# Split at the first '.'; None when there is none.
-def split(s: String) -> Maybe<&2, Cut>:
+def split_spec(s: String) -> Maybe<&2, Cut>:
   match s:
     case SNil{}:
       None{}
     case SCon{+c, +t}:
-      split_pick(c, t, split(t), Char.is_eq(c, '.'))
+      split_pick(c, t, split_spec(t), Char.is_eq(c, '.'))
 
-def codes(s: String) -> List<&2, U32>:
+def from_text(r: Maybe<&2, Text.Cut>) -> Maybe<&2, Cut>:
+  match r:
+    case None{}:
+      None{}
+    case Some{Text.Cut{a, b}}:
+      Some{Cut{a, b}}
+
+# Split at the first '.'; None when there is none.
+def split(s: String) -> Maybe<&2, Cut>:
+  from_text(Text.cut(s, '.'))
+
+def codes_spec(s: String) -> List<&2, U32>:
   match s:
     case SNil{}:
       []
     case SCon{Chr{c}, t}:
-      c <> codes(t)
+      c <> codes_spec(t)
+
+def codes_go(s: String, acc: List<&2, U32>) -> List<&2, U32>:
+  match s:
+    case SNil{}:
+      acc
+    case SCon{Chr{c}, t}:
+      codes_go(t, c <> acc)
+
+def codes(s: String) -> List<&2, U32>:
+  codes_go(String.reverse(s), [])
 
 def signing_input(a: String, b: String) -> String:
   a ++ ("." ++ b)
@@ -223,12 +255,20 @@ def strip_zeros(s: String) -> String:
     case _:
       s
 
-def nonzero(s: String) -> Bool:
+def nonzero_spec(s: String) -> Bool:
   match s:
     case SNil{}:
       False{}
     case SCon{+c, t}:
-      Bool.not(Char.is_eq(c, '0')) || nonzero(t)
+      Bool.not(Char.is_eq(c, '0')) || nonzero_spec(t)
+
+def nonzero_go(xs: String, acc: Bool) -> Bool:
+  match xs:
+    case SNil{}: acc
+    case SCon{+c, t}: nonzero_go(t, Bool.not(Char.is_eq(c, '0')) || acc)
+
+def nonzero(xs: String) -> Bool:
+  nonzero_go(String.reverse(xs), False{})
 
 type Lexeme is Data:
   Lexeme{negative: Bool, whole: String, fraction: String, exp_negative: Bool, exp: String}
@@ -274,12 +314,20 @@ def lex(s: String) -> Lexeme:
     case _:
       lex_whole(s, "", False{})
 
-def zeros(n: Nat) -> String:
+def zeros_spec(n: Nat) -> String:
   match n:
     case 0n:
       ""
     case 1n+p:
-      SCon{'0', zeros(p)}
+      SCon{'0', zeros_spec(p)}
+
+def zeros_go(n: Nat, acc: String) -> String:
+  match n:
+    case 0n: acc
+    case 1n+p: zeros_go(p, SCon{'0', acc})
+
+def zeros(n: Nat) -> String:
+  zeros_go(n, "")
 
 # Exponents beyond four significant digits are clamped to 9999. The result
 # is then far outside any clock value, which is what the checks need.
@@ -298,7 +346,7 @@ def shift_left(+whole: String, +fraction: String, +e: Nat, inside: Bool) -> Stri
   match inside:
     case True{}:
       +keep = Nat.sub(String.length(whole), e)
-      (String.take(whole, keep), nonzero(String.drop(whole, keep)) || nonzero(fraction))
+      (Text.take(whole, keep), nonzero(String.drop(whole, keep)) || nonzero(fraction))
     case False{}:
       ("", nonzero(whole) || nonzero(fraction))
 
@@ -307,7 +355,7 @@ def shifted(+whole: String, +fraction: String, +e: Nat, left: Bool) -> String & 
     case True{}:
       shift_left(whole, fraction, e, Nat.is_le(e, String.length(whole)))
     case False{}:
-      (whole ++ String.take(fraction ++ zeros(e), e), nonzero(String.drop(fraction, e)))
+      (whole ++ Text.take(fraction ++ zeros(e), e), nonzero(String.drop(fraction, e)))
 
 def numeric_parts(negative: Bool, parts: String & Bool) -> Numeric:
   (w, f) = parts

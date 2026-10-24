@@ -27,3 +27,7 @@ bun run check   # proofs, typecheck, integration tests
 ## License
 
 MIT
+
+## Benchmarks
+
+[Five-scenario benchmark chart](bench/results/2026-10-24-full-suite.svg) comparing Bendo’s native server with Hono and Elysia on Bun. See the [method and results](bench/README.md).

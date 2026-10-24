@@ -85,7 +85,7 @@ def forbidden_headers(+method: R.Method, +s: U32, +hs: List<&2, R.Header>, +b: L
   {==}
 
 def status_value(+status: U32) -> {B.value(B.encode(W.status_text(status))) == True{} : Bool}:
-  Lines.string_value_append("HTTP/1.1 ", Nat.show(U32.to_nat(status)) ++ " " ++ Response.reason(status), {==}, Lines.string_value_append(Nat.show(U32.to_nat(status)), " " ++ Response.reason(status), Decimal.nat_show_value(U32.to_nat(status)), Reason.reason_value(status)))
+  Lines.string_value_append("HTTP/1.1 ", Nat.show(U32.to_nat(status)) ++ " " ++ Response.reason(status), {==}, Lines.string_value_append(Nat.show(U32.to_nat(status)), " " ++ Response.reason(status), Decimal.nat_show_value(U32.to_nat(status)), Lines.string_value_append(" ", Response.reason(status), {==}, Reason.reason_value(status))))
 
 # The parser's canonical field predicate also holds for generated lengths.
 def no_ows_start(+xs: List<&2, U32>, ok: {Decimal.no_ows(xs) == True{} : Bool}) -> {R.value_start(xs) == True{} : Bool}:

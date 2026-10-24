@@ -9,6 +9,7 @@ import ./crypto-base64.bend as Base64Proof
 import ./crypto-support.bend as Support
 import ../src/data/base64.bend as B
 import ../src/data/utf8.bend as U
+import ./utf8.bend as Utf8Proof
 import ../src/data/cookie.bend as Cookie
 import ./signed-cookie-spec.bend as Spec
 
@@ -281,22 +282,29 @@ def encode_clean(+xs: List<&2, U32>, +url: Bool, +padded: Bool) -> {clean(B.enco
   %Equal.sym(String, B.encode(xs, url, padded), B.encode_spec(xs, url, padded), Base64Proof.encode_acc(xs, url, padded, "")) : {clean(_) == True{} : Bool}
   spec_clean(xs, url, padded)
 
-def clean_valid(+s: String, +ok: {clean(s) == True{} : Bool}) -> {U.valid(s) == True{} : Bool}:
+def clean_valid_spec(+s: String, +ok: {clean(s) == True{} : Bool}) -> {U.valid_spec(s) == True{} : Bool}:
   match s:
     case SNil{}: {==}
     case SCon{Chr{+c}, +t}:
       +head = and_left(U.scalar(c) && Bool.not(U32.is_eq(c, 46)), clean(t), ok)
-      both(U.scalar(c), U.valid(t), and_left(U.scalar(c), Bool.not(U32.is_eq(c, 46)), head), clean_valid(t, and_right(U.scalar(c) && Bool.not(U32.is_eq(c, 46)), clean(t), ok)))
+      both(U.scalar(c), U.valid_spec(t), and_left(U.scalar(c), Bool.not(U32.is_eq(c, 46)), head), clean_valid_spec(t, and_right(U.scalar(c) && Bool.not(U32.is_eq(c, 46)), clean(t), ok)))
 
-def valid_append(+a: String, +b: String, +oka: {U.valid(a) == True{} : Bool}, +okb: {U.valid(b) == True{} : Bool}) -> {U.valid(a ++ b) == True{} : Bool}:
+def valid_append_spec(+a: String, +b: String, +oka: {U.valid_spec(a) == True{} : Bool}, +okb: {U.valid_spec(b) == True{} : Bool}) -> {U.valid_spec(a ++ b) == True{} : Bool}:
   match a:
     case SNil{}: okb
     case SCon{Chr{+c}, +t}:
-      both(U.scalar(c), U.valid(t ++ b), and_left(U.scalar(c), U.valid(t), oka), valid_append(t, b, and_right(U.scalar(c), U.valid(t), oka), okb))
+      both(U.scalar(c), U.valid_spec(t ++ b), and_left(U.scalar(c), U.valid_spec(t), oka), valid_append_spec(t, b, and_right(U.scalar(c), U.valid_spec(t), oka), okb))
 
 # The complete signed payload stays a Unicode scalar string.
+def clean_valid(+s: String, +ok: {clean(s) == True{} : Bool}) -> {U.valid(s) == True{} : Bool}:
+  Equal.trans(Bool, U.valid(s), U.valid_spec(s), True{}, Utf8Proof.valid_equiv(s), clean_valid_spec(s, ok))
+
+def valid_append(+a: String, +b: String, +oka: {U.valid(a) == True{} : Bool}, +okb: {U.valid(b) == True{} : Bool}) -> {U.valid(a ++ b) == True{} : Bool}:
+  Equal.trans(Bool, U.valid(a ++ b), U.valid_spec(a ++ b), True{}, Utf8Proof.valid_equiv(a ++ b), valid_append_spec(a, b, Utf8Proof.valid_spec_of(a, oka), Utf8Proof.valid_spec_of(b, okb)))
+
 def payload_valid(+value: String, +signature: List<&2, U32>, +ok: {U.valid(value) == True{} : Bool}) -> {U.valid(value ++ "." ++ B.encode(signature, False{}, True{})) == True{} : Bool}:
-  valid_append(value, "." ++ B.encode(signature, False{}, True{}), ok, clean_valid(B.encode(signature, False{}, True{}), encode_clean(signature, False{}, True{})))
+  +e = B.encode(signature, False{}, True{})
+  valid_append(value, "." ++ e, ok, Equal.trans(Bool, U.valid("." ++ e), U.valid_spec("." ++ e), True{}, Utf8Proof.valid_equiv("." ++ e), clean_valid_spec(e, encode_clean(signature, False{}, True{}))))
 
 def clean_reverse(+s: String, +acc: String, +oks: {clean(s) == True{} : Bool}, +oka: {clean(acc) == True{} : Bool}) -> {clean(String.reverse.go(s, acc)) == True{} : Bool}:
   match s:

@@ -1,6 +1,7 @@
 # Constructive decimal formatting safety, independent of the root laws.
 import Base
 import ../src/http/bytes.bend as Bytes
+import ./bytes-tail.bend as BT
 import ./equality.bend as E
 
 type DecimalState is Data:
@@ -132,12 +133,12 @@ def and_right(a: Bool, b: Bool, e: {a && b == True{} : Bool}) -> {b == True{} : 
     case True{}:
       e
 
-def value_cons(+d: Char, +s: String, de: {digit(d) == True{} : Bool}, se: {Bytes.value(Bytes.encode(s)) == True{} : Bool}) -> {Bytes.value(Bytes.encode(SCon{d, s})) == True{} : Bool}:
+def value_cons(+d: Char, +s: String, de: {digit(d) == True{} : Bool}, se: {Bytes.value_spec(Bytes.encode_spec(s)) == True{} : Bool}) -> {Bytes.value_spec(Bytes.encode_spec(SCon{d, s})) == True{} : Bool}:
   match d:
     case Chr{x}:
-      Equal.trans(Bool, Bytes.value_octet(x) && Bytes.value(Bytes.encode(s)), Bytes.value(Bytes.encode(s)), True{}, Equal.cong(Bool, Bool, b => b && Bytes.value(Bytes.encode(s)), Bytes.value_octet(x), True{}, and_left(Bytes.value_octet(x), Bool.not(Bytes.ows(x)), de)), se)
+      Equal.trans(Bool, Bytes.value_octet(x) && Bytes.value_spec(Bytes.encode_spec(s)), Bytes.value_spec(Bytes.encode_spec(s)), True{}, Equal.cong(Bool, Bool, b => b && Bytes.value_spec(Bytes.encode_spec(s)), Bytes.value_octet(x), True{}, and_left(Bytes.value_octet(x), Bool.not(Bytes.ows(x)), de)), se)
 
-def fin_value(+g: Nat, +acc: String, dq: Char & Nat, de: {pair_digit(dq) == True{} : Bool}, ae: {Bytes.value(Bytes.encode(acc)) == True{} : Bool}, step: @n:Nat -> @s:String -> {Bytes.value(Bytes.encode(s)) == True{} : Bool} -> {Bytes.value(Bytes.encode(Nat.show.go(g, n, s))) == True{} : Bool}) -> {Bytes.value(Bytes.encode(Nat.show.fin(g, acc, dq))) == True{} : Bool}:
+def fin_value(+g: Nat, +acc: String, dq: Char & Nat, de: {pair_digit(dq) == True{} : Bool}, ae: {Bytes.value_spec(Bytes.encode_spec(acc)) == True{} : Bool}, step: @n:Nat -> @s:String -> {Bytes.value_spec(Bytes.encode_spec(s)) == True{} : Bool} -> {Bytes.value_spec(Bytes.encode_spec(Nat.show.go(g, n, s))) == True{} : Bool}) -> {Bytes.value_spec(Bytes.encode_spec(Nat.show.fin(g, acc, dq))) == True{} : Bool}:
   match dq:
     case (+d, q):
       match q:
@@ -146,17 +147,23 @@ def fin_value(+g: Nat, +acc: String, dq: Char & Nat, de: {pair_digit(dq) == True
         case 1n+p:
           step(1n+p, SCon{d, acc}, value_cons(d, acc, de, ae))
 
-def go_value(+f: Nat, +n: Nat, +acc: String, ae: {Bytes.value(Bytes.encode(acc)) == True{} : Bool}) -> {Bytes.value(Bytes.encode(Nat.show.go(f, n, acc))) == True{} : Bool}:
+def go_value(+f: Nat, +n: Nat, +acc: String, ae: {Bytes.value_spec(Bytes.encode_spec(acc)) == True{} : Bool}) -> {Bytes.value_spec(Bytes.encode_spec(Nat.show.go(f, n, acc))) == True{} : Bool}:
   match f:
     case 0n:
       ae
     case 1n+g:
       fin_value(g, acc, Nat.show.put(Nat.divmod(n, 10n)), divmod_digit(n, D0{}, 0n), ae, +k => +s => e => go_value(g, k, s, e))
 
-def nat_show_value(+n: Nat) -> {Bytes.value(Bytes.encode(Nat.show(n))) == True{} : Bool}:
+def nat_show_value_spec(+n: Nat) -> {Bytes.value_spec(Bytes.encode_spec(Nat.show(n))) == True{} : Bool}:
   fin_value(n, SNil{}, Nat.show.put(Nat.divmod(n, 10n)), divmod_digit(n, D0{}, 0n), {==}, +k => +s => e => go_value(n, k, s, e))
 
 # Every fin emits a digit before recurring, including when its fuel is zero.
+
+def nat_show_value(+n: Nat) -> {Bytes.value(Bytes.encode(Nat.show(n))) == True{} : Bool}:
+  +x = Nat.show(n)
+  Equal.trans(Bool, Bytes.value(Bytes.encode(x)), Bytes.value_spec(Bytes.encode_spec(x)), True{}, Equal.trans(Bool, Bytes.value(Bytes.encode(x)), Bytes.value_spec(Bytes.encode(x)), Bytes.value_spec(Bytes.encode_spec(x)), BT.value_equiv(Bytes.encode(x)), Equal.cong(List<&2, U32>, Bool, l => Bytes.value_spec(l), Bytes.encode(x), Bytes.encode_spec(x), BT.encode_equiv(x))), nat_show_value_spec(n))
+
+
 def fin_nonempty(+g: Nat, +acc: String, dq: Char & Nat, step: @n:Nat -> @s:String -> {String.is_empty(s) == False{} : Bool} -> {String.is_empty(Nat.show.go(g, n, s)) == False{} : Bool}) -> {String.is_empty(Nat.show.fin(g, acc, dq)) == False{} : Bool}:
   match dq:
     case (d, q):
@@ -188,12 +195,12 @@ def no_ows_cons(+c: U32, +t: List<&2, U32>, yes: {Bool.not(Bytes.ows(c)) == True
   %Equal.sym(Bool, Bool.not(Bytes.ows(c)), True{}, yes) : {_ && no_ows(t) == True{} : Bool}
   tail
 
-def no_ows_char(+d: Char, +s: String, de: {digit(d) == True{} : Bool}, se: {no_ows(Bytes.encode(s)) == True{} : Bool}) -> {no_ows(Bytes.encode(SCon{d, s})) == True{} : Bool}:
+def no_ows_char(+d: Char, +s: String, de: {digit(d) == True{} : Bool}, se: {no_ows(Bytes.encode_spec(s)) == True{} : Bool}) -> {no_ows(Bytes.encode_spec(SCon{d, s})) == True{} : Bool}:
   match d:
     case Chr{x}:
-      no_ows_cons(x, Bytes.encode(s), and_right(Bytes.value_octet(x), Bool.not(Bytes.ows(x)), de), se)
+      no_ows_cons(x, Bytes.encode_spec(s), and_right(Bytes.value_octet(x), Bool.not(Bytes.ows(x)), de), se)
 
-def fin_no_ows(+g: Nat, +acc: String, dq: Char & Nat, de: {pair_digit(dq) == True{} : Bool}, ae: {no_ows(Bytes.encode(acc)) == True{} : Bool}, step: @n:Nat -> @s:String -> {no_ows(Bytes.encode(s)) == True{} : Bool} -> {no_ows(Bytes.encode(Nat.show.go(g, n, s))) == True{} : Bool}) -> {no_ows(Bytes.encode(Nat.show.fin(g, acc, dq))) == True{} : Bool}:
+def fin_no_ows(+g: Nat, +acc: String, dq: Char & Nat, de: {pair_digit(dq) == True{} : Bool}, ae: {no_ows(Bytes.encode_spec(acc)) == True{} : Bool}, step: @n:Nat -> @s:String -> {no_ows(Bytes.encode_spec(s)) == True{} : Bool} -> {no_ows(Bytes.encode_spec(Nat.show.go(g, n, s))) == True{} : Bool}) -> {no_ows(Bytes.encode_spec(Nat.show.fin(g, acc, dq))) == True{} : Bool}:
   match dq:
     case (+d, q):
       match q:
@@ -202,15 +209,20 @@ def fin_no_ows(+g: Nat, +acc: String, dq: Char & Nat, de: {pair_digit(dq) == Tru
         case 1n+p:
           step(1n+p, SCon{d, acc}, no_ows_char(d, acc, de, ae))
 
-def go_no_ows(+f: Nat, +n: Nat, +acc: String, ae: {no_ows(Bytes.encode(acc)) == True{} : Bool}) -> {no_ows(Bytes.encode(Nat.show.go(f, n, acc))) == True{} : Bool}:
+def go_no_ows(+f: Nat, +n: Nat, +acc: String, ae: {no_ows(Bytes.encode_spec(acc)) == True{} : Bool}) -> {no_ows(Bytes.encode_spec(Nat.show.go(f, n, acc))) == True{} : Bool}:
   match f:
     case 0n:
       ae
     case 1n+g:
       fin_no_ows(g, acc, Nat.show.put(Nat.divmod(n, 10n)), divmod_digit(n, D0{}, 0n), ae, +k => +s => e => go_no_ows(g, k, s, e))
 
-def nat_show_no_ows(+n: Nat) -> {no_ows(Bytes.encode(Nat.show(n))) == True{} : Bool}:
+def nat_show_no_ows_spec(+n: Nat) -> {no_ows(Bytes.encode_spec(Nat.show(n))) == True{} : Bool}:
   fin_no_ows(n, SNil{}, Nat.show.put(Nat.divmod(n, 10n)), divmod_digit(n, D0{}, 0n), {==}, +k => +s => e => go_no_ows(n, k, s, e))
+
+def nat_show_no_ows(+n: Nat) -> {no_ows(Bytes.encode(Nat.show(n))) == True{} : Bool}:
+  +x = Nat.show(n)
+  Equal.trans(Bool, no_ows(Bytes.encode(x)), no_ows(Bytes.encode_spec(x)), True{}, Equal.cong(List<&2, U32>, Bool, l => no_ows(l), Bytes.encode(x), Bytes.encode_spec(x), BT.encode_equiv(x)), nat_show_no_ows_spec(n))
+
 
 def reverse_no_ows(+xs: List<&2, U32>, +acc: List<&2, U32>, +ok: {no_ows(xs) == True{} : Bool}, +ae: {no_ows(acc) == True{} : Bool}) -> {no_ows(List.reverse.go(&2, U32, xs, acc)) == True{} : Bool}:
   match xs:

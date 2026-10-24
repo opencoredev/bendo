@@ -2,8 +2,14 @@
 # every request path that a resolved path stays inside the static root.
 # `raw` is the undecoded request path after the mount prefix, such as
 # "/assets/app.js" or "/docs/". See docs/static.md.
+#
+# Every loop over the path or its segments is a tail call, so a long request
+# path cannot exhaust the JavaScript stack (BND-84).
+# proof/static-path-equiv.bend proves this resolver equal to the recursive
+# one in proof/static-path-model.bend, which carries the BND-45 proofs.
 import Base
 import ../router/encoding.bend as E
+import ../http/text.bend as Text
 
 # A relative path: one or more decoded segments.
 type Segments is Data:
@@ -18,10 +24,13 @@ def char_ok(+c: Char) -> Bool:
   +code = Char.to_u32(c)
   code_ok(U32.is_lt(code, 32), U32.is_eq(code, 127), Char.is_eq(c, '/'), U32.is_eq(code, 92), U32.is_eq(code, 37))
 
-def chars_ok(s: String) -> Bool:
+def chars_go(s: String, ok: Bool) -> Bool:
   match s:
-    case SNil{}: True{}
-    case SCon{+c, t}: char_ok(c) && chars_ok(t)
+    case SNil{}: ok
+    case SCon{+c, t}: chars_go(t, ok && char_ok(c))
+
+def chars_ok(s: String) -> Bool:
+  chars_go(s, True{})
 
 # A segment is nonempty and does not start with '.', which refuses ".", ".."
 # and dotfiles such as .env or .git.
@@ -30,31 +39,51 @@ def segment_ok(s: String) -> Bool:
     case SNil{}: False{}
     case SCon{+c, t}: Bool.not(U32.is_eq(Char.to_u32(c), 46)) && char_ok(c) && chars_ok(t)
 
-def segments_ok(xs: List<&2, String>) -> Bool:
+def segments_go(xs: List<&2, String>, ok: Bool) -> Bool:
   match xs:
-    case Nil{}: True{}
-    case s <> t: segment_ok(s) && segments_ok(t)
+    case Nil{}: ok
+    case s <> t: segments_go(t, ok && segment_ok(s))
+
+def segments_ok(xs: List<&2, String>) -> Bool:
+  segments_go(xs, True{})
 
 def slash_count(b: Bool, n: Nat) -> Nat:
   match b:
     case True{}: 1n+n
     case False{}: n
 
+def slashes_go(s: String, n: Nat) -> Nat:
+  match s:
+    case SNil{}: n
+    case SCon{+c, t}: slashes_go(t, slash_count(Char.is_eq(c, '/'), n))
+
 # Literal '/' characters in a raw path.
 def slashes(s: String) -> Nat:
-  match s:
-    case SNil{}: 0n
-    case SCon{+c, t}: slash_count(Char.is_eq(c, '/'), slashes(t))
+  slashes_go(s, 0n)
+
+def count_go(xs: List<&2, String>, n: Nat) -> Nat:
+  match xs:
+    case Nil{}: n
+    case h <> t: count_go(t, 1n+n)
+
+# List.length, counted in a tail loop.
+def count(xs: List<&2, String>) -> Nat:
+  count_go(xs, 0n)
+
+# `out` holds the joined prefix reversed; each segment is pushed onto it
+# after a '/'. Appending instead would be quadratic in native builds.
+def join_go(rest: List<&2, String>, out: String) -> String:
+  match rest:
+    case Nil{}: out
+    case h <> t: join_go(t, String.reverse.go(h, SCon{'/', out}))
 
 def join(rest: List<&2, String>, first: String) -> String:
-  match rest:
-    case Nil{}: first
-    case h <> t: String.append(first, SCon{'/', join(t, h)})
+  String.reverse(join_go(rest, String.reverse(first)))
 
 # The final check, independent of how segments were decoded: every segment
 # is safe and free of '/', and there is one segment per '/' in the raw path.
 def check(+raw: String, +first: String, +rest: List<&2, String>) -> Bool:
-  segment_ok(first) && segments_ok(rest) && Nat.is_eq(1n+List.length(&2, String, rest), slashes(raw))
+  segment_ok(first) && segments_ok(rest) && Nat.is_eq(1n+count(rest), slashes(raw))
 
 def accept(first: String, rest: List<&2, String>, ok: Bool) -> Maybe<&2, String>:
   match ok:
@@ -76,10 +105,13 @@ def plain_char(+c: Char) -> Bool:
   +code = Char.to_u32(c)
   plain_code(U32.is_lt(code, 32), U32.is_eq(code, 32), U32.is_eq(code, 127), U32.is_lt(127, code), Char.is_eq(c, '/'), U32.is_eq(code, 92), U32.is_eq(code, 37))
 
-def plain(s: String) -> Bool:
+def plain_go(s: String, ok: Bool) -> Bool:
   match s:
-    case SNil{}: True{}
-    case SCon{+c, t}: plain_char(c) && plain(t)
+    case SNil{}: ok
+    case SCon{+c, t}: plain_go(t, ok && plain_char(c))
+
+def plain(s: String) -> Bool:
+  plain_go(s, True{})
 
 def decoded(+s: String, plain: Bool) -> Maybe<&2, String>:
   match plain:
@@ -96,26 +128,26 @@ def decode_last(raw: String, index: String) -> Maybe<&2, String>:
     case SNil{}: Some{index}
     case SCon{c, t}: decode_segment(SCon{c, t})
 
-def single(x: Maybe<&2, String>) -> Maybe<&2, List<&2, String>>:
-  match x:
-    case None{}: None{}
-    case Some{y}: Some{[y]}
+def push_piece(acc: Maybe<&2, List<&2, String>>, x: Maybe<&2, String>) -> Maybe<&2, List<&2, String>>:
+  match acc x:
+    case Some{ys} Some{y}: Some{y <> ys}
+    case _ _: None{}
 
-def prepend_to(y: String, xs: Maybe<&2, List<&2, String>>) -> Maybe<&2, List<&2, String>>:
-  match xs:
-    case None{}: None{}
-    case Some{ys}: Some{y <> ys}
-
-def prepend(x: Maybe<&2, String>, xs: Maybe<&2, List<&2, String>>) -> Maybe<&2, List<&2, String>>:
-  match x:
-    case None{}: None{}
-    case Some{y}: prepend_to(y, xs)
+def finish(acc: Maybe<&2, List<&2, String>>, x: Maybe<&2, String>) -> Maybe<&2, List<&2, String>>:
+  match acc x:
+    case Some{ys} Some{y}: Some{List.reverse(&2, String, y <> ys)}
+    case _ _: None{}
 
 # Each raw segment decodes on its own, so one segment yields one piece.
-def decode_go(rest: List<&2, String>, raw: String, +index: String) -> Maybe<&2, List<&2, String>>:
+# `acc` holds the pieces so far, most recent first.
+def decode_go_loop(rest: List<&2, String>, raw: String, +index: String, acc: Maybe<&2, List<&2, String>>) -> Maybe<&2, List<&2, String>>:
   match rest:
-    case Nil{}: single(decode_last(raw, index))
-    case h <> t: prepend(decode_segment(raw), decode_go(t, h, index))
+    case Nil{}: finish(acc, decode_last(raw, index))
+    case h <> t: decode_go_loop(t, h, index, push_piece(acc, decode_segment(raw)))
+
+# Keep the original helper interface; only its worker carries state.
+def decode_go(rest: List<&2, String>, raw: String, index: String) -> Maybe<&2, List<&2, String>>:
+  decode_go_loop(rest, raw, index, Some{Nil{}})
 
 def segments_of(xs: Maybe<&2, List<&2, String>>) -> Maybe<&2, Segments>:
   match xs:
@@ -133,7 +165,7 @@ def split_raw(parts: List<&2, String>, +index: String) -> Maybe<&2, Segments>:
     case SCon{c, s} <> t: None{}
 
 def segments(+raw: String, +index: String) -> Maybe<&2, Segments>:
-  split_raw(String.split(raw, '/'), index)
+  split_raw(Text.split(raw, '/'), index)
 
 # The relative path to open beneath the root, or None for a path that must
 # not be served. `index` names the file served for a trailing slash; "" or

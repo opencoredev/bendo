@@ -9,6 +9,7 @@ import ./cookie-spec.bend as Spec
 import ./cookie-serialization-spec.bend as Independent
 import ./cookie-serialization.bend as SerializationProof
 import ./cookie-fast.bend as Fast
+import ./bytes-tail.bend as BT
 
 def head_valid(+name: String, +value: String, +tail: Bool, ok: {Independent.name_valid(name) && Independent.value_valid(value) && tail == True{} : Bool}) -> {C.name_valid(name) && C.value_valid(value) && tail == True{} : Bool}:
   %Equal.sym(Bool, C.name_valid(name), Independent.name_valid(name), SerializationProof.name_equiv(name)) : {_ && C.value_valid(value) && tail == True{} : Bool}
@@ -63,11 +64,14 @@ def octet_clean(+c: U32, +ok: {C.octet(c) == True{} : Bool}) -> {clean_char(c) =
   %Equal.sym(Bool, U32.is_eq(c, 59), False{}, octet_not(c, 59, ok, {==})) : {Bool.not(False{}) && Bool.not(False{}) && Bool.not(False{}) && Bool.not(_) == True{} : Bool}
   {==}
 
-def token_clean_string(+s: String, +ok: {B.token_tail(s) == True{} : Bool}) -> {clean(s) == True{} : Bool}:
+def token_clean_string_inner(+s: String, +ok: {B.token_tail_spec(s) == True{} : Bool}) -> {clean(s) == True{} : Bool}:
   match s:
     case SNil{}: {==}
     case SCon{Chr{+c}, +t}:
-      and_true(clean_char(c), clean(t), token_clean(c, Laws.and_left(B.tchar(c), B.token_tail(t), ok)), token_clean_string(t, Laws.and_right(B.tchar(c), B.token_tail(t), ok)))
+      and_true(clean_char(c), clean(t), token_clean(c, Laws.and_left(B.tchar(c), B.token_tail_spec(t), ok)), token_clean_string_inner(t, Laws.and_right(B.tchar(c), B.token_tail_spec(t), ok)))
+
+def token_clean_string(+s: String, +ok: {B.token_tail(s) == True{} : Bool}) -> {clean(s) == True{} : Bool}:
+  token_clean_string_inner(s, Equal.trans(Bool, B.token_tail_spec(s), B.token_tail(s), True{}, Equal.sym(Bool, B.token_tail(s), B.token_tail_spec(s), BT.token_tail_equiv(s)), ok))
 
 def value_clean_string(+s: String, +ok: {C.value_valid(s) == True{} : Bool}) -> {clean(s) == True{} : Bool}:
   match s:
@@ -325,7 +329,7 @@ def split_single(+s: String, +ok: {clean(s) == True{} : Bool}) -> {String.split(
 def name_tail(+name: String, ok: {C.name_valid(name) == True{} : Bool}) -> {B.token_tail(name) == True{} : Bool}:
   match name:
     case SNil{}: {==}
-    case SCon{Chr{c}, t}: ok
+    case SCon{Chr{+c}, +t}: Equal.trans(Bool, B.token_tail(SCon{Chr{c}, t}), B.tchar(c) && B.token_tail(t), True{}, BT.token_tail_cons(c, t), ok)
 
 def split_stopped(+s: String, +rev: String) -> {C.split_go(s, True{}, '=', rev) == (String.reverse(rev), Some{s}) : String & Maybe<&2, String>}:
   match s:
@@ -337,6 +341,7 @@ def split_name_acc(+name: String, +value: String, +rev: String, +ok: {B.token_ta
     case SNil{}:
       split_stopped(value, rev)
     case SCon{Chr{+c}, +t}:
+      +ok = Equal.trans(Bool, B.tchar(c) && B.token_tail(t), B.token_tail(SCon{Chr{c}, t}), True{}, Equal.sym(Bool, B.token_tail(SCon{Chr{c}, t}), B.tchar(c) && B.token_tail(t), BT.token_tail_cons(c, t)), ok)
       %Equal.sym(Bool, U32.is_eq(c, 61), False{}, token_not(c, 61, Laws.and_left(B.tchar(c), B.token_tail(t), ok), {==})) : {C.split_go(t ++ "=" ++ value, _, '=', C.split_prefix(Chr{c}, rev, _)) == (String.reverse.go(rev, SCon{Chr{c}, t}), Some{value}) : String & Maybe<&2, String>}
       split_name_acc(t, value, SCon{Chr{c}, rev}, Laws.and_right(B.tchar(c), B.token_tail(t), ok))
 

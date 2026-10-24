@@ -5,7 +5,7 @@ import { snapshot, sourceDirectory } from "./source.ts";
 
 const root = resolve(import.meta.dir, "..");
 const label = `bendo-bench-${Date.now()}-${process.pid}`;
-const sandboxType = "default";
+const sandboxType = "large";
 let interrupted = false;
 const controller = new AbortController();
 const onSignal = () => {
@@ -30,7 +30,7 @@ async function main() {
       "--type",
       sandboxType,
       "--ttl",
-      "1800",
+      "7200",
       "--label",
       label,
     ]);
@@ -40,6 +40,20 @@ async function main() {
       throw new Error("Injected failure after sandbox creation");
     process.stderr.write("Uploading source snapshot\n");
     await command(["boat", "push", id, directory, "--to", "/home/user/bendo"], {
+      signal: controller.signal,
+    });
+    const toolchain = resolve(directory, "bend-local.tar.gz");
+    await command([
+      "tar",
+      "-czf",
+      toolchain,
+      "-C",
+      process.env.HOME ?? "",
+      ".bend/bin",
+      ".bend/bend2",
+      ".bend/guide",
+    ]);
+    await command(["boat", "scp", toolchain, `${id}:/tmp/bend-local.tar.gz`], {
       signal: controller.signal,
     });
     checkSignal();
@@ -66,13 +80,13 @@ async function main() {
         "exec",
         id,
         "--timeout",
-        "300",
+        "2400",
         "--cwd",
         "/home/user/bendo",
         "--",
-        'export PATH="$HOME/.bend/bin:$HOME/.bun/bin:$PATH" BEND_NO_TELEMETRY=1; bun bench/remote.ts',
+        'export PATH="$HOME/.bend/bin:$HOME/.bun/bin:$PATH"; sudo systemd-run --uid=user --collect --wait --pipe -p WorkingDirectory=/home/user/bendo -E PATH="$PATH" -E BEND_NO_TELEMETRY=1 -E BENDO_BENCH_BOAT=1 timeout 39m bun bench/remote.ts',
       ],
-      { signal: controller.signal },
+      { timeoutMs: 2460_000, signal: controller.signal },
     );
     checkSignal();
     const resultsDirectory = resolve(root, "bench/results");
@@ -105,6 +119,7 @@ async function main() {
           2,
         ) + "\n",
       );
+      await command(["bun", "bench/chart.ts", destination], { cwd: root });
       process.stdout.write(`${destination}\n`);
     } finally {
       await rm(temporary, { force: true });

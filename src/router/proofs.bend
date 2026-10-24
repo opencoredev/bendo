@@ -7,6 +7,8 @@ import ./octet-proofs.bend as OctetProof
 import ./codec-bits.bend as CodecBits
 import ./utf8-proofs.bend as Utf8Proof
 import ./utf8-code.bend as Code
+import ./encoding-proofs.bend as EP
+import ./pattern-stack-proofs.bend as PS
 
 # A Boolean equality is usable evidence, including in impossible branches.
 def true_type(b: Bool) -> Type:
@@ -100,6 +102,19 @@ def not_true(+b: Bool, e: {Bool.not(b) == True{} : Bool}) -> {b == False{} : Boo
       absurd({True{} == False{} : Bool}, false_true(e))
 
 # A slash-free prefix followed by a separator is exactly the first split part.
+def split_prefix_base(+s: String, +tail: String, clean: {no_slash(s) == True{} : Bool}) ->
+    {String.split(s ++ ("/" ++ tail), '/') == s <> String.split(tail, '/') : List<&2, String>}:
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{+h, +t}:
+      +e = clean
+      cut = not_true(Char.is_eq(h, '/'), and_left(Bool.not(Char.is_eq(h, '/')), no_slash(t), e))
+      rest = and_right(Bool.not(Char.is_eq(h, '/')), no_slash(t), e)
+      %Equal.sym(Bool, Char.is_eq(h, '/'), False{}, cut) : {String.split.fin(h, String.split(t ++ ("/" ++ tail), '/'), _) == SCon{h, t} <> String.split(tail, '/') : List<&2, String>}
+      %Equal.sym(List<&2, String>, String.split(t ++ ("/" ++ tail), '/'), t <> String.split(tail, '/'), split_prefix_base(t, tail, rest)) : {String.split.push(h, _) == SCon{h, t} <> String.split(tail, '/') : List<&2, String>}
+      {==}
+
 law split_prefix:
   for +s: String
   for +tail: String
@@ -107,6 +122,13 @@ law split_prefix:
   {P.path_segments(s ++ ("/" ++ tail)) == s <> P.path_segments(tail) : List<&2, String>}
 
 def split_prefix(s, tail, clean):
+  %PS.segments_equiv(s ++ ("/" ++ tail)) : {_ == s <> P.path_segments(tail) : List<&2, String>}
+  %PS.segments_equiv(tail) : {String.split(s ++ ("/" ++ tail), '/') == s <> _ : List<&2, String>}
+  split_prefix_base(s, tail, clean)
+
+# A single slash-free segment, including the empty segment, is preserved.
+def split_single_base(+s: String, clean: {no_slash(s) == True{} : Bool}) ->
+    {String.split(s, '/') == [s] : List<&2, String>}:
   match s:
     case SNil{}:
       {==}
@@ -114,27 +136,18 @@ def split_prefix(s, tail, clean):
       +e = clean
       cut = not_true(Char.is_eq(h, '/'), and_left(Bool.not(Char.is_eq(h, '/')), no_slash(t), e))
       rest = and_right(Bool.not(Char.is_eq(h, '/')), no_slash(t), e)
-      %Equal.sym(Bool, Char.is_eq(h, '/'), False{}, cut) : {String.split.fin(h, P.path_segments(t ++ ("/" ++ tail)), _) == SCon{h, t} <> P.path_segments(tail) : List<&2, String>}
-      %Equal.sym(List<&2, String>, P.path_segments(t ++ ("/" ++ tail)), t <> P.path_segments(tail), split_prefix(t, tail, rest)) : {String.split.push(h, _) == SCon{h, t} <> P.path_segments(tail) : List<&2, String>}
+      %Equal.sym(Bool, Char.is_eq(h, '/'), False{}, cut) : {String.split.fin(h, String.split(t, '/'), _) == [SCon{h, t}] : List<&2, String>}
+      %Equal.sym(List<&2, String>, String.split(t, '/'), [t], split_single_base(t, rest)) : {String.split.push(h, _) == [SCon{h, t}] : List<&2, String>}
       {==}
 
-# A single slash-free segment, including the empty segment, is preserved.
 law split_single:
   for +s: String
   for clean: {no_slash(s) == True{} : Bool}
   {P.path_segments(s) == [s] : List<&2, String>}
 
 def split_single(s, clean):
-  match s:
-    case SNil{}:
-      {==}
-    case SCon{+h, +t}:
-      +e = clean
-      cut = not_true(Char.is_eq(h, '/'), and_left(Bool.not(Char.is_eq(h, '/')), no_slash(t), e))
-      rest = and_right(Bool.not(Char.is_eq(h, '/')), no_slash(t), e)
-      %Equal.sym(Bool, Char.is_eq(h, '/'), False{}, cut) : {String.split.fin(h, P.path_segments(t), _) == [SCon{h, t}] : List<&2, String>}
-      %Equal.sym(List<&2, String>, P.path_segments(t), [t], split_single(t, rest)) : {String.split.push(h, _) == [SCon{h, t}] : List<&2, String>}
-      {==}
+  %PS.segments_equiv(s) : {_ == [s] : List<&2, String>}
+  split_single_base(s, clean)
 
 def clean_segments(xs: List<&2, String>) -> Bool:
   match xs:
@@ -167,18 +180,36 @@ def clean_split_fin(+h: Char, +parts: List<&2, String>, +cut: Bool,
       clean_split_push(h, parts, decision, clean)
 
 # Splitting any source establishes the separator invariant needed by split_join.
+def clean_split_base(+s: String) ->
+    {clean_segments(String.split(s, '/')) == True{} : Bool}:
+  match s:
+    case SNil{}:
+      {==}
+    case SCon{+h, +t}:
+      clean_split_fin(h, String.split(t, '/'), Char.is_eq(h, '/'), {==}, clean_split_base(t))
+
 law clean_split:
   for +s: String
   {clean_segments(P.path_segments(s)) == True{} : Bool}
 
 def clean_split(s):
-  match s:
-    case SNil{}:
-      {==}
-    case SCon{+h, +t}:
-      clean_split_fin(h, P.path_segments(t), Char.is_eq(h, '/'), {==}, clean_split(t))
+  %PS.segments_equiv(s) : {clean_segments(_) == True{} : Bool}
+  clean_split_base(s)
 
 # Splitting the joined nonempty list recovers empty and nonempty segments alike.
+def split_join_base(+tail: List<&2, String>, +head: String, clean: {clean_segments(head <> tail) == True{} : Bool}) ->
+    {String.split(String.join(head <> tail, "/"), '/') == head <> tail : List<&2, String>}:
+  match tail:
+    case Nil{}:
+      split_single_base(head, and_left(no_slash(head), True{}, clean))
+    case +h <> +t:
+      +e = clean
+      first = and_left(no_slash(head), clean_segments(h <> t), e)
+      rest = and_right(no_slash(head), clean_segments(h <> t), e)
+      %Equal.sym(List<&2, String>, String.split(head ++ ("/" ++ String.join(h <> t, "/")), '/'), head <> String.split(String.join(h <> t, "/"), '/'), split_prefix_base(head, String.join(h <> t, "/"), first)) : {_ == head <> h <> t : List<&2, String>}
+      %Equal.sym(List<&2, String>, String.split(String.join(h <> t, "/"), '/'), h <> t, split_join_base(t, h, rest)) : {head <> _ == head <> h <> t : List<&2, String>}
+      {==}
+
 law split_join:
   for +tail: List<&2, String>
   for +head: String
@@ -186,16 +217,8 @@ law split_join:
   {P.path_segments(String.join(head <> tail, "/")) == head <> tail : List<&2, String>}
 
 def split_join(tail, head, clean):
-  match tail:
-    case Nil{}:
-      split_single(head, and_left(no_slash(head), True{}, clean))
-    case +h <> +t:
-      +e = clean
-      first = and_left(no_slash(head), clean_segments(h <> t), e)
-      rest = and_right(no_slash(head), clean_segments(h <> t), e)
-      %Equal.sym(List<&2, String>, P.path_segments(head ++ ("/" ++ String.join(h <> t, "/"))), head <> P.path_segments(String.join(h <> t, "/")), split_prefix(head, String.join(h <> t, "/"), first)) : {_ == head <> h <> t : List<&2, String>}
-      %Equal.sym(List<&2, String>, P.path_segments(String.join(h <> t, "/")), h <> t, split_join(t, h, rest)) : {head <> _ == head <> h <> t : List<&2, String>}
-      {==}
+  %PS.segments_equiv(String.join(head <> tail, "/")) : {_ == head <> tail : List<&2, String>}
+  split_join_base(tail, head, clean)
 
 # The filler cannot fail on an admissible ordered assignment. No compilation
 # premise or decoder/roundtrip premise is needed for this direction.
@@ -357,9 +380,10 @@ def encode_no_slash(s, valid):
     case SNil{}:
       {==}
     case SCon{Chr{+n}, +t}:
-      +yes = valid
+      +yes = Equal.trans(Bool, E.scalar(n) && E.scalars(t), E.scalars(SCon{Chr{n}, t}), True{}, EP.scalars_cons(n, t), valid)
       first = and_left(E.scalar(n), E.scalars(t), yes)
       rest = and_right(E.scalar(n), E.scalars(t), yes)
+      %EP.encode_cons(n, t) : {no_slash(_) == True{} : Bool}
       append_no_slash(E.encode_char(n), E.encode(t), clean_encoded_rep(Code.represent(n), Utf8Proof.scalar_is_packed(n, first)), encode_no_slash(t, rest))
 
 # Dynamic-programming rows contain one cell for every path suffix. These
@@ -371,10 +395,14 @@ def rows_cons(+segs: List<&2, P.Segment>, +h: String, +t: List<&2, String>) ->
     {P.match_rows(~String.eq, ~String.starts_with, segs, h <> t) == P.search_segments(segs, h <> t) <> P.match_rows(~String.eq, ~String.starts_with, segs, t) : Rows}:
   match segs:
     case Nil{}:
+      %PS.empty_rows_equiv(h <> t) : {_ == P.row_head(_) <> P.empty_rows(t) : Rows}
+      %PS.empty_rows_equiv(t) : {P.empty_rows_spec(h <> t) == P.row_head(P.empty_rows_spec(h <> t)) <> _ : Rows}
       {==}
     case +seg <> +rest:
       +same = rows_cons(rest, h, t)
       %Equal.sym(Rows, P.match_rows(~String.eq, ~String.starts_with, rest, h <> t), P.search_segments(rest, h <> t) <> P.match_rows(~String.eq, ~String.starts_with, rest, t), same) : {P.rows_for(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), h <> t, _) == P.row_head(P.rows_for(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), h <> t, _)) <> P.rows_for(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), t, P.match_rows(~String.eq, ~String.starts_with, rest, t)) : Rows}
+      %PS.rows_for_equiv(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), h <> t, P.search_segments(rest, h <> t) <> P.match_rows(~String.eq, ~String.starts_with, rest, t)) : {_ == P.row_head(_) <> P.rows_for(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), t, P.match_rows(~String.eq, ~String.starts_with, rest, t)) : Rows}
+      %PS.rows_for_equiv(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), t, P.match_rows(~String.eq, ~String.starts_with, rest, t)) : {P.rows_for_spec(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), h <> t, P.search_segments(rest, h <> t) <> P.match_rows(~String.eq, ~String.starts_with, rest, t)) == P.row_head(P.rows_for_spec(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), h <> t, P.search_segments(rest, h <> t) <> P.match_rows(~String.eq, ~String.starts_with, rest, t))) <> _ : Rows}
       {==}
 
 # The row computed for the next shorter suffix, which interior and wildcard
@@ -393,6 +421,8 @@ def rows_head(+seg: P.Segment, +rest: List<&2, P.Segment>, +paths: List<&2, Stri
       {==}
     case +h <> +t:
       %Equal.sym(Rows, P.match_rows(~String.eq, ~String.starts_with, rest, h <> t), P.search_segments(rest, h <> t) <> P.match_rows(~String.eq, ~String.starts_with, rest, t), rows_cons(rest, h, t)) : {P.row_head(P.rows_for(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), h <> t, _)) == P.row_one(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), h <> t, _, P.match_rows(~String.eq, ~String.starts_with, seg <> rest, t)) : Maybe<&2, P.Params>}
+      %PS.rows_for_equiv(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), h <> t, P.search_segments(rest, h <> t) <> P.match_rows(~String.eq, ~String.starts_with, rest, t)) : {P.row_head(_) == P.row_one(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), h <> t, P.search_segments(rest, h <> t) <> P.match_rows(~String.eq, ~String.starts_with, rest, t), P.rows_for(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), t, P.match_rows(~String.eq, ~String.starts_with, rest, t))) : Maybe<&2, P.Params>}
+      %PS.rows_for_equiv(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), t, P.match_rows(~String.eq, ~String.starts_with, rest, t)) : {P.row_head(P.rows_for_spec(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), h <> t, P.search_segments(rest, h <> t) <> P.match_rows(~String.eq, ~String.starts_with, rest, t))) == P.row_one(~String.eq, ~String.starts_with, seg, List.is_empty(&2, P.Segment, rest), h <> t, P.search_segments(rest, h <> t) <> P.match_rows(~String.eq, ~String.starts_with, rest, t), _) : Maybe<&2, P.Params>}
       {==}
 
 def wildcard_value_param(+name: String, d: Maybe<&2, String>) ->
@@ -413,6 +443,8 @@ def wildcard_search(+name: String, +ps: List<&2, String>) ->
       %Equal.sym(Maybe<&2, P.Params>, P.search_segments([P.Wildcard{name}], raw <> tail), P.row_one(~String.eq, ~String.starts_with, P.Wildcard{name}, True{}, raw <> tail, P.match_rows(~String.eq, ~String.starts_with, Nil{}, raw <> tail), below(P.Wildcard{name}, Nil{}, raw <> tail)), rows_head(P.Wildcard{name}, Nil{}, raw <> tail)) : {_ == P.match_segments([P.Wildcard{name}], raw <> tail) : Maybe<&2, P.Params>}
       %Equal.sym(Maybe<&2, P.Params>, P.search_segments([P.Wildcard{name}], tail), P.match_segments([P.Wildcard{name}], tail), wildcard_search(name, tail)) : {P.wildcard_param(name, P.join_value(E.decode(raw), tail, P.wildcard_value(_))) == P.match_segments([P.Wildcard{name}], raw <> tail) : Maybe<&2, P.Params>}
       %Equal.sym(Maybe<&2, String>, P.wildcard_value(P.wildcard_param(name, P.decode_segments(tail))), P.decode_segments(tail), wildcard_value_param(name, P.decode_segments(tail))) : {P.wildcard_param(name, P.join_value(E.decode(raw), tail, _)) == P.match_segments([P.Wildcard{name}], raw <> tail) : Maybe<&2, P.Params>}
+      %PS.decode_segments_equiv(tail) : {P.wildcard_param(name, P.join_value(E.decode(raw), tail, _)) == P.wildcard_param(name, P.decode_segments(raw <> tail)) : Maybe<&2, P.Params>}
+      %PS.decode_segments_equiv(raw <> tail) : {P.wildcard_param(name, P.join_value(E.decode(raw), tail, P.decode_segments_spec(tail))) == P.wildcard_param(name, _) : Maybe<&2, P.Params>}
       {==}
 
 # The cached-row engine agrees with the original structurally recursive
@@ -422,7 +454,8 @@ def search_equal(+segs: List<&2, P.Segment>, +paths: List<&2, String>) ->
   match segs paths:
     case Nil{} Nil{}:
       {==}
-    case Nil{} h <> t:
+    case Nil{} +h <> +t:
+      %PS.empty_rows_equiv(h <> t) : {P.row_head(_) == None{} : Maybe<&2, P.Params>}
       {==}
     case P.Static{+raw} <> +rest +h <> +t:
       %Equal.sym(Maybe<&2, P.Params>, P.search_segments(P.Static{raw} <> rest, h <> t), P.row_one(~String.eq, ~String.starts_with, P.Static{raw}, List.is_empty(&2, P.Segment, rest), h <> t, P.match_rows(~String.eq, ~String.starts_with, rest, h <> t), below(P.Static{raw}, rest, h <> t)), rows_head(P.Static{raw}, rest, h <> t)) : {_ == P.match_segments(P.Static{raw} <> rest, h <> t) : Maybe<&2, P.Params>}

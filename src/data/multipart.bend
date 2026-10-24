@@ -343,32 +343,54 @@ def header_byte(meta: Meta, valid: Bool) -> Result<&2, &2, Error, Meta>:
     case False{}:
       Fail{Malformed{}}
 
-def headers_go(xs: List<&2, U32>, +left: U32, line: List<&2, U32>, state: Result<&2, &2, Error, Meta>) -> Result<&2, &2, Error, Head>:
-  match xs left line state:
-    case _ _ _ Fail{e}:
-      Fail{e}
-    case 13 <> 10 <> t 0 _ _:
-      Fail{TooLarge{}}
-    case 13 <> 10 <> t 1 _ _:
-      Fail{TooLarge{}}
-    case 13 <> 10 <> t left Nil{} Done{meta}:
-      header_end(meta, t, (left >= 2 : U32))
-    case 13 <> 10 <> 32 <> t left line Done{meta}:
-      headers_go(32 <> t, U32.sub(left, 2), line, Done{meta})
-    case 13 <> 10 <> 9 <> t left line Done{meta}:
-      headers_go(9 <> t, U32.sub(left, 2), line, Done{meta})
-    case 13 <> 10 <> t left line Done{meta}:
-      headers_go(t, U32.sub(left, 2), [], header_line(line, meta, (left >= 2 : U32)))
-    case _ 0 _ _:
-      Fail{TooLarge{}}
-    case Nil{} _ _ _:
-      Fail{Malformed{}}
-    case 32 <> t left Nil{} Done{meta}:
-      Fail{Malformed{}}
-    case 9 <> t left Nil{} Done{meta}:
-      Fail{Malformed{}}
-    case +c <> t left line Done{meta}:
-      headers_go(t, U32.sub(left, 1), c <> line, header_byte(meta, Bytes.value_octet(c)))
+# Keep each parser transition separate so the strict kernel translation does
+# not expand a product of overlapping byte, counter, line and result patterns.
+type HeaderStep is Data:
+  HeaderDone{result: Result<&2, &2, Error, Head>}
+  HeaderNext{xs: List<&2, U32>, left: U32, line: List<&2, U32>, state: Result<&2, &2, Error, Meta>}
+
+def header_crlf(line: List<&2, U32>, xs: List<&2, U32>, +left: U32, meta: Meta) -> HeaderStep:
+  match line xs:
+    case Nil{} t: HeaderDone{header_end(meta, t, (left >= 2 : U32))}
+    case line 32 <> t: HeaderNext{32 <> t, U32.sub(left, 2), line, Done{meta}}
+    case line 9 <> t: HeaderNext{9 <> t, U32.sub(left, 2), line, Done{meta}}
+    case line t: HeaderNext{t, U32.sub(left, 2), [], header_line(line, meta, (left >= 2 : U32))}
+
+def header_crlf_gate(enough: Bool, xs: List<&2, U32>, line: List<&2, U32>, left: U32, meta: Meta) -> HeaderStep:
+  match enough:
+    case False{}: HeaderDone{Fail{TooLarge{}}}
+    case True{}: header_crlf(line, xs, left, meta)
+
+def header_octets(xs: List<&2, U32>, line: List<&2, U32>, left: U32, meta: Meta) -> HeaderStep:
+  match xs line:
+    case Nil{} _: HeaderDone{Fail{Malformed{}}}
+    case 32 <> t Nil{}: HeaderDone{Fail{Malformed{}}}
+    case 9 <> t Nil{}: HeaderDone{Fail{Malformed{}}}
+    case +c <> t line: HeaderNext{t, U32.sub(left, 1), c <> line, header_byte(meta, Bytes.value_octet(c))}
+
+def header_octets_gate(empty: Bool, xs: List<&2, U32>, line: List<&2, U32>, left: U32, meta: Meta) -> HeaderStep:
+  match empty:
+    case True{}: HeaderDone{Fail{TooLarge{}}}
+    case False{}: header_octets(xs, line, left, meta)
+
+def header_input(xs: List<&2, U32>, +left: U32, line: List<&2, U32>, meta: Meta) -> HeaderStep:
+  match xs:
+    case 13 <> 10 <> t: header_crlf_gate((left >= 2 : U32), t, line, left, meta)
+    case xs: header_octets_gate(U32.is_eq(left, 0), xs, line, left, meta)
+
+def header_step(state: Result<&2, &2, Error, Meta>, xs: List<&2, U32>, left: U32, line: List<&2, U32>) -> HeaderStep:
+  match state:
+    case Fail{e}: HeaderDone{Fail{e}}
+    case Done{meta}: header_input(xs, left, line, meta)
+
+def headers_run(fuel: List<&2, U32>, step: HeaderStep) -> Result<&2, &2, Error, Head>:
+  match fuel step:
+    case _ HeaderDone{result}: result
+    case Nil{} HeaderNext{xs, left, line, state}: Fail{Malformed{}}
+    case f <> rest HeaderNext{xs, left, line, state}: headers_run(rest, header_step(state, xs, left, line))
+
+def headers_go(+xs: List<&2, U32>, left: U32, line: List<&2, U32>, state: Result<&2, &2, Error, Meta>) -> Result<&2, &2, Error, Head>:
+  headers_run(0 <> xs, HeaderNext{xs, left, line, state})
 
 def headers(xs: List<&2, U32>, left: U32, line: List<&2, U32>, meta: Meta) -> Result<&2, &2, Error, Head>:
   headers_go(xs, left, line, Done{meta})

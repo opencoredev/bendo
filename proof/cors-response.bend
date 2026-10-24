@@ -13,6 +13,10 @@ import ./cors.bend as CorsProof
 import ./response-policy-spec.bend as RS
 import ./response-policy.bend as RP
 import ./cors-response-spec.bend as Spec
+import ../src/http/text.bend as T
+import ./text.bend as TP
+import ./fold-tail.bend as FoldTail
+import ./misc-tail.bend as MiscTail
 
 # ---- Reading the request ----
 
@@ -29,17 +33,21 @@ def sent(+values: List<&2, List<&2, U32>>) -> {CR.sent(values) == Spec.origin_fi
         case Nil{}: Equal.cong(String, P.Sent, s => P.Sent{s}, CR.text(Utf8.decode(v)), Spec.decoded(Utf8.decode(v)), text(Utf8.decode(v)))
         case w <> r: {==}
 
-def texts(+values: List<&2, List<&2, U32>>) -> {CR.texts(values) == Spec.decoded_all(values) : List<&2, String>}:
+def texts_inner(+values: List<&2, List<&2, U32>>) -> {CR.texts_spec(values) == Spec.decoded_all(values) : List<&2, String>}:
   match values:
     case Nil{}: {==}
     case +v <> +t:
-      %text(Utf8.decode(v)) : {CR.texts(v <> t) == _ <> Spec.decoded_all(t) : List<&2, String>}
-      Equal.cong(List<&2, String>, List<&2, String>, l => CR.text(Utf8.decode(v)) <> l, CR.texts(t), Spec.decoded_all(t), texts(t))
+      %text(Utf8.decode(v)) : {CR.texts_spec(v <> t) == _ <> Spec.decoded_all(t) : List<&2, String>}
+      Equal.cong(List<&2, String>, List<&2, String>, l => CR.text(Utf8.decode(v)) <> l, CR.texts_spec(t), Spec.decoded_all(t), texts_inner(t))
+
+def texts(+values: List<&2, List<&2, U32>>) -> {CR.texts(values) == Spec.decoded_all(values) : List<&2, String>}:
+  Equal.trans(List<&2, String>, CR.texts(values), CR.texts_spec(values), Spec.decoded_all(values), FoldTail.cr_texts_equiv(values), texts_inner(values))
 
 def combined(+values: List<&2, List<&2, U32>>) -> {CR.combined(values) == Spec.requested_list(values) : Maybe<&2, String>}:
   match values:
     case Nil{}: {==}
-    case +v <> +t: Equal.cong(List<&2, String>, Maybe<&2, String>, l => Some{String.join(l, ",")}, CR.texts(v <> t), Spec.decoded_all(v <> t), texts(v <> t))
+    case +v <> +t:
+      Equal.trans(Maybe<&2, String>, Some{T.join(CR.texts(v <> t), ",")}, Some{T.join(Spec.decoded_all(v <> t), ",")}, Some{String.join(Spec.decoded_all(v <> t), ",")}, Equal.cong(List<&2, String>, Maybe<&2, String>, l => Some{T.join(l, ",")}, CR.texts(v <> t), Spec.decoded_all(v <> t), texts(v <> t)), Equal.cong(String, Maybe<&2, String>, j => Some{j}, T.join(Spec.decoded_all(v <> t), ","), String.join(Spec.decoded_all(v <> t), ","), MiscTail.join_equiv(Spec.decoded_all(v <> t), ",")))
 
 def some(+values: List<&2, List<&2, U32>>) -> {CR.some(values) == Spec.any_field(values) : Bool}:
   match values:
@@ -74,21 +82,25 @@ def kept_name(+name: String, +r1: List<&2, String>, +r2: List<&2, String>, +ok: 
     case True{}: Equal.cong(List<&2, String>, List<&2, String>, l => name <> l, r1, r2, ih)
     case False{}: ih
 
-def names(+xs: List<&2, String>) -> {P.tokens(xs) == Spec.requested_names(xs) : List<&2, String>}:
+def names_inner(+xs: List<&2, String>) -> {P.tokens_spec(xs) == Spec.requested_names(xs) : List<&2, String>}:
   match xs:
     case Nil{}: {==}
-    case +x <> +t: kept_name(Bytes.fold(String.trim(x)), P.tokens(t), Spec.requested_names(t), Bytes.token(Bytes.fold(String.trim(x))), names(t))
+    case +x <> +t: kept_name(Bytes.fold(String.trim(x)), P.tokens_spec(t), Spec.requested_names(t), Bytes.token(Bytes.fold(String.trim(x))), names_inner(t))
+
+def names(+xs: List<&2, String>) -> {P.tokens(xs) == Spec.requested_names(xs) : List<&2, String>}:
+  Equal.trans(List<&2, String>, P.tokens(xs), P.tokens_spec(xs), Spec.requested_names(xs), FoldTail.cp_tokens_equiv(xs), names_inner(xs))
 
 def comma(+xs: List<&2, String>) -> {P.joined(xs) == Spec.comma_list(xs) : Maybe<&2, String>}:
   match xs:
     case Nil{}: {==}
-    case x <> t: {==}
+    case +x <> +t: Equal.cong(String, Maybe<&2, String>, j => Some{j}, T.join(x <> t, ","), String.join(x <> t, ","), MiscTail.join_equiv(x <> t, ","))
 
 def reflected(+r: Maybe<&2, String>) -> {P.reflect(r) == Spec.reflected(r) : Maybe<&2, String>}:
   match r:
     case None{}: {==}
     case Some{+v}:
       +parts = String.split(v, ',')
+      %Equal.sym(List<&2, String>, T.split(v, ','), String.split(v, ','), TP.split_equiv(v, ',')) : {P.joined(P.tokens(_)) == Spec.reflected(Some{v}) : Maybe<&2, String>}
       Equal.trans(Maybe<&2, String>, P.joined(P.tokens(parts)), P.joined(Spec.requested_names(parts)), Spec.comma_list(Spec.requested_names(parts)), Equal.cong(List<&2, String>, Maybe<&2, String>, l => P.joined(l), P.tokens(parts), Spec.requested_names(parts), names(parts)), comma(Spec.requested_names(parts)))
 
 # ---- The policy's parts ----

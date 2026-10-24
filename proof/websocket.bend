@@ -8,10 +8,17 @@ import ../src/http/request.bend as Request
 import ../src/http/bytes.bend as Bytes
 import ./websocket-spec.bend as Spec
 import ../src/data/base64.bend as Base64
+import ../src/crypto/sha1.bend as Sha1Hash
 import ../src/http/origin.bend as Origin
+import ../src/http/text.bend as T
+import ./text.bend as TP
+import ./bytes-tail.bend as BT
+import ./parse-tail.bend as PT
+import ./fold-tail.bend as FoldTail
+import ./misc-tail.bend as MiscTail
 
 def accept(+key: List<&2, U32>) -> {W.accept(key) == Spec.accept(key) : String}:
-  {==}
+  Equal.cong(List<&2, U32>, String, x => Base64.encode(Sha1Hash.hash(x), False{}, True{}), Bytes.append(key, Bytes.encode(W.guid())), List.append(&2, U32, key, Spec.guid()), BT.append_equiv(key, Bytes.encode(W.guid())))
 
 def rfc() -> {W.accept(Bytes.encode("dGhlIHNhbXBsZSBub25jZQ==")) == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=" : String}:
   {==}
@@ -25,12 +32,15 @@ def keep_step(+v: List<&2, U32>, +rest: List<&2, List<&2, U32>>, +b: Bool) -> {S
     case False{}: {==}
 
 # Lookup by a lowercase name selects exactly the spec's fields.
-def fields(+hs: List<&2, Request.Header>, +name: String) -> {Spec.fields(hs, name) == Request.lookup_folded(hs, name) : List<&2, List<&2, U32>>}:
+def fields_inner(+hs: List<&2, Request.Header>, +name: String) -> {Spec.fields(hs, name) == Request.lookup_folded_spec(hs, name) : List<&2, List<&2, U32>>}:
   match hs:
     case Nil{}: {==}
     case Request.Header{+n, +v} <> +t:
-      %fields(t, name) : {Spec.keep_value(v, Spec.fields(t, name), String.eq(n, name)) == Request.lookup_step(v, _, String.eq(n, name)) : List<&2, List<&2, U32>>}
+      %fields_inner(t, name) : {Spec.keep_value(v, Spec.fields(t, name), String.eq(n, name)) == Request.lookup_step(v, _, String.eq(n, name)) : List<&2, List<&2, U32>>}
       keep_step(v, Spec.fields(t, name), String.eq(n, name))
+
+def fields(+hs: List<&2, Request.Header>, +name: String) -> {Spec.fields(hs, name) == Request.lookup_folded(hs, name) : List<&2, List<&2, U32>>}:
+  Equal.trans(List<&2, List<&2, U32>>, Spec.fields(hs, name), Request.lookup_folded_spec(hs, name), Request.lookup_folded(hs, name), fields_inner(hs, name), Equal.sym(List<&2, List<&2, U32>>, Request.lookup_folded(hs, name), Request.lookup_folded_spec(hs, name), PT.lookup_equiv(hs, name)))
 
 def or_assoc(+a: Bool, +b: Bool, +c: Bool) -> {(a || b) || c == a || (b || c) : Bool}:
   match a:
@@ -51,37 +61,52 @@ def exact_append(+xs: List<&2, String>, +ys: List<&2, String>, +w: String) -> {S
       %exact_append(t, ys, w) : {(String.eq(x, w) || Spec.has_exact(t, w)) || Spec.has_exact(ys, w) == String.eq(x, w) || _ : Bool}
       or_assoc(String.eq(x, w), Spec.has_exact(t, w), Spec.has_exact(ys, w))
 
-def has_element(+parts: List<&2, String>, +w: String) -> {Spec.has_folded(Spec.trimmed(parts), w) == W.has_element(parts, w) : Bool}:
+def has_element_inner(+parts: List<&2, String>, +w: String) -> {Spec.has_folded(Spec.trimmed(parts), w) == W.has_element_spec(parts, w) : Bool}:
   match parts:
     case Nil{}: {==}
     case +p <> +t:
-      %has_element(t, w) : {Spec.has_folded(Spec.trimmed(p <> t), w) == String.eq(Bytes.fold(W.element(p)), w) || _ : Bool}
+      %has_element_inner(t, w) : {Spec.has_folded(Spec.trimmed(p <> t), w) == String.eq(Bytes.fold(W.element(p)), w) || _ : Bool}
+      %Equal.sym(String, Bytes.fold(W.element(p)), String.to_lower(W.element(p)), BT.fold_equiv(W.element(p))) : {Spec.has_folded(Spec.trimmed(p <> t), w) == String.eq(_, w) || Spec.has_folded(Spec.trimmed(t), w) : Bool}
+      {==}
+
+def has_element(+parts: List<&2, String>, +w: String) -> {Spec.has_folded(Spec.trimmed(parts), w) == W.has_element(parts, w) : Bool}:
+  Equal.trans(Bool, Spec.has_folded(Spec.trimmed(parts), w), W.has_element_spec(parts, w), W.has_element(parts, w), has_element_inner(parts, w), Equal.sym(Bool, W.has_element(parts, w), W.has_element_spec(parts, w), FoldTail.w_has_element_equiv(parts, w)))
+
+def has_offer_inner(+parts: List<&2, String>, +w: String) -> {Spec.has_exact(Spec.trimmed(parts), w) == W.has_offer_spec(parts, w) : Bool}:
+  match parts:
+    case Nil{}: {==}
+    case +p <> +t:
+      %has_offer_inner(t, w) : {Spec.has_exact(Spec.trimmed(p <> t), w) == String.eq(W.element(p), w) || _ : Bool}
       {==}
 
 def has_offer(+parts: List<&2, String>, +w: String) -> {Spec.has_exact(Spec.trimmed(parts), w) == W.has_offer(parts, w) : Bool}:
-  match parts:
-    case Nil{}: {==}
-    case +p <> +t:
-      %has_offer(t, w) : {Spec.has_exact(Spec.trimmed(p <> t), w) == String.eq(W.element(p), w) || _ : Bool}
-      {==}
+  Equal.trans(Bool, Spec.has_exact(Spec.trimmed(parts), w), W.has_offer_spec(parts, w), W.has_offer(parts, w), has_offer_inner(parts, w), Equal.sym(Bool, W.has_offer(parts, w), W.has_offer_spec(parts, w), FoldTail.w_has_offer_equiv(parts, w)))
 
-def listed(+values: List<&2, List<&2, U32>>, +w: String) -> {Spec.has_folded(Spec.elements(values), w) == W.listed(values, w) : Bool}:
+def listed_inner(+values: List<&2, List<&2, U32>>, +w: String) -> {Spec.has_folded(Spec.elements(values), w) == W.listed_spec(values, w) : Bool}:
   match values:
     case Nil{}: {==}
     case +v <> +t:
       +parts = String.split(Bytes.ascii(v), ',')
-      %has_element(parts, w) : {Spec.has_folded(Spec.elements(v <> t), w) == _ || W.listed(t, w) : Bool}
-      %listed(t, w) : {Spec.has_folded(Spec.elements(v <> t), w) == Spec.has_folded(Spec.trimmed(parts), w) || _ : Bool}
+      %Equal.sym(List<&2, String>, T.split(Bytes.ascii(v), ','), String.split(Bytes.ascii(v), ','), TP.split_equiv(Bytes.ascii(v), ',')) : {Spec.has_folded(Spec.elements(v <> t), w) == W.has_element(_, w) || W.listed_spec(t, w) : Bool}
+      %has_element(parts, w) : {Spec.has_folded(Spec.elements(v <> t), w) == _ || W.listed_spec(t, w) : Bool}
+      %listed_inner(t, w) : {Spec.has_folded(Spec.elements(v <> t), w) == Spec.has_folded(Spec.trimmed(parts), w) || _ : Bool}
       Equal.sym(Bool, Spec.has_folded(Spec.trimmed(parts), w) || Spec.has_folded(Spec.elements(t), w), Spec.has_folded(List.append(&2, String, Spec.trimmed(parts), Spec.elements(t)), w), folded_append(Spec.trimmed(parts), Spec.elements(t), w))
 
-def offered(+values: List<&2, List<&2, U32>>, +w: String) -> {Spec.has_exact(Spec.elements(values), w) == W.offered_any(values, w) : Bool}:
+def listed(+values: List<&2, List<&2, U32>>, +w: String) -> {Spec.has_folded(Spec.elements(values), w) == W.listed(values, w) : Bool}:
+  Equal.trans(Bool, Spec.has_folded(Spec.elements(values), w), W.listed_spec(values, w), W.listed(values, w), listed_inner(values, w), Equal.sym(Bool, W.listed(values, w), W.listed_spec(values, w), FoldTail.w_listed_equiv(values, w)))
+
+def offered_inner(+values: List<&2, List<&2, U32>>, +w: String) -> {Spec.has_exact(Spec.elements(values), w) == W.offered_any_spec(values, w) : Bool}:
   match values:
     case Nil{}: {==}
     case +v <> +t:
       +parts = String.split(Bytes.ascii(v), ',')
-      %has_offer(parts, w) : {Spec.has_exact(Spec.elements(v <> t), w) == _ || W.offered_any(t, w) : Bool}
-      %offered(t, w) : {Spec.has_exact(Spec.elements(v <> t), w) == Spec.has_exact(Spec.trimmed(parts), w) || _ : Bool}
+      %Equal.sym(List<&2, String>, T.split(Bytes.ascii(v), ','), String.split(Bytes.ascii(v), ','), TP.split_equiv(Bytes.ascii(v), ',')) : {Spec.has_exact(Spec.elements(v <> t), w) == W.has_offer(_, w) || W.offered_any_spec(t, w) : Bool}
+      %has_offer(parts, w) : {Spec.has_exact(Spec.elements(v <> t), w) == _ || W.offered_any_spec(t, w) : Bool}
+      %offered_inner(t, w) : {Spec.has_exact(Spec.elements(v <> t), w) == Spec.has_exact(Spec.trimmed(parts), w) || _ : Bool}
       Equal.sym(Bool, Spec.has_exact(Spec.trimmed(parts), w) || Spec.has_exact(Spec.elements(t), w), Spec.has_exact(List.append(&2, String, Spec.trimmed(parts), Spec.elements(t)), w), exact_append(Spec.trimmed(parts), Spec.elements(t), w))
+
+def offered(+values: List<&2, List<&2, U32>>, +w: String) -> {Spec.has_exact(Spec.elements(values), w) == W.offered_any(values, w) : Bool}:
+  Equal.trans(Bool, Spec.has_exact(Spec.elements(values), w), W.offered_any_spec(values, w), W.offered_any(values, w), offered_inner(values, w), Equal.sym(Bool, W.offered_any(values, w), W.offered_any_spec(values, w), FoldTail.w_offered_any_equiv(values, w)))
 
 def chosen(+p: String, +rest: Maybe<&2, String>, +b: Bool) -> {Spec.first_offered(p, rest, b) == W.chosen(p, rest, b) : Maybe<&2, String>}:
   match b:
@@ -96,12 +121,15 @@ def select(+protocols: List<&2, String>, +values: List<&2, List<&2, U32>>) -> {S
       %offered(values, p) : {Spec.protocol(p <> t, Spec.elements(values)) == W.chosen(p, Spec.protocol(t, Spec.elements(values)), _) : Maybe<&2, String>}
       chosen(p, Spec.protocol(t, Spec.elements(values)), Spec.has_exact(Spec.elements(values), p))
 
-def zeros(+xs: List<&2, U32>) -> {Spec.all_zero(xs) == W.zeros(xs) : Bool}:
+def zeros_inner(+xs: List<&2, U32>) -> {Spec.all_zero(xs) == W.zeros_spec(xs) : Bool}:
   match xs:
     case Nil{}: {==}
     case +c <> +t:
-      %zeros(t) : {Spec.all_zero(c <> t) == U32.is_eq(c, 48) && _ : Bool}
+      %zeros_inner(t) : {Spec.all_zero(c <> t) == U32.is_eq(c, 48) && _ : Bool}
       {==}
+
+def zeros(+xs: List<&2, U32>) -> {Spec.all_zero(xs) == W.zeros(xs) : Bool}:
+  Equal.trans(Bool, Spec.all_zero(xs), W.zeros_spec(xs), W.zeros(xs), zeros_inner(xs), Equal.sym(Bool, W.zeros(xs), W.zeros_spec(xs), FoldTail.w_zeros_equiv(xs)))
 
 def length_tail(+v: List<&2, U32>, +t: List<&2, List<&2, U32>>) -> {Spec.no_length(v <> t) == W.zero_lengths(v <> t) : Bool}:
   match v t:
@@ -132,7 +160,9 @@ def listed_field(+hs: List<&2, Request.Header>, +name: String, +w: String) -> {S
 def nonce(+text: String, +decoded: Maybe<&2, List<&2, U32>>) -> {Spec.nonce(text, decoded) == W.key_sized(text, decoded) : Bool}:
   match decoded:
     case None{}: {==}
-    case Some{+xs}: {==}
+    case Some{+xs}:
+      %Equal.sym(Nat, T.length(U32, xs), List.length(&2, U32, xs), MiscTail.length_equiv(U32, xs)) : {Spec.nonce(text, Some{xs}) == Nat.is_eq(_, 16n) && String.eq(Base64.encode(xs, False{}, True{}), text) : Bool}
+      {==}
 
 def key_tail(+k: List<&2, U32>, +t: List<&2, List<&2, U32>>) -> {Spec.good_key(k <> t) == W.key_valid(k <> t) : Bool}:
   match t:
@@ -199,6 +229,7 @@ def is_http11(+v: Request.Version) -> {Spec.is_http11(v) == W.is_http11(v) : Boo
 def accepted(+keys: List<&2, List<&2, U32>>, +ps: List<&2, String>, +offs: List<&2, List<&2, U32>>) -> {W.Accept{Spec.accept(Spec.the_key(keys)), Spec.protocol(ps, Spec.elements(offs))} == W.accepted(keys, ps, offs) : W.Decision}:
   %key_value(keys) : {W.Accept{Spec.accept(Spec.the_key(keys)), Spec.protocol(ps, Spec.elements(offs))} == W.Accept{W.accept(_), W.select(ps, offs)} : W.Decision}
   %select(ps, offs) : {W.Accept{Spec.accept(Spec.the_key(keys)), Spec.protocol(ps, Spec.elements(offs))} == W.Accept{W.accept(Spec.the_key(keys)), _} : W.Decision}
+  %Equal.sym(String, W.accept(Spec.the_key(keys)), Spec.accept(Spec.the_key(keys)), accept(Spec.the_key(keys))) : {W.Accept{Spec.accept(Spec.the_key(keys)), Spec.protocol(ps, Spec.elements(offs))} == W.Accept{_, Spec.protocol(ps, Spec.elements(offs))} : W.Decision}
   {==}
 
 def version_bool(+b: Bool, +o: Bool, +keys: List<&2, List<&2, U32>>, +ps: List<&2, String>, +offs: List<&2, List<&2, U32>>) -> {Spec.judge(True{}, Spec.thirteen(b), o, keys, ps, offs) == W.negotiated(W.supported(b), o, keys, ps, offs) : W.Decision}:
@@ -274,10 +305,14 @@ def decide(+config: W.Config, +req: Request.Req) -> {W.decide(config, req) == Sp
 def response_version() -> {W.response(W.Refuse{426}) == Response.Res{426, [Request.Header{"sec-websocket-version", Bytes.encode("13")}], [], None{}} : Response.Res}:
   {==}
 
-def response_success(+key: List<&2, U32>, +protocol: Maybe<&2, String>) -> {W.response(W.Accept{W.accept(key), protocol}) == Response.Res{101, Request.Header{"upgrade", Bytes.encode("websocket")} <> (Request.Header{"connection", Bytes.encode("Upgrade")} <> (Request.Header{"sec-websocket-accept", Bytes.encode(Spec.accept(key))} <> Spec.protocol_field(protocol))), [], None{}} : Response.Res}:
+def success_shape(+a: String, +protocol: Maybe<&2, String>) -> {W.response(W.Accept{a, protocol}) == Response.Res{101, Request.Header{"upgrade", Bytes.encode("websocket")} <> (Request.Header{"connection", Bytes.encode("Upgrade")} <> (Request.Header{"sec-websocket-accept", Bytes.encode(a)} <> Spec.protocol_field(protocol))), [], None{}} : Response.Res}:
   match protocol:
     case None{}: {==}
     case Some{p}: {==}
+
+def response_success(+key: List<&2, U32>, +protocol: Maybe<&2, String>) -> {W.response(W.Accept{W.accept(key), protocol}) == Response.Res{101, Request.Header{"upgrade", Bytes.encode("websocket")} <> (Request.Header{"connection", Bytes.encode("Upgrade")} <> (Request.Header{"sec-websocket-accept", Bytes.encode(Spec.accept(key))} <> Spec.protocol_field(protocol))), [], None{}} : Response.Res}:
+  %accept(key) : {W.response(W.Accept{W.accept(key), protocol}) == Response.Res{101, Request.Header{"upgrade", Bytes.encode("websocket")} <> (Request.Header{"connection", Bytes.encode("Upgrade")} <> (Request.Header{"sec-websocket-accept", Bytes.encode(_)} <> Spec.protocol_field(protocol))), [], None{}} : Response.Res}
+  success_shape(W.accept(key), protocol)
 
 def filter_step(+name: String, +value: List<&2, U32>, +tail: List<&2, Request.Header>, +framing: Bool, +other: Bool, eq: {W.framing(Bytes.fold(name)) == framing : Bool}, e: {Spec.unframed(tail) == True{} : Bool}) -> {Spec.unframed(List.filter.put(Request.Header, Request.Header{name, value}, tail, Bool.not(framing || other))) == True{} : Bool}:
   match framing other:
@@ -285,6 +320,7 @@ def filter_step(+name: String, +value: List<&2, U32>, +tail: List<&2, Request.He
     case True{} False{}: e
     case False{} True{}: e
     case False{} False{}:
+      %BT.fold_equiv(name) : {Bool.not(W.framing(_)) && Spec.unframed(tail) == True{} : Bool}
       %Equal.sym(Bool, W.framing(Bytes.fold(name)), False{}, eq) : {Bool.not(_) && Spec.unframed(tail) == True{} : Bool}
       e
 
@@ -314,11 +350,16 @@ def middleware_step(+h: Request.Header, +tail: List<&2, Request.Header>, +marker
     case False{}: {==}
     case True{}: middleware_put(h, List.filter(~Request.Header, ~W.kept, tail), W.kept(h))
 
+# The spec folds names with String.to_lower; Bytes.fold is equal to it (BND-84).
+def allowed_fold(+name: String, +value: List<&2, U32>) -> {Spec.middleware_allowed(name) == Stream.keep(Request.Header{name, value}) && W.kept(Request.Header{name, value}) : Bool}:
+  Equal.cong(String, Bool, n => Bool.not(String.eq(n, "x-bendo-stream-internal")) && Bool.not((String.eq(n, "content-length") || String.eq(n, "transfer-encoding")) || (String.eq(n, "upgrade") || String.eq(n, "connection") || String.eq(n, "sec-websocket-accept") || String.eq(n, "sec-websocket-protocol") || String.eq(n, "sec-websocket-extensions") || String.eq(n, "sec-websocket-version"))), String.to_lower(name), Bytes.fold(name), Equal.sym(String, Bytes.fold(name), String.to_lower(name), BT.fold_equiv(name)))
+
 def middleware_fields(+hs: List<&2, Request.Header>) -> {Spec.middleware_fields(hs) == List.filter(~Request.Header, ~W.kept, List.filter(~Request.Header, ~Stream.keep, hs)) : List<&2, Request.Header>}:
   match hs:
     case Nil{}: {==}
     case Request.Header{+name, +value} <> +tail:
       %Equal.sym(List<&2, Request.Header>, Spec.middleware_fields(tail), List.filter(~Request.Header, ~W.kept, List.filter(~Request.Header, ~Stream.keep, tail)), middleware_fields(tail)) : {Spec.middleware_pick(Request.Header{name, value}, _, Spec.middleware_allowed(name)) == List.filter(~Request.Header, ~W.kept, List.filter.put(Request.Header, Request.Header{name, value}, List.filter(~Request.Header, ~Stream.keep, tail), Stream.keep(Request.Header{name, value}))) : List<&2, Request.Header>}
+      %Equal.sym(Bool, Spec.middleware_allowed(name), Stream.keep(Request.Header{name, value}) && W.kept(Request.Header{name, value}), allowed_fold(name, value)) : {Spec.middleware_pick(Request.Header{name, value}, List.filter(~Request.Header, ~W.kept, List.filter(~Request.Header, ~Stream.keep, tail)), _) == List.filter(~Request.Header, ~W.kept, List.filter.put(Request.Header, Request.Header{name, value}, List.filter(~Request.Header, ~Stream.keep, tail), Stream.keep(Request.Header{name, value}))) : List<&2, Request.Header>}
       middleware_step(Request.Header{name, value}, List.filter(~Request.Header, ~Stream.keep, tail), Stream.keep(Request.Header{name, value}))
 
 def rebuilt_response(+res: Response.Res, +accept: String, +protocol: Maybe<&2, String>) -> {Transport.rebuilt(res, accept, protocol) == Spec.rebuilt(res, accept, protocol) : Response.Res}:

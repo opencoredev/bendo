@@ -4,6 +4,7 @@ import Base
 import ../http/request.bend as Request
 import ../http/response.bend as Response
 import ../data/utf8.bend as Utf8
+import ../http/text.bend as Text
 import ./cors_policy.bend as P
 import ./response_policy.bend as Policy
 
@@ -24,17 +25,26 @@ def some(values: List<&2, List<&2, U32>>) -> Bool:
     case Nil{}: False{}
     case _: True{}
 
-def texts(values: List<&2, List<&2, U32>>) -> List<&2, String>:
+def texts_spec(values: List<&2, List<&2, U32>>) -> List<&2, String>:
   match values:
     case Nil{}: []
-    case v <> t: text(Utf8.decode(v)) <> texts(t)
+    case v <> t: text(Utf8.decode(v)) <> texts_spec(t)
+
+# texts_spec as a tail loop over the reversed fields (BND-84).
+def texts_go(rev: List<&2, List<&2, U32>>, acc: List<&2, String>) -> List<&2, String>:
+  match rev:
+    case Nil{}: acc
+    case v <> r: texts_go(r, text(Utf8.decode(v)) <> acc)
+
+def texts(values: List<&2, List<&2, U32>>) -> List<&2, String>:
+  texts_go(List.reverse(&2, List<&2, U32>, values), [])
 
 # Every Access-Control-Request-Headers field, combined as one comma list.
 # An undecodable field contributes nothing.
 def combined(values: List<&2, List<&2, U32>>) -> Maybe<&2, String>:
   match values:
     case Nil{}: None{}
-    case v <> t: Some{String.join(texts(v <> t), ",")}
+    case v <> t: Some{Text.join(texts(v <> t), ",")}
 
 def fields(xs: List<&2, P.Field>) -> List<&2, Request.Header>:
   match xs:
