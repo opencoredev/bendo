@@ -148,3 +148,26 @@ law ws_session_rejected:
   for +st: M.State
   for +code: U32
   {S.step(max, S.Session{phase, st}, S.Rejected{code}) == S.Transition{st, Spec.failed_in(phase, code)} : S.Transition}
+
+# Exactly which commands the send helpers admit into the mailbox. The octet
+# conditions are what the frame encoder checks of every payload.
+law ws_session_admit_text:
+  for +max: U32
+  for +text: String
+  {S.admissible(max, S.SendText{text}) == Spec.text_ok(max, text) : Bool}
+
+law ws_session_admit_binary:
+  for +max: U32
+  for +bytes: List<&2, U32>
+  {S.admissible(max, S.SendBinary{bytes}) == Spec.binary_ok(max, bytes) : Bool}
+
+law ws_session_admit_ping:
+  for +max: U32
+  for +bytes: List<&2, U32>
+  {S.admissible(max, S.SendPing{bytes}) == Spec.ping_ok(bytes) : Bool}
+
+law ws_session_admit_close:
+  for +max: U32
+  for +code: U32
+  for +reason: String
+  {S.admissible(max, S.SendClose{code, reason}) == Spec.close_ok(code, reason) : Bool}

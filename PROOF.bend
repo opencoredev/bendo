@@ -2,6 +2,7 @@ import ./proof/ws-session.bend as WsSessionProof
 import ./proof/ws-session-trace.bend as WsSessionTraceProof
 import ./proof/ws-session-message.bend as WsSessionMessageProof
 import ./proof/ws-session-fault.bend as WsSessionFaultProof
+import ./proof/ws-session-admit.bend as WsSessionAdmitProof
 # Proofs of LAWS.bend. Run: bend PROOF.bend --verdict
 import Base
 import ./proof/manifest-schema-documents.bend as ManifestSchemaDocuments

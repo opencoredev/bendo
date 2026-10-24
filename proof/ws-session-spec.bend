@@ -4,6 +4,7 @@ import ../src/ws/session.bend as S
 import ../src/ws/frame.bend as F
 import ../src/ws/message.bend as M
 import ../src/data/utf8.bend as Utf8
+import ./ws-frame-spec.bend as FS
 
 def code(c: Maybe<&2, U32>) -> U32:
   match c:
@@ -308,3 +309,23 @@ def failed_in(p: S.Phase, +code: U32) -> S.Action:
     case S.WsOpen{}: failed(code)
     case S.WsClosing{}: S.Action{S.WsDone{}, None{}, S.WsFinished{code, ""}}
     case S.WsDone{}: quiet(S.WsDone{})
+
+# ---- What the send helpers admit ----
+
+# Text whose UTF-8 encoding fits max_message.
+def text_ok(+max: U32, text: String) -> Bool:
+  +bytes = Utf8.encode(text)
+  fits(max, bytes) && FS.octets(bytes)
+
+# Binary of at most max_message octets.
+def binary_ok(+max: U32, +bytes: List<&2, U32>) -> Bool:
+  fits(max, bytes) && FS.octets(bytes)
+
+# A ping of at most 125 octets, whatever max_message is.
+def ping_ok(+bytes: List<&2, U32>) -> Bool:
+  small(bytes) && FS.octets(bytes)
+
+# A close with a code a peer may send and a reason of at most 123 UTF-8 bytes,
+# whatever max_message is.
+def close_ok(+code: U32, +reason: String) -> Bool:
+  peer_code(code) && Nat.is_le(List.length(&2, U32, Utf8.encode(reason)), 123n) && FS.octets(payload(Some{code}, reason))
