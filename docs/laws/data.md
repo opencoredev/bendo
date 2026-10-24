@@ -124,9 +124,12 @@ independent specifications is BND-92.
 ## JSON Schema export
 
 Each schema exports a JSON Schema 2020-12 document for OpenAPI and the typed
-client. These laws fix the keywords of every node kind, so the exported
-document describes what the decoder accepts. See
-[JSON Schema export](../data/json-schema.md) and [OpenAPI](../openapi.md).
+client. These laws are structural: they fix the keywords emitted for every
+node kind. They do not prove that a standard validator accepts exactly what
+the decoder accepts. That equivalence is tested, and it has known exceptions:
+a validator accepts `1.0` and `1e0` for an integer, for example, while Bendo
+rejects them. See [JSON Schema export](../data/json-schema.md#decoder-policy-and-validator-differences)
+and [OpenAPI](../openapi.md).
 
 - `json_schema_invalid_rejects_all`: an invalid schema, which the decoder rejects for every input, exports as `not: {}`, which accepts nothing.
 - `json_schema_valid_exports_node`: a valid schema exports its node with the same function that exports every child, so the node laws below hold at every depth.
