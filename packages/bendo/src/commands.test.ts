@@ -40,15 +40,15 @@ for (const command of ["routes", "prove", "gen", "doctor"]) {
   });
 }
 
-test("routes builds a real app and shares the build cache; gen validates without writing types", () => {
+test("routes builds a real app and shares the build cache; gen writes route types", () => {
   expect(created.code).toBe(0);
   expect(routes.code).toBe(0);
   expect(routes.out).toContain("METHOD  PATH\nGET     /");
   expect(run(["routes"]).out).toContain("compile: cache hit");
   const gen = run(["gen"]);
   expect(gen.code).toBe(0);
-  expect(gen.out).toContain("validated 1 routes; type generation lands in BND-56");
-  expect(existsSync(join(app, ".bendo"))).toBe(false);
+  expect(gen.out).toContain("wrote .bendo/routes.ts (1 routes)");
+  expect(readFileSync(join(app, ".bendo/routes.ts"), "utf8")).toContain("export type Routes");
   expect(run(["build"]).out).toContain("compile: cache hit");
 });
 

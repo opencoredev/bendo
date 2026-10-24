@@ -1,0 +1,52 @@
+import type { Routes } from "./routes";
+
+type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
+type Expect<T extends true> = T;
+type Todo = Extract<Routes, { method: "POST"; path: "/todos/:id{int}" }>;
+type Body = Todo["input"]["body"];
+type Decoded = Todo["output"]["body"];
+type Query = Todo["input"]["query"];
+type Checks = [
+  Expect<Equal<Todo["output"]["params"], { id: number }>>,
+  Expect<Equal<Todo["input"]["params"], { id: number | string }>>,
+  Expect<Equal<Decoded["done"], boolean>>,
+  Expect<Equal<Decoded["priority"], 1 | 2 | 3>>,
+  Expect<Equal<Body["priority"], 1 | 2 | 3 | undefined>>,
+  Expect<Equal<Decoded["nullable"], null | string | undefined>>,
+  Expect<Equal<Extract<Routes, { path: "/health" }>["input"]["query"], unknown>>,
+  Expect<Equal<Extract<Routes, { path: "/status" }>["output"]["response"], "ok" | null | number>>,
+  Expect<Equal<Extract<Routes, { path: "/flags" }>["output"]["response"], never>>,
+  Expect<Equal<Todo["captures"], ["id"]>>
+];
+const input: Body = { title: "hello" };
+const decoded: Decoded = { title: "hello", done: false, priority: 2 };
+const query: Query = { active: "true", choice: 10, enum: 1, count: "10", maybe: "12", tags: ["1", 2], extra: { allowed: true } };
+const response: Todo["output"]["response"] = { rows: [{ extra: true }], extra: 1 };
+const empty: NonNullable<Body["empty"]> = {};
+// @ts-expect-error missing required title
+const missing: Body = {};
+// @ts-expect-error defaulted output keys are present
+const missingDefault: Decoded = { title: "hi" };
+// @ts-expect-error JSON body does not coerce numbers
+const wrongBody: Body = { title: "hi", priority: "1" };
+// @ts-expect-error strict object rejects extra object-literal keys
+const extraBody: Body = { title: "hi", surprise: 1 };
+// @ts-expect-error stripped keys do not appear in decoded query
+const stripped: Todo["output"]["query"] = { active: true, choice: 1, enum: 1, count: 10, extra: 1 };
+// @ts-expect-error decoded numeric param is not raw text
+const param: Todo["output"]["params"] = { id: "1" };
+// @ts-expect-error coercion does not descend through unions
+const union: Query = { active: true, choice: "10", enum: 1 };
+// @ts-expect-error enums are not coerced
+const enumQuery: Query = { active: true, choice: 1, enum: "1" };
+// @ts-expect-error boolean coercion accepts only true/false text
+const booleanQuery: Query = { active: "yes", choice: 1, enum: 1 };
+// @ts-expect-error impossible schema rejects every present value
+const impossible: Body = { title: "x", impossible: null };
+// @ts-expect-error empty strict objects reject primitives
+const emptyNumber: NonNullable<Body["empty"]> = 1;
+// @ts-expect-error empty strict objects reject named properties
+const emptyExtra: NonNullable<Body["empty"]> = { x: 1 };
+// @ts-expect-error nested decoded defaults are required
+const nested: Decoded = { title: "x", done: true, priority: 1, nested: [{}] };
+export type { Checks };

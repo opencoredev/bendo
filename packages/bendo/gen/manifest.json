@@ -1,0 +1,108 @@
+{
+  "bendo": 1,
+  "routes": [
+    {
+      "method": "POST",
+      "path": "/todos/:id{int}",
+      "params": ["id"],
+      "schemas": {
+        "params": {
+          "type": "object",
+          "properties": { "id": { "type": "integer" } },
+          "required": ["id"],
+          "additionalProperties": false
+        },
+        "query": {
+          "type": "object",
+          "properties": {
+            "count": { "type": "integer", "default": 10 },
+            "active": { "type": "boolean" },
+            "maybe": { "anyOf": [{ "type": "null" }, { "type": "integer" }] },
+            "choice": {
+              "$comment": "Bendo decodes with the first matching member",
+              "anyOf": [{ "type": "integer" }, { "type": "boolean" }]
+            },
+            "enum": { "enum": [1, 2] },
+            "tags": { "type": "array", "items": { "type": "number" } }
+          },
+          "required": ["active", "choice", "enum"],
+          "additionalProperties": true
+        },
+        "headers": {
+          "type": "object",
+          "properties": { "x-api-key": { "type": "string" } },
+          "required": ["x-api-key"],
+          "additionalProperties": true
+        },
+        "body": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80,
+              "format": "email",
+              "allOf": [{ "pattern": "@", "$comment": "email grammar" }],
+              "not": { "pattern": "surrogate-guard" }
+            },
+            "done": { "type": "boolean", "default": false },
+            "priority": { "enum": [1, 2, 3], "default": 2 },
+            "literal": { "const": "todo" },
+            "nullable": { "anyOf": [{ "type": "null" }, { "type": "string" }] },
+            "impossible": { "not": {} },
+            "empty": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": false
+            },
+            "nested": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "value": { "type": "number", "minimum": 0, "maximum": 100, "default": 1 }
+                },
+                "required": [],
+                "additionalProperties": true
+              }
+            },
+            "__proto__": { "type": "string" },
+            "a\"b": { "type": "string" }
+          },
+          "required": ["title"],
+          "additionalProperties": false
+        },
+        "response": {
+          "type": "object",
+          "properties": {
+            "done": { "type": "boolean", "default": false },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": { "count": { "type": "number", "default": 0 } },
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          },
+          "required": [],
+          "additionalProperties": true
+        }
+      }
+    },
+    { "method": "GET", "path": "/health" },
+    {
+      "method": "ALL",
+      "path": "/status",
+      "all": true,
+      "schemas": {
+        "response": {
+          "anyOf": [{ "const": "ok" }, { "type": "null" }, { "type": "number" }, { "not": {} }]
+        }
+      }
+    },
+    { "method": "GET", "path": "/flags", "schemas": { "body": true, "response": false } }
+  ]
+}
