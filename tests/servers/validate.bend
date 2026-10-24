@@ -20,6 +20,7 @@ type Tag is Data:
   Ordered{}
   Plain{}
   Combo{}
+  Wide{}
   Member{}
   Mounted{}
   Stamp{}
@@ -45,6 +46,17 @@ def whoami_headers() -> S.Schema:
   S.ObjectSchema{[
     S.Field{"x-api-key", S.StringSchema{8n, Some{64n}, Some{key_pattern()}, S.Plain{}}, S.Required{}},
     S.Field{"x-count", S.IntegerSchema{Some{"0"}, None{}}, S.Optional{}}], S.Strip{}}
+
+# (?:(?:[a]{0,10}){0,11})*: about 110 automaton nodes, the widest shape in
+# docs/data/schema.md, whose table takes tens of milliseconds to build.
+def wide_pattern() -> P.Pattern:
+  P.Repeat{P.Repeat{P.Repeat{P.Class{[P.Range{97, 97}]}, 0n, Some{10n}}, 0n, Some{11n}}, 0n, None{}}
+
+def wide(+p: Maybe<&2, P.Pattern>) -> S.Schema:
+  S.StringSchema{0n, Some{64n}, p, S.Plain{}}
+
+def wide_headers(+p: Maybe<&2, P.Pattern>) -> S.Schema:
+  S.ObjectSchema{[S.Field{"x-wide", wide(p), S.Required{}}, S.Field{"x-wide-2", wide(p), S.Required{}}, S.Field{"x-wide-3", wide(p), S.Required{}}], S.Strip{}}
 
 def todo_body() -> S.Schema:
   S.ObjectSchema{[
@@ -94,6 +106,7 @@ def answer(tag: Tag, +c: B.Ctx) -> IO(B.Res):
     case ReportText{}: IO.pure(B.Res, B.text(c, "count=3"))
     case Ordered{}: IO.pure(B.Res, B.text(c, "handler"))
     case Combo{}: IO.pure(B.Res, B.text(c, "combo"))
+    case Wide{}: IO.pure(B.Res, B.text(c, string(B.field(B.valid_headers(c), "x-wide"))))
     case Plain{}: IO.pure(B.Res, B.text(c, none(B.valid_params(c)) ++ "," ++ none(B.valid_query(c)) ++ "," ++ none(B.valid_headers(c)) ++ "," ++ none(B.valid_body(c))))
     case _: IO.pure(B.Res, B.not_found(c))
 
@@ -126,6 +139,8 @@ def entries() -> List<&2, B.Registration(Tag)>:
      B.with_schemas(Tag, B.get(Tag, "/report-text", ReportText{}), one(B.response_schema(report_response()))),
      B.route_schemas(Tag, M.post(Tag, "/ordered", Ordered{}), [B.hook(Tag, T.Transform{}, Stamp{}), B.hook(Tag, T.BeforeHandle{}, Stop{})], one(B.body_schema(todo_body()))),
      B.with_schemas(Tag, B.post(Tag, "/combo/:id", Combo{}), B.schemas([B.params_schema(id_params("id")), B.query_schema(search_query()), B.headers_schema(whoami_headers()), B.body_schema(todo_body())])),
+     B.with_schemas(Tag, B.get(Tag, "/wide", Wide{}), one(B.headers_schema(wide_headers(Some{wide_pattern()})))),
+     B.with_schemas(Tag, B.get(Tag, "/narrow", Wide{}), one(B.headers_schema(wide_headers(None{})))),
      B.get(Tag, "/plain", Plain{})],
     B.guard(Tag, B.guard_schemas(Tag, [], one(B.query_schema(token(text())))), [
       B.get(Tag, "/guarded/a", Member{}),

@@ -249,3 +249,36 @@ describe("lifecycle", () => {
     expect(await good.text()).toBe("before-handle:t");
   });
 });
+
+describe("prepared schemas", () => {
+  // A wide pattern's table takes tens of milliseconds to build. It is built
+  // once, with the route table, so a request costs about what a request
+  // without the pattern costs. Compare medians rather than wall time.
+  async function median(path: string, value: string): Promise<number> {
+    const times: number[] = [];
+    for (let i = 0; i < 15; i++) {
+      const before = performance.now();
+      const response = await send(path, {
+        headers: { "x-wide": value, "x-wide-2": value, "x-wide-3": value },
+      });
+      expect(await response.text()).toBe(value);
+      times.push(performance.now() - before);
+    }
+    times.sort((a, b) => a - b);
+    return times[7] ?? 0;
+  }
+  test("a wide pattern adds no per-request table build", async () => {
+    await median("/wide", "aaaa");
+    const wide = await median("/wide", "aaaa");
+    const narrow = await median("/narrow", "aaaa");
+    expect(wide).toBeLessThan(narrow * 3 + 3);
+    await rejected(
+      await send("/wide", { headers: { "x-wide": "ab", "x-wide-2": "a", "x-wide-3": "b" } }),
+      400,
+      [
+        issue(["headers", "x-wide"], "constraint", SCALAR),
+        issue(["headers", "x-wide-3"], "constraint", SCALAR),
+      ],
+    );
+  });
+});
