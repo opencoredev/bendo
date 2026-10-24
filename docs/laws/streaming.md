@@ -1,8 +1,8 @@
 # Streaming, WebSocket and static file laws
 
 These laws cover chunked bodies and streamed responses, Server-Sent Events,
-the WebSocket handshake, frames and sessions, and static file paths. See the
-[laws index](README.md) for how to read an entry.
+the WebSocket handshake, frames, sessions and publish/subscribe, and static
+file paths. See the [laws index](README.md) for how to read an entry.
 
 ## Chunked bodies and streams
 
@@ -127,6 +127,65 @@ Errors and the send helpers:
 - `ws_session_start_rejects`, `ws_session_resume_rejects`: the frame decoder only ever rejects with 1002 or 1009, whether it starts a frame or resumes one.
 - `ws_session_rejected`: a decoder rejection ends the session with its code, the same way.
 - `ws_session_admit_text`, `ws_session_admit_binary`, `ws_session_admit_ping`, `ws_session_admit_close`: the send helpers admit exactly the commands whose payloads the frame encoder accepts.
+
+## WebSocket publish and subscribe
+
+The topic registry is a list of subscription records (topic, connection ID,
+mailbox), the next connection ID to hand out, and the IDs of connections that
+joined and have not closed. One store actor owns it. These laws check its
+membership against an independent model in `proof/ws-topics-spec.bend`, pin
+each operation's effect on whole records, and prove that every registry the
+shell can reach is well-formed: no pair is recorded twice, every record
+belongs to an active connection, and every active ID was already handed out.
+Together they say a publication reaches each subscribed connection exactly
+once, minus the sender, a closed connection can never subscribe again, and a
+close revokes the connection's ID even when its join timed out. See
+[publish and subscribe](../websocket-pubsub.md) and
+[decision 0018](../decisions/0018-websocket-pubsub.md).
+
+Membership:
+
+- `ws_topics_subscribe_member`, `ws_topics_unsubscribe_leaves`, `ws_topics_remove_leaves`: after subscribing a connection to a topic it is a member; after unsubscribing it from that topic, or removing it, it is not.
+- `ws_topics_subscribe_independent`, `ws_topics_unsubscribe_independent`: changing one connection's membership in one topic leaves every other topic's members, in order, unchanged.
+- `ws_topics_registry_spec`: over any history of subscribes, unsubscribes and removals, membership matches the model: a connection is in a topic when the last operation naming that pair, or removing the connection, was a subscribe.
+- `ws_topics_members_records`: a connection is a member of a topic exactly when some record pairs them.
+
+Publication:
+
+- `ws_topics_publish_targets`: a publication to a topic targets exactly its members, minus the sender when one is given.
+- `ws_topics_publish_once`: over any history, a publication reaches each connection once if the model says it is a member and it is not the sender, and otherwise never.
+- `ws_topics_targets_records`: a publication selects exactly the topic's complete records, minus the sender's, in registry order, so each copy goes to the mailbox stored for that connection.
+- `ws_topics_publish_once_wf`, `ws_topics_history_once`: in a well-formed registry, and so after every runtime history, a publication selects each connection exactly once if a record pairs it with the topic and it is not the sender, and otherwise never.
+
+Records:
+
+- `ws_topics_subscribe_record`, `ws_topics_subscribe_target`: subscribing stores the new mailbox and replaces every earlier record for that pair; the other records keep their order.
+- `ws_topics_unsubscribe_record`: unsubscribing drops exactly the records for that pair.
+- `ws_topics_subscribe_records_independent`, `ws_topics_unsubscribe_records_independent`: every other topic's records, mailboxes included, are unchanged.
+- `ws_topics_remove_record`, `ws_topics_remove_next`, `ws_topics_remove_revokes`: removing a connection keeps exactly the other connections' records in order, keeps the next ID, and revokes the removed ID.
+
+Active connections and IDs:
+
+- `ws_topics_admit_active`, `ws_topics_admit_inactive`: the shell's subscribe records the subscription for an active connection and changes nothing for one that closed or never joined.
+- `ws_topics_late_subscribe`: a subscribe that arrives after the close cleanup changes nothing, so a kept handle cannot re-register a closed connection.
+- `ws_topics_join_next`, `ws_topics_join_id`, `ws_topics_join_subs`, `ws_topics_join_live`: a join hands out the next ID, increments the counter, keeps every record and adds only the new ID to the active set.
+- `ws_topics_join_positive`, `ws_topics_join_fresh_live`, `ws_topics_join_fresh_subs`: in a well-formed registry the new ID is not 0 and differs from every active and every subscribed ID.
+
+Joins that time out:
+
+A join can time out after the actor queued it, and still commit. Each
+connection joins under its own random token, and its close releases by
+token, so the close revokes whatever ID the token got.
+
+- `ws_topics_claim_registry`, `ws_topics_claim_records`: a claim is a join on the registry and records the new ID under the token.
+- `ws_topics_change_keeps_claims`: every registry change keeps every claim.
+- `ws_topics_release_revokes`, `ws_topics_release_leaves`, `ws_topics_release_unclaims`: a release revokes every ID claimed under its token, removes it from every topic, and forgets those claims.
+- `ws_topics_late_join_released`: a claim followed by any registry changes and then a release of the same token leaves the claimed ID inactive.
+
+Well-formedness:
+
+- `ws_topics_wf_empty`, `ws_topics_wf_join`, `ws_topics_wf_admit`, `ws_topics_wf_unsubscribe`, `ws_topics_wf_remove`, `ws_topics_wf_remove_all`, `ws_topics_wf_claim`, `ws_topics_wf_release`: the empty registry is well-formed, and every operation the shell uses preserves it.
+- `ws_topics_history_wf`, `ws_topics_ledger_history_wf`: so every registry reachable through any history of joins, subscribes, unsubscribes, closes and prunes is well-formed, including histories of claims and releases.
 
 ## Static files
 

@@ -1,4 +1,4 @@
-# 0017: WebSocket topics in a store actor, with drop-on-full fan-out
+# 0018: WebSocket topics in a store actor, with drop-on-full fan-out
 
 BND-53 adds publish and subscribe on top of the BND-52 session layer
 ([0015](0015-websocket-mailbox.md)). Three questions shaped it: where
