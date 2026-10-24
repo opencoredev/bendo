@@ -128,6 +128,7 @@ export const sidebar: DefaultTheme.SidebarItem[] = [
           { text: "Middleware", link: "/api/bend/middleware" },
           { text: "Streaming and real time", link: "/api/bend/streaming" },
           { text: "Stores and the clock", link: "/api/bend/state" },
+          { text: "Data and protocol modules", link: "/api/bend/modules" },
         ],
       },
       {

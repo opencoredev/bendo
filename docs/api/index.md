@@ -22,9 +22,10 @@ import ./bendo/main.bend as B
 | [Middleware](bend/middleware.md) | Built-in middleware: logging, auth, JWT, CORS, security headers, caching, limits, IP rules, rate limits |
 | [Streaming and real time](bend/streaming.md) | Streams, Server-Sent Events, WebSockets, pub/sub, static files, the reverse proxy |
 | [Stores and the clock](bend/state.md) | Shared state actors and the wall clock |
+| [Data and protocol modules](bend/modules.md) | Cookies, forms, multipart, JSON Schema, encodings, route patterns, WebSocket frames, raw requests and responses |
 
-A few modules are imported beside `B` by the examples and templates, under
-these names:
+The examples and guides also import some modules beside `B`. The reference
+writes their names with these aliases:
 
 | Alias | Module | For |
 | --- | --- | --- |
@@ -39,6 +40,15 @@ these names:
 | `Store` | `bendo/app/store.bend` | Store errors and operations |
 | `V` | `bendo/validated.bend` | Serving an app whose routes have schemas |
 | `W` | `bendo/ws/connection.bend` | WebSocket connection handles |
+| `Cookie` | `bendo/data/cookie.bend` | Cookie options |
+| `Form`, `Multipart` | `bendo/data/form.bend`, `bendo/data/multipart.bend` | Request bodies from HTML forms |
+| `JS` | `bendo/data/json-schema.bend` | JSON Schema export |
+| `SchemaPattern` | `bendo/data/schema-pattern.bend` | String patterns for schemas |
+| `SHA`, `Hex`, `Utf8` | `bendo/crypto/sha256.bend`, `bendo/data/hex.bend`, `bendo/data/utf8.bend` | Hashing and encodings |
+| `Request`, `Response` | `bendo/http/request.bend`, `bendo/http/response.bend` | HTTP methods and raw responses |
+| `StreamTypes`, `SseTypes` | `bendo/http/stream_types.bend`, `bendo/http/sse_types.bend` | Stream and SSE step values |
+| `RoutePattern` | `bendo/router/pattern.bend` | Compiling and matching route patterns |
+| `Frame` | `bendo/ws/frame.bend` | Decoding WebSocket frames |
 
 ## TypeScript packages
 
@@ -61,12 +71,11 @@ A test, `tests/api-coverage.test.ts`, fails when a public API has no entry
 here or an entry names something that is not public. Public means:
 
 - Every top-level def in `src/main.bend`, written `B.name`.
-- In the modules in the alias table above, the names that a shipped example
-  (`examples/`), a `create-bendo` template, or a published guide calls. A
-  constructor counts as its type. Other defs in those modules are internal
-  and can change without notice. The modules are the ones those examples and
-  templates import, plus `app/context.bend`, which the
-  [middleware guide](../middleware.md) imports for typed middleware.
+- Every name that a shipped example (`examples/`), a `create-bendo` template,
+  or a published guide calls through another module, such as `J.Json` or
+  `C.header`. A constructor counts as its type. Other defs in those modules
+  are internal and can change without notice. The laws and design decisions
+  name internals too; they do not make them public.
 - Every export of each entry point in the `exports` map of `bendo` and
   `vite-plugin-bendo`, read with the TypeScript compiler.
 

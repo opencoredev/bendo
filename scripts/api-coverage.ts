@@ -7,11 +7,9 @@ import ts from "typescript";
 // readers; keep the two in step.
 //
 // Bend. The public API is every top-level def in src/main.bend, written
-// `B.name`, plus part of the companion modules: the src/ modules that a shipped
-// example or create-bendo template imports, and src/app/context.bend, which the
-// middleware guide imports for typed middleware. A companion module is public
-// only in the names that an example, a template or a published docs page
-// outside docs/api calls through it. A constructor counts as its type.
+// `B.name`, plus each name that a shipped example, a create-bendo template or
+// a published guide calls through another src/ module (a companion module).
+// The rest of a companion module is internal. A constructor counts as its type.
 //
 // TypeScript. The public API is every export of every `exports` entry point
 // of packages/bendo and packages/vite-plugin-bendo, read with the TypeScript
@@ -20,28 +18,47 @@ import ts from "typescript";
 const root = join(import.meta.dir, "..");
 const apiDir = "docs/api";
 
-// Each companion module's alias in the reference, which is the alias the
-// examples use. A newly imported module fails until it is given one here.
+// Each companion module's alias in the reference: the alias most examples and
+// guides use, made unique. A module that starts being called through fails
+// until it is given one here.
 export const companionAliases: ReadonlyMap<string, string> = new Map([
   ["src/app/context.bend", "C"],
   ["src/app/store.bend", "Store"],
+  ["src/crypto/sha256.bend", "SHA"],
+  ["src/data/cookie.bend", "Cookie"],
+  ["src/data/form.bend", "Form"],
+  ["src/data/hex.bend", "Hex"],
+  ["src/data/json-schema.bend", "JS"],
   ["src/data/json.bend", "J"],
+  ["src/data/multipart.bend", "Multipart"],
+  ["src/data/schema-pattern.bend", "SchemaPattern"],
   ["src/data/schema.bend", "S"],
+  ["src/data/utf8.bend", "Utf8"],
   ["src/effects/clock.bend", "Clock"],
+  ["src/http/request.bend", "Request"],
+  ["src/http/response.bend", "Response"],
+  ["src/http/sse_types.bend", "SseTypes"],
+  ["src/http/stream_types.bend", "StreamTypes"],
   ["src/mw/cors.bend", "Cors"],
   ["src/mw/cors_policy.bend", "CorsPolicy"],
   ["src/router/methods.bend", "Methods"],
+  ["src/router/pattern.bend", "RoutePattern"],
   ["src/validated.bend", "V"],
   ["src/ws/connection.bend", "W"],
+  ["src/ws/frame.bend", "Frame"],
   ["src/ws/message.bend", "M"],
   ["src/ws/pubsub.bend", "P"],
 ]);
-const guideCompanions = ["src/app/context.bend"];
 
 // Docs pages that do not teach the API: the reference itself, the laws (which
-// name internals to state them) and the design records.
+// name internals to state them), the design records and contributor documents.
 const nonGuidePages = [/^docs\/api\//, /^docs\/laws\//, /^docs\/decisions\//];
-const unpublished = new Set(["docs/PLAN.md", "docs/RUNBOOK.md", "docs/SITE.md"]);
+const unpublished = new Set([
+  "docs/PLAN.md",
+  "docs/RUNBOOK.md",
+  "docs/SITE.md",
+  "docs/test-runners.md",
+]);
 
 export const tsEntryPackages = ["packages/bendo", "packages/vite-plugin-bendo"];
 
@@ -146,16 +163,6 @@ function teachingSources(): { readonly file: string; readonly text: string }[] {
   return [...programs, ...pages];
 }
 
-export function companionModules(): string[] {
-  const imported = [
-    ...walk("examples", (path) => path.endsWith(".bend")),
-    ...walk("packages/create-bendo/templates", (path) => path.endsWith(".bend")),
-  ].flatMap((file) => [...aliasesIn(file, read(file)).values()]);
-  return [...new Set([...imported, ...guideCompanions])]
-    .filter((module) => module !== "src/main.bend")
-    .sort();
-}
-
 export function bendPublicApi(): PublicApi[] {
   const main = bendModule("src/main.bend");
   const api: PublicApi[] = [...main.defs].map(([name, line]) => ({
@@ -163,27 +170,31 @@ export function bendPublicApi(): PublicApi[] {
     language: "bend",
     source: `src/main.bend:${line}`,
   }));
-  const companions = companionModules();
-  const unnamed = companions.filter((module) => !companionAliases.has(module));
-  if (unnamed.length > 0)
-    throw new Error(`give these companion modules an alias in companionAliases: ${unnamed}`);
   const found = new Map<string, PublicApi>();
+  const unnamed = new Set<string>();
   for (const { file, text } of teachingSources()) {
+    const code = bendCode(text);
     for (const [alias, module] of aliasesIn(file, text)) {
-      const canonical = companionAliases.get(module);
-      if (canonical === undefined || !companions.includes(module)) continue;
+      if (module === "src/main.bend") continue;
       const parsed = bendModule(module);
-      for (const match of text.matchAll(new RegExp(`(?<![\\w.])${alias}\\.([A-Za-z_]\\w*)`, "g"))) {
+      for (const match of code.matchAll(new RegExp(`(?<![\\w.])${alias}\\.([A-Za-z_]\\w*)`, "g"))) {
         const used = match[1] ?? "";
         const name = parsed.constructors.get(used) ?? used;
         const line = parsed.defs.get(name) ?? parsed.types.get(name);
         if (line === undefined) throw new Error(`${file} uses ${alias}.${used}, not in ${module}`);
+        const canonical = companionAliases.get(module);
+        if (canonical === undefined) {
+          unnamed.add(module);
+          continue;
+        }
         const key = `${canonical}.${name}`;
         if (!found.has(key))
           found.set(key, { key, language: "bend", source: `${module}:${line} (used in ${file})` });
       }
     }
   }
+  if (unnamed.size > 0)
+    throw new Error(`give these companion modules an alias in companionAliases: ${[...unnamed]}`);
   return [...api, ...[...found.values()].sort((a, b) => a.key.localeCompare(b.key))];
 }
 
@@ -245,25 +256,44 @@ export type CodeBlock = {
   readonly line: number;
 };
 
-export function codeBlocks(markdown: string): CodeBlock[] {
+export type Heading = { readonly level: number; readonly text: string; readonly line: number };
+
+/**
+ * The fenced code blocks and ATX headings of a CommonMark page. Fences may be
+ * indented up to three spaces and close only on a run of the same character
+ * at least as long as the opening one; headings inside fences do not count.
+ */
+export function markdownOutline(markdown: string): {
+  blocks: CodeBlock[];
+  headings: Heading[];
+} {
   const blocks: CodeBlock[] = [];
+  const headings: Heading[] = [];
   const lines = markdown.split("\n");
   for (let index = 0; index < lines.length; index++) {
-    const open = /^(`{3,}|~{3,})\s*(\S*)\s*(.*)$/.exec(lines[index] ?? "");
+    const line = lines[index] ?? "";
+    const heading = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$/.exec(line);
+    if (heading !== null) {
+      headings.push({ level: heading[1]?.length ?? 0, text: heading[2] ?? "", line: index + 1 });
+      continue;
+    }
+    const open = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(line);
     if (open === null) continue;
-    const [, fence = "```", lang = "", meta = ""] = open;
+    const [, indent = "", fence = "```", info = ""] = open;
+    if (fence.startsWith("`") && info.includes("`")) continue;
+    const [lang = "", ...meta] = info.trim().split(/\s+/);
+    const close = new RegExp(`^ {0,3}${fence[0] === "`" ? "`" : "~"}{${fence.length},}[ \\t]*$`);
     const start = index;
     const body: string[] = [];
-    for (index++; index < lines.length && !(lines[index] ?? "").startsWith(fence); index++)
-      body.push(lines[index] ?? "");
-    blocks.push({
-      lang,
-      meta: meta.split(/\s+/).filter(Boolean),
-      code: body.join("\n"),
-      line: start + 1,
-    });
+    for (index++; index < lines.length && !close.test(lines[index] ?? ""); index++)
+      body.push((lines[index] ?? "").replace(new RegExp(`^ {0,${indent.length}}`), ""));
+    blocks.push({ lang, meta, code: body.join("\n"), line: start + 1 });
   }
-  return blocks;
+  return { blocks, headings };
+}
+
+export function codeBlocks(markdown: string): CodeBlock[] {
+  return markdownOutline(markdown).blocks;
 }
 
 export type Entry = {
@@ -304,48 +334,76 @@ export function referencePages(): Page[] {
     });
 }
 
-const entryHeading = /^### (`[^`]+`(?:, `[^`]+`)*)\s*$/;
+const entryHeading = /^(`[^`]+`(?:, `[^`]+`)*)$/;
+
+/** H3 headings that start with a code span but are not well-formed entries. */
+export function malformedEntries(pages = referencePages()): Problem[] {
+  return pages.flatMap(({ page, text }) =>
+    markdownOutline(text)
+      .headings.filter(
+        (heading) =>
+          heading.level === 3 && heading.text.startsWith("`") && !entryHeading.test(heading.text),
+      )
+      .map((heading) => `${page}:${heading.line}: malformed entry heading: ${heading.text}`),
+  );
+}
 
 export function entries(pages = referencePages()): Entry[] {
   return pages.flatMap(({ page, language, module, text }) => {
-    const lines = text.split("\n");
-    const blocks = codeBlocks(text);
-    const found: Entry[] = [];
-    let inFence = false;
-    lines.forEach((line, index) => {
-      if (/^(`{3,}|~{3,})/.test(line)) inFence = !inFence;
-      if (inFence) return;
-      const heading = entryHeading.exec(line)?.[1];
-      if (heading === undefined) return;
-      const names = heading.split(", ").map((name) => name.slice(1, -1));
-      const start = index + 1;
-      const next = lines.findIndex((other, at) => at > index && /^#{1,3} /.test(other));
-      const end = next === -1 ? lines.length + 1 : next + 1;
-      found.push({
-        page,
-        line: start,
-        names,
-        keys: names.map((name) => (language === "ts" ? `${module}:${name}` : name)),
-        examples: blocks.filter(
-          (block) => block.line > start && block.line < end && isExample(block, language),
-        ),
-      });
+    const { blocks, headings } = markdownOutline(text);
+    return headings.flatMap((heading, index) => {
+      const names = heading.level === 3 ? entryHeading.exec(heading.text)?.[1] : undefined;
+      if (names === undefined) return [];
+      const end = headings.slice(index + 1).find((other) => other.level <= 3)?.line ?? Infinity;
+      const split = names.split(", ").map((name) => name.slice(1, -1));
+      return [
+        {
+          page,
+          line: heading.line,
+          names: split,
+          keys: split.map((name) => (language === "ts" ? `${module}:${name}` : name)),
+          examples: blocks.filter(
+            (block) => block.line > heading.line && block.line < end && isExample(block, language),
+          ),
+        },
+      ];
     });
-    return found;
   });
 }
 
-/** Whether an example's code uses a name. */
-export function mentions(
-  code: string,
-  name: string,
-  language: "bend" | "ts",
-  module?: string,
-): boolean {
-  if (language === "ts" && name === "default")
-    return new RegExp(`import\\s+\\w+\\s*(?:,\\s*\\{[^}]*\\})?\\s+from\\s+"${module}"`).test(code);
-  const escaped = name.replace(/[.$]/g, (char) => `\\${char}`);
-  return new RegExp(`(?<![\\w.$])${escaped}(?![\\w$])`).test(code);
+/** Bend code without comments and string literals. */
+export function bendCode(text: string): string {
+  return text.replace(/"(?:[^"\\\n]|\\.)*"|#.*$/gm, (match) => (match.startsWith('"') ? '""' : ""));
+}
+
+/** Whether Bend example code uses a qualified name outside comments and strings. */
+export function bendMentions(code: string, name: string): boolean {
+  const escaped = name.replace(/\./g, "\\.");
+  return new RegExp(`(?<![\\w.])${escaped}(?!\\w)`).test(bendCode(code));
+}
+
+/**
+ * Whether a TypeScript example uses an export: an identifier with its name,
+ * or for `default`, a default import from the page's module.
+ */
+export function tsMentions(code: string, name: string, module: string): boolean {
+  const source = ts.createSourceFile("example.tsx", code, ts.ScriptTarget.Latest, false);
+  if (name === "default")
+    return source.statements.some(
+      (statement) =>
+        ts.isImportDeclaration(statement) &&
+        statement.importClause?.name !== undefined &&
+        ts.isStringLiteral(statement.moduleSpecifier) &&
+        statement.moduleSpecifier.text === module,
+    );
+  let found = false;
+  const visit = (node: ts.Node): void => {
+    if (found) return;
+    if (ts.isIdentifier(node) && node.text === name) found = true;
+    else ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return found;
 }
 
 export type Problem = string;
@@ -357,14 +415,13 @@ export function coverageProblems(
   const known = new Set(api.map((item) => item.key));
   const all = entries(pages);
   const documented = new Set(all.flatMap((entry) => entry.keys));
-  const problems: Problem[] = [];
+  const problems: Problem[] = malformedEntries(pages);
   for (const item of api)
     if (!documented.has(item.key)) problems.push(`no entry for ${item.key} (${item.source})`);
   const seen = new Map<string, string>();
   for (const entry of all) {
     const where = `${entry.page}:${entry.line}`;
-    const language = entry.page.startsWith(`${apiDir}/ts/`) ? "ts" : "bend";
-    const module = entry.keys[0]?.split(":")[0];
+    const page = pages.find((candidate) => candidate.page === entry.page);
     entry.keys.forEach((key, index) => {
       const name = entry.names[index] ?? key;
       if (!known.has(key)) problems.push(`${where}: ${key} is not a public API`);
@@ -374,8 +431,9 @@ export function coverageProblems(
       seen.set(key, where);
       if (entry.examples.length === 0) return;
       const code = entry.examples.map((block) => block.code).join("\n");
-      if (!mentions(code, name, language, module))
-        problems.push(`${where}: no example under this entry uses ${name}`);
+      const used =
+        page?.module === undefined ? bendMentions(code, name) : tsMentions(code, name, page.module);
+      if (!used) problems.push(`${where}: no example under this entry uses ${name}`);
     });
     if (entry.examples.length === 0)
       problems.push(`${where}: ${entry.names.join(", ")} has no example`);
@@ -472,19 +530,18 @@ export function checkTsExamples(pages = referencePages()): TsCheck {
     jsx: ts.JsxEmit.ReactJSX,
     paths,
   });
-  const problems = ts
-    .getPreEmitDiagnostics(program)
-    .filter((diagnostic) => diagnostic.file !== undefined && origins.has(diagnostic.file.fileName))
-    .map((diagnostic) => {
-      const file = diagnostic.file;
-      const origin = file === undefined ? "?" : origins.get(file.fileName);
-      const { line } =
-        file === undefined
-          ? { line: 0 }
-          : file.getLineAndCharacterOfPosition(diagnostic.start ?? 0);
-      const [page, fence] = (origin ?? "?:0").split(":");
-      return `${page}:${Number(fence) + 1 + line}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n")}`;
-    });
+  // Diagnostics in the workspace sources belong to `bun run typecheck`;
+  // global ones (a missing lib or types package) are reported here too.
+  const problems = ts.getPreEmitDiagnostics(program).flatMap((diagnostic) => {
+    const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
+    const file = diagnostic.file;
+    if (file === undefined) return [message];
+    const origin = origins.get(file.fileName);
+    if (origin === undefined) return [];
+    const { line } = file.getLineAndCharacterOfPosition(diagnostic.start ?? 0);
+    const [page, fence] = origin.split(":");
+    return [`${page}:${Number(fence) + 1 + line}: ${message}`];
+  });
   return { files: origins.size, problems };
 }
 

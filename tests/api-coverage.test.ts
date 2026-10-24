@@ -60,6 +60,48 @@ test("the check reports missing entries, unknown names and entries without examp
   ]);
 });
 
+test("fences follow CommonMark, and comments and strings do not count as uses", () => {
+  const api: PublicApi[] = [
+    { key: "B.text", language: "bend", source: "test" },
+    { key: "B.html", language: "bend", source: "test" },
+  ];
+  const text = [
+    "### `B.text`",
+    "  ```bend",
+    "  # B.text",
+    '  def ex() -> String: "B.text"',
+    "  ```",
+    "````md",
+    "```bend",
+    "### `B.ghost`",
+    "```",
+    "````",
+    "### `B.html` (old)",
+  ].join("\n");
+  const page: Page = { page: "docs/api/bend/t.md", language: "bend", module: undefined, text };
+  expect(coverageProblems([page], api)).toEqual([
+    "docs/api/bend/t.md:11: malformed entry heading: `B.html` (old)",
+    "no entry for B.html (test)",
+    "docs/api/bend/t.md:1: no example under this entry uses B.text",
+  ]);
+});
+
+test("a TypeScript default export is used through a default import", () => {
+  const api: PublicApi[] = [{ key: "vite-plugin-bendo:default", language: "ts", source: "test" }];
+  const page = (code: string): Page => ({
+    page: "docs/api/ts/t.md",
+    language: "ts",
+    module: "vite-plugin-bendo",
+    text: ["### `default`", "```ts", code, "```"].join("\n"),
+  });
+  expect(coverageProblems([page("import bendo from 'vite-plugin-bendo';\nbendo();")], api)).toEqual(
+    [],
+  );
+  expect(
+    coverageProblems([page('import { locate } from "vite-plugin-bendo"; // default')], api),
+  ).toEqual(["docs/api/ts/t.md:1: no example under this entry uses default"]);
+});
+
 test("every public API has a reference entry with an example, and every entry names one", () => {
   expect(coverageProblems()).toEqual([]);
 });
