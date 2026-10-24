@@ -16,6 +16,7 @@
     "packages/*/src",
     "packages/bendo/shared/*.ts",
     "packages/bendo/gen",
+    "packages/bendo/client",
     "tests",
     "scripts/*.ts"
   ]

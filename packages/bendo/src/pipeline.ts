@@ -108,6 +108,7 @@ export async function generateSchemas(binary?: string): Promise<void | Manifest>
   const manifest = fetchManifest(binary);
   writeRouteTypes(manifest);
   log(`generate: wrote .bendo/routes.ts (${manifest.routes.length} routes)`);
+  log("generate: wrote .bendo/routes.schemas.ts");
   return manifest;
 }
 

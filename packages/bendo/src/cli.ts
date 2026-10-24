@@ -34,7 +34,7 @@ Usage:
   bendo start          run dist/server; honors PORT (default: 8787)
   bendo routes [entry] print the method/path table (default: main.bend)
   bendo prove [file]   check proofs (default: PROOF.bend)
-  bendo gen [entry]    write .bendo/routes.ts from the manifest
+  bendo gen [entry]    write .bendo/routes.ts and routes.schemas.ts from the manifest
   bendo openapi [entry] [--out file] [--bend file] [--config file]
                        write an OpenAPI 3.1 document from the manifest
   bendo doctor         check Bend, Lean/elan, clang and Bun versions

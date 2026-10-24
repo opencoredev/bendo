@@ -20,6 +20,9 @@
       "bin": {
         "bendo": "./src/cli.ts",
       },
+      "dependencies": {
+        "ajv": "^8.17.1",
+      },
     },
   },
   "packages": {
