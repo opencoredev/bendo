@@ -28,6 +28,13 @@ function Todo({ id }: { id: number }) {
 Install `@tanstack/react-query` 5.89 or later next to `bendo`. It is an optional
 peer dependency: only `bendo/query` imports it.
 
+> [!WARNING]
+> Keys hold the path and the request, not the client. The base URL and the
+> headers set in `createClient`, such as an `Authorization` header, are not part
+> of any key. Give each server, and each signed-in user, its own `QueryClient`,
+> or clear the cache (`queryClient.clear()`) when the user changes. Otherwise
+> one client's queries can return data cached by another.
+
 ## Queries
 
 `queryOptions(endpoint, input?, options?)` takes a client method, the input you
@@ -49,15 +56,22 @@ type.
 A query resolves to the response of a `kind: "data"` result. Two results have no
 data to cache, since TanStack refuses `undefined` as query data:
 
-- A 204 or 205 is thrown as a `no-content` error.
-- A successful `HEAD` resolves to `null`.
+- A successful `HEAD` resolves to `null`, whether the server answered 200, 204
+  or 205.
+- Any other 204 or 205 is thrown as a `no-content` error. The route's response
+  type promised a body, and resolving `null` instead would add `null` to the
+  data of every query. Retrying will not change the answer, so leave
+  `no-content` out of your `retry` policy (see [Errors](#errors)). Use a
+  mutation for a request that may answer 204.
 
 ## Mutations
 
 `mutationOptions(endpoint, options?)` takes a client method and any other
 `useMutation` options except `mutationFn` and `mutationKey`. The variables are
 the method's input, so `mutate({ body })` sends the body. A method without
-required input takes `mutate()`. Captures are part of the endpoint, so build
+required input takes `mutate()`. TanStack gives mutations no abort signal, so
+the variables may carry one: `mutate({ body, signal })` passes it to `fetch`,
+and aborting it fails the mutation with a `network` error. Captures are part of the endpoint, so build
 the options per item: `mutationOptions(api.todos({ id }).delete)`.
 
 A mutation resolves to the response, or to `undefined` when the server answered
@@ -110,12 +124,15 @@ A key is `"bendo"`, one part per path step, then the request:
 
 ```ts
 queryKey(api.todos({ id: 1 }).get, { query: { tag: ["a", "b"], limit: 20 } });
-// ["bendo", "todos", { ":id": "1" }, { method: "GET", query: { limit: "20", tag: ["a", "b"] } }]
+// ["bendo", "todos", { ":id": "1" }, { method: "GET", query: [["limit", "20"], ["tag", ["a", "b"]]] }]
 ```
 
 Static segments stay as text and each capture becomes `{ ":name": value }`. The
 last part holds the method and whichever of `query`, `headers` and `body` the
-request sends. Keys are built from what goes on the wire, so equal requests get
+request sends. Query and headers are `[name, value]` pairs and the body is JSON
+text, never objects keyed by your field names: TanStack hashes keys by copying
+object fields, which would drop a name like `__proto__` and let two requests
+share a cache entry. Keys are built from what goes on the wire, so equal requests get
 equal keys however their objects were built:
 
 - Capture, query and header values are compared as the text they are sent as,
@@ -123,11 +140,14 @@ equal keys however their objects were built:
 - Query and header names are sorted, header names are lowercased, and fields
   set to `undefined` or an empty array are left out.
 - A one-item array and its single value share a key; items keep their order.
-- The body is compared as its JSON, with object keys sorted.
+- The body is compared as its JSON text, with object keys sorted.
+- Input the client refuses, such as a BigInt in the body, becomes
+  `{ "!": reason }`. The request then fails with that reason either way.
 
 A new input object on every render therefore keeps the same query and does not
-refetch. Headers set in `createClient` and the base URL are not part of the key,
-so two clients for different servers should use separate `QueryClient`s.
+refetch. Per-call headers are part of the key, so never pass a secret there that
+should not sit in the cache; set it in `createClient` and follow the warning at
+the top of this page.
 
 `routeKey(node)` is the prefix key for everything below a node, for
 `invalidateQueries`, `cancelQueries` and other filters:
@@ -147,12 +167,13 @@ A value that did not come from `createClient` throws a `TypeError`.
 The helpers infer everything from the client method's type, so they add a
 constant cost per call: `timeout 60s bun scripts/client-types-bench.ts 400 --query`
 passes 400 routes through `queryOptions` with a `select` into `useQuery` and
-through `mutationOptions` into `useMutation`. It checks in about 2.4 s (1.05 s for
-100, 1.27 s for 200), against 0.65 s for the client calls alone. That works out
-to about 2,560 type instantiations per route.
+through `mutationOptions` into `useMutation`. It checks in about 2.3 s (0.9 s for
+100, 1.3 s for 200), against 0.76 s for the client calls alone. That works out
+to about 2,640 type instantiations per route.
 
 `packages/bendo/query/types.check.ts` holds the type tests that
 `bun run typecheck` checks. `timeout 5m bun test --timeout 30000 packages/bendo/query`
 renders the hooks in Happy DOM against the compiled client fixture. It checks
-stable keys across re-renders, thrown errors, signal pass-through,
-cancellation, and mutation invalidation.
+stable keys across re-renders, keys for names such as `__proto__`, thrown
+errors, HEAD with 200, 204 and 205, signal pass-through for queries and
+mutations, cancellation, and mutation invalidation.

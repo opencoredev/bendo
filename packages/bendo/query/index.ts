@@ -18,9 +18,10 @@ export type AnyEndpoint = (...args: never[]) => Promise<ClientResult<unknown>>;
 type Result<E extends AnyEndpoint> = Awaited<ReturnType<E>>;
 /** The response type of a `kind: "data"` result. */
 export type ResponseOf<E extends AnyEndpoint> = Extract<Result<E>, { kind: "data" }>["data"];
-/** The endpoint's input without `signal`, which TanStack supplies. */
-export type InputOf<E extends AnyEndpoint> =
-  Parameters<E> extends [input?: infer I] ? Omit<I, "signal"> : never;
+/** The endpoint's input, as a mutation's variables, `signal` included. */
+type CallInput<E extends AnyEndpoint> = Parameters<E> extends [input?: infer I] ? I : never;
+/** A query's input: the endpoint's without `signal`, which TanStack supplies. */
+export type InputOf<E extends AnyEndpoint> = Omit<CallInput<E>, "signal">;
 type Optional<E extends AnyEndpoint> = [] extends Parameters<E> ? true : false;
 
 /**
@@ -35,9 +36,12 @@ export type QueryData<E extends AnyEndpoint> =
     : ResponseOf<E>;
 /** What a mutation resolves to: `undefined` when the server answered 204 or 205. */
 export type MutationData<E extends AnyEndpoint> = ResponseOf<E> | undefined;
-/** `mutate()` takes no argument when the route has no required input. */
+/**
+ * `mutate()` takes no argument when the route has no required input. TanStack
+ * gives a mutation no signal, so `mutate({ body, signal })` passes one to `fetch`.
+ */
 export type MutationVariables<E extends AnyEndpoint> =
-  Optional<E> extends true ? InputOf<E> | void : InputOf<E>;
+  Optional<E> extends true ? CallInput<E> | void : CallInput<E>;
 
 /** A failed client result, plus the 204 or 205 a query cannot cache. */
 export type Failure =
@@ -100,37 +104,41 @@ function pathParts(steps: readonly Step[]): KeyPart[] {
 }
 
 /**
- * Query and header entries as the client sends them, keys sorted. One value
+ * Query and header entries as the client sends them, sorted by name. One value
  * stays text and several stay an array in order, so `{ tag: ["a"] }` and
- * `{ tag: "a" }` share a key. Input the client would refuse keeps its raw form;
- * the request then fails with a `request` error either way.
+ * `{ tag: "a" }` share a key. Entries are `[name, value]` pairs, not object
+ * fields: TanStack's `hashKey` copies object fields into `{}`, where a name such
+ * as `__proto__` would vanish and two different requests would share a key.
  */
-function textKey(entries: readonly [string, string][]): Record<string, string | string[]> {
+function textKey(entries: readonly [string, string][]): [string, string | string[]][] {
   const grouped = new Map<string, string[]>();
   for (const [name, value] of entries) grouped.set(name, [...(grouped.get(name) ?? []), value]);
-  const record: Record<string, string | string[]> = {};
-  for (const name of [...grouped.keys()].sort()) {
+  return [...grouped.keys()].sort().map((name) => {
     const values = grouped.get(name) ?? [];
-    record[name] = values.length === 1 ? (values[0] ?? "") : values;
-  }
-  return record;
+    return [name, values.length === 1 ? (values[0] ?? "") : values];
+  });
 }
 
-/** JSON as the client would send it, with object keys sorted at every level. */
-function canonical(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (typeof value !== "object" || value === null) return value;
-  const record: Record<string, unknown> = {};
-  for (const key of Object.keys(value).sort()) record[key] = canonical(Reflect.get(value, key));
-  return record;
+/** JSON text with object keys sorted at every level. */
+function canonicalText(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalText).join(",")}]`;
+  if (typeof value !== "object" || value === null) return JSON.stringify(value);
+  const fields = Object.keys(value)
+    .sort()
+    .map((name) => `${JSON.stringify(name)}:${canonicalText(Reflect.get(value, name))}`);
+  return `{${fields.join(",")}}`;
 }
 
-function bodyKey(body: unknown): unknown {
+/** The body as the client sends it: its JSON text, with object keys sorted. */
+function bodyKey(body: unknown): string | { "!": string } {
   try {
     const json = JSON.stringify(body);
-    return typeof json === "string" ? canonical(JSON.parse(json)) : body;
-  } catch {
-    return body;
+    // JSON.parse keeps `__proto__` as an own field, so the sort sees every name.
+    if (typeof json === "string") return canonicalText(JSON.parse(json));
+    return { "!": "body has no JSON form" };
+  } catch (cause) {
+    // BigInt values and cycles throw; the client refuses them the same way.
+    return { "!": `body has no JSON form: ${String(cause)}` };
   }
 }
 
@@ -140,17 +148,19 @@ function field(input: unknown, name: string): unknown {
     : undefined;
 }
 
+/**
+ * Input the client would refuse becomes `{ "!": reason }`. Such a request fails
+ * with that same `request` error, so inputs with one reason may share a key.
+ */
 function requestPart(method: Method, input: unknown): KeyPart {
   const part: Record<string, unknown> = { method };
-  const query = field(input, "query");
-  const queryEntries = textEntries(query, "query");
-  if (!queryEntries.ok) part.query = query;
-  else if (queryEntries.value.length > 0) part.query = textKey(queryEntries.value);
-  const headers = field(input, "headers");
-  const headerList = headerEntries(headers);
-  if (!headerList.ok) part.headers = headers;
-  else if (headerList.value.length > 0)
-    part.headers = textKey(headerList.value.map(([name, value]) => [name.toLowerCase(), value]));
+  const query = textEntries(field(input, "query"), "query");
+  if (!query.ok) part.query = { "!": query.reason };
+  else if (query.value.length > 0) part.query = textKey(query.value);
+  const headers = headerEntries(field(input, "headers"));
+  if (!headers.ok) part.headers = { "!": headers.reason };
+  else if (headers.value.length > 0)
+    part.headers = textKey(headers.value.map(([name, value]) => [name.toLowerCase(), value]));
   const body = field(input, "body");
   if (body !== undefined) part.body = bodyKey(body);
   return part;
@@ -218,9 +228,16 @@ type AsMethod<V> = V extends (...args: infer A) => infer R
   ? { method(...args: A): R }["method"]
   : V;
 
-async function runQuery(endpoint: Fn, input: unknown, signal: AbortSignal): Promise<unknown> {
+async function runQuery(
+  endpoint: Fn,
+  method: Method,
+  input: unknown,
+  signal: AbortSignal,
+): Promise<unknown> {
   const result = await endpoint({ ...(typeof input === "object" ? input : {}), signal });
   if (!result.ok) throw thrown(endpoint, result);
+  // A HEAD has no body, so a 204 or 205 is as good as a 200.
+  if (method === "HEAD") return null;
   switch (result.kind) {
     case "data":
       return result.data === undefined ? null : result.data;
@@ -277,10 +294,11 @@ export function queryOptions(
     "queryKey" | "queryFn"
   >,
 ): unknown {
+  const { method } = endpointChain(endpoint);
   return {
     ...options,
     queryKey: keyOf(endpoint, input),
-    queryFn: ({ signal }: { signal: AbortSignal }) => runQuery(endpoint, input, signal),
+    queryFn: ({ signal }: { signal: AbortSignal }) => runQuery(endpoint, method, input, signal),
   };
 }
 

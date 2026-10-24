@@ -89,8 +89,15 @@ test("equal requests get equal keys whatever their objects look like", () => {
     { ":rest": "a/b" },
     {
       method: "GET",
-      query: { flag: "true", n: "2", tag: ["x", "y"] },
-      headers: { "x-extra": "e", "x-token": "t" },
+      query: [
+        ["flag", "true"],
+        ["n", "2"],
+        ["tag", ["x", "y"]],
+      ],
+      headers: [
+        ["x-extra", "e"],
+        ["x-token", "t"],
+      ],
     },
   ]);
   // One value and a one-item array send the same query; order within an array does not.
@@ -112,6 +119,53 @@ test("equal requests get equal keys whatever their objects look like", () => {
   // Methods and captures separate keys.
   expect(queryKey(api.any.get)).not.toEqual(queryKey(api.any.put));
   expect(queryKey(api.todos({ id: 1 }).get)).not.toEqual(queryKey(api.todos({ id: 2 }).get));
+});
+
+test("names such as __proto__ and constructor keep requests apart", () => {
+  const api = createClient<Routes>("http://127.0.0.1:1");
+  const hash = (input: {
+    query?: Record<string, string | number | string[]>;
+    headers?: Record<string, string>;
+    body?: unknown;
+  }) => hashKey(queryKey(api.any.put, input));
+  for (const name of ["__proto__", "constructor", "toString", "hasOwnProperty", "valueOf"]) {
+    const a = { [name]: "a", x: "1" };
+    const b = { [name]: "b", x: "1" };
+    expect(Object.keys(a)).toContain(name);
+    expect(hash({ query: a })).not.toBe(hash({ query: b }));
+    expect(hash({ body: a })).not.toBe(hash({ body: b }));
+    expect(hash({ body: { nested: [a] } })).not.toBe(hash({ body: { nested: [b] } }));
+    expect(hash({ body: a })).not.toBe(hash({ body: { x: "1" } }));
+    // Equal requests still share a key, whatever the field order.
+    expect(hash({ query: a })).toBe(hash({ query: { x: 1, [name]: ["a"] } }));
+    expect(hash({ body: { nested: [a] } })).toBe(
+      hash({ body: { nested: [{ x: "1", [name]: "a" }] } }),
+    );
+  }
+  // `__proto__` is not a header name fetch accepts, but the others are.
+  expect(hash({ headers: { constructor: "a" } })).not.toBe(hash({ headers: { constructor: "b" } }));
+  // A body the client refuses keys by its reason instead of making hashKey throw.
+  expect(hash({ body: { n: 1n } })).toBe(hash({ body: { m: 2n } }));
+});
+
+test("a QueryClient reuses data only for the same __proto__ field", async () => {
+  let calls = 0;
+  const counting: Fetch = async () => {
+    calls += 1;
+    return Response.json({ method: "PUT" });
+  };
+  const api = createClient<Routes>("http://127.0.0.1:1", { fetch: counting });
+  const { client } = harness();
+  const fetchWith = (query: Record<string, string | number>, body: unknown) =>
+    client.fetchQuery({ ...queryOptions(api.any.put, { query, body }), staleTime: Infinity });
+  await fetchWith({ ["__proto__"]: "a", x: 1 }, { ["__proto__"]: { deep: 1 } });
+  await fetchWith({ x: "1", ["__proto__"]: "a" }, { ["__proto__"]: { deep: 1 } });
+  expect(calls).toBe(1);
+  await fetchWith({ ["__proto__"]: "b", x: 1 }, { ["__proto__"]: { deep: 1 } });
+  await fetchWith({ ["__proto__"]: "a", x: 1 }, { ["__proto__"]: { deep: 2 } });
+  await fetchWith({ constructor: "a", x: 1 }, { ["__proto__"]: { deep: 1 } });
+  expect(calls).toBe(4);
+  expect(client.getQueryCache().getAll()).toHaveLength(4);
 });
 
 test("route keys are prefixes of exactly the queries below them", () => {
@@ -204,6 +258,21 @@ test("a HEAD query resolves to null", async () => {
   expect(result.current.data).toBeNull();
 });
 
+test("a successful HEAD resolves to null whatever its 2xx status", async () => {
+  for (const status of [200, 204, 205]) {
+    const empty: Fetch = async () => new Response(null, { status });
+    const api = createClient<Routes>("http://127.0.0.1:1", { fetch: empty });
+    const { client } = harness();
+    expect(await client.fetchQuery(queryOptions(api.any.head))).toBeNull();
+  }
+  const missing: Fetch = async () => new Response(null, { status: 404 });
+  const api = createClient<Routes>("http://127.0.0.1:1", { fetch: missing });
+  const error: unknown = await harness()
+    .client.fetchQuery(queryOptions(api.any.head))
+    .catch((caught: unknown) => caught);
+  expect(error).toMatchObject({ kind: "http", status: 404 });
+});
+
 test("TanStack's signal reaches fetch, and cancelling aborts the request", async () => {
   const { api, sent } = recordingClient(200);
   const { client, wrapper } = harness();
@@ -221,6 +290,22 @@ test("TanStack's signal reaches fetch, and cancelling aborts the request", async
   expect(result.current.status).toBe("pending");
   expect(result.current.fetchStatus).toBe("idle");
   expect(result.current.error).toBeNull();
+});
+
+test("a mutation forwards the signal in its variables, so aborting cancels the fetch", async () => {
+  const { api, sent } = recordingClient(200);
+  const { client } = harness();
+  const controller = new AbortController();
+  const mutation = client.getMutationCache().build(client, mutationOptions(api.todos.post));
+  const pending = mutation
+    .execute({ body: { title: "never sent" }, signal: controller.signal })
+    .catch((caught: unknown) => caught);
+  await waitFor(() => expect(sent).toHaveLength(1));
+  expect(sent[0]?.signal).toBe(controller.signal);
+  controller.abort();
+  const error = await pending;
+  expect(isBendoQueryError(error)).toBe(true);
+  expect(error).toMatchObject({ kind: "network" });
 });
 
 test("a mutation sends its variables, returns typed data and invalidates its targets", async () => {

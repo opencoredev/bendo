@@ -150,6 +150,10 @@ export function mutations(): void {
     }),
   );
   create.mutate({ body: { title: "write docs" } });
+  // TanStack gives a mutation no signal, so the variables may carry one.
+  create.mutate({ body: { title: "write docs" }, signal: new AbortController().signal });
+  // @ts-expect-error the signal must be an AbortSignal
+  create.mutate({ body: { title: "write docs" }, signal: "stop" });
   // @ts-expect-error the body needs a title
   create.mutate({ body: {} });
   // @ts-expect-error the body is required
