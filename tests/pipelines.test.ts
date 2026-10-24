@@ -227,7 +227,9 @@ test("a response-only route enters as the request step would have admitted it", 
   expect(skipped.responses).toEqual(stepped.responses);
   expect(skipped.traces).toEqual(stepped.traces);
 
-  const wire = new Map(schemaCases.map((entry, index) => [entry.name, stepped.responses[index] ?? ""]));
+  const wire = new Map(
+    schemaCases.map((entry, index) => [entry.name, stepped.responses[index] ?? ""]),
+  );
   expect(wire.get("response-only route")).toContain("HTTP/1.1 200");
   expect(wire.get("response-only route")).toContain("x-seeded: cleared");
   expect(wire.get("route without schemas")).toContain("x-seeded: kept");
