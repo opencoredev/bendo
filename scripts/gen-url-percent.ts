@@ -38,7 +38,11 @@ function partial(prefix: boolean[], rest: string): string {
 // The head trie for the literal 37. `leaf(head)` closes a branch where the
 // default row fires for the given head term; `hit(indent)` emits the code
 // for the branch where the head is exactly 37.
-function headTrie(indent: number, leaf: (head: string) => string, hit: (indent: number) => void): void {
+function headTrie(
+  indent: number,
+  leaf: (head: string) => string,
+  hit: (indent: number) => void,
+): void {
   const walk = (depth: number, prefix: boolean[], pad: number): void => {
     const sp = " ".repeat(pad);
     if (depth === 32) {
@@ -87,8 +91,14 @@ function msbSplit(indent: number, high: () => string, low: (code: number) => str
   walk(31, 0, indent);
 }
 
-const bitParams = [...Array(32).keys()].reverse().map((i) => `+b${i}: Bool`).join(", ");
-const bitArgs = [...Array(32).keys()].reverse().map((i) => `b${i}`).join(", ");
+const bitParams = [...Array(32).keys()]
+  .reverse()
+  .map((i) => `+b${i}: Bool`)
+  .join(", ");
+const bitArgs = [...Array(32).keys()]
+  .reverse()
+  .map((i) => `b${i}`)
+  .join(", ");
 const bitWord = [...Array(32).keys()].reduceRight((acc, i) => `WCon{b${i}, ${acc}}`, "WNil{}");
 const bitPattern = [...Array(32).keys()].reduceRight((acc, i) => `WCon{+b${i}, ${acc}}`, "WNil{}");
 const byteA = `U32{${bitWord}}`;
@@ -140,7 +150,9 @@ def hpick(+c: U32, ok: Bool) -> Maybe<&2, U32>:
 
 // ---- hex digits ----
 emit(`# The spec's hex digit value is the implementation's, for every U32.`);
-emit(`def hex_bits(${bitParams}) -> {Spec.hexdig(${byteA}) == hpick(${byteA}, Bytes.hex(${byteA})) : Maybe<&2, U32>}:`);
+emit(
+  `def hex_bits(${bitParams}) -> {Spec.hexdig(${byteA}) == hpick(${byteA}, Bytes.hex(${byteA})) : Maybe<&2, U32>}:`,
+);
 msbSplit(
   2,
   () => "{==}",
@@ -173,7 +185,8 @@ headTrie(
 emit(``);
 
 // ---- escapes, with a known high digit ----
-const IH = (t: string): string => `@r:${L} -> {${go(t, "Done{r}")} == prepend(r, Spec.unpercent(${t})) : ${R}}`;
+const IH = (t: string): string =>
+  `@r:${L} -> {${go(t, "Done{r}")} == prepend(r, Spec.unpercent(${t})) : ${R}}`;
 emit(`def esc_lo(+a: U32, +va: U32, +b: U32, +t: ${L}, +rev: ${L}, sh: {(Url.unhex(a) << 4n : U32) == (va * 16 : U32) : U32}, y: Bool, ey: {Bytes.hex(b) == y : Bool}, ih: ${IH("t")}) -> {${go("t", "Url.percent_step(a, b, rev, y)")} == prepend(rev, Spec.escaped(Some{va}, hpick(b, y), Spec.unpercent(t))) : ${R}}:
   match y:
     case False{}:
@@ -187,14 +200,21 @@ def esc_hi(+a: U32, +va: U32, +b: U32, +t: ${L}, +rev: ${L}, sh: {(Url.unhex(a) 
   esc_lo(a, va, b, t, rev, sh, Bytes.hex(b), {==}, ih)
 `);
 
-emit(`def esc_bits(${bitParams}, +b: U32, +t: ${L}, +rev: ${L}, ih: ${IH("t")}) -> {${go("t", `Url.percent_step(${byteA}, b, rev, Bytes.hex(${byteA}) && Bytes.hex(b))`)} == prepend(rev, Spec.escaped(Spec.hexdig(${byteA}), Spec.hexdig(b), Spec.unpercent(t))) : ${R}}:`);
+emit(
+  `def esc_bits(${bitParams}, +b: U32, +t: ${L}, +rev: ${L}, ih: ${IH("t")}) -> {${go("t", `Url.percent_step(${byteA}, b, rev, Bytes.hex(${byteA}) && Bytes.hex(b))`)} == prepend(rev, Spec.escaped(Spec.hexdig(${byteA}), Spec.hexdig(b), Spec.unpercent(t))) : ${R}}:`,
+);
 msbSplit(
   2,
   () => "fail_stays(t, Url.InvalidPercent{})",
-  (code) => (isHex(code) ? `esc_hi(${code}, ${nibble(code)}, b, t, rev, {==}, ih)` : "fail_stays(t, Url.InvalidPercent{})"),
+  (code) =>
+    isHex(code)
+      ? `esc_hi(${code}, ${nibble(code)}, b, t, rev, {==}, ih)`
+      : "fail_stays(t, Url.InvalidPercent{})",
 );
 emit(``);
-emit(`def esc(+a: U32, +b: U32, +t: ${L}, +rev: ${L}, ih: ${IH("t")}) -> {${go("t", "Url.percent_step(a, b, rev, Bytes.hex(a) && Bytes.hex(b))")} == prepend(rev, Spec.escaped(Spec.hexdig(a), Spec.hexdig(b), Spec.unpercent(t))) : ${R}}:`);
+emit(
+  `def esc(+a: U32, +b: U32, +t: ${L}, +rev: ${L}, ih: ${IH("t")}) -> {${go("t", "Url.percent_step(a, b, rev, Bytes.hex(a) && Bytes.hex(b))")} == prepend(rev, Spec.escaped(Spec.hexdig(a), Spec.hexdig(b), Spec.unpercent(t))) : ${R}}:`,
+);
 emit(`  match a:`);
 emit(`    case U32{${bitPattern}}:`);
 emit(`      esc_bits(${bitArgs}, b, t, rev, ih)`);

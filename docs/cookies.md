@@ -251,15 +251,34 @@ specifications they refer to:
   listed key is accepted.
 
 `Spec.verify` is independent of the implementation only in the last-dot split
-and the key and HMAC relation. It calls the same `Url.decode` and
-`Base64.decode`, so the wire law cannot catch a bug inside those decoders. Two
-laws are still pending that would replace them with independent
-specifications:
+and the key and HMAC relation: it calls the same `Url.decode` and
+`Base64.decode`. The laws in `proof/signed-cookie-decoder-laws.bend` specify
+both decoders independently, so a decoder bug cannot hide behind the wire law:
 
 - `Base64.decode(s, False{}, True{}) == Some{bytes}` implies
   `s == Spec.base64(bytes)` and every byte is at most 255. Strict standard
   Base64 accepts only the canonical encoding.
-- `Url.decode(wire)` equals an independent decoder: RFC 3986 `%HH` escapes
-  with either hex case, a literal `+`, then strict RFC 3629 UTF-8 decoding.
+- `Url.percent_decode` in query mode equals `proof/url-decode-spec.bend`'s
+  `unpercent`: RFC 3986 `%HH` escapes with either hex case, a `%` without two
+  hex digits rejected, and every other octet, including `+`, kept literally.
+- A string `Utf8.decode` returns holds only Unicode scalars and encodes back to
+  exactly its input octets. With the existing roundtrip law (every scalar
+  string decodes back), strict UTF-8 decoding is the inverse of the encoder.
+- Together, four laws fix `Url.decode(wire)` completely. It returns
+  `Done{value}` exactly when `value` is a scalar string whose UTF-8 octets are
+  `unpercent` of the wire's UTF-8 octets. It returns the percent error when
+  `unpercent` fails, and `InvalidUtf8` otherwise.
+- Verification is restated over these decoders alone. `verify(Keys{first,
+  rest}, wire) == Some{value}` holds exactly when the keys are usable, `value`
+  is a scalar string, and for some listed key, `unpercent` of the wire's octets
+  is the UTF-8 encoding of `value ++ "." ++ Spec.base64(HMAC-SHA256(key,
+  value))`. Every escaping of that payload verifies, and nothing else does.
+
+`Url.decode` reads the wire's characters as their UTF-8 octets first.
+`Utf8.encode` expects scalar strings and drops characters above U+1FFFFF, so a
+wire string holding such a character verifies as if it were absent. HTTP
+cookie values cannot carry one, because the cookie parser accepts only ASCII
+cookie-octets, and the HMAC still covers the decoded value. Wires that reach
+`verify` through `B.signed_cookie` never hold one.
 
 Cookie-name binding is out of scope by design (see above).

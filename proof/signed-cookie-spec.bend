@@ -204,8 +204,9 @@ def verify_payload(keys: S.Keys, decoded: Result<&2, &2, Url.Error, String>) -> 
 # Only the last-dot split and the key and HMAC relation are written
 # independently here. URL and Base64 decoding call the same Url.decode and
 # Base64.decode as the implementation, so the wire law rules out composition,
-# split and authentication bugs but not decoder bugs. Independent strict
-# decoder specs are pending (docs/cookies.md).
+# split and authentication bugs but not decoder bugs. BND-87's laws in
+# signed-cookie-decoder-laws.bend specify both decoders independently and
+# restate verification against them (docs/cookies.md).
 def verify(keys: S.Keys, wire: String) -> Maybe<&2, String>:
   verify_payload(keys, Url.decode(wire))
 

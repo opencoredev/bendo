@@ -31,6 +31,9 @@ import ./proof/proxy.bend as ProxyProof
 import ./proof/ip.bend as IpProof
 import ./proof/rate-limit.bend as RateLimitProof
 
+# BND-87
+import ./proof/signed-cookie-decoders.bend as SignedCookieDecoderProof
+
 # BND-32
 import ./proof/signed-cookie.bend as SignedCookieProof
 
