@@ -85,6 +85,14 @@ Hosts must be written the way browsers send them, as described in
 `https://[0::1]` is dropped, so configure `http://127.0.0.1` or
 `https://[::1]`.
 
+Dropped entries are silent with `B.cors_allow`. Build the list once at
+startup with `B.cors_allow_checked(origins)` instead, an `IO(B.CorsConfig)`,
+and each dropped entry prints one line on stderr:
+
+```text
+bendo: cors: ignoring allowed origin "app.example": not an http or https URL
+```
+
 Configured entries may be full URLs; only their origin counts, so
 `https://app.example/login` configures `https://app.example`. Request `Origin`
 values must be bare origins: a path, userinfo or another scheme is not an

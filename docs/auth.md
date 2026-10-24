@@ -136,6 +136,11 @@ without a CORS preflight: any method other than `GET` and `HEAD`, with a
 `text/plain`, or no `Content-Type` at all. A JSON request is not inspected,
 because browsers preflight cross-origin JSON; use CORS to control it.
 
+The check fails closed. A `Content-Type` whose media type is not
+`type/subtype`, two HTTP tokens after trimming spaces and tabs, is inspected
+like a form type. That covers `text`, `text/plain/x`, an empty value and any
+control character.
+
 An inspected request passes when any of these holds:
 
 - `Sec-Fetch-Site` is `same-origin`.
@@ -166,7 +171,9 @@ such as `[::1]`. Bendo rejects other spellings instead of rewriting them. So
 configure `http://127.0.0.1`, not `http://127.1`, and `https://[::1]`, not
 `https://[0::1]`; the rejected forms are never what a browser sends, and an
 entry written that way is dropped. A DNS name may not end in a number
-(`a.b.1`), since browsers read such a host as IPv4. Each entry of `origins` may
+(`a.b.1`), since browsers read such a host as IPv4, and has at most 253
+characters; one trailing root dot (`app.example.`) does not count and stays in
+the origin. Each entry of `origins` may
 be a full URL; only its origin counts. Entries that are not `http` or `https`
 URLs are ignored.
 
@@ -249,8 +256,14 @@ covered.
 - `origin_canonical_spec`, `origin_of_url_spec` and `origin_of_host_spec`: for
   every input, `src/http/origin.bend` returns what `proof/origin-spec.bend`
   says, so the CSRF, CORS and WebSocket laws also hold for the parser the
-  middleware runs. `media_essence_spec` does the same for
-  `src/http/media.bend`.
+  middleware runs. `media_essence_spec` and `media_well_formed_spec` do the
+  same for `src/http/media.bend`.
+- `csrf_spec_v1_inspected` and `csrf_spec_v1_denies`: failing closed on a
+  malformed media type only adds denials. `proof/csrf-spec-v1.bend` keeps the
+  Content-Type rule from before BND-85, which trimmed with Base's
+  `String.trim` and exempted every value that was not a form type. Every
+  request it inspected is still inspected, and every request it denied is
+  still denied.
 - `origin_read_back`: reading a serialized origin gives back the scheme, host
   and port it was parsed into, so distinct origins never serialize alike.
 - `csrf_configured_decision_spec`: the same, for the policy the middleware

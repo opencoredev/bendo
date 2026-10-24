@@ -181,8 +181,11 @@ def host_short(+host: String, short: Bool) -> Bool:
     case False{}: False{}
 
 # A host outside brackets: IPv4 when it ends in a number, else a DNS name.
+# RFC 1035 section 3.1 limits a name to 255 octets on the wire, which is 253
+# characters of text; a fully qualified name's trailing root dot is the empty
+# root label and does not count.
 def name_host(+host: String) -> Bool:
-  host_short(host, Nat.is_le(String.length(host), 253n))
+  host_short(host, Nat.is_le(String.length(host), 253n) || (String.ends_with(host, ".") && Nat.is_le(String.length(host), 254n)))
 
 # ---- IPv6 in RFC 5952 form ----
 

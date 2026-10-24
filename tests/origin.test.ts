@@ -29,6 +29,7 @@ const ofUrl = exported("of_url");
 const ofHost = exported("of_host");
 const essence = exported("essence");
 const trimText = exported("trim_text");
+const wellFormed = (value: string): boolean => exported("well_formed")(value) === "yes";
 
 describe("Origin hosts are accepted only in the form browsers send", () => {
   test.each([
@@ -81,6 +82,20 @@ describe("Origin hosts are accepted only in the form browsers send", () => {
   test("the longest DNS name is accepted", () => {
     const host = "a".repeat(253);
     expect(canonical(`http://${host}`)).toBe(`http://${host}`);
+  });
+
+  test("a trailing root dot does not count toward the 253-character limit", () => {
+    // Labels of 63, 63, 63 and 61 characters: 253 characters with the dots.
+    const name = ["a", "b", "c"].map((c) => c.repeat(63)).join(".") + "." + "d".repeat(61);
+    expect(name).toHaveLength(253);
+    expect(canonical(`http://${name}`)).toBe(`http://${name}`);
+    expect(canonical(`http://${name}.`)).toBe(`http://${name}.`);
+    expect(ofUrl(`https://${name}./x`)).toBe(`https://${name}.`);
+    expect(ofHost("https", `${name}.:443`)).toBe(`https://${name}.`);
+    // Only one root dot is free, and only a dot.
+    expect(canonical(`http://${name}..`)).toBe("");
+    expect(canonical(`http://${name}e.`)).toBe("");
+    expect(canonical(`http://${"a".repeat(254)}.`)).toBe("");
   });
 });
 
@@ -144,5 +159,38 @@ describe("Media-type essence", () => {
     ["\u000bapplication/json", "\u000bapplication/json"],
   ])("%j has essence %j", (input, expected) => {
     expect(essence(input)).toBe(expected);
+  });
+
+  test.each([
+    "text/plain",
+    "Text/Plain; charset=utf-8",
+    " \tapplication/vnd.api+json \t; x",
+    "multipart/form-data;boundary=x",
+    "a/b",
+    "!#$%&'*+-.^_`|~/0Az",
+  ])("%j is a well-formed media type", (input) => {
+    expect(wellFormed(input)).toBe(true);
+  });
+
+  test.each([
+    "",
+    " ",
+    "text",
+    "text/",
+    "/plain",
+    "text/plain/x",
+    "text//plain",
+    "text /plain",
+    "text/pl ain",
+    "te(xt/plain",
+    "text/plain\u0000",
+    "\ntext/plain",
+    "\u000btext/plain",
+    "\u000ctext/plain",
+    "\rtext/plain",
+    "text/plain\n",
+    "t\u00e9xt/plain",
+  ])("%j is malformed", (input) => {
+    expect(wellFormed(input)).toBe(false);
   });
 });

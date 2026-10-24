@@ -32,7 +32,7 @@ def safe_reads(+m: Request.Method) -> {P.safe(m) == Spec.reads_only(m) : Bool}:
 def form_simple(+ct: Maybe<&2, String>) -> {P.form(ct) == Spec.simple_body(ct) : Bool}:
   match ct:
     case None{}: {==}
-    case Some{+v}: Equal.cong(String, Bool, e => Spec.form_essence(e), Media.essence(v), MediaSpec.essence(v), MediaProof.essence(v))
+    case Some{+v}: Equal.trans(Bool, Spec.form_essence(Media.essence(v)) || Bool.not(Media.well_formed(v)), Spec.form_essence(MediaSpec.essence(v)) || Bool.not(Media.well_formed(v)), Spec.form_essence(MediaSpec.essence(v)) || Bool.not(MediaSpec.well_formed(v)), Equal.cong(String, Bool, e => Spec.form_essence(e) || Bool.not(Media.well_formed(v)), Media.essence(v), MediaSpec.essence(v), MediaProof.essence(v)), Equal.cong(Bool, Bool, w => Spec.form_essence(MediaSpec.essence(v)) || Bool.not(w), Media.well_formed(v), MediaSpec.well_formed(v), MediaProof.well_formed(v)))
 
 def member_listed(+o: String, +xs: List<&2, String>) -> {P.member(o, xs) == Spec.listed(o, xs) : Bool}:
   match xs:

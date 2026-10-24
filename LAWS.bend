@@ -24,6 +24,7 @@ import ./proof/plugin-laws.bend as PluginLaws
 import ./proof/trim-laws.bend as TrimLaws
 import ./proof/media-laws.bend as MediaLaws
 import ./proof/origin-laws.bend as OriginLaws
+import ./proof/csrf-v1-laws.bend as CsrfV1Laws
 
 # BND-68
 import ./proof/hot-path-laws.bend as HotPathLaws
@@ -1625,7 +1626,7 @@ law jwt_verify_rejects_repeated_claim:
 
 # The CSRF decision equals CsrfSpec.allows for every policy (configured
 # origins and optional scheme), method and header combination. The spec
-# inspects only non-GET/HEAD requests with a form-like or absent
+# inspects only non-GET/HEAD requests with a form-like, malformed or absent
 # Content-Type; trusts Sec-Fetch-Site: same-origin, a listed source, or the
 # scheme://Host origin unless Sec-Fetch-Site is cross-site; takes Origin over
 # Referer; and never trusts a missing or unparsable source such as "null".

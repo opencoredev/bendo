@@ -250,7 +250,7 @@ def name_short_same(+h: String, short: Bool) -> {O.name_bounded(h, short) == S.h
     case False{}: {==}
 
 def name_host_same(+h: String) -> {O.name_host(h) == S.name_host(h) : Bool}:
-  name_short_same(h, Nat.is_le(String.length(h), 253n))
+  name_short_same(h, Nat.is_le(String.length(h), 253n) || (String.ends_with(h, ".") && Nat.is_le(String.length(h), 254n)))
 
 # ---- Ports ----
 

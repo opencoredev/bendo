@@ -731,6 +731,21 @@ describe("CSRF", () => {
     expect(await res.text()).toBe("Forbidden");
   });
 
+  test("a malformed Content-Type is inspected, not exempt", async () => {
+    // The check fails closed: a value it cannot read as type "/" subtype
+    // gets the same origin check as a form type.
+    for (const type of ["text", "text/", "/plain", "text/plain/x", "text /plain", "a@b/c"]) {
+      expect(await post({ origin: "https://evil.example", "content-type": type })).toBe(403);
+      expect(await post({ "content-type": type, "sec-fetch-site": "same-origin" })).toBe(200);
+    }
+    expect(
+      await rawStatus("/csrf/form", { origin: "https://evil.example", "content-type": "" }),
+    ).toBe(403);
+    expect(
+      await post({ origin: "https://evil.example", "content-type": "application/vnd.api+json" }),
+    ).toBe(200);
+  });
+
   test("same-origin, configured and safe requests pass", async () => {
     const own = new URL(server.url);
     expect(await post({ ...form, origin: `http://${own.host}` })).toBe(200);

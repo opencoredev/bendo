@@ -33,3 +33,18 @@ def before_params(s: String) -> String:
 # has essence "text/plain". proof/media-spec.bend states it independently.
 def essence(value: String) -> String:
   Bytes.fold(Bytes.trim_text(before_params(value)))
+
+# Reads the media type as type "/" subtype, two RFC 9110 tokens. slash records
+# whether the '/' was read, some whether the current token has a character,
+# and ok whether everything read so far fits. A tail loop: Bool.and is strict
+# in the JavaScript target.
+def shape_go(s: String, +slash: Bool, some: Bool, ok: Bool) -> Bool:
+  match s:
+    case SNil{}: ok && slash && some
+    case SCon{Chr{+c}, t}: shape_go(t, slash || U32.is_eq(c, 47), Bytes.tchar(c), ok && (Bytes.tchar(c) || (U32.is_eq(c, 47) && some && Bool.not(slash))))
+
+# Whether the essence is a well-formed type "/" subtype. Anything else,
+# including a control character the SP and HTAB trim keeps, is malformed.
+# proof/media-spec.bend states it independently.
+def well_formed(value: String) -> Bool:
+  shape_go(Bytes.trim_text(before_params(value)), False{}, False{}, True{})

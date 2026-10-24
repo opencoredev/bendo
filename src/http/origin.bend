@@ -218,9 +218,11 @@ def name_bounded(+host: String, short: Bool) -> Bool:
     case False{}: False{}
 
 # A host outside brackets: an IPv4 address when it ends in a number,
-# otherwise a DNS name of letters, digits, '-', '.' and '_' (after IDNA).
+# otherwise a DNS name of letters, digits, '-', '.' and '_' (after IDNA). The
+# name has at most 253 characters, not counting one trailing root dot, which
+# stays in the serialized origin.
 def name_host(+host: String) -> Bool:
-  name_bounded(host, Nat.is_le(String.length(host), 253n))
+  name_bounded(host, Nat.is_le(String.length(host), 253n) || (String.ends_with(host, ".") && Nat.is_le(String.length(host), 254n)))
 
 # One 16-bit group of RFC 5952 text: one to four lowercase hex digits, no
 # leading zero.
