@@ -14,7 +14,7 @@ import {
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { build, compile, start, type RunningServer } from "./harness.ts";
+import { build, compile, SLOW_TEST_TIMEOUT_MS, start, type RunningServer } from "./harness.ts";
 
 const binary = build("tests/servers/static.bend");
 const openNative = compile("tests/fixtures/static/open.bend", "native");
@@ -114,6 +114,50 @@ async function raw(
   return { status, head, body: bytes.subarray(split + 4) };
 }
 
+type Http10Download = {
+  status: number;
+  head: string;
+  length: number;
+  sha: string;
+};
+
+/**
+ * An HTTP/1.0 GET that hashes the body as it arrives instead of keeping it.
+ * It resolves only when the server ends the connection.
+ */
+async function http10(target: RunningServer, path: string): Promise<Http10Download> {
+  const port = Number(new URL(target.url).port);
+  return new Promise<Http10Download>((done, fail) => {
+    const socket = connect(port, "127.0.0.1");
+    const hash = createHash("sha256");
+    let pending = Buffer.alloc(0);
+    let head: string | undefined;
+    let length = 0;
+    socket.setTimeout(20_000, () => socket.destroy(new Error("socket timeout")));
+    socket.on("connect", () => socket.write(`GET ${path} HTTP/1.0\r\nHost: test\r\n\r\n`));
+    socket.on("data", (chunk: Buffer) => {
+      if (head !== undefined) {
+        hash.update(chunk);
+        length += chunk.length;
+        return;
+      }
+      pending = Buffer.concat([pending, chunk]);
+      const split = pending.indexOf("\r\n\r\n");
+      if (split < 0) return;
+      head = pending.subarray(0, split).toString("latin1");
+      const body = pending.subarray(split + 4);
+      hash.update(body);
+      length += body.length;
+    });
+    socket.on("error", fail);
+    socket.on("end", () => {
+      socket.destroy();
+      const status = Number(/^HTTP\/1\.1 (\d{3})/.exec(head ?? "")?.[1] ?? Number.NaN);
+      done({ status, head: head ?? "", length, sha: hash.digest("hex") });
+    });
+  });
+}
+
 async function get(path: string, headers: Record<string, string> = {}): Promise<Response> {
   return fetch(server.url + path, { headers, redirect: "manual" });
 }
@@ -151,18 +195,18 @@ describe("serving files", () => {
     expect(response.headers.get("last-modified")).toBe(modifiedOf(join(root, "hello.txt")));
   });
 
-  test("HEAD sends the GET validators and no body, without reading the file", async () => {
+  test("HEAD sends the GET validators and length and no body, without reading the file", async () => {
     const response = await raw("/static/hello.txt", "HEAD");
     expect(response.status).toBe(200);
     expect(response.head).toContain(`\r\netag: ${tagOf(join(root, "hello.txt"))}`);
     expect(response.head).toContain("\r\ncontent-type: text/plain; charset=utf-8");
-    // The transport derives Content-Length from a body; HEAD never reads one.
-    expect(response.head).not.toContain("content-length");
+    // The length comes from fstat; the stream registered for HEAD is never pulled.
+    expect(response.head).toContain("\r\ncontent-length: 11");
     expect(response.head).not.toContain("transfer-encoding");
     expect(response.body.length).toBe(0);
   });
 
-  test("HTTP/1.0 HEAD reads a buffered body to send its length", async () => {
+  test("HTTP/1.0 HEAD sends the length too", async () => {
     const response = await raw("/static/hello.txt", "HEAD", "1.0");
     expect(response.status).toBe(200);
     expect(response.head).toContain("\r\ncontent-length: 11");
@@ -504,12 +548,13 @@ describe("confinement", () => {
 });
 
 describe("streaming bodies above buffer_bytes", () => {
-  test("a body over buffer_bytes streams chunked; a range under it is buffered", async () => {
+  test("a body over buffer_bytes streams with its length and no chunking; a range under it is buffered", async () => {
     const whole = await raw("/small/data.bin");
     expect(whole.status).toBe(200);
-    expect(whole.head).toContain("\r\ntransfer-encoding: chunked");
-    expect(whole.head).not.toContain("content-length");
+    expect(whole.head).toContain("\r\ncontent-length: 2000");
+    expect(whole.head).not.toContain("transfer-encoding");
     expect(whole.head).toContain(`\r\netag: ${tagOf(join(root, "data.bin"))}`);
+    expect(whole.body.equals(data)).toBe(true);
     const streamed = await get("/small/data.bin");
     expect(Buffer.from(await streamed.arrayBuffer()).equals(data)).toBe(true);
     const part = await get("/small/data.bin", { range: "bytes=0-99" });
@@ -522,7 +567,7 @@ describe("streaming bodies above buffer_bytes", () => {
     const response = await get("/small/large.bin", { range: "bytes=1000-150000" });
     expect(response.status).toBe(206);
     expect(response.headers.get("content-range")).toBe(`bytes 1000-150000/${large.length}`);
-    expect(response.headers.get("content-length")).toBeNull();
+    expect(response.headers.get("content-length")).toBe("149001");
     expect(Buffer.from(await response.arrayBuffer()).equals(large.subarray(1000, 150001))).toBe(
       true,
     );
@@ -534,11 +579,72 @@ describe("streaming bodies above buffer_bytes", () => {
     ).toBe(createHash("sha256").update(large).digest("hex"));
   });
 
-  test("HTTP/1.0 cannot carry a stream and gets 505", async () => {
-    expect((await raw("/small/data.bin", "GET", "1.0")).status).toBe(505);
-    expect((await raw("/small/data.bin", "HEAD", "1.0")).status).toBe(505);
+  test("HTTP/1.0 gets a streamed body with its length", async () => {
+    const whole = await raw("/small/data.bin", "GET", "1.0");
+    expect(whole.status).toBe(200);
+    expect(whole.head).toContain("\r\ncontent-length: 2000");
+    expect(whole.head).not.toContain("transfer-encoding");
+    expect(whole.body.equals(data)).toBe(true);
+    const bare = await raw("/small/data.bin", "HEAD", "1.0");
+    expect(bare.status).toBe(200);
+    expect(bare.head).toContain("\r\ncontent-length: 2000");
+    expect(bare.body.length).toBe(0);
     expect((await raw("/static/data.bin", "GET", "1.0")).status).toBe(200);
   });
+
+  test("HEAD of a streamed file carries the GET body size over HTTP/1.1", async () => {
+    const bare = await raw("/small/large.bin", "HEAD");
+    expect(bare.status).toBe(200);
+    expect(bare.head).toContain(`\r\ncontent-length: ${large.length}`);
+    expect(bare.head).not.toContain("transfer-encoding");
+    expect(bare.body.length).toBe(0);
+    const whole = await raw("/small/large.bin");
+    expect(whole.head).toContain(`\r\ncontent-length: ${large.length}`);
+    expect(whole.body.length).toBe(large.length);
+  });
+
+  test.skipIf(process.platform !== "linux")(
+    "HTTP/1.0 downloads of 2 and 20 MiB stream in bounded memory and close the connection",
+    async () => {
+      const sizes = [2 << 20, 20 << 20];
+      const files = sizes.map((size) => {
+        const name = `http10-${size}.bin`;
+        const bytes = Buffer.alloc(size);
+        for (let i = 0; i < size; i += 4) bytes.writeUInt32LE((i * 2654435761) >>> 0, i);
+        writeFileSync(join(root, name), bytes);
+        return { name, size, sha: createHash("sha256").update(bytes).digest("hex") };
+      });
+      // A fresh server, so earlier tests' peaks don't hide the growth.
+      await using fresh = await start(binary, "127.0.0.1", {
+        BENDO_STATIC_ROOT: root,
+        BENDO_STATIC_APP: APP,
+      });
+      const hwm = (): number => {
+        const line = readFileSync(`/proc/${fresh.pid}/status`, "utf8")
+          .split("\n")
+          .find((l) => l.startsWith("VmHWM:"));
+        return Number(line?.split(/\s+/)[1] ?? Number.NaN) * 1024;
+      };
+      const before = hwm();
+      const peaks: number[] = [];
+      for (const file of files) {
+        const got = await http10(fresh, `/static/${file.name}`);
+        expect(got.status).toBe(200);
+        expect(got.head).toContain(`\r\ncontent-length: ${file.size}`);
+        expect(got.head).toContain("\r\nconnection: close");
+        expect(got.head).not.toContain("transfer-encoding");
+        expect(got.length).toBe(file.size);
+        expect(got.sha).toBe(file.sha);
+        peaks.push(hwm());
+      }
+      const smallGrowth = Math.max((peaks[0] ?? 0) - before, 8 << 20);
+      const largeGrowth = (peaks[1] ?? 0) - before;
+      // Ten times the bytes; a buffered body costs about 16 bytes of memory
+      // per octet, so it would grow memory about tenfold too.
+      expect(largeGrowth).toBeLessThan(smallGrowth * 2);
+    },
+    SLOW_TEST_TIMEOUT_MS,
+  );
 
   test("streams, HEADs and aborted downloads leave no descriptor open", async () => {
     const before = openFds();

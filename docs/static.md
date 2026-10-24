@@ -25,7 +25,7 @@ def dispatch(tag: Tag, c: B.Ctx, env: Unit) -> IO(B.Res):
 | `static_options(root)` | | Directory to serve, absolute or relative to the working directory. The root itself may be a symlink. |
 | `static_mounted(o, prefix)` | `""` | Route prefix removed from the request path. A path outside the prefix gets 404. |
 | `static_index(o, name)` | `"index.html"` | File served for a path ending in `/`. `""` turns that off. |
-| `static_buffer_bytes(o, n)` | 1 MiB | Largest body read into memory and sent with `Content-Length`. Longer bodies stream. |
+| `static_buffer_bytes(o, n)` | 1 MiB | Largest body read into memory before sending. Longer bodies stream. Both carry `Content-Length`. |
 | `static_cache_control(o, v)` | none | `Cache-Control` value for served files and 304s. |
 
 The handler reads the raw, still-encoded request path, not the decoded
@@ -152,21 +152,23 @@ Anything else is `application/octet-stream`. Every file response carries
 
 A body (the whole file, or the selected range) up to `buffer_bytes` is read
 into memory in 64 KiB chunks and sent with `Content-Length`. A longer body
-streams through `B.stream` ([streaming](streaming.md)) with chunked encoding
-and no `Content-Length`: the producer reads the next 64 KiB only after the
-previous chunk was sent, and its cleanup closes the file whether the stream
-ends, fails, is cancelled or the client disconnects. Octet lists cost about 16
-bytes of memory per octet ([0002](decisions/0002-bytes.md)), so a buffered body
-needs up to about 16 MiB at the 1 MiB default, and a streamed one about 1 MiB
-for its current chunk, whatever the file size.
+streams through `B.stream` ([streaming](streaming.md)) as a stream of known
+length: `fstat` gave the size, so the response carries the same
+`Content-Length` and raw octets, with no chunked framing. The producer reads
+the next 64 KiB only after the previous chunk was sent, and its cleanup closes
+the file whether the stream ends, fails, is cancelled or the client
+disconnects. Octet lists cost about 16 bytes of memory per octet
+([0002](decisions/0002-bytes.md)), so a buffered body needs up to about 16 MiB
+at the 1 MiB default, and a streamed one about 1 MiB for its current chunk,
+whatever the file size.
 
-HEAD over HTTP/1.1 never reads the file. It registers the same stream, which
-the transport does not pull for HEAD, and gets every header GET gets except
-`Content-Length`, because the response writer derives that from a body.
-HTTP/1.0 cannot carry a stream: a body above `buffer_bytes` gets 505 there,
-and HEAD over HTTP/1.0 reads a buffered body to send its length. Network-free
-`B.handle` cannot carry a stream either, so a streamed file is an empty 500
-there.
+HEAD never reads the file. It registers the same stream, which the transport
+does not pull for HEAD, and gets every header GET gets, `Content-Length`
+included. A HEAD with `Range` gets the 206 headers with the range's length.
+HTTP/1.0 has no chunked encoding but needs none here: a streamed file goes to
+an HTTP/1.0 client with its `Content-Length`, and the connection closes after
+the body, as every HTTP/1.0 connection does. Network-free `B.handle` cannot
+carry a stream, so a streamed file, and any HEAD, is an empty 500 there.
 
 Files of 4 GiB or more are refused, because Base reads files at 32-bit
 offsets. If a file shrinks while it is read, a buffered response is 500 and a
@@ -179,7 +181,8 @@ streamed one is aborted.
 in that directory). It covers headers, HEAD, MIME types, index files and
 redirects, validators across same-second rewrites, conditional requests,
 ranges, traversal attempts over raw sockets, symlinks, a FIFO, streaming above
-`buffer_bytes` (including descriptor counts after aborted downloads), and both
-effect twins. The Vite build's `vite.config.js` writes each bundled package's
+`buffer_bytes` (including descriptor counts after aborted downloads), HEAD
+lengths, HTTP/1.0 downloads of 2 and 20 MiB with the server's peak memory
+compared between them, and both effect twins. The Vite build's `vite.config.js` writes each bundled package's
 license to `build/THIRD_PARTY_LICENSES.txt` and names them in a banner at the
 top of every chunk.

@@ -19,8 +19,10 @@ type Outcome is Type:
   Written{socket: Socket, complete: Bool}
   Cancelled{}
 
+# length: the body's exact octet count when the producer knows it up front
+# (BND-91). The transport then sends Content-Length instead of chunking.
 type Plan is Type:
-  Plan{timeout_ms: U32, action: Command -> IO(Outcome)}
+  Plan{timeout_ms: U32, length: Maybe<&2, Nat>, action: Command -> IO(Outcome)}
 
 # After a 101, Open hands the socket and every octet already read past the
 # handshake to the session, which then owns and closes the socket. Abort

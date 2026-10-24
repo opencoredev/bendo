@@ -11,4 +11,4 @@ def headers(res: Response.Res) -> String:
   Write.headers_text(hs)
 
 def main() -> IO(Unit):
-  IO.print("connect205:" ++ headers(StreamResponse.frame(Request.Connect{}, Response.body(205, [Request.Header{"content-length", [55]}, Request.Header{"transfer-encoding", [120]}], []), False{})))
+  IO.print("connect205:" ++ headers(StreamResponse.frame(Request.Connect{}, Response.body(205, [Request.Header{"content-length", [55]}, Request.Header{"transfer-encoding", [120]}], []), None{}, False{})))
