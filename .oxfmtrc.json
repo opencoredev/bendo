@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
   "ignorePatterns": [
+    "docs/.vitepress/cache/**",
     "**/*.md",
     "**/*.mdx",
     "**/*.d.bend.ts",
