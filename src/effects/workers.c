@@ -4,6 +4,7 @@
 // everything it needs is prepared before fork. Each child asks for SIGTERM when
 // the parent dies. A detached thread per child waits for it and, when it
 // stops, stops this process the same way.
+#include <poll.h>
 #include <sys/wait.h>
 #ifdef __linux__
 #include <sched.h>
@@ -12,6 +13,13 @@
 #endif
 
 #define BENDO_WORKERS_MAX 256
+// How long the first process waits for every worker to report its listener
+// bound. BENDO_WORKERS_STARTUP_MS overrides it.
+#define BENDO_WORKERS_STARTUP_MS 30000
+
+// Set once the first process stops its workers itself, so their watcher
+// threads stand down instead of reporting the stop and exiting.
+static int bendo_workers_stopping = 0;
 
 static u32 bendo_workers_cpus(void) {
 #ifdef __linux__
@@ -31,6 +39,9 @@ static void* bendo_workers_watch(void* arg) {
     if (errno != EINTR) {
       return NULL;
     }
+  }
+  if (__atomic_load_n(&bendo_workers_stopping, __ATOMIC_SEQ_CST)) {
+    return NULL;
   }
   if (WIFSIGNALED(status)) {
     int sig = WTERMSIG(status);
@@ -100,10 +111,16 @@ static char** bendo_workers_argv(char** buf) {
   return argv;
 }
 
+// Kills every started worker. A watcher thread may reap a worker first, so
+// waitpid failing with ECHILD is expected.
 static void bendo_workers_stop(pid_t* pids, u32 n) {
+  __atomic_store_n(&bendo_workers_stopping, 1, __ATOMIC_SEQ_CST);
   for (u32 i = 0; i < n; i += 1) {
-    kill(pids[i], SIGTERM);
-    waitpid(pids[i], NULL, 0);
+    kill(pids[i], SIGKILL);
+  }
+  for (u32 i = 0; i < n; i += 1) {
+    while (waitpid(pids[i], NULL, 0) < 0 && errno == EINTR) {
+    }
   }
 }
 
@@ -131,12 +148,43 @@ static void bendo_workers_child(pid_t parent, int ready, long open_max,
   _exit(127);
 }
 
-// Waits until every worker reports its listener bound. A worker that stops
-// first closes its end of the pipe; its watcher thread then stops this
-// process with the worker's status, which the bounded sleep gives it time to do.
-static int bendo_workers_barrier(int ready, u32 want) {
-  u32 seen = 0;
+static u64 bendo_workers_now_ms(void) {
+  struct timespec now;
+  clock_gettime(CLOCK_MONOTONIC, &now);
+  return (u64)now.tv_sec * 1000 + (u64)now.tv_nsec / 1000000;
+}
+
+// BENDO_WORKERS_STARTUP_MS as a decimal from 1 to 3600000, or the default.
+static u64 bendo_workers_startup_ms(void) {
+  const char*   text = getenv("BENDO_WORKERS_STARTUP_MS");
+  char*         end  = NULL;
+  unsigned long ms   = text == NULL ? 0 : strtoul(text, &end, 10);
+  int valid = text != NULL && text[0] >= '0' && text[0] <= '9' && *end == 0
+    && ms >= 1 && ms <= 3600000;
+  return valid ? (u64)ms : BENDO_WORKERS_STARTUP_MS;
+}
+
+// Waits until every worker reports its listener bound, at most `limit` ms
+// from now; ETIMEDOUT past that. A worker that stops first closes its end of
+// the pipe; its watcher thread then stops this process with the worker's
+// status, which the bounded sleep gives it time to do.
+static int bendo_workers_barrier(int ready, u32 want, u64 limit) {
+  u64 deadline = bendo_workers_now_ms() + limit;
+  u32 seen     = 0;
   while (seen < want) {
+    u64 now = bendo_workers_now_ms();
+    if (now >= deadline) {
+      return ETIMEDOUT;
+    }
+    u64           left   = deadline - now;
+    struct pollfd pfd    = { .fd = ready, .events = POLLIN };
+    int           polled = poll(&pfd, 1, left > 60000 ? 60000 : (int)left);
+    if (polled < 0 && errno != EINTR) {
+      return errno;
+    }
+    if (polled <= 0) {
+      continue;
+    }
     char    buf[64];
     ssize_t got = read(ready, buf, sizeof(buf));
     if (got > 0) {
@@ -206,24 +254,34 @@ static Term bendo_workers_spawn(Env e, u32 want) {
       pthread_detach(tid);
     }
   }
+  u64 limit = bendo_workers_startup_ms();
+  if (code == 0) {
+    code = bendo_workers_barrier(pipe_fds[0], want - 1, limit);
+  }
   if (code != 0) {
     bendo_workers_stop(pids, started);
-  } else {
-    code = bendo_workers_barrier(pipe_fds[0], want - 1);
   }
   close(pipe_fds[0]);
   free(envp), free(slots), free(pids), free(argv), free(buf);
+  if (code == ETIMEDOUT) {
+    static char why[128];
+    snprintf(why, sizeof(why),
+      "bendo: a worker did not report its listener within %llu ms; stopping "
+      "the server", (unsigned long long)limit);
+    return io_fail(e, ETIMEDOUT, why);
+  }
   return code != 0 ? io_fail(e, (u32)code, NULL) : io_done(e, (Term)0);
 }
 
 #endif
 
-// Set in a worker at load: its index and the write end of the ready pipe.
-static const char* bendo_worker_index = NULL;
-static int         bendo_worker_ready = -1;
+// Set in a worker at load: its index (0 in the first process) and the write
+// end of the ready pipe.
+static u32 bendo_worker_index = 0;
+static int bendo_worker_ready = -1;
 
 static Term bendo_start_workers_run(Env e, Term* f, IoWork* w) {
-  if (bendo_worker_index != NULL) {
+  if (bendo_worker_index != 0) {
     // The server listens before this effect runs, so the worker is bound.
     if (bendo_worker_ready >= 0) {
       ssize_t sent = write(bendo_worker_ready, "1", 1);
@@ -231,7 +289,7 @@ static Term bendo_start_workers_run(Env e, Term* f, IoWork* w) {
       close(bendo_worker_ready);
       bendo_worker_ready = -1;
     }
-    return io_done(e, (Term)(u32)strtoul(bendo_worker_index, NULL, 10));
+    return io_done(e, (Term)bendo_worker_index);
   }
   u32 want = (u32)f[0];
   want = want == 0 ? bendo_workers_cpus() : want;
@@ -249,20 +307,30 @@ static Term bendo_start_workers_run(Env e, Term* f, IoWork* w) {
 #endif
 }
 
+// Reads the worker variables into private state and removes them from the
+// environment before main runs, so a process the app starts never inherits a
+// worker's identity: a Bendo server it starts is a fresh first process.
 static void __attribute__((constructor)) bendo_start_workers_use(void) {
   io_eff(CID(start_workers), bendo_start_workers_run);
-  bendo_worker_index = getenv("BENDO_WORKER_INDEX");
-  const char* ready  = getenv("BENDO_WORKER_READY");
-  if (bendo_worker_index != NULL && ready != NULL && strcmp(ready, "3") == 0
+  const char*   index = getenv("BENDO_WORKER_INDEX");
+  char*         end   = NULL;
+  unsigned long n     = index == NULL ? 0 : strtoul(index, &end, 10);
+  if (index != NULL && index[0] >= '1' && index[0] <= '9' && *end == 0
+    && n < BENDO_WORKERS_MAX) {
+    bendo_worker_index = (u32)n;
+  }
+  const char* ready = getenv("BENDO_WORKER_READY");
+  if (bendo_worker_index != 0 && ready != NULL && strcmp(ready, "3") == 0
     && fcntl(3, F_SETFD, FD_CLOEXEC) == 0) {
     bendo_worker_ready = 3;
   }
-  unsetenv("BENDO_WORKER_READY");
 #ifdef __linux__
   const char* name = getenv("BENDO_WORKER_NAME");
-  if (bendo_worker_index != NULL && name != NULL) {
+  if (bendo_worker_index != 0 && name != NULL) {
     prctl(PR_SET_NAME, name);
   }
-  unsetenv("BENDO_WORKER_NAME");
 #endif
+  unsetenv("BENDO_WORKER_INDEX");
+  unsetenv("BENDO_WORKER_READY");
+  unsetenv("BENDO_WORKER_NAME");
 }

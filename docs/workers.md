@@ -47,6 +47,17 @@ connections across all workers. Connections that arrive earlier wait in the
 first process's queue. A keep-alive connection stays on the worker that
 accepted it. Every worker prints its own listening line.
 
+Each copy removes `BENDO_WORKER_INDEX` from its environment when it loads, so
+a process your app starts does not inherit it. A Bendo server started from a
+worker is a fresh server and starts workers of its own.
+
+The first process waits up to 30 seconds for every worker to report. Set
+`BENDO_WORKERS_STARTUP_MS` to a number of milliseconds from 1 to 3,600,000 to
+change that. A worker that has not reported in time, for example one stuck in
+`main`, makes the first process kill every worker, print `bendo: a worker did
+not report its listener within <ms> ms; stopping the server` and exit with
+status 110 (ETIMEDOUT).
+
 Because every listener sets `SO_REUSEPORT`, a second multi-worker server
 started by the same user on the same port joins the first one instead of
 failing with "address in use". A one-worker server binds without

@@ -1,15 +1,22 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readdirSync, readFileSync, readlinkSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync } from "node:fs";
 import { get } from "node:http";
 import { connect } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { build, start, type RunningServer } from "./harness.ts";
 
 // Workers (BND-69, decision 0017): tests/servers/workers.bend serves with
 // B.workers(config, 3) and answers each request with the serving PID.
 const binary = build("tests/servers/workers.bend");
 
+/** A port below Linux's ephemeral range, as the harness picks. */
+function randomPort(): number {
+  return 20000 + Math.floor(Math.random() * 10000);
+}
+
 /** One request on its own connection, so the kernel picks a worker each time. */
-function servingPid(url: string): Promise<number> {
+function reply(url: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const req = get(url, { agent: false, timeout: 5000 }, (res) => {
       let body = "";
@@ -17,16 +24,22 @@ function servingPid(url: string): Promise<number> {
       res.on("data", (chunk: string) => (body += chunk));
       res.on("error", reject);
       res.on("end", () => {
-        if (res.statusCode !== 200 || !/^[0-9]+$/.test(body)) {
+        if (res.statusCode !== 200) {
           reject(new Error(`unexpected reply: ${res.statusCode} ${body}`));
           return;
         }
-        resolve(Number(body));
+        resolve(body);
       });
     });
     req.on("timeout", () => req.destroy(new Error("request timeout")));
     req.on("error", reject);
   });
+}
+
+async function servingPid(url: string): Promise<number> {
+  const text = await reply(url);
+  if (!/^[0-9]+$/.test(text)) throw new Error(`unexpected reply: ${text}`);
+  return Number(text);
 }
 
 /** Distinct serving PIDs, polling until `want` appear or attempts run out. */
@@ -99,35 +112,130 @@ function listeners(port: number): Set<string> {
   return inodes;
 }
 
+function kill(pid: number): void {
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    // Already gone.
+  }
+}
+
+/** Resolves when `promise` settles or after `ms`, whichever comes first. */
+async function bounded(promise: Promise<unknown>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    promise.then(
+      () => undefined,
+      () => undefined,
+    ),
+    new Promise<void>((resolve) => (timer = setTimeout(resolve, ms))),
+  ]);
+  clearTimeout(timer);
+}
+
 /**
- * Runs `body` against a fresh server. Every process the server started is
- * killed afterwards, whether the body passes or throws.
+ * Records every process under some roots while a test runs: once a parent
+ * stops, its children are no longer listed under it. `stop` SIGKILLs them all
+ * before anything waits on a process or its output.
+ */
+function processTracker(): {
+  root: (pid: number) => void;
+  stop: () => Promise<void>;
+} {
+  const roots = new Set<number>();
+  const seen = new Set<number>();
+  const scan = (): void => {
+    for (const root of roots) for (const pid of children(root)) seen.add(pid);
+  };
+  const watch = setInterval(scan, 25);
+  return {
+    root: (pid) => {
+      roots.add(pid);
+      scan();
+    },
+    stop: async () => {
+      clearInterval(watch);
+      scan();
+      const all = [...roots, ...seen];
+      for (const pid of all) kill(pid);
+      await until(() => all.every((pid) => !running(pid)), 3000);
+    },
+  };
+}
+
+/**
+ * Runs `body` against a fresh server. Every process the server started, and
+ * every root the body adds with `track`, is killed afterwards, whether the
+ * body passes or throws. The server's own exit and stderr are awaited only
+ * after that, and only for a bounded time.
  */
 async function withServer(
   env: Readonly<Record<string, string>>,
-  body: (server: RunningServer) => Promise<void>,
+  body: (server: RunningServer, track: (pid: number) => void) => Promise<void>,
 ): Promise<void> {
   const server = await start(binary, "127.0.0.1", env);
-  const spawned = new Set<number>(children(server.pid));
-  // Keep listing children while the body runs: once the first process stops,
-  // its children are no longer listed under it.
-  const watch = setInterval(() => {
-    for (const pid of children(server.pid)) spawned.add(pid);
-  }, 25);
+  const tracker = processTracker();
+  tracker.root(server.pid);
   try {
-    await body(server);
+    await body(server, tracker.root);
+  } finally {
+    await tracker.stop();
+    await bounded(server[Symbol.asyncDispose](), 3000);
+  }
+}
+
+type Exit = {
+  code: number | null;
+  stderr: string;
+  ms: number;
+  workers: number;
+  workersGone: boolean;
+};
+
+/** Runs the server to its exit, bounded by `ms`, and kills whatever is left. */
+async function runToExit(env: Readonly<Record<string, string>>, ms: number): Promise<Exit> {
+  const began = Date.now();
+  const proc = Bun.spawn([binary], {
+    env: { ...process.env, ...env, PORT: String(randomPort()) },
+    stdout: "ignore",
+    stderr: "pipe",
+  });
+  const tracker = processTracker();
+  tracker.root(proc.pid);
+  const workers = new Set<number>();
+  const watch = setInterval(() => {
+    for (const pid of children(proc.pid)) workers.add(pid);
+  }, 10);
+  try {
+    await bounded(proc.exited, ms);
+    clearInterval(watch);
+    const elapsed = Date.now() - began;
+    const code = proc.exitCode;
+    const started = [...workers];
+    const workersGone = await until(() => started.every((pid) => !running(pid)), 3000);
+    await tracker.stop();
+    let stderr = "";
+    await bounded(
+      (async () => {
+        const decoder = new TextDecoder();
+        for await (const chunk of proc.stderr) stderr += decoder.decode(chunk, { stream: true });
+      })(),
+      3000,
+    );
+    return { code, stderr, ms: elapsed, workers: started.length, workersGone };
   } finally {
     clearInterval(watch);
-    for (const pid of children(server.pid)) spawned.add(pid);
-    await server[Symbol.asyncDispose]();
-    for (const pid of spawned) {
-      try {
-        process.kill(pid, "SIGKILL");
-      } catch {
-        // Already gone.
-      }
-    }
+    await tracker.stop();
   }
+}
+
+/** A fresh stall marker, so only workers run the stall test effect. */
+function stallFile(): { path: string; [Symbol.dispose]: () => void } {
+  const directory = mkdtempSync(join(tmpdir(), "bendo-stall-"));
+  return {
+    path: join(directory, "first"),
+    [Symbol.dispose]: () => rmSync(directory, { recursive: true, force: true }),
+  };
 }
 
 async function workerTree(server: RunningServer, count: number): Promise<number[]> {
@@ -206,5 +314,77 @@ describe.skipIf(process.platform !== "linux")("multi-worker serving", () => {
     await withServer({ BENDO_WORKERS: "many" }, async (server) => {
       expect((await workerTree(server, 3)).length).toBe(3);
     });
+  });
+
+  test("a server a worker starts is a fresh first process with its own workers", async () => {
+    const port = randomPort();
+    await withServer({ BENDO_TEST_CHILD_PORT: String(port) }, async (server, track) => {
+      await workerTree(server, 3);
+      // /spawn starts a copy only in a worker; retry until a worker answers.
+      let copy = 0;
+      for (let i = 0; i < 300 && copy === 0; i++) {
+        const [worker, started] = (await reply(`${server.url}/spawn`)).split(" ").map(Number);
+        if (started !== undefined && started !== 0) {
+          expect(worker).not.toBe(server.pid);
+          copy = started;
+          track(copy);
+        }
+      }
+      expect(copy).not.toBe(0);
+      // A copy that inherited the worker's identity would serve alone.
+      expect(await until(() => children(copy).length === 2, 10_000)).toBe(true);
+      const url = `http://127.0.0.1:${port}`;
+      const seen = await servingPids(url, 3);
+      expect([...seen].sort()).toEqual([copy, ...children(copy)].sort());
+    });
+  });
+
+  test("a worker that reports late, within the startup limit, still starts", async () => {
+    using stall = stallFile();
+    const began = Date.now();
+    const env = {
+      BENDO_WORKERS_STARTUP_MS: "15000",
+      BENDO_TEST_STALL_FILE: stall.path,
+      BENDO_TEST_STALL_MS: "1500",
+    };
+    await withServer(env, async (server) => {
+      // The first process answers only after every worker reported.
+      expect(Date.now() - began).toBeGreaterThanOrEqual(1500);
+      const tree = await workerTree(server, 3);
+      expect([...(await servingPids(server.url, 3))].sort()).toEqual([...tree].sort());
+    });
+  });
+
+  test("a worker that exits before it reports stops startup at once", async () => {
+    using stall = stallFile();
+    const exit = await runToExit(
+      { BENDO_TEST_STALL_FILE: stall.path, BENDO_TEST_STALL_MS: "200", BENDO_TEST_STALL_EXIT: "7" },
+      20_000,
+    );
+    expect(exit.code).toBe(7);
+    // Well inside the default 30-second startup limit.
+    expect(exit.ms).toBeLessThan(10_000);
+    expect(exit.stderr).toMatch(/bendo: worker [0-9]+ exited with status 7; stopping the server/);
+  });
+
+  test("a worker stuck past the startup limit stops the whole group", async () => {
+    using stall = stallFile();
+    const exit = await runToExit(
+      {
+        BENDO_WORKERS_STARTUP_MS: "500",
+        BENDO_TEST_STALL_FILE: stall.path,
+        BENDO_TEST_STALL_MS: "60000",
+      },
+      20_000,
+    );
+    // ETIMEDOUT.
+    expect(exit.code).toBe(110);
+    expect(exit.ms).toBeLessThan(10_000);
+    expect(exit.stderr).toContain(
+      "bendo: a worker did not report its listener within 500 ms; stopping the server",
+    );
+    expect(exit.stderr).not.toContain("stopped by signal");
+    expect(exit.workers).toBe(2);
+    expect(exit.workersGone).toBe(true);
   });
 });

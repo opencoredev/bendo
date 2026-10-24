@@ -112,6 +112,22 @@ listening line only once every worker is bound, and the kernel spreads
 connections over all listeners from then on. If a copy stops first, its end
 of the pipe closes and its watcher thread (below) stops the server.
 
+The wait has a deadline: 30 seconds from the end of spawning, or
+`BENDO_WORKERS_STARTUP_MS`. The first process polls the pipe against that
+absolute deadline. A copy that is alive but stuck before it binds keeps its end
+of the pipe open, so without a deadline the server would hang in startup
+forever. When it passes, the first process SIGKILLs every copy, tells their
+watcher threads to stand down so they do not report the kills as crashes, and
+fails startup with ETIMEDOUT (110) and the message `bendo: a worker did not
+report its listener within <ms> ms; stopping the server`.
+
+A copy reads `BENDO_WORKER_INDEX`, `BENDO_WORKER_READY` and
+`BENDO_WORKER_NAME` into private state when it loads and removes all three
+from its environment before `main` runs. Otherwise any process the app starts
+would inherit them, and a Bendo server started from a worker would think it
+was worker `k`: it would serve alone instead of starting workers of its own.
+The JavaScript twin does the same with `process.env`.
+
 A child execs `/proc/self/exe` rather than the path it resolves to. The magic
 link names the inode the parent is running, so a binary replaced on disk after
 startup cannot start as a worker. The kernel then names the child `exe`, so
@@ -173,7 +189,15 @@ the same command line under the same process name; that once the first process
 answers, each of the three holds exactly one listener on the port; that stopping the first process leaves no worker
 running and the port refusing connections; that killing one worker stops the
 others and prints the stderr line; and that `BENDO_WORKERS` set to `1` or `2`
-overrides the config while `many` keeps it. The JavaScript build of the same
+overrides the config while `many` keeps it. A `/spawn` route starts a fresh
+copy of the binary from a worker; that copy must start two workers of its own
+and serve from three PIDs, which fails when the index stays in the
+environment. A test-only `stall` effect holds back every process after the
+first: a worker that reports after 1.5 seconds still starts the server, a
+worker that exits before reporting stops startup in well under the default
+limit with its status, and a worker stuck past a 500 ms limit makes the first
+process exit with 110 and the timeout message while both workers are gone. The
+JavaScript build of the same
 fixture exits with status 38 under the default three workers and serves with
 `BENDO_WORKERS=1`.
 
