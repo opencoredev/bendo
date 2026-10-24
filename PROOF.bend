@@ -4,6 +4,7 @@ import ./proof/limits.bend as LimitsProof
 import ./proof/manifest.bend as ManifestProof
 import ./proof/manifest-built.bend as ManifestBuiltProof
 import ./proof/compose.bend as ComposeProof
+import ./proof/validate.bend as ValidateProof
 import ./proof/plugin.bend as PluginProof
 
 # BND-32

@@ -10,6 +10,7 @@ import ./src/app/manifest.bend as Manifest
 import ./proof/manifest-spec.bend as ManifestSpec
 import ./proof/manifest-built-spec.bend as ManifestBuiltSpec
 import ./proof/compose-laws.bend as ComposeLaws
+import ./proof/validate-laws.bend as ValidateLaws
 import ./proof/plugin-laws.bend as PluginLaws
 
 # BND-32

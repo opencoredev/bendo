@@ -144,6 +144,10 @@ With [request-ID middleware](observability.md#request-id), handlers read
 from the app's typed variables. `B.timing_mark(Vars, c, name, duration_ms)` records
 a named duration in the active request's timing collector and returns `IO(Bool)`.
 
+On a route with [schemas](validation.md), `B.valid_params(c)`, `B.valid_query(c)`,
+`B.valid_headers(c)` and `B.valid_body(c)` return the decoded values, with
+defaults filled in; each is `None{}` for a slot the route does not declare.
+
 [Typed HTTP errors and custom not-found handlers](decisions/0011-crash.md) use
 `B.error(c, B.http_error(status, message))`, `B.result(c, result)`, and
 `B.on_not_found(Tag, id)`. Private 5xx messages default to `Internal Server Error`;

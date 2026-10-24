@@ -152,7 +152,9 @@ route set or one route. Global hooks run first within each stage, then inherited
 hooks from outer to inner scope, then local hooks. Guard membership follows the
 selected registration, including its method and first-match priority.
 See [hook scopes and guards](decisions/0011-hook-scopes.md) for the typed API,
-request-rewrite behavior, schema extension slot and Elysia comparison.
+request-rewrite behavior, schema slot and Elysia comparison. Routes and guards
+can also declare [schemas](validation.md); validation runs between
+`on_transform` and `before_handle`.
 
 ## Plugins
 

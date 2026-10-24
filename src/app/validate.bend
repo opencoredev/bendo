@@ -264,6 +264,17 @@ def request(set: Schemas, input: Input) -> Verdict:
   Input{ps, qs, +hs, body} = input
   verdict(text_slot("params", p, params_json(ps)), text_slot("query", q, query_json(qs)), text_slot("headers", h, headers_json(hs)), body_slot(b, hs, body))
 
+# Whether the handler runs, and what a rejection lists.
+def admits(v: Verdict) -> Bool:
+  match v:
+    case Valid{x}: True{}
+    case Invalid{c, es}: False{}
+
+def rejection_errors(v: Verdict) -> List<&2, S.Error>:
+  match v:
+    case Valid{x}: []
+    case Invalid{c, es}: es
+
 # Responses: a 2xx response other than 204 must carry a JSON body its
 # schema accepts. Other statuses, and routes without one, are not checked.
 type Check is Data:
