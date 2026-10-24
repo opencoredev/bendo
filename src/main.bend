@@ -2,6 +2,8 @@
 import Base
 import ./stream.bend as Stream
 import ./websocket.bend as WebSocket
+import ./ws/connection.bend as WsConnection
+import ./ws/message.bend as WsMessage
 import ./http/websocket.bend as Handshake
 import ./http/stream_types.bend as StreamTypes
 import ./sse.bend as Sse
@@ -274,6 +276,19 @@ def websocket_protocols(config: Handshake.Config, protocols: List<&2, String>) -
 def websocket_timeout(config: Handshake.Config, milliseconds: U32) -> Handshake.Config: Handshake.with_timeout(config, milliseconds)
 def websocket(~Vars: Data, ~State: Type, ~session: State -> Socket -> List<&2, U32> -> IO(Unit), ~cleanup: State -> IO(Unit), +c: Context.Ctx<Vars>, state: State, config: Handshake.Config) -> IO(Response.Res):
   WebSocket.respond(~Vars, ~State, ~session, ~cleanup, c, state, config)
+
+def WebSocketHandle() -> Data: WsConnection.Handle
+def WebSocketSessionConfig() -> Data: WsConnection.Config
+def WebSocketMessage() -> Data: WsMessage.Message
+def websocket_session_config() -> WsConnection.Config: WsConnection.defaults()
+def websocket_send_text(handle: WsConnection.Handle, text: String) -> IO(Bool): WsConnection.text(handle, text)
+def websocket_send_binary(handle: WsConnection.Handle, bytes: List<&2, U32>) -> IO(Bool): WsConnection.binary(handle, bytes)
+def websocket_ping(handle: WsConnection.Handle, bytes: List<&2, U32>) -> IO(Bool): WsConnection.ping(handle, bytes)
+def websocket_close(handle: WsConnection.Handle, code: U32, reason: String) -> IO(Bool): WsConnection.close(handle, code, reason)
+
+@unsafe
+def websocket_handlers(~Vars: Data, ~User: Data, ~on_open: User -> WsConnection.Handle -> IO(User), ~on_message: User -> WsConnection.Handle -> WsMessage.Message -> IO(User), ~on_close: User -> U32 -> String -> IO(Unit), c: Context.Ctx<Vars>, user: User, handshake: Handshake.Config, config: WsConnection.Config) -> IO(Response.Res):
+  WsConnection.upgrade(~Vars, ~User, ~on_open, ~on_message, ~on_close, c, user, handshake, config)
 
 # Buffered protection and cache middleware.
 def body_limit(bytes: U32) -> Builtin.Builtin: Builtin.BodyLimit{bytes}
