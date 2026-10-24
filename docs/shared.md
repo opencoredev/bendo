@@ -135,4 +135,5 @@ objects into nested schemas.
   `unknown` rather than a guess.
 - Bend 2.0.38 has no `I32` or `F64`; Base numbers are `Nat`, `U32` and `F32`.
 - `bendo dev` does not rebuild shared modules. Run `bendo build --shared` after
-  editing them; BND-59 adds a Vite plugin for this.
+  editing them, or import the `.bend` file through
+  [vite-plugin-bendo](vite-plugin.md), which recompiles it on save.
