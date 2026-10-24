@@ -1,13 +1,14 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useMatchRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import {
+  invalidate,
   mutationOptions,
   queryOptions,
   type BendoMutationError,
   type ResponseOf,
 } from "bendo/query";
 import { useId, useState, type FormEvent } from "react";
-import { API_BASE, SHOWS, describeFailure, todos, type Show } from "./api.ts";
+import { API_BASE, SHOWS, describeFailure, isGone, queryClient, todos, type Show } from "./api.ts";
 import { NO_VERDICT, useBrowserCheck, type Verdict } from "./check.ts";
 import { CheckIcon, TrashIcon } from "./icons.tsx";
 import { TITLE_LIMIT, checkCreate } from "./rules.ts";
@@ -156,15 +157,39 @@ function TodoRow({ todo }: { todo: Todo }) {
   const matchRoute = useMatchRoute();
   const selected = matchRoute({ to: "/todos/$id", params: { id: String(todo.id) } }) !== false;
   const item = todos({ id: todo.id });
+  const [failure, setFailure] = useState<RowFailed | undefined>(undefined);
+  const leave = () => {
+    if (selected) void navigate({ to: "/", search: (prev) => ({ show: prev.show ?? "all" }) });
+  };
   const toggle = useMutation(mutationOptions(item.patch, { invalidates: [todos] }));
   const remove = useMutation(
-    mutationOptions(item.delete, {
-      invalidates: [todos],
-      onSuccess: () => {
-        if (selected) void navigate({ to: "/", search: (prev) => ({ show: prev.show ?? "all" }) });
-      },
-    }),
+    mutationOptions(item.delete, { invalidates: [todos], onSuccess: leave }),
   );
+  // Each attempt replaces the row's failure, so Try again repeats the last
+  // action. A 404 means the todo is already gone elsewhere: refresh the list.
+  function run(action: RowAction): void {
+    setFailure(undefined);
+    const settle = {
+      onError: (error: BendoMutationError) => {
+        if (isGone(error)) {
+          void invalidate(queryClient, todos);
+          leave();
+        } else setFailure({ ...action, error });
+      },
+    };
+    switch (action.kind) {
+      case "toggle":
+        toggle.mutate({ body: { done: action.done } }, settle);
+        return;
+      case "delete":
+        remove.mutate(undefined, settle);
+        return;
+      default: {
+        const _exhaustive: never = action;
+        return _exhaustive;
+      }
+    }
+  }
   // Show the new state while the request and the refetch are in flight.
   const done = toggle.isPending ? (toggle.variables?.body?.done ?? todo.done) : todo.done;
   return (
@@ -180,7 +205,7 @@ function TodoRow({ todo }: { todo: Todo }) {
         role="checkbox"
         aria-checked={done}
         aria-label={`${todo.title}: ${done ? "done" : "not done"}`}
-        onClick={() => toggle.mutate({ body: { done: !done } })}
+        onClick={() => run({ kind: "toggle", done: !done })}
       >
         <CheckIcon />
       </button>
@@ -197,45 +222,28 @@ function TodoRow({ todo }: { todo: Todo }) {
         className="icon-button row-delete"
         aria-label={`Delete “${todo.title}”`}
         disabled={remove.isPending}
-        onClick={() => remove.mutate()}
+        onClick={() => run({ kind: "delete" })}
       >
         <TrashIcon />
       </button>
-      <RowFailure
-        toggle={toggle.error}
-        remove={remove.error}
-        wanted={toggle.variables?.body?.done}
-        retry={() => {
-          if (toggle.isError && toggle.variables !== undefined) toggle.mutate(toggle.variables);
-          else if (remove.isError) remove.mutate();
-        }}
-      />
+      {failure === undefined ? null : <RowFailure failure={failure} retry={() => run(failure)} />}
     </li>
   );
 }
 
+type RowAction = { kind: "toggle"; done: boolean } | { kind: "delete" };
+type RowFailed = RowAction & { error: BendoMutationError };
+
 /** Why the row's last toggle or delete failed, with a way to try it again. */
-function RowFailure({
-  toggle,
-  remove,
-  wanted,
-  retry,
-}: {
-  toggle: BendoMutationError | null;
-  remove: BendoMutationError | null;
-  wanted: boolean | undefined;
-  retry: () => void;
-}) {
-  const failed = toggle ?? remove;
-  if (failed === null) return null;
+function RowFailure({ failure, retry }: { failure: RowFailed; retry: () => void }) {
   const action =
-    toggle !== null
-      ? `Could not mark it ${wanted === true ? "done" : "not done"}`
+    failure.kind === "toggle"
+      ? `Could not mark it ${failure.done ? "done" : "not done"}`
       : "Could not delete it";
   return (
     <div className="row-error" role="alert">
       <span>
-        {action}: {describeFailure(failed).headline}
+        {action}: {describeFailure(failure.error).headline}
       </span>
       <button type="button" className="link-button" onClick={retry}>
         Try again

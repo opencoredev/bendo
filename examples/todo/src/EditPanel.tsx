@@ -1,8 +1,8 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
-import { mutationOptions, queryOptions } from "bendo/query";
+import { invalidate, mutationOptions, queryOptions } from "bendo/query";
 import { useId, useState, type FormEvent } from "react";
-import { describeFailure, todos } from "./api.ts";
+import { describeFailure, isGone, queryClient, todos } from "./api.ts";
 import { NO_VERDICT, useBrowserCheck, type Verdict } from "./check.ts";
 import { BackIcon } from "./icons.tsx";
 import { TITLE_LIMIT, checkUpdate, type TodoChange } from "./rules.ts";
@@ -54,9 +54,10 @@ function Loaded({ id }: { id: number }) {
 function EditForm({ todo }: { todo: Todo }) {
   const browserCheck = useBrowserCheck();
   const navigate = useNavigate();
-  // A field shows the server's value until the user edits it, so a change made
-  // elsewhere (the list's checkbox) reaches an open editor, and saving sends
-  // only the fields the user changed.
+  // A field shows the server's value until the user edits it to something
+  // else, so a change made elsewhere (the list's checkbox) reaches an open
+  // editor, and saving sends only the fields the user changed. A draft equal to
+  // the server's value is no draft.
   const [titleDraft, setTitleDraft] = useState<string | undefined>(undefined);
   const [doneDraft, setDoneDraft] = useState<boolean | undefined>(undefined);
   const title = titleDraft ?? todo.title;
@@ -65,10 +66,17 @@ function EditForm({ todo }: { todo: Todo }) {
   const [saved, setSaved] = useState(false);
   const item = todos({ id: todo.id });
   const save = useMutation(mutationOptions(item.patch, { invalidates: [todos] }));
+  const leave = () => void navigate({ to: "/", search: (prev) => ({ show: prev.show ?? "all" }) });
   const remove = useMutation(
     mutationOptions(item.delete, {
       invalidates: [todos],
-      onSuccess: () => void navigate({ to: "/", search: (prev) => ({ show: prev.show ?? "all" }) }),
+      onSuccess: leave,
+      // Deleted elsewhere already: the outcome the user asked for.
+      onError: (error) => {
+        if (!isGone(error)) return;
+        void invalidate(queryClient, todos);
+        leave();
+      },
     }),
   );
   const verdictId = useId();
@@ -81,6 +89,8 @@ function EditForm({ todo }: { todo: Todo }) {
       ...(done !== todo.done ? { done } : {}),
     };
     if (!changed) {
+      setTitleDraft(undefined);
+      setDoneDraft(undefined);
       setSaved(true);
       return;
     }
@@ -96,10 +106,11 @@ function EditForm({ todo }: { todo: Todo }) {
     save.mutate(
       { body },
       {
-        // The mutation's own onSuccess has already refetched the todo.
+        // The mutation's own onSuccess has already refetched the todo. Drop
+        // only the drafts this save sent: anything typed since stays.
         onSuccess: () => {
-          setTitleDraft(undefined);
-          setDoneDraft(undefined);
+          setTitleDraft((draft) => (draft === body.title ? undefined : draft));
+          setDoneDraft((draft) => (draft === body.done ? undefined : draft));
           setSaved(true);
         },
         onError: (error) => setVerdict({ kind: "server", rejection: describeFailure(error) }),
@@ -108,7 +119,7 @@ function EditForm({ todo }: { todo: Todo }) {
   }
 
   function onTitle(next: string): void {
-    setTitleDraft(next);
+    setTitleDraft(next === todo.title ? undefined : next);
     setSaved(false);
     if (verdict.kind === "browser") {
       const issues = checkUpdate({ title: next });
@@ -144,7 +155,8 @@ function EditForm({ todo }: { todo: Todo }) {
           name="done"
           checked={done}
           onChange={(event) => {
-            setDoneDraft(event.currentTarget.checked);
+            const checked = event.currentTarget.checked;
+            setDoneDraft(checked === todo.done ? undefined : checked);
             setSaved(false);
           }}
         />
@@ -167,7 +179,7 @@ function EditForm({ todo }: { todo: Todo }) {
           {remove.isPending ? "Deleting…" : "Delete"}
         </button>
       </div>
-      {remove.isError ? (
+      {remove.isError && !isGone(remove.error) ? (
         <VerdictLine
           verdict={{ kind: "server", rejection: describeFailure(remove.error) }}
           id={`${verdictId}-delete`}

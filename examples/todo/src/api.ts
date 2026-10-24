@@ -38,6 +38,11 @@ export const queryClient = new QueryClient({
   },
 });
 
+/** A 404 from a write to one todo: it was deleted elsewhere. */
+export function isGone(error: BendoMutationError): boolean {
+  return error.kind === "http" && error.status === 404;
+}
+
 /** What the server said about a failed write, in words for the page. */
 export type ServerRejection = {
   status: number | undefined;
