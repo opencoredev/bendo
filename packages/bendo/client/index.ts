@@ -2,10 +2,11 @@
 import { captureStep, headerEntries, pathOf, textEntries, type Built, type Step } from "./path.ts";
 import {
   errorBody,
+  expected,
   isJson,
   parseJson,
-  responseSchemas,
   validate,
+  type Expected,
   type ResponseSchemaTable,
 } from "./response.ts";
 import type { Client, ClientResult, Method, MethodKey, RouteRecord } from "./types.ts";
@@ -27,7 +28,7 @@ export type {
   TextRecord,
   TextValue,
 } from "./types.ts";
-export type { ResponseSchema, ResponseSchemaRow, ResponseSchemaTable } from "./response.ts";
+export type { JsonSchema, ResponseSchemaRow, ResponseSchemaTable } from "./response.ts";
 
 /** The part of `fetch` the client calls; inject one to add auth, retries or a test transport. */
 export type Fetch = (input: string, init: RequestInit) => Promise<Response>;
@@ -159,30 +160,45 @@ async function request(
     const status = response.status;
     const text = await response.text();
     if (!response.ok) return { ok: false, kind: "http", status, error: errorBody(text), response };
-    // A HEAD response has no body, even when its Content-Type names JSON.
-    if (method === "HEAD") return { ok: true, status, data: undefined, response };
+    // 204 has no body whatever its Content-Type says, and Bendo never checks it.
+    if (status === 204) return { ok: true, kind: "no-content", status, data: undefined, response };
+    // Neither has a HEAD response.
+    if (method === "HEAD") return { ok: true, kind: "data", status, data: undefined, response };
     const json = isJson(response.headers.get("content-type"));
     const parsed = json ? parseJson(text) : { ok: true as const, value: text };
     if (!parsed.ok)
       return { ok: false, kind: "invalid-response", status, issues: [parsed.issue], response };
-    const schemas =
-      settings.schemas === undefined ? undefined : responseSchemas(settings.schemas, method, steps);
-    if (schemas !== undefined) {
-      if (!json) {
-        const type = response.headers.get("content-type") ?? "none";
-        return {
-          ok: false,
-          kind: "invalid-response",
-          status,
-          issues: [{ path: [], message: `expected a JSON response, got content-type ${type}` }],
-          response,
-        };
+    const expect: Expected =
+      settings.schemas === undefined
+        ? { kind: "any" }
+        : await expected(settings.schemas, method, steps);
+    switch (expect.kind) {
+      case "any":
+        break;
+      case "unreachable":
+        return { ok: false, kind: "invalid-response", status, issues: [expect.issue], response };
+      case "schemas": {
+        if (!json) {
+          const type = response.headers.get("content-type") ?? "none";
+          return {
+            ok: false,
+            kind: "invalid-response",
+            status,
+            issues: [{ path: [], message: `expected a JSON response, got content-type ${type}` }],
+            response,
+          };
+        }
+        const issues = await validate(expect.schemas, parsed.value);
+        if (issues.length > 0)
+          return { ok: false, kind: "invalid-response", status, issues, response };
+        break;
       }
-      const issues = await validate(schemas, parsed.value);
-      if (issues.length > 0)
-        return { ok: false, kind: "invalid-response", status, issues, response };
+      default: {
+        const exhaustive: never = expect;
+        return exhaustive;
+      }
     }
-    return { ok: true, status, data: parsed.value, response };
+    return { ok: true, kind: "data", status, data: parsed.value, response };
   } catch (cause) {
     return { ok: false, kind: "network", cause };
   }

@@ -47,7 +47,7 @@ Every command supports `--help`.
   Proof checks have a ten-minute limit.
 - `bendo gen [entry]` uses the same cached build and manifest validation as `routes`.
   It writes [TypeScript route types](route-types.md) to `.bendo/routes.ts` and the
-  [typed client's](client.md) response schemas to `.bendo/routes.schemas.ts`, and
+  [typed client's](client.md) params and response schemas to `.bendo/routes.schemas.ts`, and
   reports the number of routes.
 - `bendo openapi [entry]` builds the app like `routes` and writes an OpenAPI 3.1
   document from its manifest to `openapi.json`. `--bend <file>` also writes a

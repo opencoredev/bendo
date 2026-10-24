@@ -45,8 +45,8 @@ slots, and returns `output.response`. A consumer can also select a route with
 `Extract<Routes, { method: "GET"; path: "/todos/:id{int}" }>`.
 
 `bendo gen` also writes `.bendo/routes.schemas.ts` beside the types: one row
-per route in the same order with `method`, `path`, `all` and the `response`
-schema when there is one. The client validates responses against it
+per route in the same order with `method`, `path`, `all` and the `params` and
+`response` schemas when the route has them. The client validates responses against it
 ([decision 0014](decisions/0014-client-response-validation.md)). Both files are
 generated before either is replaced.
 

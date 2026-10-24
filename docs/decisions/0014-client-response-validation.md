@@ -13,7 +13,11 @@ from the manifest to the browser.
 - `.bendo/routes.ts`: the `Routes` type union from BND-56, unchanged.
 - `.bendo/routes.schemas.ts`: `export const schemas`, one row per route in
   registration order with `method`, `path`, `all` and, when the route has
-  one, the `response` schema as a plain object literal.
+  them, the `params` and `response` schemas as plain object literals. The
+  client needs the params schemas to tell apart routes that share a path
+  shape: it keeps only the rows whose params accept the call's coerced
+  captures, so a route narrowed to `id: "read"` is never validated against
+  the response schema of its `id: "write"` sibling.
 
 An app opts in to validation by importing the second file and passing it to
 `createClient<Routes>(baseUrl, { schemas })`. `validate: false` switches it

@@ -1,14 +1,16 @@
 import type { ErrorObject, ValidateFunction } from "ajv";
-import { chainShape, shapes, type Step } from "./path.ts";
+import { chainShape, shapes, text, type Step } from "./path.ts";
 import type { BendoFieldError, HttpErrorBody, ResponseIssue } from "./types.ts";
 
+/** A JSON Schema (draft 2020-12) as `bendo gen` prints it. */
+export type JsonSchema = boolean | { readonly [keyword: string]: unknown };
 /** One row of the generated `routes.schemas.ts`. */
-export type ResponseSchema = boolean | { readonly [keyword: string]: unknown };
 export type ResponseSchemaRow = {
   readonly method: string;
   readonly path: string;
   readonly all: boolean;
-  readonly response?: ResponseSchema;
+  readonly params?: JsonSchema;
+  readonly response?: JsonSchema;
 };
 export type ResponseSchemaTable = ReadonlyArray<ResponseSchemaRow>;
 
@@ -76,24 +78,95 @@ export function errorBody(text: string): HttpErrorBody {
   return { kind: "bendo", error: value.error, status: value.status, errors };
 }
 
+/** What a 2xx body is checked against. */
+export type Expected =
+  | { kind: "any" }
+  | { kind: "schemas"; schemas: readonly JsonSchema[] }
+  | { kind: "unreachable"; issue: ResponseIssue };
+
+// A JSON number token; Bendo coerces only these (docs/data/schema.md#coercion-for-text-sources).
+const NUMBER = /^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$/;
+const FIRST_MATCH = "Bendo decodes with the first matching member";
+
+/** Bendo's text coercion of one scalar, read from the exported schema like `route-schema.ts` does. */
+function coerceScalar(schema: unknown, value: string): unknown {
+  if (!record(schema)) return value;
+  switch (schema.type) {
+    case "number":
+    case "integer":
+      return NUMBER.test(value) ? Number(value) : value;
+    case "boolean":
+      return value === "true" ? true : value === "false" ? false : value;
+  }
+  // A nullable coerces its inner schema; a union never coerces.
+  const members: unknown = schema.anyOf;
+  if (
+    Array.isArray(members) &&
+    members.length === 2 &&
+    record(members[0]) &&
+    members[0].type === "null" &&
+    schema.$comment !== FIRST_MATCH
+  )
+    return coerceScalar(members[1], value);
+  const parts: unknown = schema.allOf;
+  if (Array.isArray(parts))
+    for (const part of parts) {
+      const coerced = coerceScalar(part, value);
+      if (coerced !== value) return coerced;
+    }
+  return value;
+}
+
+/** The params object the server decodes: each capture's text, coerced by its field schema. */
+function paramsOf(schema: JsonSchema, steps: readonly Step[]): Record<string, unknown> {
+  const fields: unknown = record(schema) ? schema.properties : undefined;
+  const params: Record<string, unknown> = {};
+  for (const step of steps) {
+    if (step.kind !== "capture") continue;
+    const value = text(step.value) ?? "";
+    const field =
+      record(fields) && Object.hasOwn(fields, step.name) ? fields[step.name] : undefined;
+    // Only a direct array field gathers its key into an array.
+    params[step.name] =
+      record(field) && field.type === "array"
+        ? [coerceScalar(field.items, value)]
+        : coerceScalar(field, value);
+  }
+  return params;
+}
+
 /**
- * The response schemas of every row the call could have reached. `undefined`
- * means at least one of them has no schema, so any body is acceptable.
+ * The response schemas of every row that could have answered: the method and
+ * step shape match, and the row's params schema accepts the call's captures.
+ * `any` means one of them has no response schema, or no row describes the
+ * chain at all.
  */
-export function responseSchemas(
+export async function expected(
   table: ResponseSchemaTable,
   method: string,
   steps: readonly Step[],
-): ResponseSchema[] | undefined {
+): Promise<Expected> {
   const shape = chainShape(steps).join("/");
-  const schemas: ResponseSchema[] = [];
+  const schemas: JsonSchema[] = [];
+  let shaped = false;
   for (const row of table) {
     if (!row.all && row.method !== method) continue;
     if (!shapes(row.path).some((candidate) => candidate.join("/") === shape)) continue;
-    if (row.response === undefined) return undefined;
+    shaped = true;
+    if (
+      row.params !== undefined &&
+      (await check(row.params, paramsOf(row.params, steps))).length > 0
+    )
+      continue;
+    if (row.response === undefined) return { kind: "any" };
     schemas.push(row.response);
   }
-  return schemas.length === 0 ? undefined : schemas;
+  if (schemas.length > 0) return { kind: "schemas", schemas };
+  if (!shaped) return { kind: "any" };
+  return {
+    kind: "unreachable",
+    issue: { path: [], message: "no route at this path accepts the call's captures" },
+  };
 }
 
 // Ajv generates code, so load it only when a client validates.
@@ -136,7 +209,7 @@ function issues(data: unknown, errors: ErrorObject[]): ResponseIssue[] {
 
 /** Issues against the first schema when no schema accepts the data. */
 export async function validate(
-  schemas: readonly ResponseSchema[],
+  schemas: readonly JsonSchema[],
   data: unknown,
 ): Promise<ResponseIssue[]> {
   let first: ResponseIssue[] | undefined;
@@ -148,10 +221,9 @@ export async function validate(
   return first ?? [];
 }
 
-async function check(schema: ResponseSchema, data: unknown): Promise<ResponseIssue[]> {
+async function check(schema: JsonSchema, data: unknown): Promise<ResponseIssue[]> {
   if (schema === true) return [];
-  if (schema === false)
-    return [{ path: [], message: "the route's response schema accepts nothing" }];
+  if (schema === false) return [{ path: [], message: "the route's schema accepts nothing" }];
   let validator = compiled.get(schema);
   if (validator === undefined) {
     try {
@@ -160,7 +232,7 @@ async function check(schema: ResponseSchema, data: unknown): Promise<ResponseIss
       return [
         {
           path: [],
-          message: `the response schema did not compile: ${error instanceof Error ? error.message : String(error)}`,
+          message: `the route's schema did not compile: ${error instanceof Error ? error.message : String(error)}`,
         },
       ];
     }

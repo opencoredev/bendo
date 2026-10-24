@@ -1,8 +1,9 @@
 # A small todo API for the typed client (BND-57). Routes carry schemas so
 # `bendo gen` derives Routes and the response table from the real manifest,
 # and the server validates requests with them (BND-36), so a bad POST /todos
-# body gets Bendo's own 422. GET /broken breaks its response schema on purpose;
-# production mode sends it unchanged so the client's own check sees it.
+# body gets Bendo's own 422. GET /broken breaks its response schema on purpose:
+# under BENDO_ENV=production the server sends it unchanged so the client's own
+# check sees it, and in the default development mode the server answers 500.
 # ALL /any answers HEAD with a JSON Content-Type and no body.
 import Base
 import ../../../src/main.bend as B
@@ -117,7 +118,7 @@ def routes() -> List<&2, B.Registration(Tag)>:
 
 def ready(result: Result<&2, &2, B.RouteError, B.Routes(Tag)>) -> IO(Unit):
   match result:
-    case Done{table}: V.serve(~Tag, ~Unit, ~dispatch, table, Unit{}, B.production(B.config()))
+    case Done{table}: V.serve(~Tag, ~Unit, ~dispatch, table, Unit{}, B.config())
     case Fail{error}: IO.die(Unit, 1, "invalid client fixture routes")
 
 def main() -> IO(Unit):

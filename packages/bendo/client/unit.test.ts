@@ -6,7 +6,7 @@ import { parseManifest } from "../src/manifest.ts";
 import { emitResponseSchemas } from "../src/response-schemas.ts";
 import { createClient, type ResponseSchemaTable } from "./index.ts";
 import { headerEntries, pathOf, shapes, textEntries } from "./path.ts";
-import { errorBody, isJson, responseSchemas } from "./response.ts";
+import { errorBody, expected, isJson } from "./response.ts";
 
 test("route patterns become the step shapes the client tree uses", () => {
   expect(shapes("/")).toEqual([[]]);
@@ -92,19 +92,90 @@ test("JSON media types", () => {
   expect(isJson(null)).toBe(false);
 });
 
-test("schema rows match by method, ALL and optional captures; a row without a schema accepts anything", () => {
+test("schema rows match by method, ALL and optional captures; a row without a schema accepts anything", async () => {
   const table: ResponseSchemaTable = [
     { method: "GET", path: "/v1/:version?", all: false, response: { type: "string" } },
     { method: "ALL", path: "/v1", all: true, response: { type: "number" } },
     { method: "POST", path: "/v1/:other", all: false },
   ];
   const v1 = [{ kind: "static" as const, name: "v1" }];
-  expect(responseSchemas(table, "GET", v1)).toEqual([{ type: "string" }, { type: "number" }]);
-  expect(responseSchemas(table, "PUT", v1)).toEqual([{ type: "number" }]);
+  expect(await expected(table, "GET", v1)).toEqual({
+    kind: "schemas",
+    schemas: [{ type: "string" }, { type: "number" }],
+  });
+  expect(await expected(table, "PUT", v1)).toEqual({
+    kind: "schemas",
+    schemas: [{ type: "number" }],
+  });
   expect(
-    responseSchemas(table, "POST", [...v1, { kind: "capture", name: "other", value: 1 }]),
-  ).toBe(undefined);
-  expect(responseSchemas(table, "GET", [{ kind: "static", name: "v2" }])).toBe(undefined);
+    await expected(table, "POST", [...v1, { kind: "capture", name: "other", value: 1 }]),
+  ).toEqual({ kind: "any" });
+  expect(await expected(table, "GET", [{ kind: "static", name: "v2" }])).toEqual({ kind: "any" });
+});
+
+const item = (value: unknown) => [
+  { kind: "static" as const, name: "items" },
+  { kind: "capture" as const, name: "id", value },
+];
+
+test("a row whose params schema rejects the captures is not a candidate", async () => {
+  const param = (schema: object) => ({
+    type: "object",
+    properties: { id: schema },
+    required: ["id"],
+    additionalProperties: false,
+  });
+  const table: ResponseSchemaTable = [
+    // Excluded for "write", so its missing response schema does not switch validation off.
+    { method: "GET", path: "/items/:id", all: false, params: param({ const: "read" }) },
+    {
+      method: "GET",
+      path: "/items/:id",
+      all: false,
+      params: param({ const: "write" }),
+      response: { const: "written" },
+    },
+    // Coercion as the server does it: "7" is the integer 7, "07" stays text.
+    {
+      method: "PUT",
+      path: "/items/:id",
+      all: false,
+      params: param({ type: "integer", minimum: 5 }),
+      response: { const: "int" },
+    },
+    {
+      method: "PUT",
+      path: "/items/:id",
+      all: false,
+      params: param({ type: "string", pattern: "^0" }),
+      response: { const: "text" },
+    },
+    {
+      method: "DELETE",
+      path: "/items/:id",
+      all: false,
+      params: param({ anyOf: [{ type: "null" }, { type: "boolean" }] }),
+      response: { const: "flag" },
+    },
+  ];
+  expect(await expected(table, "GET", item("read"))).toEqual({ kind: "any" });
+  expect(await expected(table, "GET", item("write"))).toEqual({
+    kind: "schemas",
+    schemas: [{ const: "written" }],
+  });
+  expect(await expected(table, "PUT", item(7))).toEqual({
+    kind: "schemas",
+    schemas: [{ const: "int" }],
+  });
+  expect(await expected(table, "PUT", item("07"))).toEqual({
+    kind: "schemas",
+    schemas: [{ const: "text" }],
+  });
+  expect(await expected(table, "DELETE", item(false))).toEqual({
+    kind: "schemas",
+    schemas: [{ const: "flag" }],
+  });
+  expect(await expected(table, "PUT", item(3))).toMatchObject({ kind: "unreachable" });
 });
 
 test("the emitted schema table keeps __proto__ as an own key and survives overflowing numbers", async () => {
@@ -141,7 +212,19 @@ test("the emitted schema table keeps __proto__ as an own key and survives overfl
   expect(emitResponseSchemas(parseManifest('{"bendo":1,"routes":[]}'))).toContain("> = [];");
 });
 
+type Endpoint<P extends string, Params, Response> = {
+  method: "GET";
+  path: P;
+  all: false;
+  captures: P extends `/${string}/:${string}` ? ["id"] : [];
+  input: { params: Params; query: unknown; headers: unknown; body: unknown; response: Response };
+  output: { params: Params; query: unknown; headers: unknown; body: unknown; response: Response };
+};
+
 type Routes =
+  | Endpoint<"/docs/:id", { id: "read" }, { title: string }>
+  | Endpoint<"/docs/:id", { id: "write" }, { count: number }>
+  | Endpoint<"/empty", unknown, { n: number }>
   | {
       method: "GET";
       path: "/thing";
@@ -182,7 +265,33 @@ type Routes =
         response: unknown;
       };
     };
+const docParams = (id: string) => ({
+  type: "object",
+  properties: { id: { const: id } },
+  required: ["id"],
+  additionalProperties: false,
+});
 const table: ResponseSchemaTable = [
+  {
+    method: "GET",
+    path: "/docs/:id",
+    all: false,
+    params: docParams("read"),
+    response: { type: "object", properties: { title: { type: "string" } }, required: ["title"] },
+  },
+  {
+    method: "GET",
+    path: "/docs/:id",
+    all: false,
+    params: docParams("write"),
+    response: { type: "object", properties: { count: { type: "number" } }, required: ["count"] },
+  },
+  {
+    method: "GET",
+    path: "/empty",
+    all: false,
+    response: { type: "object", properties: { n: { type: "number" } }, required: ["n"] },
+  },
   {
     method: "GET",
     path: "/thing",
@@ -202,6 +311,15 @@ const replies = new Map<string, () => Response>([
   ["/thing?mode=text-error", () => new Response("teapot", { status: 418 })],
   ["/thing?mode=ok", () => Response.json({ n: 1 })],
   ["/?mode=text", () => new Response("hello")],
+  // The read handler answers with the write route's shape.
+  ["/docs/read", () => Response.json({ count: 1 })],
+  ["/docs/write", () => Response.json({ count: 1 })],
+  [
+    "/empty?mode=json",
+    () => new Response(null, { status: 204, headers: { "content-type": "application/json" } }),
+  ],
+  ["/empty?mode=bare", () => new Response(null, { status: 204 })],
+  ["/empty?mode=not-modified", () => new Response(null, { status: 304 })],
 ]);
 const server = Bun.serve({
   port: 0,
@@ -226,6 +344,34 @@ test("non-JSON and malformed 2xx bodies are invalid-response when a schema appli
   expect(await api.thing.get({ query: { mode: "ok" } })).toMatchObject({
     ok: true,
     data: { n: 1 },
+  });
+});
+
+test("a narrowed route that returns its sibling's response shape is invalid-response", async () => {
+  const read = await api.docs({ id: "read" }).get();
+  expect(read).toMatchObject({
+    ok: false,
+    kind: "invalid-response",
+    status: 200,
+    issues: [{ path: [], message: "must have required property 'title' (required)" }],
+  });
+  expect(await api.docs({ id: "write" }).get()).toMatchObject({
+    ok: true,
+    kind: "data",
+    data: { count: 1 },
+  });
+});
+
+test("a 204 is no-content with or without a JSON content type; a 304 is http", async () => {
+  for (const mode of ["json", "bare"]) {
+    const result = await api.empty.get({ query: { mode } });
+    expect(result).toMatchObject({ ok: true, kind: "no-content", status: 204 });
+    if (result.ok) expect(result.data).toBeUndefined();
+  }
+  expect(await api.empty.get({ query: { mode: "not-modified" } })).toMatchObject({
+    ok: false,
+    kind: "http",
+    status: 304,
   });
 });
 

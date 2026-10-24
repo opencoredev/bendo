@@ -72,8 +72,11 @@ export async function checks(): Promise<void> {
   expectType<Equal<Awaited<ReturnType<typeof api.todos.get>>, ClientResult<Todo[]>>>(true);
 
   const one = await api.todos({ id: 1 }).get();
-  if (one.ok) expectType<Equal<typeof one.data, Todo>>(true);
+  if (one.ok) expectType<Equal<typeof one.data, Todo | undefined>>(true);
   else if (one.kind === "http") expectType<Equal<typeof one.status, number>>(true);
+  // Any route may answer 204, so `data` is the response type only under `kind: "data"`.
+  if (one.ok && one.kind === "data") expectType<Equal<typeof one.data, Todo>>(true);
+  if (one.ok && one.kind === "no-content") expectType<Equal<typeof one.status, 204>>(true);
   await api.todos({ id: "1" }).delete();
   await api.todos.get();
   await api.todos.get({ query: { limit: 5, tag: ["a", "b"], extra: true } });
@@ -95,14 +98,14 @@ export async function checks(): Promise<void> {
 
   // A capture value keeps only the routes it can reach, here and below.
   const read = await api.items({ id: "read" }).get();
-  if (read.ok) expectType<Equal<typeof read.data, "read">>(true);
+  if (read.ok && read.kind === "data") expectType<Equal<typeof read.data, "read">>(true);
   await api.items({ id: "write" }).put();
   await api.items({ id: "write" }).notes.post();
   await api.items({ id: "read" }).notes.get();
   const key = await api.keys({ key: 1 }).get();
-  if (key.ok) expectType<Equal<typeof key.data, "key">>(true);
+  if (key.ok && key.kind === "data") expectType<Equal<typeof key.data, "key">>(true);
   const name = await api.keys({ name: "n" }).get();
-  if (name.ok) expectType<Equal<typeof name.data, "name">>(true);
+  if (name.ok && name.kind === "data") expectType<Equal<typeof name.data, "name">>(true);
   await api.signed.get({ headers: { "x-sig": ["s"], "x-n": 1, "x-other": ["o"] } });
 
   // @ts-expect-error a capture value of the wrong type
@@ -156,7 +159,7 @@ export async function checks(): Promise<void> {
   await api.cache.purge();
   // @ts-expect-error lowercase method tokens are not GET
   await api.lower.get();
-  if (one.ok) {
+  if (one.ok && one.kind === "data") {
     // @ts-expect-error data is typed
     const title: number = one.data.title;
     void title;

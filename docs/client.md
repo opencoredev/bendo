@@ -12,7 +12,7 @@ import { schemas } from "./.bendo/routes.schemas";
 const api = createClient<Routes>("http://localhost:8787", { schemas });
 
 const todo = await api.todos({ id: 1 }).get();
-if (todo.ok) console.log(todo.data.title);
+if (todo.ok && todo.kind === "data") console.log(todo.data.title);
 else if (todo.kind === "http") console.log(todo.status, todo.error);
 
 await api.todos.post({ body: { title: "Write docs" } });
@@ -20,7 +20,7 @@ await api.todos.get({ query: { limit: 20, tag: ["home", "urgent"] } });
 ```
 
 Run `bendo gen` first. It writes `.bendo/routes.ts` (the [route types](route-types.md))
-and `.bendo/routes.schemas.ts` (the response schemas used for validation).
+and `.bendo/routes.schemas.ts` (the params and response schemas used for validation).
 Rerun it after changing a route or schema.
 
 ## Building a path
@@ -95,15 +95,19 @@ type, or `undefined` for `head`. The promise never rejects.
 
 | Result | When |
 | --- | --- |
-| `{ ok: true, status, data, response }` | a 2xx response whose body passed validation |
+| `{ ok: true, kind: "data", status, data, response }` | a 2xx response other than 204 whose body passed validation |
+| `{ ok: true, kind: "no-content", status: 204, data: undefined, response }` | a 204 |
 | `{ ok: false, kind: "http", status, error, response }` | any status outside 200 to 299 |
 | `{ ok: false, kind: "request", cause }` | the request could not be built, so nothing was sent |
 | `{ ok: false, kind: "network", cause }` | no response: fetch rejected (refused connection, DNS, abort) or the body could not be read |
 | `{ ok: false, kind: "invalid-response", status, issues, response }` | a 2xx body that is not valid JSON or fails the response schema |
 
 `data` is parsed JSON when the response's content type is `application/json`
-or `+json`, and the body text otherwise. A successful `HEAD` has `data:
-undefined` whatever its content type says, since the response has no body.
+or `+json`, and the body text otherwise. A 204 and a successful `HEAD` have
+`data: undefined` whatever their content type says, since neither has a body.
+Any route can answer 204 and Bendo never checks one against the response
+schema, so `data` has the route's type only after narrowing on `kind: "data"`.
+A 304 is an `http` result like any status outside 200 to 299.
 `response` is the `Response` with its body already read.
 
 `error` is Bendo's error JSON when the body has its whole shape:
@@ -131,10 +135,16 @@ indexes into `data`.
 ## Response validation
 
 With `schemas`, a 2xx body is checked against the response schema of every
-route the call could reach (several when duplicate or `B.all` routes share the
-path). It passes when any of them accepts it. A route without a response schema
-accepts any body. `HEAD` responses are never validated. A body that is not JSON fails
-when a schema applies.
+route that could have answered the call (several when duplicate or `B.all`
+routes share the path). A route qualifies when its method and path shape match
+and its params schema accepts the call's captures, coerced from text as the
+server does: `{ id: 7 }` is the integer 7, and a route that only takes
+`id: "read"` is not a candidate for `id: "write"`. The body passes when any
+candidate's response schema accepts it. A candidate without a response schema
+accepts any body, and so does a call no route in the table describes. When
+routes share the path but none accepts the captures, the server cannot have
+sent the 2xx, so it is an `invalid-response`. `HEAD` and 204 responses are
+never validated. A body that is not JSON fails when a schema applies.
 
 Pass `validate: false` to switch validation off, for example in production or
 under a Content Security Policy without `unsafe-eval`. Then the body is
@@ -183,7 +193,8 @@ such routes called with 400 different literals take about 1.75 s. A value typed
 `timeout 10m bun test --timeout 30000 packages/bendo/client` compiles
 `tests/fixtures/client/app.bend`, checks that `bendo gen` output matches the
 committed `packages/bendo/client/fixture`, and calls the server for typed data,
-404 and validation 422 errors, invalid responses, HEAD on a JSON route,
+404 and validation 422 errors, invalid responses, the development server's own
+response check as a 500, HEAD on a JSON route,
 encoding and serialization, a closed
 port and an aborted signal. `packages/bendo/client/types.check.ts` holds the
 type tests that `bun run typecheck` checks.

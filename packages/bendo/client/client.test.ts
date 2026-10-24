@@ -11,12 +11,16 @@ import { schemas } from "./fixture/routes.schemas.ts";
 
 // Compile outside the test timeout; the harness gives each compile 180 s.
 const binary = build("tests/fixtures/client/app.bend");
+// Production sends a response that breaks its schema; development answers 500.
 let server: RunningServer;
+let development: RunningServer;
 beforeAll(async () => {
-  server = await start(binary);
+  server = await start(binary, "127.0.0.1", { BENDO_ENV: "production" });
+  development = await start(binary);
 });
 afterAll(async () => {
   await server[Symbol.asyncDispose]();
+  await development[Symbol.asyncDispose]();
 });
 
 const client = (options: Parameters<typeof createClient>[1] = { schemas }) =>
@@ -37,7 +41,8 @@ test("bendo gen output for the compiled fixture matches the committed client fix
 
 test("a capture call returns the typed, validated todo", async () => {
   const result = await client().todos({ id: 1 }).get();
-  if (!result.ok) throw new Error(`expected ok, got ${JSON.stringify(result)}`);
+  if (!result.ok || result.kind !== "data")
+    throw new Error(`expected data, got ${JSON.stringify(result)}`);
   const title: string = result.data.title;
   expect(result.status).toBe(200);
   expect(result.data).toEqual({ id: 1, title: "write the client", done: false });
@@ -99,9 +104,23 @@ test("a body that breaks the response schema is invalid-response, unless validat
   expect(await client({}).broken.get()).toMatchObject({ ok: true });
 });
 
+test("in development the server's own response check is a 500 http result", async () => {
+  const result = await createClient<Routes>(development.url, { schemas }).broken.get();
+  if (result.ok || result.kind !== "http")
+    throw new Error(`expected http, got ${JSON.stringify(result)}`);
+  expect(result.status).toBe(500);
+  expect(result.error).toEqual({
+    kind: "bendo",
+    error: "Internal Server Error",
+    status: 500,
+    errors: [],
+  });
+});
+
 test("HEAD on a JSON route succeeds with no data, though Content-Type names JSON", async () => {
   const head = await client().any.head();
-  if (!head.ok) throw new Error(`expected ok, got ${JSON.stringify(head)}`);
+  if (!head.ok || head.kind !== "data")
+    throw new Error(`expected data, got ${JSON.stringify(head)}`);
   const data: undefined = head.data;
   expect(data).toBeUndefined();
   expect(head.status).toBe(200);
@@ -126,7 +145,8 @@ test("captures are percent-encoded; query and headers follow Bendo's text coerci
       query: { n: 1.5, flag: false, tag: ["p", "q r&"], skipped: undefined },
       headers: { "x-token": "t" },
     });
-  if (!result.ok) throw new Error(`expected ok, got ${JSON.stringify(result)}`);
+  if (!result.ok || result.kind !== "data")
+    throw new Error(`expected data, got ${JSON.stringify(result)}`);
   const url = "/echo/a%20b%2F%C3%A7%3F%23%25/x%2Fy%20z?n=1.5&flag=false&tag=p&tag=q+r%26";
   expect(seen).toEqual([`${server.url}${url}`]);
   expect(result.data).toEqual({
