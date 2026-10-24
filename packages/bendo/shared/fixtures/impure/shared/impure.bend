@@ -9,6 +9,9 @@ def Action() -> Type:
 def Later() -> Type:
   Action()
 
+def Identity(A: Type) -> Type:
+  A
+
 def double(+n: Nat) -> Nat:
   (n + n : Nat)
 
@@ -22,4 +25,7 @@ def later(s: String) -> Later():
   IO.print(s)
 
 def remote(s: String) -> Effects.Effect():
+  IO.print(s)
+
+def wrapped(s: String) -> Identity(IO(Unit)):
   IO.print(s)

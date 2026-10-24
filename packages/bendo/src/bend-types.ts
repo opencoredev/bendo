@@ -575,6 +575,8 @@ type Scope = {
   naming: Naming;
   /** Aliases being expanded, as `file#def`, so a cyclic alias stops. */
   expanding: ReadonlySet<string>;
+  /** Alias parameters bound to an IO argument, as in `Identity(IO(Unit))`. */
+  ioParams?: ReadonlySet<string>;
 };
 
 /**
@@ -659,7 +661,12 @@ function render(type: TypeExpr, scope: Scope): Rendered {
 function renderName(type: Extract<TypeExpr, { kind: "name" }>, scope: Scope): Rendered {
   const plain = (text: string): Rendered => ({ text, io: false, kind: false });
   const args = (): string[] => type.args.map((arg) => render(arg, scope).text);
-  if (type.args.length === 0 && scope.params.has(type.name)) return plain(identifier(type.name));
+  if (type.args.length === 0 && scope.params.has(type.name))
+    return {
+      text: identifier(type.name),
+      io: scope.ioParams?.has(type.name) ?? false,
+      kind: false,
+    };
   if (["Data", "Type", "Kind"].includes(type.name))
     return { text: "unknown", io: false, kind: true };
   if (type.name === "IO" && type.call) return { text: "unknown", io: true, kind: false };
@@ -681,7 +688,7 @@ function renderName(type: Extract<TypeExpr, { kind: "name" }>, scope: Scope): Re
     const def = module.defs.get(found.local);
     if (def !== undefined && type.call) {
       // An alias may stand for IO, as in `def Action() -> Type: IO(Unit)`.
-      const io = aliasIo(def, module, scope);
+      const io = aliasIo(def, module, scope, type.args);
       const body = aliasBody(def);
       if (body === undefined) return { text: "unknown", io, kind: false };
       const rendered = args();
@@ -708,7 +715,7 @@ function renderName(type: Extract<TypeExpr, { kind: "name" }>, scope: Scope): Re
 }
 
 /** True when a type-level def's body is IO, directly or through other aliases. */
-function aliasIo(def: DefDecl, module: Module, scope: Scope): boolean {
+function aliasIo(def: DefDecl, module: Module, scope: Scope, args: readonly TypeExpr[]): boolean {
   const key = `${module.file}#${def.name}`;
   if (!isTypeLevel(def) || def.body === undefined || scope.expanding.has(key)) return false;
   let body: TypeExpr;
@@ -719,7 +726,14 @@ function aliasIo(def: DefDecl, module: Module, scope: Scope): boolean {
   }
   const params = new Set(def.params.map((p) => p.name));
   const expanding = new Set([...scope.expanding, key]);
-  return render(body, { module, params, naming: scope.naming, expanding }).io;
+  // Arguments are rendered in the caller's scope and bound to parameters by position.
+  const ioParams = new Set(
+    def.params.flatMap((p, i) => {
+      const arg = args[i];
+      return arg !== undefined && render(arg, scope).io ? [p.name] : [];
+    }),
+  );
+  return render(body, { module, params, naming: scope.naming, expanding, ioParams }).io;
 }
 
 /** A rendered declaration for a module's own types and type-level aliases. */

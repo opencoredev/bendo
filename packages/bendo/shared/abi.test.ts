@@ -143,7 +143,7 @@ test(
       );
       expect(run.code).toBe(1);
       expect(run.output).toContain(
-        "shared code must be pure, but `announce`, `shout`, `later`, `remote` return IO",
+        "shared code must be pure, but `announce`, `shout`, `later`, `remote`, `wrapped` return IO",
       );
       expect(existsSync(join(out, "impure.mjs"))).toBe(false);
     } finally {
