@@ -21,6 +21,7 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "ajv": "^8.17.1",
     "jose": "^6.2.13",
     "oxfmt": "0.74.0",
     "oxlint": "1.89.0",
