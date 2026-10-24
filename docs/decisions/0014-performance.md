@@ -115,3 +115,39 @@ The baseline was first pinned at `59ac5e5`, the last hot-path change, on top of 
 
 All 18 samples had zero errors. The hello server runs no middleware, so the loss comes from main's request pipeline, not from this change. The gate is meant to catch regressions after BND-68 on the current main, so the baseline is now the merge commit `853687e`. That keeps the full 25% margin. Leaving the pin at `59ac5e5` would have started every later run at about 0.91.
 
+
+## BND-96: recovering the BND-36 regression
+
+Route validation (BND-36) cost every app on the request path, schemas or not. Bisecting main on Boat put the whole loss in the BND-36 merge (`d31b132` to `824dc43` added 62,600 instructions to each hello request; the other commits in that merge added none). For a table without schemas, a request still looked up its route's schemas twice, ran its pre-handler hooks through the validation step's wrapper, built the response check and its route label, and reserved the stream marker by lowering every response field name twice. The pipeline had also grown IO steps that the compiler could no longer inline.
+
+### What changed
+
+- Serving works out once, at startup, whether the table declares any route schema. A table that declares none runs `Handle.parsed_plain`: the pre-BND-36 lifecycle, with no per-route schema lookup, no validation step and no response check. Law `undeclared_table_checks_nothing` states that such a table gives every route an empty schema set, so nothing is skipped that could have mattered.
+- The plain entrypoints (`B.serve` and friends, and `src/serve-schemas.bend`) already refuse tables with schemas, so they serve through `Serve.startup_plain` and `Handle.transport_plain`, and their binaries do not contain the validating pipeline. That matters for speed, not just size: Bend's code generator inlines a function only when it has one caller in the binary, and a second copy of the pipeline cost hello about 8,000 instructions and 25,000 cycles per request in a test build.
+- Under `src/validated.bend`, a table with schemas still checks each route: a route without params, query, headers or body schemas runs its hooks without the validation step, even when it declares a response schema, and a route without a response schema skips the response check. Laws `response_without_schema_is_sent_run` and `response_without_schema_is_sent_skip` state that the check answers Send for such a route with either validator. Laws `request_free_route_is_admitted_run` and `request_free_route_is_admitted_skip` state that a skipped request step would have admitted the request with no values; without the decoder only a route with no schema at all skips it, so `B.handle` keeps refusing a response-only route. Such a route still clears decoded values that earlier middleware stored, with one record update in place of the validator call; laws `request_free_route_enters_cleared_run` and `request_free_route_enters_cleared_skip` state that, for every context, it enters with exactly the context the step would have admitted. A route with no schema at all has no step, as before BND-96, and law `no_values_entry_reads_unchanged` covers its fresh context.
+- `tests/pipelines.test.ts` serves one app without schemas through `Handle.parsed_plain` and, forced, through `Handle.parsed_checked`, and compares the raw responses and the hook and log traces across buffered responses, errors, rewrites, hook replacements that reapply retained policies, streams and upgrades. It guards the duplicated setup against drift. A second case serves a response-only route through `Handle.parsed_checked` as it is and with the request step forced, as before BND-96, after middleware stored decoded values, and requires the same responses and traces.
+- `Marker.named` tests whether a field name is the stream marker by lowering one character at a time and stopping at the first difference. The earlier test, `Marker.named_spec`, lowered the whole name into a new string first; finalization and transport run it three times on every response field. Law `hot_marker_named` states that the two agree for every name.
+
+### Measurements
+
+Per-request work on hello, from `perf stat` on the server over 40,000 requests with 16 connections, on a Boat large sandbox with near-zero CPU steal. Instruction counts repeat to within 0.1% across runs and hosts; cycles vary by a few percent.
+
+| Commit | Instructions per request | Cycles per request |
+|---|---:|---:|
+| Before BND-36, `38f86d4` | 706,100 | 208,600–208,700 |
+| Main, `07b27be` | 757,000 | 251,900–253,000 |
+| BND-96, `08a5212` | 717,900 | 215,000–220,600 |
+
+Requests per second, median (min–max) of seven samples, measured with `bench/steps.py` (server on CPUs 0–3, oha on 4–7, 64 connections, the BND-68 method) on a Boat large sandbox:
+
+| Commit | Hello | JSON | Params | Echo | Middleware |
+|---|---:|---:|---:|---:|---:|
+| Before BND-36, `38f86d4` | 15,353 (14,341–19,073) | 13,306 (11,374–15,701) | 9,234 (7,177–10,357) | 1,558 (1,278–1,980) | 1,414 (1,012–1,690) |
+| Main, `07b27be` | 13,172 (12,109–15,189) | 12,435 (9,576–13,070) | 8,109 (5,888–9,303) | 1,686 (1,143–2,057) | 1,428 (1,193–1,651) |
+| BND-96, `08a5212` | 15,711 (13,833–17,033) | 13,423 (12,289–15,481) | 8,865 (7,692–9,833) | 1,701 (1,336–2,121) | 1,559 (1,391–1,682) |
+| **BND-96 against before BND-36** | **1.023** | **1.009** | **0.960** | **1.091** | **1.103** |
+| **BND-96 against main** | **1.193** | **1.079** | **1.093** | **1.009** | **1.092** |
+
+All 105 samples had zero errors. Boat hosts were shared with other large sandboxes that afternoon, which shows in the ranges and in the lower absolute numbers than the tables above; compare rows within this table only. An earlier three-sample run of the same binaries, on a host whose steal rose during the run, measured hello at 0.827 of the pre-BND-36 figure and main at 0.744. Both runs are in [`bench/results/2026-10-24-bnd96-steps.json`](../../bench/results/2026-10-24-bnd96-steps.json). The instruction counts above are the steadier evidence: BND-96 removes 39,000 of the 51,000 instructions BND-36 added to hello, and the remaining 12,000 (1.7%) include the response-policy marker reservation that BND-36 needs for correctness.
+
+On GitHub's `perf` job, `08a5212` measured a median ratio of 1.114 against the previous pin `853687e` (pairs 1.118, 1.114 and 1.112). When BND-36 merged, that pin itself measured 0.907 against the pre-BND-36 code, so in that job BND-96 sits about 1% above where hello was before BND-36. The baseline is now pinned to `08a5212`.

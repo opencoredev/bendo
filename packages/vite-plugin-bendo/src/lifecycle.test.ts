@@ -7,6 +7,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -304,6 +305,43 @@ test("an import in a missing directory is watched once the entry recompiles afte
   const before = s.compiles();
   writeFileSync(late, "def late() -> Nat:\n  2n\n");
   await until("the late import's edit recompiled inside", () => s.compiles() === before + 1);
+});
+
+test("a watched directory that is deleted or renamed, then recreated, is watched again", async () => {
+  using app = copyFixture("replaced-dir");
+  await using s = await watchServer(app);
+  const lib = join(s.outside, "lib");
+  mkdirSync(lib);
+  const a = writeDep(lib, "a");
+  const inside = app.path("shared/inside.bend");
+  s.entry(inside, [a]);
+  await s.dev.pluginContainer.load(inside);
+  await expectWatched(s.plugin, [a]);
+
+  /** Saves `a` with a new body and waits for the plugin's watcher to recompile `inside`. */
+  let version = 1;
+  const save = async (label: string) => {
+    const before = s.compiles();
+    writeFileSync(a, `def a() -> Nat:\n  ${++version}n\n`);
+    await until(label, () => s.compiles() > before);
+  };
+  await save("the first save recompiled inside");
+
+  const replacements: [string, () => void][] = [
+    ["deleted", () => rmSync(lib, { recursive: true })],
+    ["renamed", () => renameSync(lib, `${lib}-old`)],
+  ];
+  for (let round = 0; round < 2; round++) {
+    for (const [how, replace] of replacements) {
+      rmSync(`${lib}-old`, { recursive: true, force: true });
+      replace();
+      // Nothing reads the old directory any more; recreate it, then save.
+      mkdirSync(lib);
+      await save(`a save after lib was ${how} and recreated recompiled inside`);
+      await save(`a second save after lib was ${how} recompiled inside`);
+      await expectWatched(s.plugin, [a]);
+    }
+  }
 });
 
 test("restarting the dev server keeps the new server's watcher", async () => {

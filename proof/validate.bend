@@ -30,6 +30,7 @@ import ./scoped-assembly.bend as Assembly
 import ./scoped-assembly-spec.bend as AssemblySpec
 import ../src/app/scopes.bend as RuntimeScopes
 import ../src/http/stream_marker.bend as Marker
+import ./stream-marker.bend as SM
 import ../src/http/response.bend as Response
 import ../src/app/finalize.bend as Final
 import ../src/app/observability.bend as Obs
@@ -577,7 +578,12 @@ def L.table_schemas_one_per_route(Tag, entries, routes, compiled, layers, count,
 def marked_carries(hs: List<&2, Request.Header>, +id: String) -> {Marker.marked(hs, id) == Spec.carries(hs, id) : Bool}:
   match hs:
     case Nil{}: {==}
-    case Request.Header{n, v} <> t: Equal.cong(Bool, Bool, z => (String.eq(Bytes.fold(n), "x-bendo-stream-internal") && String.eq(Bytes.ascii(v), id)) || z, Marker.marked(t, id), Spec.carries(t, id), marked_carries(t, id))
+    case Request.Header{+n, +v} <> t:
+      # BND-96: the transport tests the name with Marker.named, equal to the
+      # spec's lowered comparison (law hot_marker_named).
+      Equal.trans(Bool, (Marker.named(n) && String.eq(Bytes.ascii(v), id)) || Marker.marked(t, id), (Marker.named_spec(n) && String.eq(Bytes.ascii(v), id)) || Marker.marked(t, id), (String.eq(Bytes.fold(n), "x-bendo-stream-internal") && String.eq(Bytes.ascii(v), id)) || Spec.carries(t, id),
+        Equal.cong(Bool, Bool, z => (z && String.eq(Bytes.ascii(v), id)) || Marker.marked(t, id), Marker.named(n), Marker.named_spec(n), SM.named_equiv(n)),
+        Equal.cong(Bool, Bool, z => (String.eq(Bytes.fold(n), "x-bendo-stream-internal") && String.eq(Bytes.ascii(v), id)) || z, Marker.marked(t, id), Spec.carries(t, id), marked_carries(t, id)))
 
 def L.transport_eligibility_matches_spec(claim, code, headers):
   match claim:
@@ -672,43 +678,43 @@ def claims_append_step(+n: String, +v: List<&2, U32>, +a: List<&2, Request.Heade
 def claims_append(+xs: List<&2, Request.Header>, +ys: List<&2, Request.Header>) -> {Marker.claims(List.append(&2, Request.Header, xs, ys)) == List.append(&2, Request.Header, Marker.claims(xs), Marker.claims(ys)) : List<&2, Request.Header>}:
   match xs:
     case Nil{}: {==}
-    case Request.Header{+n, +v} <> +t: claims_append_step(n, v, Marker.claims(List.append(&2, Request.Header, t, ys)), Marker.claims(t), Marker.claims(ys), String.eq(Bytes.fold(n), Marker.marker()), claims_append(t, ys))
+    case Request.Header{+n, +v} <> +t: claims_append_step(n, v, Marker.claims(List.append(&2, Request.Header, t, ys)), Marker.claims(t), Marker.claims(ys), Marker.named(n), claims_append(t, ys))
 
-def claims_twice_step(+n: String, +v: List<&2, U32>, +t: List<&2, Request.Header>, same: Bool, e: {String.eq(Bytes.fold(n), Marker.marker()) == same : Bool}, ih: {Marker.claims(Marker.claims(t)) == Marker.claims(t) : List<&2, Request.Header>}) -> {Marker.claims(Marker.claim_field(Request.Header{n, v}, Marker.claims(t), same)) == Marker.claim_field(Request.Header{n, v}, Marker.claims(t), same) : List<&2, Request.Header>}:
+def claims_twice_step(+n: String, +v: List<&2, U32>, +t: List<&2, Request.Header>, same: Bool, e: {Marker.named(n) == same : Bool}, ih: {Marker.claims(Marker.claims(t)) == Marker.claims(t) : List<&2, Request.Header>}) -> {Marker.claims(Marker.claim_field(Request.Header{n, v}, Marker.claims(t), same)) == Marker.claim_field(Request.Header{n, v}, Marker.claims(t), same) : List<&2, Request.Header>}:
   match same:
     case True{}:
-      %Equal.sym(Bool, String.eq(Bytes.fold(n), Marker.marker()), True{}, e) : {Marker.claim_field(Request.Header{n, v}, Marker.claims(Marker.claims(t)), _) == Request.Header{n, v} <> Marker.claims(t) : List<&2, Request.Header>}
+      %Equal.sym(Bool, Marker.named(n), True{}, e) : {Marker.claim_field(Request.Header{n, v}, Marker.claims(Marker.claims(t)), _) == Request.Header{n, v} <> Marker.claims(t) : List<&2, Request.Header>}
       Equal.cong(List<&2, Request.Header>, List<&2, Request.Header>, l => Request.Header{n, v} <> l, Marker.claims(Marker.claims(t)), Marker.claims(t), ih)
     case False{}: ih
 
 def claims_twice(+hs: List<&2, Request.Header>) -> {Marker.claims(Marker.claims(hs)) == Marker.claims(hs) : List<&2, Request.Header>}:
   match hs:
     case Nil{}: {==}
-    case Request.Header{+n, +v} <> +t: claims_twice_step(n, v, t, String.eq(Bytes.fold(n), Marker.marker()), {==}, claims_twice(t))
+    case Request.Header{+n, +v} <> +t: claims_twice_step(n, v, t, Marker.named(n), {==}, claims_twice(t))
 
-def claims_unclaimed_step(+n: String, +v: List<&2, U32>, +t: List<&2, Request.Header>, same: Bool, e: {String.eq(Bytes.fold(n), Marker.marker()) == same : Bool}, ih: {Marker.claims(Marker.unclaimed(t)) == [] : List<&2, Request.Header>}) -> {Marker.claims(Marker.other_field(Request.Header{n, v}, Marker.unclaimed(t), same)) == [] : List<&2, Request.Header>}:
+def claims_unclaimed_step(+n: String, +v: List<&2, U32>, +t: List<&2, Request.Header>, same: Bool, e: {Marker.named(n) == same : Bool}, ih: {Marker.claims(Marker.unclaimed(t)) == [] : List<&2, Request.Header>}) -> {Marker.claims(Marker.other_field(Request.Header{n, v}, Marker.unclaimed(t), same)) == [] : List<&2, Request.Header>}:
   match same:
     case True{}: ih
     case False{}:
-      %Equal.sym(Bool, String.eq(Bytes.fold(n), Marker.marker()), False{}, e) : {Marker.claim_field(Request.Header{n, v}, Marker.claims(Marker.unclaimed(t)), _) == [] : List<&2, Request.Header>}
+      %Equal.sym(Bool, Marker.named(n), False{}, e) : {Marker.claim_field(Request.Header{n, v}, Marker.claims(Marker.unclaimed(t)), _) == [] : List<&2, Request.Header>}
       ih
 
 def claims_unclaimed(+hs: List<&2, Request.Header>) -> {Marker.claims(Marker.unclaimed(hs)) == [] : List<&2, Request.Header>}:
   match hs:
     case Nil{}: {==}
-    case Request.Header{+n, +v} <> +t: claims_unclaimed_step(n, v, t, String.eq(Bytes.fold(n), Marker.marker()), {==}, claims_unclaimed(t))
+    case Request.Header{+n, +v} <> +t: claims_unclaimed_step(n, v, t, Marker.named(n), {==}, claims_unclaimed(t))
 
-def marked_claims_step(+n: String, +v: List<&2, U32>, +t: List<&2, Request.Header>, +id: String, same: Bool, e: {String.eq(Bytes.fold(n), Marker.marker()) == same : Bool}, ih: {Marker.marked(t, id) == Marker.marked(Marker.claims(t), id) : Bool}) -> {(same && String.eq(Bytes.ascii(v), id)) || Marker.marked(t, id) == Marker.marked(Marker.claim_field(Request.Header{n, v}, Marker.claims(t), same), id) : Bool}:
+def marked_claims_step(+n: String, +v: List<&2, U32>, +t: List<&2, Request.Header>, +id: String, same: Bool, e: {Marker.named(n) == same : Bool}, ih: {Marker.marked(t, id) == Marker.marked(Marker.claims(t), id) : Bool}) -> {(same && String.eq(Bytes.ascii(v), id)) || Marker.marked(t, id) == Marker.marked(Marker.claim_field(Request.Header{n, v}, Marker.claims(t), same), id) : Bool}:
   match same:
     case True{}:
-      %Equal.sym(Bool, String.eq(Bytes.fold(n), Marker.marker()), True{}, e) : {(True{} && String.eq(Bytes.ascii(v), id)) || Marker.marked(t, id) == (_ && String.eq(Bytes.ascii(v), id)) || Marker.marked(Marker.claims(t), id) : Bool}
+      %Equal.sym(Bool, Marker.named(n), True{}, e) : {(True{} && String.eq(Bytes.ascii(v), id)) || Marker.marked(t, id) == (_ && String.eq(Bytes.ascii(v), id)) || Marker.marked(Marker.claims(t), id) : Bool}
       Equal.cong(Bool, Bool, z => (True{} && String.eq(Bytes.ascii(v), id)) || z, Marker.marked(t, id), Marker.marked(Marker.claims(t), id), ih)
     case False{}: ih
 
 def marked_claims(+hs: List<&2, Request.Header>, +id: String) -> {Marker.marked(hs, id) == Marker.marked(Marker.claims(hs), id) : Bool}:
   match hs:
     case Nil{}: {==}
-    case Request.Header{+n, +v} <> +t: marked_claims_step(n, v, t, id, String.eq(Bytes.fold(n), Marker.marker()), {==}, marked_claims(t, id))
+    case Request.Header{+n, +v} <> +t: marked_claims_step(n, v, t, id, Marker.named(n), {==}, marked_claims(t, id))
 
 def header_append_nil(+xs: List<&2, Request.Header>) -> {List.append(&2, Request.Header, xs, []) == xs : List<&2, Request.Header>}:
   match xs:
@@ -815,3 +821,107 @@ def L.finalizers_only_stamp(res, id, timing):
   Equal.trans(Response.Res, Final.unstamped(Obs.header(Obs.request_id(res, id), "server-timing", timing)), Final.unstamped(Obs.request_id(res, id)), Final.unstamped(res),
     header_stamped(Obs.request_id(res, id), "server-timing", timing, {==}),
     request_id_stamped(res, id))
+
+# BND-96: Unchecked is sent whatever the delivery.
+def policy_unchecked(+mode: Config.Mode, d: V.Delivery) -> {V.policy(mode, d, V.Unchecked{}) == V.Send{} : V.Action}:
+  match d:
+    case V.Buffered{}: {==}
+    case V.Streamed{}: {==}
+
+def L.response_without_schema_is_sent_run(mode, claim, res):
+  match res:
+    case Response.Res{+code, +hs, +body, +rep}: policy_unchecked(mode, V.delivery(claim, code, hs))
+
+def L.response_without_schema_is_sent_skip(mode, claim, res):
+  match res:
+    case Response.Res{+code, +hs, +body, +rep}: policy_unchecked(mode, V.delivery(claim, code, hs))
+
+# BND-96: a table that declares no schema validates nothing.
+def bool_seen(b: Bool) -> Type:
+  match b:
+    case True{}: Unit
+    case False{}: Empty
+
+def true_false(e: {True{} == False{} : Bool}) -> Empty:
+  %e : bool_seen(_)
+  Unit{}
+
+def never(-A: Type, e: Empty) -> A:
+  match e:
+
+def or_false_left(a: Bool, +b: Bool, e: {a || b == False{} : Bool}) -> {a == False{} : Bool}:
+  match a:
+    case False{}: {==}
+    case True{}: never({True{} == False{} : Bool}, true_false(e))
+
+def or_false_right(a: Bool, +b: Bool, e: {a || b == False{} : Bool}) -> {b == False{} : Bool}:
+  match a:
+    case False{}: e
+    case True{}: never({b == False{} : Bool}, true_false(e))
+
+# A set that declares nothing has every slot empty, so overriding with it
+# keeps the outer set.
+def undeclared_override(+acc: V.Schemas, +set: V.Schemas, e: {V.declares(set) == False{} : Bool}) -> {V.override(acc, set) == acc : V.Schemas}:
+  match acc set:
+    case V.Schemas{+p, +q, +h, +b, +r} V.Schemas{None{}, None{}, None{}, None{}, None{}}: {==}
+    case V.Schemas{+p, +q, +h, +b, +r} V.Schemas{Some{c}, sq, sh, sb, sr}: never({V.override(V.Schemas{p, q, h, b, r}, V.Schemas{Some{c}, sq, sh, sb, sr}) == V.Schemas{p, q, h, b, r} : V.Schemas}, true_false(e))
+    case V.Schemas{+p, +q, +h, +b, +r} V.Schemas{None{}, Some{c}, sh, sb, sr}: never({V.override(V.Schemas{p, q, h, b, r}, V.Schemas{None{}, Some{c}, sh, sb, sr}) == V.Schemas{p, q, h, b, r} : V.Schemas}, true_false(e))
+    case V.Schemas{+p, +q, +h, +b, +r} V.Schemas{None{}, None{}, Some{c}, sb, sr}: never({V.override(V.Schemas{p, q, h, b, r}, V.Schemas{None{}, None{}, Some{c}, sb, sr}) == V.Schemas{p, q, h, b, r} : V.Schemas}, true_false(e))
+    case V.Schemas{+p, +q, +h, +b, +r} V.Schemas{None{}, None{}, None{}, Some{c}, sr}: never({V.override(V.Schemas{p, q, h, b, r}, V.Schemas{None{}, None{}, None{}, Some{c}, sr}) == V.Schemas{p, q, h, b, r} : V.Schemas}, true_false(e))
+    case V.Schemas{+p, +q, +h, +b, +r} V.Schemas{None{}, None{}, None{}, None{}, Some{c}}: never({V.override(V.Schemas{p, q, h, b, r}, V.Schemas{None{}, None{}, None{}, None{}, Some{c}}) == V.Schemas{p, q, h, b, r} : V.Schemas}, true_false(e))
+
+def placed_undeclared(-Tag: Data, +hooks: List<&2, Table.Placement<Tag>>, +acc: V.Schemas, +e: {Table.placed_declares(Tag, hooks) == False{} : Bool}) -> {Table.placed_schemas(Tag, hooks, acc) == acc : V.Schemas}:
+  match hooks:
+    case Nil{}: {==}
+    case Table.Placement{scope, hook} <> +tail: placed_undeclared(Tag, tail, acc, e)
+    case Table.Checks{scope, +schemas} <> +tail:
+      Equal.trans(V.Schemas, Table.placed_schemas(Tag, tail, V.override(acc, schemas)), V.override(acc, schemas), acc,
+        placed_undeclared(Tag, tail, V.override(acc, schemas), or_false_right(V.declares(schemas), Table.placed_declares(Tag, tail), e)),
+        undeclared_override(acc, schemas, or_false_left(V.declares(schemas), Table.placed_declares(Tag, tail), e)))
+
+def here_undeclared(-Tag: Data, +hooks: List<&2, Table.Placement<Tag>>, yes: Bool, e: {Table.placed_declares(Tag, hooks) == False{} : Bool}) -> {Table.schemas_here(Tag, hooks, yes) == V.none() : V.Schemas}:
+  match yes:
+    case True{}: placed_undeclared(Tag, hooks, V.none(), e)
+    case False{}: {==}
+
+def route_undeclared(-Tag: Data, +layers: List<&2, Table.Middleware<Tag>>, +route: Maybe<&2, Nat>, +e: {Table.declares_schemas(Tag, layers) == False{} : Bool}) -> {Table.route_schemas(Tag, layers, route) == V.none() : V.Schemas}:
+  match layers:
+    case Nil{}: {==}
+    case Table.Staged{stage, tag} <> +tail: route_undeclared(Tag, tail, route, e)
+    case Table.Middleware{pattern, tag} <> +tail: route_undeclared(Tag, tail, route, e)
+    case Table.Scoped{+index, +hooks} <> +tail:
+      match route:
+        case None{}: {==}
+        case Some{+n}:
+          Equal.trans(V.Schemas, V.override(Table.route_schemas(Tag, tail, Some{n}), Table.schemas_here(Tag, hooks, Nat.is_eq(index, n))), V.override(V.none(), Table.schemas_here(Tag, hooks, Nat.is_eq(index, n))), V.none(),
+            Equal.cong(V.Schemas, V.Schemas, x => V.override(x, Table.schemas_here(Tag, hooks, Nat.is_eq(index, n))), Table.route_schemas(Tag, tail, Some{n}), V.none(), route_undeclared(Tag, tail, Some{n}, or_false_right(Table.placed_declares(Tag, hooks), Table.declares_schemas(Tag, tail), e))),
+            Equal.cong(V.Schemas, V.Schemas, y => V.override(V.none(), y), Table.schemas_here(Tag, hooks, Nat.is_eq(index, n)), V.none(), here_undeclared(Tag, hooks, Nat.is_eq(index, n), or_false_left(Table.placed_declares(Tag, hooks), Table.declares_schemas(Tag, tail), e))))
+
+def L.undeclared_table_checks_nothing(Tag, layers, route, undeclared):
+  route_undeclared(Tag, layers, route, undeclared)
+
+# BND-96: a set with no request slot is admitted with no values.
+def request_free_run(+set: V.Schemas, +input: V.Input, e: {Bool.not(V.requests_nothing(set)) == False{} : Bool}) -> {V.run(V.RequestJob{set, input}) == V.Judged{V.Valid{V.no_values()}} : V.Answer}:
+  match set input:
+    case V.Schemas{None{}, None{}, None{}, None{}, +r} V.Input{+ps, +qs, +hs, +body}: {==}
+    case V.Schemas{Some{c}, sq, sh, sb, sr} +i: never({V.run(V.RequestJob{V.Schemas{Some{c}, sq, sh, sb, sr}, i}) == V.Judged{V.Valid{V.no_values()}} : V.Answer}, true_false(e))
+    case V.Schemas{None{}, Some{c}, sh, sb, sr} +i: never({V.run(V.RequestJob{V.Schemas{None{}, Some{c}, sh, sb, sr}, i}) == V.Judged{V.Valid{V.no_values()}} : V.Answer}, true_false(e))
+    case V.Schemas{None{}, None{}, Some{c}, sb, sr} +i: never({V.run(V.RequestJob{V.Schemas{None{}, None{}, Some{c}, sb, sr}, i}) == V.Judged{V.Valid{V.no_values()}} : V.Answer}, true_false(e))
+    case V.Schemas{None{}, None{}, None{}, Some{c}, sr} +i: never({V.run(V.RequestJob{V.Schemas{None{}, None{}, None{}, Some{c}, sr}, i}) == V.Judged{V.Valid{V.no_values()}} : V.Answer}, true_false(e))
+
+def L.request_free_route_is_admitted_run(set, input, unchecked):
+  request_free_run(set, input, unchecked)
+
+def L.request_free_route_is_admitted_skip(set, input, unchecked):
+  Equal.cong(Bool, V.Answer, d => V.Judged{V.skipped(Bool.not(d))}, V.declares(set), False{}, unchecked)
+
+def L.request_free_route_enters_cleared_run(Vars, c, set, input, unchecked):
+  Equal.cong(V.Answer, C.Entry<Vars>, a => C.answered(Vars, c, a), V.run(V.RequestJob{set, input}), V.Judged{V.Valid{V.no_values()}}, request_free_run(set, input, unchecked))
+
+def L.request_free_route_enters_cleared_skip(Vars, c, set, input, unchecked):
+  Equal.cong(V.Answer, C.Entry<Vars>, a => C.answered(Vars, c, a), V.skip(V.RequestJob{set, input}), V.Judged{V.Valid{V.no_values()}}, L.request_free_route_is_admitted_skip(set, input, unchecked))
+
+def L.no_values_entry_reads_unchanged(Vars, c, fresh):
+  match c:
+    case C.Ctx{+r, +p, +b, +q, +s, +hs, +vars, Obs.State{+id, +timing, +finalized, +policies, +stream, +peer, +access, +valid}}:
+      Equal.cong(Maybe<&2, V.Values>, V.Values, x => C.values_of(x), None{}, valid, Equal.sym(Maybe<&2, V.Values>, valid, None{}, fresh))
