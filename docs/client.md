@@ -47,12 +47,15 @@ from path segments.
 A capture value's type comes from the route's params schema, so
 `api.todos({ id: true })` is a type error when `id` is an integer. Without a
 params schema a capture takes `string | number`. Two routes that share a
-capture position share one call, so its value type is the union of theirs.
+capture position share one call, which takes any value either route accepts.
+The value then picks the routes: if `GET /items/:id` takes `id: "read"` and
+`PUT /items/:id` takes `id: "write"`, `api.items({ id: "write" })` has `put` but
+no `get`, and the same holds for every route below the capture.
 
 Captures are encoded with `encodeURIComponent`. A `/` inside a value travels as
 `%2F`, which Bendo decodes back, so `{ path: "a/b" }` reaches a wildcard as
 `a/b`. Values `.` and `..` cannot be sent, because the URL parser removes dot
-segments; the call returns a `network` result without sending anything.
+segments; the call returns a `request` result without sending anything.
 Static segments are sent as written. The URL parser percent-encodes spaces and
 non-ASCII text in them, and Bendo compares static text without decoding, so a
 route such as `/café` cannot be reached from `fetch`.
@@ -75,9 +78,11 @@ text values and `body` accepts any JSON value.
 Query and header values follow Bendo's [text coercion](data/schema.md#coercion-for-text-sources):
 a string is sent as is, a number or bigint as its JavaScript string, a boolean
 as `true` or `false`, and an array as the key repeated once per item.
-`undefined` leaves the key out, so an empty array sends nothing. Fetch joins
-repeated header values into one field (`a, b`), which Bendo reads as a single
-value; send header arrays with one item.
+`undefined` leaves the key out, so an empty array sends nothing. Headers take
+one value per name: fetch joins repeated header values into one field (`a, b`),
+which Bendo reads as a single value. So a header array has exactly one item
+(`["v"]`, even when the schema allows more), and a call with two items, or with
+two spellings of one name such as `X-A` and `x-a`, is a `request` result.
 
 Every request sends `accept: application/json` unless a default or call header
 sets another `accept`, because Bendo renders error bodies as JSON only for an
@@ -86,34 +91,39 @@ explicit JSON Accept ([decision 0011](decisions/0011-crash.md)).
 ## Results
 
 Every call resolves to a `ClientResult<T>`, where `T` is the route's response
-type. The promise never rejects.
+type, or `undefined` for `head`. The promise never rejects.
 
 | Result | When |
 | --- | --- |
 | `{ ok: true, status, data, response }` | a 2xx response whose body passed validation |
 | `{ ok: false, kind: "http", status, error, response }` | any status outside 200 to 299 |
-| `{ ok: false, kind: "network", cause }` | no response: fetch rejected (refused connection, DNS, abort), the body could not be read, or the request could not be built |
+| `{ ok: false, kind: "request", cause }` | the request could not be built, so nothing was sent |
+| `{ ok: false, kind: "network", cause }` | no response: fetch rejected (refused connection, DNS, abort) or the body could not be read |
 | `{ ok: false, kind: "invalid-response", status, issues, response }` | a 2xx body that is not valid JSON or fails the response schema |
 
 `data` is parsed JSON when the response's content type is `application/json`
-or `+json`, and the body text otherwise. `response` is the `Response` with its
-body already read.
+or `+json`, and the body text otherwise. A successful `HEAD` has `data:
+undefined` whatever its content type says, since the response has no body.
+`response` is the `Response` with its body already read.
 
 `error` is Bendo's error JSON when the body has its whole shape:
 
 ```ts
-{ kind: "bendo", error: "Unprocessable Entity", status: 422,
-  errors: [{ path: ["title"], code: "constraint", message: "value does not satisfy scalar checks" }] }
+{ kind: "bendo", error: "Unprocessable Content", status: 422,
+  errors: [{ path: ["body", "title"], code: "constraint", message: "value does not satisfy scalar checks" }] }
 ```
 
 `errors` is the [schema error list](data/schema.md#errors) and is empty when the
 body has none. Any other body is kept as `{ kind: "text", text }`.
 
-A request that cannot be built is a `network` result whose `cause` is a
-`TypeError` naming the problem: a dot-segment capture, a query or header value
-that is not text, a body without a JSON form, or a capture call without exactly
-one key. The types reject all of these except dot segments and, for routes
-without a body schema, bodies such as a function or a bigint.
+A request that cannot be built is a `request` result, kept apart from
+`network` so a retry policy can skip it: retrying sends the same broken
+request. Its `cause` is usually a `TypeError` naming the problem: a dot-segment
+capture, a query or header value that is not text, a header with more than one
+value, a header name or value HTTP cannot carry, a body without a JSON form, or
+a capture call without exactly one key. The types reject most of these; they
+cannot see dot segments, invalid header characters, or, for routes without a
+body schema, bodies such as a function or a bigint.
 
 `issues` lists `{ path, message }` per failure; `path` holds keys and array
 indexes into `data`.
@@ -123,7 +133,7 @@ indexes into `data`.
 With `schemas`, a 2xx body is checked against the response schema of every
 route the call could reach (several when duplicate or `B.all` routes share the
 path). It passes when any of them accepts it. A route without a response schema
-accepts any body, and so do `HEAD` requests. A body that is not JSON fails
+accepts any body. `HEAD` responses are never validated. A body that is not JSON fails
 when a schema applies.
 
 Pass `validate: false` to switch validation off, for example in production or
@@ -160,14 +170,20 @@ base URL throws from `createClient`. That is the only throw.
   still be passed in each call.
 
 Type checking stays linear in the number of routes:
-`timeout 30s bun scripts/client-types-bench.ts` checks 100 routes, each called
-once, in about 0.3 s.
+`timeout 60s bun scripts/client-types-bench.ts 400` checks 400 routes, each
+called once, in about 0.55 s (0.22 s for 100, 0.32 s for 200), with the same
+cost when every call passes a different capture literal (`--distinct`). The
+exception is a capture whose routes disagree on its value type (`--mixed`): each
+distinct literal type passed to it filters that capture's routes again, so 400
+such routes called with 400 different literals take about 1.75 s. A value typed
+`string` or `number` is one type however many calls pass it.
 
 ## Tests
 
 `timeout 10m bun test --timeout 30000 packages/bendo/client` compiles
 `tests/fixtures/client/app.bend`, checks that `bendo gen` output matches the
 committed `packages/bendo/client/fixture`, and calls the server for typed data,
-404 and 422 errors, invalid responses, encoding and serialization, a closed
+404 and validation 422 errors, invalid responses, HEAD on a JSON route,
+encoding and serialization, a closed
 port and an aborted signal. `packages/bendo/client/types.check.ts` holds the
 type tests that `bun run typecheck` checks.

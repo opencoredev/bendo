@@ -81,4 +81,24 @@ export type Routes =
       body: unknown;
       response: { "done": boolean; "id": number; "title": string; };
     };
+  }
+  | {
+    method: "ALL";
+    path: "/any";
+    all: true;
+    captures: [];
+    input: {
+      params: unknown;
+      query: unknown;
+      headers: unknown;
+      body: unknown;
+      response: { "method": string; };
+    };
+    output: {
+      params: unknown;
+      query: unknown;
+      headers: unknown;
+      body: unknown;
+      response: { "method": string; };
+    };
   };

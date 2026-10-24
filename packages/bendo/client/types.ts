@@ -26,6 +26,9 @@ export type MethodKey = Lowercase<Method>;
 export type TextValue = string | number | bigint | boolean;
 export type TextField = TextValue | readonly TextValue[] | undefined;
 export type TextRecord = { readonly [key: string]: TextField };
+/** Fetch joins repeated header values into one field, so a header array holds one item. */
+export type HeaderField = TextValue | readonly [TextValue] | undefined;
+export type HeaderRecord = { readonly [key: string]: HeaderField };
 
 export type BendoFieldError = {
   path: readonly (string | number)[];
@@ -44,6 +47,7 @@ export type ResponseIssue = { path: readonly (string | number)[]; message: strin
 export type ClientResult<T> =
   | { ok: true; status: number; data: T; response: Response }
   | { ok: false; kind: "http"; status: number; error: HttpErrorBody; response: Response }
+  | { ok: false; kind: "request"; cause: unknown }
   | { ok: false; kind: "network"; cause: unknown }
   | {
       ok: false;
@@ -108,20 +112,28 @@ type Slot<K extends string, T, Fallback> = unknown extends T
     ? { [P in K]?: T }
     : { [P in K]: T };
 type Text<T> = unknown extends T ? T : T & TextRecord;
+// A schema array such as [string, ...string[]] narrows to one item for headers.
+type OneValue<T> = T extends readonly [infer H, ...unknown[]]
+  ? readonly [H]
+  : T extends readonly (infer I)[]
+    ? readonly [I]
+    : T;
+type HeaderText<T> = unknown extends T ? T : { [K in keyof T]: OneValue<T[K]> } & HeaderRecord;
 export type RequestInput<R extends RouteRecord> = Slot<
   "query",
   Text<R["input"]["query"]>,
   TextRecord
 > &
-  Slot<"headers", Text<R["input"]["headers"]>, TextRecord> &
+  Slot<"headers", HeaderText<R["input"]["headers"]>, HeaderRecord> &
   Slot<"body", R["input"]["body"], unknown> & { signal?: AbortSignal };
 type Args<I> = {} extends I ? [input?: I] : [input: I];
-export type Endpoint<R extends RouteRecord> = (
+/** A HEAD response has no body, so its data is `undefined`. */
+export type Endpoint<R extends RouteRecord, M extends MethodKey> = (
   ...args: Args<RequestInput<R>>
-) => Promise<ClientResult<R["output"]["response"]>>;
+) => Promise<ClientResult<M extends "head" ? undefined : R["output"]["response"]>>;
 
 type Endpoints<E> = {
-  [M in E extends { route: infer R } ? Keys<R> : never]: Endpoint<Routed<E, M>>;
+  [M in E extends { route: infer R } ? Keys<R> : never]: Endpoint<Routed<E, M>, M>;
 };
 // Key remapping groups entries by head in one pass: entries that share a head
 // become one union, so a wide node costs O(routes) rather than O(routes²).
@@ -137,8 +149,24 @@ type ParamValue<E, N extends string> = E extends { route: infer R extends RouteR
     ? Exclude<V, undefined>
     : string | number
   : never;
+// The value picks the routes it can reach: a GET that needs "read" and a PUT
+// that needs "write" share the node, but `({ id: "write" })` keeps only the PUT
+// and its descendants. tsc re-walks a node's entries for every new type
+// argument of a generic signature, so only a node whose routes disagree on the
+// value's type gets one; when they agree, every value keeps the whole node and
+// the call stays plain, so its cost is paid once per node.
+type Shared<E, N extends string> = Intersect<E extends unknown ? [ParamValue<E, N>] : never>;
+type Accepting<E, N extends string, V> = E extends unknown
+  ? [V] extends [ParamValue<E, N>]
+    ? E
+    : never
+  : never;
+type CaptureCall<E, N extends string, Accepted> =
+  [Accepted] extends Shared<E, N>
+    ? (params: { [P in N]: Accepted }) => Node<E>
+    : <V extends Accepted>(params: { [P in N]: V }) => Node<Accepting<E, N, V>>;
 type Capture<C, K extends keyof C> = K extends `:${infer N}`
-  ? (params: { [P in N]: ParamValue<C[K], N> }) => Node<C[K]>
+  ? CaptureCall<C[K], N, ParamValue<C[K], N>>
   : never;
 type Intersect<U> = (U extends unknown ? (value: U) => void : never) extends (
   value: infer I,

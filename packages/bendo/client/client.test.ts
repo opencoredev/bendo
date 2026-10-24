@@ -64,17 +64,21 @@ test("a 404 is a typed http result with Bendo's error body", async () => {
   });
 });
 
-test("a 422 carries the error list", async () => {
+test("a 422 from route validation carries Bendo's error list", async () => {
   const result = await client().todos.post({ body: { title: "" } });
   if (result.ok || result.kind !== "http")
     throw new Error(`expected http, got ${JSON.stringify(result)}`);
   expect(result.status).toBe(422);
   expect(result.error).toEqual({
     kind: "bendo",
-    error: "Unprocessable Entity",
+    error: "Unprocessable Content",
     status: 422,
     errors: [
-      { path: ["title"], code: "constraint", message: "value does not satisfy scalar checks" },
+      {
+        path: ["body", "title"],
+        code: "constraint",
+        message: "value does not satisfy scalar checks",
+      },
     ],
   });
 });
@@ -93,6 +97,16 @@ test("a body that breaks the response schema is invalid-response, unless validat
   const unchecked = await client({ schemas, validate: false }).broken.get();
   expect(unchecked).toMatchObject({ ok: true, data: { id: "one", done: true } });
   expect(await client({}).broken.get()).toMatchObject({ ok: true });
+});
+
+test("HEAD on a JSON route succeeds with no data, though Content-Type names JSON", async () => {
+  const head = await client().any.head();
+  if (!head.ok) throw new Error(`expected ok, got ${JSON.stringify(head)}`);
+  const data: undefined = head.data;
+  expect(data).toBeUndefined();
+  expect(head.status).toBe(200);
+  expect(head.response.headers.get("content-type")).toContain("application/json");
+  expect(await client().any.get()).toMatchObject({ ok: true, data: { method: "GET" } });
 });
 
 test("captures are percent-encoded; query and headers follow Bendo's text coercion", async () => {
@@ -135,7 +149,7 @@ test("a closed port is a network result, not an exception", async () => {
   expect(result.cause).toBeInstanceOf(Error);
 });
 
-test("an aborted signal and an unsendable capture are network results", async () => {
+test("an aborted signal is a network result; an unsendable capture is a request result", async () => {
   const aborted = await client().todos({ id: 1 }).get({ signal: AbortSignal.abort() });
   expect(aborted).toMatchObject({ ok: false, kind: "network", cause: { name: "AbortError" } });
   let calls = 0;
@@ -146,7 +160,7 @@ test("an aborted signal and an unsendable capture are network results", async ()
   const dot = await client({ fetch: counting })
     .echo({ name: ".." })({ rest: "" })
     .get({ headers: { "x-token": "t" } });
-  expect(dot).toMatchObject({ ok: false, kind: "network", cause: { name: "TypeError" } });
+  expect(dot).toMatchObject({ ok: false, kind: "request", cause: { name: "TypeError" } });
   expect(calls).toBe(0);
 });
 

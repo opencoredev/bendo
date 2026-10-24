@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { parseManifest } from "../src/manifest.ts";
 import { emitResponseSchemas } from "../src/response-schemas.ts";
 import { createClient, type ResponseSchemaTable } from "./index.ts";
-import { pathOf, shapes, textEntries } from "./path.ts";
+import { headerEntries, pathOf, shapes, textEntries } from "./path.ts";
 import { errorBody, isJson, responseSchemas } from "./response.ts";
 
 test("route patterns become the step shapes the client tree uses", () => {
@@ -52,6 +52,21 @@ test("text entries repeat array keys and print numbers and booleans", () => {
   expect(textEntries({ a: null }, "query").ok).toBe(false);
   expect(textEntries({ a: [{}] }, "query").ok).toBe(false);
   expect(textEntries("x=1", "query").ok).toBe(false);
+});
+
+test("header entries take one value per name", () => {
+  expect(headerEntries({ "x-a": ["1"], "x-b": 2, "x-c": [] })).toEqual({
+    ok: true,
+    value: [
+      ["x-a", "1"],
+      ["x-b", "2"],
+    ],
+  });
+  expect(headerEntries({ "x-a": ["1", "2"] })).toEqual({
+    ok: false,
+    reason: "headers.x-a has more than one value; fetch would join them into one field",
+  });
+  expect(headerEntries({ "x-a": "1", "X-A": "2" }).ok).toBe(false);
 });
 
 test("error bodies parse only Bendo's whole shape", () => {
@@ -224,9 +239,31 @@ test("a text error stays text and an unschematized text body is the data", async
   expect(await api.get({ query: { mode: "text" } })).toMatchObject({ ok: true, data: "hello" });
 });
 
-test("awaiting a node does not send a request, and a malformed call is a network result", async () => {
+test("awaiting a node does not send a request, and a malformed call is a request result", async () => {
   const node: unknown = await api.thing;
   expect(typeof node).toBe("function");
   const call: unknown = Reflect.apply(api.thing.get, undefined, ["not an object"]);
-  expect(await call).toMatchObject({ ok: false, kind: "network", cause: { name: "TypeError" } });
+  expect(await call).toMatchObject({ ok: false, kind: "request", cause: { name: "TypeError" } });
+});
+
+test("requests that cannot be built are request results and never reach fetch", async () => {
+  let calls = 0;
+  const counting = createClient<Routes>(`http://127.0.0.1:${server.port}/`, {
+    fetch: (input, init) => {
+      calls += 1;
+      return fetch(input, init);
+    },
+  });
+  // The types already reject two items; Reflect.apply sends them anyway.
+  const joined: unknown = Reflect.apply(counting.thing.get, undefined, [
+    { headers: { "x-a": ["1", "2"] } },
+  ]);
+  const failures = [
+    await joined,
+    await counting.thing.get({ headers: { "bad name": "1" } }),
+    await counting.thing.get({ headers: { "x-a": "line\nbreak" } }),
+  ];
+  for (const failure of failures)
+    expect(failure).toMatchObject({ ok: false, kind: "request", cause: { name: "TypeError" } });
+  expect(calls).toBe(0);
 });

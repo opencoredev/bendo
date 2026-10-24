@@ -1,21 +1,22 @@
 # A small todo API for the typed client (BND-57). Routes carry schemas so
-# `bendo gen` derives Routes and the response table from the real manifest.
-# Request validation (BND-36) is not wired yet, so POST /todos decodes its own
-# body and answers 422 with Bendo's error list. GET /broken breaks its response
-# schema on purpose.
+# `bendo gen` derives Routes and the response table from the real manifest,
+# and the server validates requests with them (BND-36), so a bad POST /todos
+# body gets Bendo's own 422. GET /broken breaks its response schema on purpose;
+# production mode sends it unchanged so the client's own check sees it.
+# ALL /any answers HEAD with a JSON Content-Type and no body.
 import Base
 import ../../../src/main.bend as B
-import ../../../src/serve-schemas.bend as BS
-import ../../../src/router/methods.bend as Methods
+import ../../../src/validated.bend as V
 import ../../../src/data/schema.bend as S
 import ../../../src/data/json.bend as J
-import ../../../src/app/table.bend as Table
+import ../../../src/http/request.bend as Request
 
 type Tag is Data:
   Echo{}
   GetTodo{}
   CreateTodo{}
   Broken{}
+  Any{}
 
 def text_or_empty(s: Maybe<&2, String>) -> String:
   Maybe.default(&2, String, s, "")
@@ -49,33 +50,19 @@ def todo_input() -> S.Schema:
     S.Field{"done", S.BooleanSchema{}, S.Default{J.JBool{False{}}}},
   ], S.Strict{}}
 
-def unprocessable(+c: B.Ctx, errors: List<&2, S.Error>) -> B.Res:
-  B.json(B.status(c, 422), J.JObject{[
-    J.Field{"error", J.JString{"Unprocessable Entity"}},
-    J.Field{"status", J.JNumber{"422"}},
-    J.Field{"errors", S.errors_json(errors)},
-  ]})
-
-def created(+c: B.Ctx, body: J.Json, decoded: Result<&2, &2, S.Errors(), S.Value>) -> B.Res:
-  match body decoded:
-    case _ Fail{errors}: unprocessable(c, errors)
-    case J.JObject{fields} Done{value}: B.json(B.status(c, 201), todo_json("2", Maybe.default(&2, J.Json, J.lookup(fields, "title"), J.JNull{})))
-    case _ Done{value}: B.not_found(c)
-
-def decoded(+c: B.Ctx, +body: J.Json) -> B.Res:
-  created(c, body, S.decode(todo_input(), body))
-
-def create(+c: B.Ctx, parsed: Result<&2, &2, J.Error, J.Json>) -> B.Res:
-  match parsed:
-    case Done{body}: decoded(c, body)
-    case Fail{e}: B.text(B.status(c, 400), "bad json")
+# Validation already decoded the body, so the title is there.
+def create(+c: B.Ctx, title: Maybe<&2, S.Value>) -> B.Res:
+  match title:
+    case Some{S.VString{t}}: B.json(B.status(c, 201), todo_json("2", J.JString{t}))
+    case _: B.not_found(c)
 
 def response(tag: Tag, +c: B.Ctx) -> B.Res:
   match tag:
     case Echo{}: echo(c)
     case GetTodo{}: get_todo(c, B.param(c, "id"))
-    case CreateTodo{}: create(c, J.parse(B.raw_body(c)))
+    case CreateTodo{}: create(c, B.field(B.valid_body(c), "title"))
     case Broken{}: B.json(c, J.JObject{[J.Field{"id", J.JString{"one"}}, J.Field{"done", J.JBool{True{}}}]})
+    case Any{}: B.json(c, J.JObject{[J.Field{"method", J.JString{Request.method_text(B.method(c))}}]})
 
 def dispatch(tag: Tag, c: B.Ctx, env: Unit) -> IO(B.Res):
   IO.pure(B.Res, response(tag, c))
@@ -116,25 +103,21 @@ def echo_response() -> S.Schema:
 def id_params() -> S.Schema:
   S.ObjectSchema{[S.Field{"id", S.IntegerSchema{Some{"1"}, None{}}, S.Required{}}], S.Strict{}}
 
-def routes() -> List<&2, Table.Entry<Tag>>:
+def any_response() -> S.Schema:
+  S.ObjectSchema{[S.Field{"method", text(1n), S.Required{}}], S.Strict{}}
+
+def routes() -> List<&2, B.Registration(Tag)>:
   [
-    B.get(Tag, "/echo/:name/*rest", Echo{}),
-    B.get(Tag, "/todos/:id{int}", GetTodo{}),
-    B.post(Tag, "/todos", CreateTodo{}),
-    B.get(Tag, "/broken", Broken{}),
+    B.with_schemas(Tag, B.get(Tag, "/echo/:name/*rest", Echo{}), B.schemas([B.params_schema(echo_params()), B.query_schema(echo_query()), B.headers_schema(echo_headers()), B.response_schema(echo_response())])),
+    B.with_schemas(Tag, B.get(Tag, "/todos/:id{int}", GetTodo{}), B.schemas([B.params_schema(id_params()), B.response_schema(todo())])),
+    B.with_schemas(Tag, B.post(Tag, "/todos", CreateTodo{}), B.schemas([B.body_schema(todo_input()), B.response_schema(todo())])),
+    B.with_schemas(Tag, B.get(Tag, "/broken", Broken{}), B.schemas([B.response_schema(todo())])),
+    B.with_schemas(Tag, B.all(Tag, "/any", Any{}), B.schemas([B.response_schema(any_response())])),
   ]
 
-def schemas() -> List<&2, BS.RouteSchemas()>:
-  [
-    BS.route_schemas(Some{echo_params()}, Some{echo_query()}, Some{echo_headers()}, None{}, Some{echo_response()}),
-    BS.route_schemas(Some{id_params()}, None{}, None{}, None{}, Some{todo()}),
-    BS.route_schemas(None{}, None{}, None{}, Some{todo_input()}, Some{todo()}),
-    BS.route_schemas(None{}, None{}, None{}, None{}, Some{todo()}),
-  ]
-
-def ready(result: Result<&2, &2, Methods.BuildError, B.Routes(Tag)>) -> IO(Unit):
+def ready(result: Result<&2, &2, B.RouteError, B.Routes(Tag)>) -> IO(Unit):
   match result:
-    case Done{table}: BS.serve_schemas(~Tag, ~Unit, ~dispatch, table, schemas(), Unit{}, B.config())
+    case Done{table}: V.serve(~Tag, ~Unit, ~dispatch, table, Unit{}, B.production(B.config()))
     case Fail{error}: IO.die(Unit, 1, "invalid client fixture routes")
 
 def main() -> IO(Unit):

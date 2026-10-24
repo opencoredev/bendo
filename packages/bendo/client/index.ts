@@ -1,5 +1,5 @@
 // The typed client (BND-57). Usage and result kinds: docs/client.md.
-import { captureStep, pathOf, textEntries, type Built, type Step } from "./path.ts";
+import { captureStep, headerEntries, pathOf, textEntries, type Built, type Step } from "./path.ts";
 import {
   errorBody,
   isJson,
@@ -15,6 +15,8 @@ export type {
   Client,
   ClientResult,
   Endpoint,
+  HeaderField,
+  HeaderRecord,
   HttpErrorBody,
   Method,
   MethodKey,
@@ -93,6 +95,18 @@ function inputOf(value: unknown): Built<Input> {
   };
 }
 
+function jsonText(value: unknown): Built<string> {
+  try {
+    const body: unknown = JSON.stringify(value);
+    return typeof body === "string"
+      ? { ok: true, value: body }
+      : { ok: false, reason: "body has no JSON form" };
+  } catch (cause) {
+    // BigInt values and cycles throw.
+    return { ok: false, reason: `body has no JSON form: ${String(cause)}` };
+  }
+}
+
 function requestOf(
   settings: Settings,
   method: Method,
@@ -103,7 +117,7 @@ function requestOf(
   if (!path.ok) return path;
   const query = textEntries(input.query, "query");
   if (!query.ok) return query;
-  const fields = textEntries(input.headers, "headers");
+  const fields = headerEntries(input.headers);
   if (!fields.ok) return fields;
   const headers = new Headers(settings.headers);
   // Bendo renders errors as JSON only for an explicit JSON Accept (BND-25).
@@ -113,9 +127,9 @@ function requestOf(
   const init: RequestInit = { method, headers };
   if (input.signal !== undefined) init.signal = input.signal;
   if (input.body !== undefined) {
-    const body: unknown = JSON.stringify(input.body);
-    if (typeof body !== "string") return { ok: false, reason: "body has no JSON form" };
-    init.body = body;
+    const body = jsonText(input.body);
+    if (!body.ok) return body;
+    init.body = body.value;
     if (!headers.has("content-type")) headers.set("content-type", "application/json");
   }
   const search = new URLSearchParams(query.value).toString();
@@ -131,23 +145,28 @@ async function request(
   steps: readonly Step[],
   argument: unknown,
 ): Promise<ClientResult<unknown>> {
+  let built: Built<[string, RequestInit]>;
   try {
     const input = inputOf(argument);
-    if (!input.ok) return { ok: false, kind: "network", cause: new TypeError(input.reason) };
-    const built = requestOf(settings, method, steps, input.value);
-    if (!built.ok) return { ok: false, kind: "network", cause: new TypeError(built.reason) };
+    built = input.ok ? requestOf(settings, method, steps, input.value) : input;
+  } catch (cause) {
+    // new Headers throws on a name or value that HTTP cannot carry.
+    return { ok: false, kind: "request", cause };
+  }
+  if (!built.ok) return { ok: false, kind: "request", cause: new TypeError(built.reason) };
+  try {
     const response = await settings.fetch(...built.value);
     const status = response.status;
     const text = await response.text();
     if (!response.ok) return { ok: false, kind: "http", status, error: errorBody(text), response };
+    // A HEAD response has no body, even when its Content-Type names JSON.
+    if (method === "HEAD") return { ok: true, status, data: undefined, response };
     const json = isJson(response.headers.get("content-type"));
     const parsed = json ? parseJson(text) : { ok: true as const, value: text };
     if (!parsed.ok)
       return { ok: false, kind: "invalid-response", status, issues: [parsed.issue], response };
     const schemas =
-      settings.schemas === undefined || method === "HEAD"
-        ? undefined
-        : responseSchemas(settings.schemas, method, steps);
+      settings.schemas === undefined ? undefined : responseSchemas(settings.schemas, method, steps);
     if (schemas !== undefined) {
       if (!json) {
         const type = response.headers.get("content-type") ?? "none";

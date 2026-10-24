@@ -140,3 +140,24 @@ export function textEntries(record: unknown, slot: string): Built<[string, strin
   }
   return { ok: true, value: entries };
 }
+
+/**
+ * Header entries, one value per name. Fetch would join an array's items, or
+ * two spellings of one name, into a single `a, b` field that Bendo reads as
+ * one value, so both are request errors rather than a silently different header.
+ */
+export function headerEntries(record: unknown): Built<[string, string][]> {
+  const entries = textEntries(record, "headers");
+  if (!entries.ok) return entries;
+  const seen = new Set<string>();
+  for (const [key] of entries.value) {
+    const name = key.toLowerCase();
+    if (seen.has(name))
+      return {
+        ok: false,
+        reason: `headers.${key} has more than one value; fetch would join them into one field`,
+      };
+    seen.add(name);
+  }
+  return entries;
+}

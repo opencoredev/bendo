@@ -50,6 +50,18 @@ type Routes =
   | Row<"GET", "/assets*", {}, { response: "prefix" }>
   | Row<"GET", "/flag/:on", { params: { on: boolean | "true" | "false" } }, { response: "flag" }>
   | Row<"ALL", "/any", {}, { response: "any" }, true>
+  | Row<"GET", "/items/:id", { params: { id: "read" } }, { response: "read" }>
+  | Row<"PUT", "/items/:id", { params: { id: "write" } }, { response: "written" }>
+  | Row<"POST", "/items/:id/notes", { params: { id: "write" } }, { response: "noted" }>
+  | Row<"GET", "/items/:id/notes", { params: { id: "read" } }, { response: "notes" }>
+  | Row<"GET", "/keys/:key", { params: { key: number } }, { response: "key" }>
+  | Row<"GET", "/keys/:name", { params: { name: string } }, { response: "name" }>
+  | Row<
+      "GET",
+      "/signed",
+      { headers: { "x-sig": [string, ...string[]]; "x-n"?: number; [key: string]: unknown } },
+      { response: "signed" }
+    >
   | Row<"PURGE", "/cache", {}, { response: "purged" }>
   | Row<"get", "/lower", {}, { response: "lower" }>;
 
@@ -79,6 +91,19 @@ export async function checks(): Promise<void> {
   await api.flag({ on: true }).get();
   await api.any.get();
   await api.any.patch();
+  expectType<Equal<Awaited<ReturnType<typeof api.any.head>>, ClientResult<undefined>>>(true);
+
+  // A capture value keeps only the routes it can reach, here and below.
+  const read = await api.items({ id: "read" }).get();
+  if (read.ok) expectType<Equal<typeof read.data, "read">>(true);
+  await api.items({ id: "write" }).put();
+  await api.items({ id: "write" }).notes.post();
+  await api.items({ id: "read" }).notes.get();
+  const key = await api.keys({ key: 1 }).get();
+  if (key.ok) expectType<Equal<typeof key.data, "key">>(true);
+  const name = await api.keys({ name: "n" }).get();
+  if (name.ok) expectType<Equal<typeof name.data, "name">>(true);
+  await api.signed.get({ headers: { "x-sig": ["s"], "x-n": 1, "x-other": ["o"] } });
 
   // @ts-expect-error a capture value of the wrong type
   api.todos({ id: true });
@@ -104,6 +129,29 @@ export async function checks(): Promise<void> {
   await api.missing.get();
   // @ts-expect-error optional captures cannot skip the earlier one
   await api.v1({ platform: "linux" }).get();
+  // @ts-expect-error GET needs "read"
+  await api.items({ id: "write" }).get();
+  // @ts-expect-error PUT needs "write"
+  await api.items({ id: "read" }).put();
+  // @ts-expect-error the descendant POST needs "write"
+  await api.items({ id: "read" }).notes.post();
+  // @ts-expect-error the descendant GET needs "read"
+  await api.items({ id: "write" }).notes.get();
+  // @ts-expect-error no route takes this value
+  api.items({ id: "other" });
+  const either: "read" | "write" = Math.random() > 0.5 ? "read" : "write";
+  // @ts-expect-error a value that may be "write" cannot reach the GET
+  await api.items({ id: either }).get();
+  // @ts-expect-error :key takes a number
+  api.keys({ key: "k" });
+  // @ts-expect-error a header array holds one item; fetch would join the rest
+  await api.signed.get({ headers: { "x-sig": ["a", "b"] } });
+  // @ts-expect-error an extra header array holds one item too
+  await api.signed.get({ headers: { "x-sig": ["s"], "x-other": ["a", "b"] } });
+  // @ts-expect-error an empty header array sends no required header
+  await api.signed.get({ headers: { "x-sig": [] } });
+  // @ts-expect-error a header array without a schema holds one item
+  await api.any.get({ headers: { "x-a": ["a", "b"] } });
   // @ts-expect-error extension methods have no key
   await api.cache.purge();
   // @ts-expect-error lowercase method tokens are not GET
