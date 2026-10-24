@@ -167,7 +167,8 @@ every slot with Ajv, and compares one document with the `.mjs` exporter's.
 ### The CLI parser
 
 `parseManifest` in `packages/bendo/src/manifest.ts` returns routes with
-`method`, `path`, `params`, `all` and `schemas`. `params` defaults to `[]`,
+`method`, `path`, `params`, `all` and `schemas`. `path` starts with `/`, or is `*`,
+the bare wildcard alias, which an app prints exactly as registered. `params` defaults to `[]`,
 `all` to `false` and `schemas` to `{}`. Each slot must be a JSON object or
 boolean. Unknown slots and fields are ignored, so later additive versions
 still parse. When `--bendo-routes` exits non-zero, `fetchManifest` includes

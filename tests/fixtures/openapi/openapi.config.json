@@ -1,0 +1,16 @@
+{
+  "info": {
+    "title": "Bendo OpenAPI fixture",
+    "version": "1.0.0",
+    "description": "Every route pattern and schema kind Bendo exports, for BND-62.",
+    "license": { "name": "MIT", "identifier": "MIT" }
+  },
+  "tags": [{ "name": "todos", "description": "A todo list with validated bodies." }],
+  "exclude": ["/openapi.json", "/docs", "/docs/offline", "/docs/bare"],
+  "operations": {
+    "GET /todos": { "summary": "List todos" },
+    "GET /todos/:id{int}": { "summary": "Get a todo", "operationId": "getTodo" },
+    "POST /todos": { "summary": "Create a todo" },
+    "GET /kinds": { "summary": "Every schema kind", "tags": ["schemas"], "deprecated": true }
+  }
+}
