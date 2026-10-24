@@ -92,36 +92,43 @@ def with_params(-Vars: Data, ctx: Context.Ctx<Vars>, ps: Pattern.Params) -> Cont
   Context.Ctx{req, ps, body, pairs, code, hs, vars, observation}
 
 # BND-36: request validation runs after parse and transform hooks and before
-# before_handle. A rejection answers at once; the handler never runs.
-def admitted(-Vars: Data, +ctx: Context.Ctx<Vars>, verdict: Validate.Verdict, +slot: Chan(Context.Ctx<Vars>), next: Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
+# before_handle, as one step of the same chain. A rejection answers at once;
+# the handler never runs. The chain remembers the validated context.
+type Step<-Tag: Data> is Data:
+  Run{tag: Tag}
+  Check{schemas: Validate.Schemas}
+
+def runs(-Tag: Data, ids: List<&2, Tag>) -> List<&2, Step<Tag>>:
+  match ids:
+    case Nil{}: []
+    case id <> tail: Run{id} <> runs(Tag, tail)
+
+def checks(-Tag: Data, schemas: Validate.Schemas, empty: Bool) -> List<&2, Step<Tag>>:
+  match empty:
+    case True{}: []
+    case False{}: [Check{schemas}]
+
+def admitted(-Vars: Data, +ctx: Context.Ctx<Vars>, verdict: Validate.Verdict, next: Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
   match verdict:
-    case Validate.Valid{values}:
-      +passed = Context.with_values(Vars, ctx, values)
-      do IO<Response.Res>:
-        Hooks.remember(Vars, slot, passed)
-        next(passed)
+    case Validate.Valid{values}: next(Context.with_values(Vars, ctx, values))
     case Validate.Invalid{code, errors}: IO.pure(Response.Res, Context.rejected(Vars, ctx, code, errors))
 
-def validate_with(-Vars: Data, +schemas: Validate.Schemas, +ctx: Context.Ctx<Vars>, +slot: Chan(Context.Ctx<Vars>), next: Context.Ctx<Vars> -> IO(Response.Res), empty: Bool) -> IO(Response.Res):
-  match empty:
-    case True{}: next(ctx)
-    case False{}: admitted(Vars, ctx, Validate.request(schemas, Context.validation_input(Vars, ctx)), slot, next)
-
-def validate(-Vars: Data, +schemas: Validate.Schemas, +ctx: Context.Ctx<Vars>, +slot: Chan(Context.Ctx<Vars>), next: Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
-  validate_with(Vars, schemas, ctx, slot, next, Validate.requests_nothing(schemas))
+def stepped(~Vars: Data, ~Tag: Data, ~Env: Data, ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), step: Step<Tag>, +ctx: Context.Ctx<Vars>, env: Env, next: Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
+  match step:
+    case Run{tag}: middleware(tag, ctx, env, next)
+    case Check{schemas}: admitted(Vars, ctx, Validate.request(schemas, Context.validation_input(Vars, ctx)), next)
 
 def resolved_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +resolution: Methods.Resolution<Tag>, +layers: List<&2, Table.Middleware<Tag>>, ctx: Context.Ctx<Vars>, +env: Env, +slot: Chan(Context.Ctx<Vars>), +route_slot: Chan(Maybe<&2, Nat>), count: Nat, +mode: Config.Mode) -> IO(Response.Res):
   +route = RouteSlot.identity(Tag, count, resolution)
   +routed = with_params(Vars, ctx, params(Tag, resolution))
   +schemas = Table.route_schemas(Tag, layers, route)
   early = List.concat(&2, Tag, [Table.selected(Tag, layers, Context.path(Vars, routed)), Table.scoped_stage_ids(Tag, layers, route, Table.Parse{}), Table.scoped_stage_ids(Tag, layers, route, Table.Transform{})])
-  late = Table.scoped_stage_ids(Tag, layers, route, Table.BeforeHandle{})
-  outer = Hooks.chain(~Vars, ~Tag, ~Env, ~middleware, early, env, slot)
-  inner = Hooks.chain(~Vars, ~Tag, ~Env, ~middleware, late, env, slot)
+  steps = List.concat(&2, Step<Tag>, [runs(Tag, early), checks(Tag, schemas, Validate.requests_nothing(schemas)), runs(Tag, Table.scoped_stage_ids(Tag, layers, route, Table.BeforeHandle{}))])
+  onion = Hooks.chain(~Vars, ~Step<Tag>, ~Env, ~(step => c => e => next => stepped(~Vars, ~Tag, ~Env, ~middleware, step, c, e, next)), steps, env, slot)
   do IO<Response.Res>:
     RouteSlot.remember(route_slot, route)
     Hooks.remember(Vars, slot, routed)
-    outer(routed, parsed => validate(Vars, schemas, parsed, slot, checked => inner(checked, changed => terminal(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, Table.stage_ids(Tag, layers, Table.NotFound{}), resolution, changed, env, slot, schemas, mode))))
+    onion(routed, changed => terminal(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, Table.stage_ids(Tag, layers, Table.NotFound{}), resolution, changed, env, slot, schemas, mode))
 
 # Route the context on_request produced, through the configured router. Every
 # kind returns Methods.resolve's result (law methods_router_resolve).
