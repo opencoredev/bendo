@@ -4,7 +4,8 @@
     "**/*.md",
     "**/*.mdx",
     "tests/fixtures/JSONTestSuite/**",
-    "tests/fixtures/static/vite-app/build/**"
+    "tests/fixtures/static/vite-app/build/**",
+    "packages/bendo/client/fixture/**"
   ],
   "sortPackageJson": false
 }

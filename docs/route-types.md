@@ -39,12 +39,16 @@ names in segment order. Missing schemas produce `unknown`, even for a path
 whose captures are known. An empty manifest exports `Routes = never`.
 Duplicates remain union members; generation does not choose between registrations.
 
-A typed client can distribute over the union, split `path` into segments for
-Eden-style access, select the method, accept `input` request slots, and return
-`output.response`. The future BND-57 `createClient<Routes>(baseUrl)` consumes
-this contract; the generator itself does not implement the client. A consumer
-can already select a route with
+The [typed client](client.md) distributes over the union, splits `path` into
+segments for Eden-style access, selects the method, accepts `input` request
+slots, and returns `output.response`. A consumer can also select a route with
 `Extract<Routes, { method: "GET"; path: "/todos/:id{int}" }>`.
+
+`bendo gen` also writes `.bendo/routes.schemas.ts` beside the types: one row
+per route in the same order with `method`, `path`, `all` and the `response`
+schema when there is one. The client validates responses against it
+([decision 0013](decisions/0013-client-response-validation.md)). Both files are
+generated before either is replaced.
 
 ## Input, decoded values and responses
 

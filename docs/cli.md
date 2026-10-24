@@ -43,7 +43,8 @@ Every command supports `--help`.
   and shows law diagnostics and source locations without JavaScript stack traces.
   Proof checks have a ten-minute limit.
 - `bendo gen [entry]` uses the same cached build and manifest validation as `routes`.
-  It writes [TypeScript route types](route-types.md) to `.bendo/routes.ts` and
+  It writes [TypeScript route types](route-types.md) to `.bendo/routes.ts` and the
+  [typed client's](client.md) response schemas to `.bendo/routes.schemas.ts`, and
   reports the number of routes.
 - `bendo doctor` checks Bend, elan, Lean, clang, and Bun, printing versions and
   paths. Bend must match `.bend-version`; Lean must match `lean-toolchain`. A
