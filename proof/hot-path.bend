@@ -8,6 +8,9 @@ import ../src/http/response.bend as R
 import ../src/app/context.bend as C
 import ../src/http/connection.bend as Cn
 import ../src/http/text.bend as Text
+import ../src/http/body.bend as Body
+import ../src/http/parse.bend as Parse
+import ../src/http/request.bend as Req
 import ../src/data/utf8.bend as U
 
 def Laws.hot_utf8_encode_char(c):
@@ -246,3 +249,51 @@ def header_value_and(+v: List<&2, U32>, +wanted: String, named: Bool) -> {Cn.hea
 
 def Laws.hot_connection_header_hit(n, v, wanted):
   header_value_and(v, wanted, String.eq(B.fold(n), "connection"))
+
+# ---- BND-68: the head loop equals scanning from a Head state ----
+
+# A Bad state ends the scan whatever input is left.
+def scan_bad_431(~Policy: Data, ~select: Req.Req -> Policy -> U32, +policy: Policy, +xs: List<&2, U32>, +limit: U32, +headers: U32) -> {Body.head_scan_policy(~Policy, ~select, policy, xs, Body.Bad{431}, limit, headers) == (Body.Bad{431}, False{}) : Body.State & Bool}:
+  match xs:
+    case Nil{}:
+      {==}
+    case c <> t:
+      {==}
+
+def head_equiv(~Policy: Data, ~select: Req.Req -> Policy -> U32, +policy: Policy, +xs: List<&2, U32>, +s: Parse.State, +bytes: U32, +limit: U32, +headers: U32, over: Bool, e: {(bytes >= headers : U32) == over : Bool}) -> {Body.head_loop(~Policy, ~select, policy, xs, s, bytes, limit, headers, over) == Body.head_scan_policy(~Policy, ~select, policy, xs, Body.Head{s, bytes}, limit, headers) : Body.State & Bool}:
+  match xs s over:
+    case Nil{} Parse.RequestLine{rv, cr} _:
+      {==}
+    case Nil{} Parse.Headers{r, rv, cr} _:
+      {==}
+    case Nil{} Parse.Complete{r} _:
+      {==}
+    case Nil{} Parse.Bad{x} _:
+      {==}
+    case c <> t Parse.Complete{r} True{}:
+      {==}
+    case c <> t Parse.Complete{r} False{}:
+      {==}
+    case c <> t Parse.Bad{x} True{}:
+      {==}
+    case c <> t Parse.Bad{x} False{}:
+      {==}
+    case c <> t Parse.RequestLine{rv, cr} True{}:
+      %Equal.sym(Bool, (bytes >= headers : U32), True{}, e) : {Body.head_loop(~Policy, ~select, policy, c <> t, Parse.RequestLine{rv, cr}, bytes, limit, headers, True{}) == Body.head_scan_policy(~Policy, ~select, policy, t, Body.head_step(Parse.RequestLine{rv, cr}, c, bytes, _), limit, headers) : Body.State & Bool}
+      Equal.sym(Body.State & Bool, Body.head_scan_policy(~Policy, ~select, policy, t, Body.Bad{431}, limit, headers), (Body.Bad{431}, False{}), scan_bad_431(~Policy, ~select, policy, t, limit, headers))
+    case c <> t Parse.Headers{r, rv, cr} True{}:
+      %Equal.sym(Bool, (bytes >= headers : U32), True{}, e) : {Body.head_loop(~Policy, ~select, policy, c <> t, Parse.Headers{r, rv, cr}, bytes, limit, headers, True{}) == Body.head_scan_policy(~Policy, ~select, policy, t, Body.head_step(Parse.Headers{r, rv, cr}, c, bytes, _), limit, headers) : Body.State & Bool}
+      Equal.sym(Body.State & Bool, Body.head_scan_policy(~Policy, ~select, policy, t, Body.Bad{431}, limit, headers), (Body.Bad{431}, False{}), scan_bad_431(~Policy, ~select, policy, t, limit, headers))
+    case c <> t Parse.RequestLine{rv, cr} False{}:
+      %Equal.sym(Bool, (bytes >= headers : U32), False{}, e) : {Body.head_loop(~Policy, ~select, policy, c <> t, Parse.RequestLine{rv, cr}, bytes, limit, headers, False{}) == Body.head_scan_policy(~Policy, ~select, policy, t, Body.head_step(Parse.RequestLine{rv, cr}, c, bytes, _), limit, headers) : Body.State & Bool}
+      head_equiv(~Policy, ~select, policy, t, Parse.advance(Parse.RequestLine{rv, cr}, c), (bytes + 1 : U32), limit, headers, ((bytes + 1 : U32) >= headers : U32), {==})
+    case c <> t Parse.Headers{r, rv, cr} False{}:
+      %Equal.sym(Bool, (bytes >= headers : U32), False{}, e) : {Body.head_loop(~Policy, ~select, policy, c <> t, Parse.Headers{r, rv, cr}, bytes, limit, headers, False{}) == Body.head_scan_policy(~Policy, ~select, policy, t, Body.head_step(Parse.Headers{r, rv, cr}, c, bytes, _), limit, headers) : Body.State & Bool}
+      head_equiv(~Policy, ~select, policy, t, Parse.advance(Parse.Headers{r, rv, cr}, c), (bytes + 1 : U32), limit, headers, ((bytes + 1 : U32) >= headers : U32), {==})
+
+# The new head feed equals the retained one for every policy template.
+def head_feed_equiv(~Policy: Data, ~select: Req.Req -> Policy -> U32, +policy: Policy, +xs: List<&2, U32>, +s: Parse.State, +bytes: U32, +limit: U32, +headers: U32) -> {Body.head_feed_policy(~Policy, ~select, policy, xs, s, bytes, limit, headers) == Body.head_feed_policy_spec(~Policy, ~select, policy, xs, s, bytes, limit, headers) : Body.State & Bool}:
+  head_equiv(~Policy, ~select, policy, xs, s, bytes, limit, headers, (bytes >= headers : U32), {==})
+
+def Laws.hot_body_head_feed(xs, s, bytes, limit, headers):
+  head_feed_equiv(~U32, ~(req => n => n), limit, xs, s, bytes, limit, headers)

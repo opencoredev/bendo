@@ -92,8 +92,27 @@ def head_scan_policy(~Policy: Data, ~select: R.Req -> Policy -> U32, +policy: Po
     case _ s:
       (s, False{})
 
-def head_feed_policy(~Policy: Data, ~select: R.Req -> Policy -> U32, policy: Policy, xs: List<&2, U32>, s: Parse.State, bytes: U32, limit: U32, headers: U32) -> State & Bool:
+# head_scan_policy from Head{s, bytes}, without rebuilding and matching a
+# Head state per byte (BND-68). `over` is (bytes >= headers) for the next
+# byte. Law hot_body_head_feed equates the two for every input.
+def head_loop(~Policy: Data, ~select: R.Req -> Policy -> U32, +policy: Policy, xs: List<&2, U32>, s: Parse.State, +bytes: U32, +limit: U32, +headers: U32, over: Bool) -> State & Bool:
+  match xs s over:
+    case xs Parse.Complete{+r} _:
+      expected_policy(r, xs, select(r, policy), limit)
+    case _ Parse.Bad{e} _:
+      (Bad{400}, False{})
+    case Nil{} s _:
+      (Head{s, bytes}, False{})
+    case c <> t s True{}:
+      (Bad{431}, False{})
+    case c <> t s False{}:
+      head_loop(~Policy, ~select, policy, t, Parse.advance(s, c), (bytes + 1 : U32), limit, headers, ((bytes + 1 : U32) >= headers : U32))
+
+def head_feed_policy_spec(~Policy: Data, ~select: R.Req -> Policy -> U32, policy: Policy, xs: List<&2, U32>, s: Parse.State, bytes: U32, limit: U32, headers: U32) -> State & Bool:
   head_scan_policy(~Policy, ~select, policy, xs, Head{s, bytes}, limit, headers)
+
+def head_feed_policy(~Policy: Data, ~select: R.Req -> Policy -> U32, policy: Policy, xs: List<&2, U32>, s: Parse.State, +bytes: U32, limit: U32, +headers: U32) -> State & Bool:
+  head_loop(~Policy, ~select, policy, xs, s, bytes, limit, headers, (bytes >= headers : U32))
 
 def feed_policy(~Policy: Data, ~select: R.Req -> Policy -> U32, policy: Policy, xs: List<&2, U32>, state: State, limit: U32, headers: U32) -> State & Bool:
   match state:

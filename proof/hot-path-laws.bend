@@ -7,6 +7,8 @@ import ../src/http/response.bend as Response
 import ../src/app/context.bend as Context
 import ../src/http/request.bend as Request
 import ../src/http/connection.bend as Connection
+import ../src/http/body.bend as Body
+import ../src/http/parse.bend as Parse
 import ../src/data/json.bend as Json
 import ../src/mw/cors.bend as Cors
 import ../src/mw/secure_headers.bend as SecureHeaders
@@ -72,3 +74,13 @@ law hot_connection_header_hit:
   for +v: List<&2, U32>
   for +wanted: String
   {Connection.header_hit(n, v, wanted) == Connection.header_hit_spec(n, v, wanted) : Bool}
+
+# The request-head scan of Body.head_feed. proof/hot-path.bend proves the
+# same equation for every policy template that Connection instantiates.
+law hot_body_head_feed:
+  for +xs: List<&2, U32>
+  for +s: Parse.State
+  for +bytes: U32
+  for +limit: U32
+  for +headers: U32
+  {Body.head_feed_policy(~U32, ~(req => n => n), limit, xs, s, bytes, limit, headers) == Body.head_feed_policy_spec(~U32, ~(req => n => n), limit, xs, s, bytes, limit, headers) : Body.State & Bool}
