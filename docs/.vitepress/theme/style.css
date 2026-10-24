@@ -1,0 +1,151 @@
+/*
+ * Direction: Hono's docs for density and code-first pages; Bun's docs for a
+ * plain, fast home that leads with a real program and its output. Colors come
+ * from the todo example (examples/todo/src/app.css): cool paper, ink, one
+ * indigo accent. System sans for prose, ui-monospace for code. The signature
+ * is the proof verdict: the home transcript ends on a highlighted
+ * `ALL PROOFS CHECK`. Avoiding: Inter, gradient hero names, feature-card
+ * grids, decorative shadows.
+ */
+:root {
+  --bendo-ink: #15171c;
+  --bendo-paper: #f5f6f8;
+  --bendo-line: #e2e5ea;
+  --bendo-accent: #4636f0;
+  --bendo-accent-2: #3a2bd6;
+  --bendo-accent-soft: #ecebfe;
+
+  --vp-font-family-base: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --vp-font-family-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+  --vp-c-brand-1: var(--bendo-accent);
+  --vp-c-brand-2: var(--bendo-accent-2);
+  --vp-c-brand-3: var(--bendo-accent);
+  --vp-c-brand-soft: var(--bendo-accent-soft);
+
+  --vp-c-text-1: var(--bendo-ink);
+  --vp-c-bg-alt: var(--bendo-paper);
+  --vp-c-bg-soft: var(--bendo-paper);
+  --vp-c-divider: var(--bendo-line);
+  --vp-code-block-bg: var(--bendo-paper);
+  --vp-code-line-highlight-color: var(--bendo-accent-soft);
+  /* VitePress's grey language label is 2.9:1 on the code background. */
+  --vp-code-lang-color: #5f6672;
+
+  --vp-home-hero-name-color: var(--bendo-accent);
+  --vp-button-brand-bg: var(--bendo-accent);
+  --vp-button-brand-hover-bg: var(--bendo-accent-2);
+  --vp-button-brand-active-bg: var(--bendo-accent-2);
+}
+
+.dark {
+  --bendo-ink: #eceef2;
+  --vp-code-lang-color: #9aa1ad;
+  --bendo-paper: #16171b;
+  --bendo-line: #2a2d34;
+  --bendo-accent: #8b80ff;
+  --bendo-accent-2: #a49bff;
+  --bendo-accent-soft: #25224a;
+
+  --vp-c-bg: #111216;
+  --vp-c-bg-elv: #1a1c21;
+  --vp-button-brand-text: #111216;
+  --vp-button-brand-hover-text: #111216;
+  --vp-button-brand-active-text: #111216;
+}
+
+/* Bend has no Shiki grammar, so its fences use Python highlighting. Label
+   them as what they are. */
+.vp-doc div.language-python > span.lang {
+  font-size: 0;
+}
+
+.vp-doc div.language-python > span.lang::after {
+  content: "bend";
+  font-size: 12px;
+}
+
+/* Home */
+
+.VPHero .name,
+.VPHero .text {
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.VPHero .tagline {
+  max-width: 34rem;
+  text-wrap: pretty;
+}
+
+.home-demo {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 1px;
+  margin: 0 0 56px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--vp-c-divider);
+}
+
+.home-demo-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--vp-code-block-bg);
+}
+
+.vp-doc .home-demo-label {
+  margin: 0;
+  padding: 10px 20px 0;
+  font-family: var(--vp-font-family-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--vp-c-text-2);
+}
+
+.vp-doc .home-demo div[class*="language-"] {
+  flex: 1;
+  margin: 0;
+  border-radius: 0;
+}
+
+.vp-doc .home-demo div[class*="language-"] > span.lang {
+  display: none;
+}
+
+.vp-doc .home-demo .highlighted span {
+  color: var(--vp-c-brand-1) !important;
+  font-weight: 600;
+}
+
+.home-section {
+  max-width: 760px;
+}
+
+.home-section h2 {
+  margin-top: 0;
+  border-top: 0;
+}
+
+.home-section h2 + p,
+.home-section h2 + table {
+  margin-top: 12px;
+}
+
+.home-section table {
+  display: table;
+  width: 100%;
+}
+
+@media (max-width: 767px) {
+  .home-demo {
+    grid-template-columns: minmax(0, 1fr);
+    margin-bottom: 40px;
+  }
+
+  .vp-doc .home-demo div[class*="language-"] code {
+    font-size: 13px;
+  }
+}
