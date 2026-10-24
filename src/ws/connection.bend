@@ -15,12 +15,32 @@ type Config is Data:
 
 def defaults() -> Config: Config{1048576, 16, 10, 100, 60000, 0, 1000, 30000}
 
+# `alive` has no room and no receiver, so a send to it never lands: it waits
+# while the connection runs and fails once the connection closes `alive`
+# together with its mailbox.
 type Handle is Data:
-  Handle{outbound: Chan(S.Command), max_message: U32}
+  Handle{outbound: Chan(S.Command), max_message: U32, alive: Chan(Unit)}
 
 def outbound(handle: Handle) -> Chan(S.Command):
-  Handle{channel, max} = handle
+  Handle{channel, max, alive} = handle
   channel
+
+def max_message(handle: Handle) -> U32:
+  Handle{channel, max, alive} = handle
+  max
+
+def running(result: Poll<&1, &1, Result<&1, &1, Unit, Unit>, Unit>) -> Bool:
+  match result:
+    case Ready{Fail{u}}: False{}
+    case _: True{}
+
+# Whether the connection is still open, without touching its mailbox. A
+# publisher uses this when a command is too large to offer.
+def live(handle: Handle) -> IO(Bool):
+  Handle{channel, max, alive} = handle
+  do IO<Bool>:
+    result : Poll<&1, &1, Result<&1, &1, Unit, Unit>, Unit> <- Chan.try_send(Unit, alive, Unit{}, 0)
+    return running(result)
 
 def admitted(result: Poll<&1, &1, Result<&1, &1, S.Command, Unit>, S.Command>) -> Bool:
   match result:
@@ -38,7 +58,7 @@ def enqueue_checked(ok: Bool, channel: Chan(S.Command), command: S.Command) -> I
 # Nonblocking admission: False means full, closed, or invalid. Never spawn a
 # waiting sender: a broadcast must be free to drop/disconnect a slow recipient.
 def enqueue(handle: Handle, +command: S.Command) -> IO(Bool):
-  Handle{channel, max} = handle
+  Handle{channel, max, alive} = handle
   enqueue_checked(S.admissible(max, command), channel, command)
 
 def text(handle: Handle, value: String) -> IO(Bool): enqueue(handle, S.SendText{value})
@@ -137,9 +157,10 @@ def discard(+channel: Chan(S.Command), fuel: Nat, got: Poll<&1, &1, Maybe<&1, S.
 
 def finished(~User: Data, ~on_close: User -> U32 -> String -> IO(Unit), s: Socket, state: State<User>, handle: Handle, room: U32, code: U32, reason: String) -> IO(Unit):
   State{user, phase, assembly, pending, body, received, ping, closing, wait} = state
-  Handle{+channel, max} = handle
+  Handle{+channel, max, alive} = handle
   do IO<Unit>:
     Chan.close(S.Command, channel)
+    Chan.close(Unit, alive)
     Socket.close(s)
     first : Poll<&1, &1, Maybe<&1, S.Command>, Unit> <- Chan.try_recv(S.Command, channel, 0)
     discard(channel, 1n+U32.to_nat(U32.max(room, 1)), first)
@@ -241,8 +262,10 @@ type Registration<-User: Data> is Data:
   Registration{user: User, handle: Handle, config: Config}
 
 def cleanup(~User: Data, registration: Registration<User>) -> IO(Unit):
-  Registration{user, Handle{channel, max}, cfg} = registration
-  Chan.close(S.Command, channel)
+  Registration{user, Handle{channel, max, alive}, cfg} = registration
+  do IO<Unit>:
+    Chan.close(S.Command, channel)
+    Chan.close(Unit, alive)
 
 @unsafe
 def start(~User: Data, ~on_open: User -> Handle -> IO(User), ~on_message: User -> Handle -> M.Message -> IO(User), ~on_close: User -> U32 -> String -> IO(Unit), registration: Registration<User>, s: Socket, rest: List<&2, U32>) -> IO(Unit):
@@ -258,4 +281,5 @@ def upgrade(~Vars: Data, ~User: Data, ~on_open: User -> Handle -> IO(User), ~on_
   Config{+max, room, poll, poll_max, idle, ping, closing, write} = cfg
   do IO<Response.Res>:
     channel : Chan(S.Command) <- Chan.new(S.Command, U32.max(room, 1))
-    Upgrade.respond(~Vars, ~(Registration<User>), ~(start(~User, ~on_open, ~on_message, ~on_close)), ~(cleanup(~User)), c, Registration{user, Handle{channel, max}, cfg}, handshake)
+    alive : Chan(Unit) <- Chan.new(Unit, 0)
+    Upgrade.respond(~Vars, ~(Registration<User>), ~(start(~User, ~on_open, ~on_message, ~on_close)), ~(cleanup(~User)), c, Registration{user, Handle{channel, max, alive}, cfg}, handshake)
