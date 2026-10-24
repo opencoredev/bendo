@@ -1,0 +1,257 @@
+# Proofs of the BND-52 input-error laws. Does not import LAWS.bend.
+import Base
+import ./ws-session-laws.bend as L
+import ./ws-session-spec.bend as Spec
+import ./ws-session-message.bend as MP
+import ./ws-frame.bend as WF
+import ../src/ws/session.bend as S
+import ../src/ws/frame.bend as F
+import ../src/ws/message.bend as M
+import ../src/data/utf8.bend as Utf8
+
+def absurd(-A: Type, e: Empty) -> A:
+  match e:
+
+def none_type(m: Maybe<&2, U32>) -> Type:
+  match m:
+    case None{}: Unit
+    case Some{x}: Empty
+
+def none_some(-x: U32, e: {None{} == Some{x} : Maybe<&2, U32>}) -> Empty:
+  %e : none_type(_)
+  Unit{}
+
+def unwrap(m: Maybe<&2, U32>) -> U32:
+  match m:
+    case None{}: 0
+    case Some{x}: x
+
+def td_f(m: Maybe<&2, String>) -> {Spec.failure_of(M.text_done(m)) == Spec.utf8_result(m) : Maybe<&2, U32>}:
+  match m:
+    case None{}: {==}
+    case Some{t}: {==}
+
+def keep_f(fits: Bool, fin: Bool, text: Bool, +rev: List<&2, U32>, +budget: Nat, +n: Nat, +payload: List<&2, U32>) -> {Spec.failure_of(M.keep(fits, text, fin, rev, budget, n, payload)) == Spec.when(Bool.not(fits), 1009, Spec.utf8_fault(text && fin, List.append(&2, U32, List.reverse(&2, U32, rev), payload))) : Maybe<&2, U32>}:
+  match fits:
+    case False{}: {==}
+    case True{}:
+      match fin:
+        case False{}:
+          match text:
+            case True{}: {==}
+            case False{}: {==}
+        case True{}:
+          match text:
+            case True{}:
+              %Equal.sym(List<&2, U32>, List.reverse(&2, U32, M.rev_onto(payload, rev)), List.append(&2, U32, List.reverse(&2, U32, rev), payload), MP.rev_rev(payload, rev)) : {Spec.failure_of(M.text_done(Utf8.decode(_))) == Spec.utf8_result(Utf8.decode(List.append(&2, U32, List.reverse(&2, U32, rev), payload))) : Maybe<&2, U32>}
+              td_f(Utf8.decode(List.append(&2, U32, List.reverse(&2, U32, rev), payload)))
+            case False{}: {==}
+
+def reason_f(+code: U32, m: Maybe<&2, String>) -> {Spec.failure_of(M.close_reason(code, m)) == Spec.utf8_result(m) : Maybe<&2, U32>}:
+  match m:
+    case None{}: {==}
+    case Some{t}: {==}
+
+def coded_f(ok: Bool, +code: U32, +reason: List<&2, U32>) -> {Spec.failure_of(M.close_coded(ok, code, reason)) == Spec.when(Bool.not(ok), 1002, Spec.utf8_fault(True{}, reason)) : Maybe<&2, U32>}:
+  match ok:
+    case False{}: {==}
+    case True{}: reason_f(code, Utf8.decode(reason))
+
+def close_f(payload: List<&2, U32>) -> {Spec.failure_of(M.close(payload)) == Spec.close_fault(payload) : Maybe<&2, U32>}:
+  match payload:
+    case Nil{}: {==}
+    case +x <> t:
+      match t:
+        case Nil{}: {==}
+        case +y <> r: coded_f(F.is_octet(x) && F.is_octet(y) && M.code_ok((x * 256 + y : U32)), (x * 256 + y : U32), r)
+
+def cs_close(ok: Bool, +s: M.State, +payload: List<&2, U32>) -> {Spec.failure_of(M.control_step(ok, s, F.OpClose{}, payload)) == Spec.when(Bool.not(ok), 1002, Spec.close_fault(payload)) : Maybe<&2, U32>}:
+  match ok:
+    case False{}: {==}
+    case True{}: close_f(payload)
+
+def cs_ping(ok: Bool, s: M.State, +payload: List<&2, U32>) -> {Spec.failure_of(M.control_step(ok, s, F.OpPing{}, payload)) == Spec.when(Bool.not(ok), 1002, None{}) : Maybe<&2, U32>}:
+  match ok:
+    case False{}: {==}
+    case True{}:
+      match s:
+        case M.Idle{}: {==}
+        case M.Collecting{t, r, b}: {==}
+        case M.Ended{}: {==}
+
+def cs_pong(ok: Bool, s: M.State, +payload: List<&2, U32>) -> {Spec.failure_of(M.control_step(ok, s, F.OpPong{}, payload)) == Spec.when(Bool.not(ok), 1002, None{}) : Maybe<&2, U32>}:
+  match ok:
+    case False{}: {==}
+    case True{}:
+      match s:
+        case M.Idle{}: {==}
+        case M.Collecting{t, r, b}: {==}
+        case M.Ended{}: {==}
+
+def ctl_close(+s: M.State, +fin: Bool, +payload: List<&2, U32>) -> {Spec.failure_of(M.control_step(fin && Nat.is_le(F.length(payload), 125n), s, F.OpClose{}, payload)) == Spec.control_fault(fin, payload, Spec.close_fault(payload)) : Maybe<&2, U32>}:
+  %MP.control_small(payload) : {Spec.failure_of(M.control_step(fin && Nat.is_le(F.length(payload), 125n), s, F.OpClose{}, payload)) == Spec.when(Bool.not(fin && _), 1002, Spec.close_fault(payload)) : Maybe<&2, U32>}
+  cs_close(fin && Nat.is_le(F.length(payload), 125n), s, payload)
+
+def ctl_ping(+s: M.State, +fin: Bool, +payload: List<&2, U32>) -> {Spec.failure_of(M.control_step(fin && Nat.is_le(F.length(payload), 125n), s, F.OpPing{}, payload)) == Spec.control_fault(fin, payload, None{}) : Maybe<&2, U32>}:
+  %MP.control_small(payload) : {Spec.failure_of(M.control_step(fin && Nat.is_le(F.length(payload), 125n), s, F.OpPing{}, payload)) == Spec.when(Bool.not(fin && _), 1002, None{}) : Maybe<&2, U32>}
+  cs_ping(fin && Nat.is_le(F.length(payload), 125n), s, payload)
+
+def ctl_pong(+s: M.State, +fin: Bool, +payload: List<&2, U32>) -> {Spec.failure_of(M.control_step(fin && Nat.is_le(F.length(payload), 125n), s, F.OpPong{}, payload)) == Spec.control_fault(fin, payload, None{}) : Maybe<&2, U32>}:
+  %MP.control_small(payload) : {Spec.failure_of(M.control_step(fin && Nat.is_le(F.length(payload), 125n), s, F.OpPong{}, payload)) == Spec.when(Bool.not(fin && _), 1002, None{}) : Maybe<&2, U32>}
+  cs_pong(fin && Nat.is_le(F.length(payload), 125n), s, payload)
+
+def start_f(+max: U32, +text: Bool, +fin: Bool, +payload: List<&2, U32>) -> {Spec.failure_of(M.keep(Nat.is_le(F.length(payload), U32.to_nat(max)), text, fin, [], U32.to_nat(max), F.length(payload), payload)) == Spec.start_fault(M.Idle{}, text, fin, payload, max) : Maybe<&2, U32>}:
+  %MP.first_fits(payload, max) : {Spec.failure_of(M.keep(Nat.is_le(F.length(payload), U32.to_nat(max)), text, fin, [], U32.to_nat(max), F.length(payload), payload)) == Spec.when(Bool.not(_), 1009, Spec.utf8_fault(text && fin, payload)) : Maybe<&2, U32>}
+  keep_f(Nat.is_le(F.length(payload), U32.to_nat(max)), fin, text, [], U32.to_nat(max), F.length(payload), payload)
+
+def cont_f(+t: Bool, +r: List<&2, U32>, +b: Nat, +fin: Bool, +payload: List<&2, U32>) -> {Spec.failure_of(M.keep(Nat.is_le(F.length(payload), b), t, fin, r, b, F.length(payload), payload)) == Spec.continue_fault(M.Collecting{t, r, b}, fin, payload) : Maybe<&2, U32>}:
+  %WF.length_eq(payload) : {Spec.failure_of(M.keep(Nat.is_le(F.length(payload), b), t, fin, r, b, F.length(payload), payload)) == Spec.when(Bool.not(Nat.is_le(_, b)), 1009, Spec.utf8_fault(t && fin, List.append(&2, U32, List.reverse(&2, U32, r), payload))) : Maybe<&2, U32>}
+  keep_f(Nat.is_le(F.length(payload), b), fin, t, r, b, F.length(payload), payload)
+
+def idle_f(+max: U32, f: F.Frame) -> {Spec.failure_of(M.step(max, M.Idle{}, f)) == Spec.fault(max, M.Idle{}, f) : Maybe<&2, U32>}:
+  match f:
+    case F.Frame{+fin, op, +payload}:
+      match op:
+        case F.OpClose{}: ctl_close(M.Idle{}, fin, payload)
+        case F.OpPing{}: ctl_ping(M.Idle{}, fin, payload)
+        case F.OpPong{}: ctl_pong(M.Idle{}, fin, payload)
+        case F.OpText{}: start_f(max, True{}, fin, payload)
+        case F.OpBinary{}: start_f(max, False{}, fin, payload)
+        case F.OpContinue{}: {==}
+
+def coll_f(+max: U32, +t: Bool, +r: List<&2, U32>, +b: Nat, f: F.Frame) -> {Spec.failure_of(M.step(max, M.Collecting{t, r, b}, f)) == Spec.fault(max, M.Collecting{t, r, b}, f) : Maybe<&2, U32>}:
+  match f:
+    case F.Frame{+fin, op, +payload}:
+      match op:
+        case F.OpClose{}: ctl_close(M.Collecting{t, r, b}, fin, payload)
+        case F.OpPing{}: ctl_ping(M.Collecting{t, r, b}, fin, payload)
+        case F.OpPong{}: ctl_pong(M.Collecting{t, r, b}, fin, payload)
+        case F.OpText{}: {==}
+        case F.OpBinary{}: {==}
+        case F.OpContinue{}: cont_f(t, r, b, fin, payload)
+
+def L.ws_session_fault_classified(max, st, f):
+  match st:
+    case M.Ended{}: {==}
+    case M.Idle{}: idle_f(max, f)
+    case M.Collecting{t, r, b}: coll_f(max, t, r, b, f)
+
+def fin_phase(p: S.Phase, +c: U32) -> {S.assembled(p, M.Advance{M.Ended{}, M.Failed{c}}) == S.Transition{M.Ended{}, Spec.failed_in(p, c)} : S.Transition}:
+  match p:
+    case S.WsOpen{}: {==}
+    case S.WsClosing{}: {==}
+    case S.WsDone{}: {==}
+
+def false_true(e: {False{} == True{} : Bool}) -> Empty:
+  %e : Bool.pick(Type, _, Empty, Unit)
+  Unit{}
+
+# ---- Every failure ends the assembler ----
+
+def td_e(m: Maybe<&2, String>) -> {Spec.failure_ends(M.text_done(m)) == True{} : Bool}:
+  match m:
+    case None{}: {==}
+    case Some{t}: {==}
+
+def complete_e(text: Bool, +d: List<&2, U32>) -> {Spec.failure_ends(M.complete(text, d)) == True{} : Bool}:
+  match text:
+    case True{}: td_e(Utf8.decode(d))
+    case False{}: {==}
+
+def keep_e(fits: Bool, +text: Bool, fin: Bool, +rev: List<&2, U32>, +budget: Nat, +n: Nat, +payload: List<&2, U32>) -> {Spec.failure_ends(M.keep(fits, text, fin, rev, budget, n, payload)) == True{} : Bool}:
+  match fits:
+    case False{}: {==}
+    case True{}:
+      match fin:
+        case True{}: complete_e(text, List.reverse(&2, U32, M.rev_onto(payload, rev)))
+        case False{}: {==}
+
+def reason_e(+code: U32, m: Maybe<&2, String>) -> {Spec.failure_ends(M.close_reason(code, m)) == True{} : Bool}:
+  match m:
+    case None{}: {==}
+    case Some{t}: {==}
+
+def coded_e(ok: Bool, +code: U32, +reason: List<&2, U32>) -> {Spec.failure_ends(M.close_coded(ok, code, reason)) == True{} : Bool}:
+  match ok:
+    case False{}: {==}
+    case True{}: reason_e(code, Utf8.decode(reason))
+
+def close_e(payload: List<&2, U32>) -> {Spec.failure_ends(M.close(payload)) == True{} : Bool}:
+  match payload:
+    case Nil{}: {==}
+    case +x <> t:
+      match t:
+        case Nil{}: {==}
+        case +y <> r: coded_e(F.is_octet(x) && F.is_octet(y) && M.code_ok((x * 256 + y : U32)), (x * 256 + y : U32), r)
+
+def cs_e(ok: Bool, +s: M.State, op: F.Opcode, +payload: List<&2, U32>) -> {Spec.failure_ends(M.control_step(ok, s, op, payload)) == True{} : Bool}:
+  match ok:
+    case False{}: {==}
+    case True{}:
+      match op:
+        case F.OpClose{}: close_e(payload)
+        case F.OpPing{}: {==}
+        case F.OpPong{}: {==}
+        case F.OpContinue{}: {==}
+        case F.OpText{}: {==}
+        case F.OpBinary{}: {==}
+
+def data_e(+max: U32, s: M.State, kind: Maybe<&2, Bool>, +fin: Bool, +payload: List<&2, U32>) -> {Spec.failure_ends(M.data(max, s, kind, fin, payload)) == True{} : Bool}:
+  match s:
+    case M.Idle{}:
+      match kind:
+        case Some{text}: keep_e(Nat.is_le(F.length(payload), U32.to_nat(max)), text, fin, [], U32.to_nat(max), F.length(payload), payload)
+        case None{}: {==}
+    case M.Collecting{t, r, +b}:
+      match kind:
+        case Some{x}: {==}
+        case None{}: keep_e(Nat.is_le(F.length(payload), b), t, fin, r, b, F.length(payload), payload)
+    case M.Ended{}: {==}
+
+def bk_e(control: Bool, +max: U32, +s: M.State, +op: F.Opcode, +fin: Bool, +payload: List<&2, U32>) -> {Spec.failure_ends(M.by_kind(control, max, s, op, fin, payload)) == True{} : Bool}:
+  match control:
+    case True{}: cs_e(fin && Nat.is_le(F.length(payload), 125n), s, op, payload)
+    case False{}: data_e(max, s, M.data_kind(op), fin, payload)
+
+def live_e(+max: U32, +s: M.State, f: F.Frame) -> {Spec.failure_ends(M.live(max, s, f)) == True{} : Bool}:
+  match f:
+    case F.Frame{fin, +op, payload}: bk_e(F.is_control(op), max, s, op, fin, payload)
+
+def L.ws_session_failure_ends(max, st, f):
+  match st:
+    case M.Ended{}: {==}
+    case M.Idle{}: live_e(max, M.Idle{}, f)
+    case M.Collecting{t, r, b}: live_e(max, M.Collecting{t, r, b}, f)
+
+def L.ws_session_ended_absorbs(max, f): {==}
+
+def inv(+p: S.Phase, r: M.Advance, +code: U32, e: {Spec.failure_of(r) == Some{code} : Maybe<&2, U32>}, ends: {Spec.failure_ends(r) == True{} : Bool}) -> {S.assembled(p, r) == S.Transition{M.Ended{}, Spec.failed_in(p, code)} : S.Transition}:
+  match r:
+    case M.Advance{a, outcome}:
+      match a:
+        case M.Ended{}:
+          match outcome:
+            case M.Failed{+c}:
+              %Equal.cong(Maybe<&2, U32>, U32, unwrap, Some{c}, Some{code}, e) : {S.assembled(p, M.Advance{M.Ended{}, M.Failed{c}}) == S.Transition{M.Ended{}, Spec.failed_in(p, _)} : S.Transition}
+              fin_phase(p, c)
+            case M.Absorbed{}: absurd({S.assembled(p, M.Advance{M.Ended{}, M.Absorbed{}}) == S.Transition{M.Ended{}, Spec.failed_in(p, code)} : S.Transition}, none_some(code, e))
+            case M.Deliver{m}: absurd({S.assembled(p, M.Advance{M.Ended{}, M.Deliver{m}}) == S.Transition{M.Ended{}, Spec.failed_in(p, code)} : S.Transition}, none_some(code, e))
+        case M.Idle{}:
+          match outcome:
+            case M.Failed{c}: absurd({S.assembled(p, M.Advance{M.Idle{}, M.Failed{c}}) == S.Transition{M.Ended{}, Spec.failed_in(p, code)} : S.Transition}, false_true(ends))
+            case M.Absorbed{}: absurd({S.assembled(p, M.Advance{M.Idle{}, M.Absorbed{}}) == S.Transition{M.Ended{}, Spec.failed_in(p, code)} : S.Transition}, none_some(code, e))
+            case M.Deliver{m}: absurd({S.assembled(p, M.Advance{M.Idle{}, M.Deliver{m}}) == S.Transition{M.Ended{}, Spec.failed_in(p, code)} : S.Transition}, none_some(code, e))
+        case M.Collecting{t, rv, b}:
+          match outcome:
+            case M.Failed{c}: absurd({S.assembled(p, M.Advance{M.Collecting{t, rv, b}, M.Failed{c}}) == S.Transition{M.Ended{}, Spec.failed_in(p, code)} : S.Transition}, false_true(ends))
+            case M.Absorbed{}: absurd({S.assembled(p, M.Advance{M.Collecting{t, rv, b}, M.Absorbed{}}) == S.Transition{M.Ended{}, Spec.failed_in(p, code)} : S.Transition}, none_some(code, e))
+            case M.Deliver{m}: absurd({S.assembled(p, M.Advance{M.Collecting{t, rv, b}, M.Deliver{m}}) == S.Transition{M.Ended{}, Spec.failed_in(p, code)} : S.Transition}, none_some(code, e))
+
+def L.ws_session_fault_closes(max, phase, st, f, code, bad):
+  inv(phase, M.step(max, st, f), code, Equal.trans(Maybe<&2, U32>, Spec.failure_of(M.step(max, st, f)), Spec.fault(max, st, f), Some{code}, L.ws_session_fault_classified(max, st, f), bad), L.ws_session_failure_ends(max, st, f))
+
+def L.ws_session_rejected(max, phase, st, code):
+  match phase:
+    case S.WsOpen{}: {==}
+    case S.WsClosing{}: {==}
+    case S.WsDone{}: {==}
