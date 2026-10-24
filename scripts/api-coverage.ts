@@ -290,7 +290,7 @@ export function markdownOutline(markdown: string): {
     }
     const open = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(line);
     if (open === null) {
-      if (/^\s*(?:>\s*)*(?:(?:[-*+]|\d+[.)])\s+)?\s*(?:`{3,}|~{3,})/.test(line))
+      if (/^(?:\s*(?:>|[-*+]|\d+[.)])(?=\s|$))*\s*(?:`{3,}|~{3,})/.test(line))
         nested.push(index + 1);
       continue;
     }

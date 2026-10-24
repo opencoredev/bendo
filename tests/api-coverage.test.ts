@@ -138,10 +138,11 @@ test("a fence inside a blockquote or list is reported, not skipped", () => {
     "> ```",
   ].join("\n");
   const page: Page = { page: "docs/api/bend/t.md", language: "bend", module: undefined, text };
-  expect(coverageProblems([page], api)).toEqual([
-    "docs/api/bend/t.md:5: a fence inside a blockquote, list or indented block is not checked; move it to the top level",
-    "docs/api/bend/t.md:7: a fence inside a blockquote, list or indented block is not checked; move it to the top level",
-  ]);
+  const nested = (line: number) =>
+    `docs/api/bend/t.md:${line}: a fence inside a blockquote, list or indented block is not checked; move it to the top level`;
+  expect(coverageProblems([page], api)).toEqual([nested(5), nested(7)]);
+  const mixed: Page = { ...page, text: `${text}\n- > \`\`\`bend\n  > def broken() -> U32: "x"` };
+  expect(coverageProblems([mixed], api)).toEqual([nested(5), nested(7), nested(8)]);
 });
 
 test("every public API has a reference entry with an example, and every entry names one", () => {
