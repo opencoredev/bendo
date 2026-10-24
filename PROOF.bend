@@ -50,6 +50,7 @@ import ./src/http/request.bend as Request
 import ./src/http/parse.bend as Parse
 import ./src/http/write.bend as Write
 import ./LAWS.bend as Laws
+import ./proof/websocket.bend as WebSocketProof
 import ./proof/equality.bend as Equality
 import ./proof/tokens.bend as Tokens
 import ./proof/headers.bend as Headers
@@ -841,3 +842,30 @@ def Laws.manifest_schema_accepted(Tag, sources, compiled, layers, count, schemas
 def Laws.json_schema_object_node_exact(fields, unknown): JsonSchemaProof.object_node_exact(fields, unknown)
 def Laws.json_schema_string_node_exact(min, max, pattern, format): JsonSchemaProof.string_node_exact(min, max, pattern, format)
 def Laws.json_schema_boolean_node_exact(): {==}
+
+def Laws.websocket_accept_spec(key):
+  WebSocketProof.accept(key)
+
+def Laws.websocket_accept_rfc():
+  WebSocketProof.rfc()
+
+def Laws.websocket_decision_spec(config, req):
+  WebSocketProof.decide(config, req)
+
+def Laws.websocket_response_version():
+  WebSocketProof.response_version()
+
+def Laws.websocket_response_success(key, protocol):
+  WebSocketProof.response_success(key, protocol)
+
+def Laws.websocket_rebuilt_framing(res, accept, protocol):
+  WebSocketProof.rebuilt_framing(res, accept, protocol)
+
+def Laws.websocket_rebuilt_response(res, accept, protocol):
+  WebSocketProof.rebuilt_response(res, accept, protocol)
+
+def Laws.websocket_response_refuse_400():
+  {==}
+
+def Laws.websocket_response_refuse_403():
+  {==}

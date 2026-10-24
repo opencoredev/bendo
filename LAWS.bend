@@ -8,6 +8,7 @@ import ./proof/manifest-schema-spec.bend as ManifestSchemaSpec
 import ./src/data/json-schema.bend as JsonSchema
 import ./proof/json-schema-spec.bend as JsonSchemaSpec
 import ./src/data/schema-pattern.bend as SchemaPattern
+import ./src/app/transport_response.bend as WebSocketTransport
 import ./src/mw/etag.bend as ETag
 import ./src/http/conditional.bend as Conditional
 import ./src/mw/body_limit.bend as BodyLimit
@@ -105,6 +106,8 @@ import ./src/mw/trailing_slash_policy.bend as TrailingPolicy
 import ./proof/trailing-spec.bend as TrailingSpec
 
 import ./src/http/date.bend as HttpDate
+import ./src/http/websocket.bend as WebSocket
+import ./proof/websocket-spec.bend as WebSocketSpec
 import ./proof/date-spec.bend as HttpDateSpec
 
 # BND-45
@@ -2278,3 +2281,69 @@ law json_schema_string_node_exact:
 # the two values the decoder accepts.
 law json_schema_boolean_node_exact:
   {JsonSchema.go(Schema.BooleanSchema{}, JsonSchema.start(Schema.BooleanSchema{})) == Json.JObject{[Json.Field{"type", Json.JString{"boolean"}}]} : Json.Json}
+
+# BND-50: the WebSocket opening handshake (RFC 6455 section 4).
+
+# For every key, Sec-WebSocket-Accept is the padded standard base64 of the
+# SHA-1 of the key's octets followed by the RFC's GUID, which the spec spells
+# out as literal octets.
+# SHA-1 and base64 correctness rest on BND-42's NIST vectors,
+# base64_roundtrip, and the RFC example law below.
+law websocket_accept_spec:
+  for +key: List<&2, U32>
+  {WebSocket.accept(key) == WebSocketSpec.accept(key) : String}
+
+# The worked example of RFC 6455 section 1.3.
+law websocket_accept_rfc:
+  {WebSocket.accept(Bytes.encode("dGhlIHNhbXBsZSBub25jZQ==")) == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=" : String}
+
+# For every configuration and request, the handshake decision equals
+# WebSocketSpec.decide: 400 unless the request is a GET over HTTP/1.1 with no
+# Transfer-Encoding and at most one zero Content-Length, a "websocket" Upgrade
+# element and an "upgrade" Connection element (ASCII case ignored), and exactly
+# one key that is the canonical padded base64 of 16 octets; then 400 for a
+# missing or repeated version and 426 for one that is not "13"; then 403 when
+# a listed origin policy does not list the single Origin field's
+# serialization; otherwise accept with the computed key and the first
+# configured subprotocol the client offered, or none.
+# Domain: canonical requests with lowercase header names. Origin.canonical
+# is shared by the implementation and spec; independent coverage is BND-85.
+law websocket_decision_spec:
+  for +config: WebSocket.Config
+  for +req: Request.Req
+  {WebSocket.decide(config, req) == WebSocketSpec.decide(config, req) : WebSocket.Decision}
+
+# The pure opening response names exactly version 13 on a 426.
+law websocket_response_version:
+  {WebSocket.response(WebSocket.Refuse{426}) == Response.Res{426, [Request.Header{"sec-websocket-version", Bytes.encode("13")}], [], None{}} : Response.Res}
+
+# A successful pure opening response has precisely the RFC fields, with the
+# selected protocol present exactly in the Some case (including its value).
+law websocket_response_success:
+  for +key: List<&2, U32>
+  for +protocol: Maybe<&2, String>
+  {WebSocket.response(WebSocket.Accept{WebSocket.accept(key), protocol}) == Response.Res{101, Request.Header{"upgrade", Bytes.encode("websocket")} <> (Request.Header{"connection", Bytes.encode("Upgrade")} <> (Request.Header{"sec-websocket-accept", Bytes.encode(WebSocketSpec.accept(key))} <> WebSocketSpec.protocol_field(protocol))), [], None{}} : Response.Res}
+
+# Even arbitrary middleware responses rebuild to an empty 101 with neither
+# Content-Length nor Transfer-Encoding, checking field names case-insensitively.
+law websocket_rebuilt_framing:
+  for +res: Response.Res
+  for +accept: String
+  for +protocol: Maybe<&2, String>
+  {WebSocketSpec.frameless(WebSocketTransport.rebuilt(res, accept, protocol)) == True{} : Bool}
+
+# Every middleware field survives unchanged, in its original order and with
+# duplicates intact, except handshake-owned fields, framing and the marker.
+# The independent spec puts the computed handshake first, with no body or rep.
+law websocket_rebuilt_response:
+  for +res: Response.Res
+  for +accept: String
+  for +protocol: Maybe<&2, String>
+  {WebSocketTransport.rebuilt(res, accept, protocol) == WebSocketSpec.rebuilt(res, accept, protocol) : Response.Res}
+
+# Pure refusal responses are empty; the context layer supplies error bodies.
+law websocket_response_refuse_400:
+  {WebSocket.response(WebSocket.Refuse{400}) == Response.Res{400, [], [], None{}} : Response.Res}
+
+law websocket_response_refuse_403:
+  {WebSocket.response(WebSocket.Refuse{403}) == Response.Res{403, [], [], None{}} : Response.Res}
