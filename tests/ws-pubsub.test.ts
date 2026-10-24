@@ -226,8 +226,9 @@ test("1,000 subscribe-and-disconnect cycles leave the registry empty", async () 
   }
   await eventually("/size", "0");
   expect(await get("/members/e")).toBe("0");
-  // Every close path also revoked its connection's ID.
+  // Every close path also revoked its connection's ID and forgot its claim.
   await eventually("/connections", "0");
+  await eventually("/claims", "0");
 }, 60000);
 
 test("a full mailbox drops that subscriber's copy without blocking anyone", async () => {
@@ -315,15 +316,20 @@ test("subscribes racing their connection's close never leave a registration", as
   expect(await get("/members/race")).toBe("0");
 }, 60000);
 
-test("an oversized publication still prunes a closed subscriber", async () => {
+test("an oversized publication still prunes a closed subscriber and its claim", async () => {
+  await eventually("/claims", "0");
   // `max_message` is 20 bytes for both subscribers.
   using small = await subscriber("/ws/o?mode=small");
   expect(await post("/ghost/o")).toBe("yes");
   expect(await get("/members/o")).toBe("2");
+  // Each joined under its own token.
+  expect(await get("/claims")).toBe("2");
   const big = "x".repeat(24);
   // The open subscriber refuses the copy; the closed one is gone and pruned.
   expect(await publish("o", big)).toBe("0 1 1");
   expect(await get("/members/o")).toBe("1");
+  // The ghost never closes through the hub, so only the prune can forget its claim.
+  expect(await get("/claims")).toBe("1");
   expect(await publish("o", big)).toBe("0 1 0");
   expect(await get("/members/o")).toBe("1");
   expect(await publish("o", "ok")).toBe("1 0 0");
@@ -341,6 +347,33 @@ test("a join that times out after it is queued is still revoked on close", async
   wire.socket.destroy();
   // The close revokes it by token.
   await eventually("/connections", "0");
+  await eventually("/claims", "0");
+}, 30000);
+
+test("a close while the hub's queue stays full still releases its connection", async () => {
+  await eventually("/connections", "0");
+  await eventually("/claims", "0");
+  // /jammed's hub reaches the same registry through a gate that can hold every
+  // request, and gives up on an ordinary request after 100 ms.
+  const wire = await open("/jammed");
+  expect(await wire.text()).toMatch(/^ready [1-9]\d* yes$/);
+  expect(await get("/connections")).toBe("1");
+  expect(await get("/claims")).toBe("1");
+  expect(await post("/jam/hold")).toBe("held");
+  try {
+    // The gate holds one request and the 128-slot queue behind it fills up.
+    expect(Number(await post("/jam/fill"))).toBeGreaterThanOrEqual(128);
+    wire.socket.destroy();
+    // Ten times the 100 ms an ordinary request waits for room before it gives up.
+    await Bun.sleep(1000);
+    expect(await post("/jam/fill")).toBe("0");
+    expect(await get("/connections")).toBe("1");
+  } finally {
+    expect(await post("/jam/free")).toBe("free");
+  }
+  // The release waited for room instead of giving up, and lands once the queue drains.
+  await eventually("/connections", "0");
+  await eventually("/claims", "0");
 }, 30000);
 
 function median(values: number[]): number {
