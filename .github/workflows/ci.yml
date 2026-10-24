@@ -50,9 +50,14 @@ jobs:
         run: timeout --foreground 12m bun run check:static
 
   tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
+      BENDO_TEST_SHARD: ${{ matrix.shard }}
       BEND_NO_TELEMETRY: "1"
     steps:
       - uses: actions/checkout@v4
@@ -87,6 +92,8 @@ jobs:
           sh /tmp/bendo-elan-init.sh -y --no-modify-path --default-toolchain none
       - name: Install dependencies
         run: bun install --frozen-lockfile
+      - name: Guard shard assignment
+        run: bun run test:shards
       - name: Check the Bend pin
         run: bun run check:bend
       - name: Fingerprint the native toolchain
@@ -101,10 +108,12 @@ jobs:
           path: |
             .cache/bend
             .cache/test-timings.json
-          key: ${{ runner.os }}-${{ runner.arch }}-fixtures-v1-${{ steps.toolchain.outputs.id }}-${{ hashFiles('**/*.bend', '**/*.c', '**/*.js', 'tests/**/*.ts', 'prototypes/**/*.json', '.bend-version') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-fixtures-v2-${{ steps.toolchain.outputs.id }}-shard-${{ matrix.shard }}-${{ hashFiles('**/*.bend', '**/*.c', '**/*.js', 'tests/**/*.ts', 'prototypes/**/*.json', 'scripts/*.ts', 'scripts/test-timings.json', 'package.json', '.bend-version') }}
           restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-fixtures-v2-${{ steps.toolchain.outputs.id }}-shard-${{ matrix.shard }}-
+            ${{ runner.os }}-${{ runner.arch }}-fixtures-v2-${{ steps.toolchain.outputs.id }}-
+            ${{ runner.os }}-${{ runner.arch }}-fixtures-v2-
             ${{ runner.os }}-${{ runner.arch }}-fixtures-v1-${{ steps.toolchain.outputs.id }}-
-            ${{ runner.os }}-${{ runner.arch }}-fixtures-v1-
       - name: Tests
         run: bun run test:ci
       - name: Save compiled fixtures
