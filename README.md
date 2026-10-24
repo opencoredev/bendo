@@ -139,8 +139,9 @@ baseline.
 ## Proofs
 
 [`LAWS.bend`](LAWS.bend) and the law modules it imports under `proof/` state
-653 laws about Bendo's pure code, and [`PROOF.bend`](PROOF.bend) proves every
-one. Bend's proof checker runs on a Lean-backed kernel. The laws cover, among
+661 laws about Bendo's pure code as of 2026-10-24, and
+[`PROOF.bend`](PROOF.bend) proves every one. `bun scripts/laws-index.ts` prints
+the current count. Bend's proof checker runs on a Lean-backed kernel. The laws cover, among
 other things:
 
 - every well-formed request, written out, parses back to the same request, and
