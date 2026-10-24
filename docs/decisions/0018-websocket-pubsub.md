@@ -40,9 +40,22 @@ subscription only for an active ID. A subscribe that the actor serializes
 after the close cleanup leaves the registry unchanged and returns `False`, so
 it cannot re-register a dead connection.
 
-The removal is a store update with the hub's timeout. If it fails, the dead
-entry is still harmless: its connection is closed, so the next publication to
-that topic counts it as `gone` and removes it. Liveness is checked apart from
+The release must reach the actor, or the ID stays active and its claim stays
+in the ledger forever (BND-98). A store update with the hub's timeout gives up
+when the actor's 128-request queue stays full past it, so the release instead
+goes through `Store.update_queued`: a blocking `Chan.send` that parks until
+there is room, then a bounded wait for the reply. Parked senders form a FIFO
+ring in the channel, and each slot the actor frees goes to the oldest one, so
+the release cannot be starved by later requests. We considered retrying a
+bounded update with backoff instead. Each retry after a reply timeout would
+queue a duplicate release (harmless, since a second release of a token is a
+no-op), adding load to the queue that was already full.
+
+A publication's pruning is a bounded update. If it fails, the dead entry is
+still harmless: its connection is closed, so the next publication to that
+topic counts it as `gone` and prunes it again. Pruning goes through
+`T.prune`, which also forgets the claims of the pruned IDs, so the claims
+list does not grow with connections whose own release never ran. Liveness is checked apart from
 the message: when a message is too large for the subscriber's `max_message`,
 the publisher does not offer it, and instead probes the handle's `alive`
 channel. That channel has no room and no receiver, so a send to it never
@@ -136,4 +149,15 @@ and records the new ID under `k`. Registry changes keep every claim.
 those claims. So a claim followed by any registry changes and then a release
 of the same token leaves the claimed ID inactive (`ws_topics_late_join_released`).
 `claim` and `release` preserve `Spec.wf`, and so does every ledger history
-(`ws_topics_ledger_history_wf`). `proof/ws-topics.bend` proves all of them.
+(`ws_topics_ledger_history_wf`).
+
+BND-98 added laws about other connections' claims. A claim or release under
+one token keeps every other token's claims. A prune changes the registry as
+`remove_all` does and keeps exactly the claims of the IDs it did not prune.
+Over any ledger history after a claim, including other tokens' claims and
+releases, prunes, and the same token's earlier claims and releases, a release
+of the token leaves the claimed ID inactive and in no topic
+(`ws_topics_history_release_revokes`, `ws_topics_history_release_leaves`). The
+proof carries one invariant through each step: the ID is below `next`, and
+either still claimed under the token or inactive and unsubscribed.
+`proof/ws-topics.bend` proves all of them.

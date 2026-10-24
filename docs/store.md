@@ -100,7 +100,7 @@ acknowledgment. Multiple stores are independent; there is no transaction across
 stores.
 
 The direct module `src/app/store.bend` exports `Store<S>`, `Error`, `get`, `set`,
-and `update`. `src/app/store_actor.bend` exports `store` and
+`update` and `update_queued`. `src/app/store_actor.bend` exports `store` and
 `store_with_timeout`; it holds the `@unsafe` actor loop apart from the pure
 types, so laws can import the request context. Public operation names have a
 `store_` prefix because `B.get` already registers routes.
@@ -126,6 +126,12 @@ Handle both failures with a 503 (or your app's 500 policy), as the example does.
 There is no implicit exception or HTTP conversion in this IO-level API. If an
 actor stops answering without closing its mailbox, calls time out. A handler's
 failed response does not affect the independent actor.
+
+`Store.update_queued(S, handle, change)` is `update` for cleanup that must not
+be lost. Its send waits for room in the mailbox for as long as that takes,
+behind any caller already waiting, and only the reply wait is bounded. So
+`Fail{Store.TimedOut{}}` from it means the update is queued and will still be
+applied. Pub/sub uses it to release a closing connection.
 
 A timed-out write may still commit if its message was accepted. Do not blindly
 retry non-idempotent updates; use app-owned operation IDs if retries are needed.
