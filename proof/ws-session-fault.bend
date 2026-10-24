@@ -142,7 +142,90 @@ def fin_phase(p: S.Phase, +c: U32) -> {S.assembled(p, M.Advance{M.Ended{}, M.Fai
     case S.WsClosing{}: {==}
     case S.WsDone{}: {==}
 
-def inv(+p: S.Phase, r: M.Advance, +code: U32, e: {Spec.failure_of(r) == Some{code} : Maybe<&2, U32>}) -> {S.assembled(p, r) == S.Transition{M.Ended{}, Spec.failed_in(p, code)} : S.Transition}:
+def false_true(e: {False{} == True{} : Bool}) -> Empty:
+  %e : Bool.pick(Type, _, Empty, Unit)
+  Unit{}
+
+# ---- Every failure ends the assembler ----
+
+def td_e(m: Maybe<&2, String>) -> {Spec.failure_ends(M.text_done(m)) == True{} : Bool}:
+  match m:
+    case None{}: {==}
+    case Some{t}: {==}
+
+def complete_e(text: Bool, +d: List<&2, U32>) -> {Spec.failure_ends(M.complete(text, d)) == True{} : Bool}:
+  match text:
+    case True{}: td_e(Utf8.decode(d))
+    case False{}: {==}
+
+def keep_e(fits: Bool, +text: Bool, fin: Bool, +rev: List<&2, U32>, +budget: Nat, +n: Nat, +payload: List<&2, U32>) -> {Spec.failure_ends(M.keep(fits, text, fin, rev, budget, n, payload)) == True{} : Bool}:
+  match fits:
+    case False{}: {==}
+    case True{}:
+      match fin:
+        case True{}: complete_e(text, List.reverse(&2, U32, M.rev_onto(payload, rev)))
+        case False{}: {==}
+
+def reason_e(+code: U32, m: Maybe<&2, String>) -> {Spec.failure_ends(M.close_reason(code, m)) == True{} : Bool}:
+  match m:
+    case None{}: {==}
+    case Some{t}: {==}
+
+def coded_e(ok: Bool, +code: U32, +reason: List<&2, U32>) -> {Spec.failure_ends(M.close_coded(ok, code, reason)) == True{} : Bool}:
+  match ok:
+    case False{}: {==}
+    case True{}: reason_e(code, Utf8.decode(reason))
+
+def close_e(payload: List<&2, U32>) -> {Spec.failure_ends(M.close(payload)) == True{} : Bool}:
+  match payload:
+    case Nil{}: {==}
+    case +x <> t:
+      match t:
+        case Nil{}: {==}
+        case +y <> r: coded_e(F.is_octet(x) && F.is_octet(y) && M.code_ok((x * 256 + y : U32)), (x * 256 + y : U32), r)
+
+def cs_e(ok: Bool, +s: M.State, op: F.Opcode, +payload: List<&2, U32>) -> {Spec.failure_ends(M.control_step(ok, s, op, payload)) == True{} : Bool}:
+  match ok:
+    case False{}: {==}
+    case True{}:
+      match op:
+        case F.OpClose{}: close_e(payload)
+        case F.OpPing{}: {==}
+        case F.OpPong{}: {==}
+        case F.OpContinue{}: {==}
+        case F.OpText{}: {==}
+        case F.OpBinary{}: {==}
+
+def data_e(+max: U32, s: M.State, kind: Maybe<&2, Bool>, +fin: Bool, +payload: List<&2, U32>) -> {Spec.failure_ends(M.data(max, s, kind, fin, payload)) == True{} : Bool}:
+  match s:
+    case M.Idle{}:
+      match kind:
+        case Some{text}: keep_e(Nat.is_le(F.length(payload), U32.to_nat(max)), text, fin, [], U32.to_nat(max), F.length(payload), payload)
+        case None{}: {==}
+    case M.Collecting{t, r, +b}:
+      match kind:
+        case Some{x}: {==}
+        case None{}: keep_e(Nat.is_le(F.length(payload), b), t, fin, r, b, F.length(payload), payload)
+    case M.Ended{}: {==}
+
+def bk_e(control: Bool, +max: U32, +s: M.State, +op: F.Opcode, +fin: Bool, +payload: List<&2, U32>) -> {Spec.failure_ends(M.by_kind(control, max, s, op, fin, payload)) == True{} : Bool}:
+  match control:
+    case True{}: cs_e(fin && Nat.is_le(F.length(payload), 125n), s, op, payload)
+    case False{}: data_e(max, s, M.data_kind(op), fin, payload)
+
+def live_e(+max: U32, +s: M.State, f: F.Frame) -> {Spec.failure_ends(M.live(max, s, f)) == True{} : Bool}:
+  match f:
+    case F.Frame{fin, +op, payload}: bk_e(F.is_control(op), max, s, op, fin, payload)
+
+def L.ws_session_failure_ends(max, st, f):
+  match st:
+    case M.Ended{}: {==}
+    case M.Idle{}: live_e(max, M.Idle{}, f)
+    case M.Collecting{t, r, b}: live_e(max, M.Collecting{t, r, b}, f)
+
+def L.ws_session_ended_absorbs(max, f): {==}
+
+def inv(+p: S.Phase, r: M.Advance, +code: U32, e: {Spec.failure_of(r) == Some{code} : Maybe<&2, U32>}, ends: {Spec.failure_ends(r) == True{} : Bool}) -> {S.assembled(p, r) == S.Transition{M.Ended{}, Spec.failed_in(p, code)} : S.Transition}:
   match r:
     case M.Advance{a, outcome}:
       match a:
@@ -153,11 +236,19 @@ def inv(+p: S.Phase, r: M.Advance, +code: U32, e: {Spec.failure_of(r) == Some{co
               fin_phase(p, c)
             case M.Absorbed{}: absurd({S.assembled(p, M.Advance{M.Ended{}, M.Absorbed{}}) == S.Transition{M.Ended{}, Spec.failed_in(p, code)} : S.Transition}, none_some(code, e))
             case M.Deliver{m}: absurd({S.assembled(p, M.Advance{M.Ended{}, M.Deliver{m}}) == S.Transition{M.Ended{}, Spec.failed_in(p, code)} : S.Transition}, none_some(code, e))
-        case M.Idle{}: absurd({S.assembled(p, M.Advance{M.Idle{}, outcome}) == S.Transition{M.Ended{}, Spec.failed_in(p, code)} : S.Transition}, none_some(code, e))
-        case M.Collecting{t, rv, b}: absurd({S.assembled(p, M.Advance{M.Collecting{t, rv, b}, outcome}) == S.Transition{M.Ended{}, Spec.failed_in(p, code)} : S.Transition}, none_some(code, e))
+        case M.Idle{}:
+          match outcome:
+            case M.Failed{c}: absurd({S.assembled(p, M.Advance{M.Idle{}, M.Failed{c}}) == S.Transition{M.Ended{}, Spec.failed_in(p, code)} : S.Transition}, false_true(ends))
+            case M.Absorbed{}: absurd({S.assembled(p, M.Advance{M.Idle{}, M.Absorbed{}}) == S.Transition{M.Ended{}, Spec.failed_in(p, code)} : S.Transition}, none_some(code, e))
+            case M.Deliver{m}: absurd({S.assembled(p, M.Advance{M.Idle{}, M.Deliver{m}}) == S.Transition{M.Ended{}, Spec.failed_in(p, code)} : S.Transition}, none_some(code, e))
+        case M.Collecting{t, rv, b}:
+          match outcome:
+            case M.Failed{c}: absurd({S.assembled(p, M.Advance{M.Collecting{t, rv, b}, M.Failed{c}}) == S.Transition{M.Ended{}, Spec.failed_in(p, code)} : S.Transition}, false_true(ends))
+            case M.Absorbed{}: absurd({S.assembled(p, M.Advance{M.Collecting{t, rv, b}, M.Absorbed{}}) == S.Transition{M.Ended{}, Spec.failed_in(p, code)} : S.Transition}, none_some(code, e))
+            case M.Deliver{m}: absurd({S.assembled(p, M.Advance{M.Collecting{t, rv, b}, M.Deliver{m}}) == S.Transition{M.Ended{}, Spec.failed_in(p, code)} : S.Transition}, none_some(code, e))
 
 def L.ws_session_fault_closes(max, phase, st, f, code, bad):
-  inv(phase, M.step(max, st, f), code, Equal.trans(Maybe<&2, U32>, Spec.failure_of(M.step(max, st, f)), Spec.fault(max, st, f), Some{code}, L.ws_session_fault_classified(max, st, f), bad))
+  inv(phase, M.step(max, st, f), code, Equal.trans(Maybe<&2, U32>, Spec.failure_of(M.step(max, st, f)), Spec.fault(max, st, f), Some{code}, L.ws_session_fault_classified(max, st, f), bad), L.ws_session_failure_ends(max, st, f))
 
 def L.ws_session_rejected(max, phase, st, code):
   match phase:

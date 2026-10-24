@@ -82,6 +82,43 @@ law ws_session_trace_safe:
   for +events: List<&2, S.WsEvent>
   {Spec.watch(S.trace(max, events, S.opened()), False{}, False{}) == True{} : Bool}
 
+# BND-52 review round 2. The same, and no message is delivered by the action
+# that writes the first close, since the connection writes that close before
+# it delivers the action's notice. Implies the monitor of ws_session_trace_safe.
+law ws_session_trace_strict:
+  for +max: U32
+  for +events: List<&2, S.WsEvent>
+  {Spec.strict_watch(S.trace(max, events, S.opened()), False{}, False{}) == True{} : Bool}
+
+# After any history, a valid close from the peer (final, at most 125 bytes, an
+# empty payload or a code a peer may send then a UTF-8 reason) ends message
+# assembly, including a message cut off between its fragments. While open it
+# writes one close echoing the code and reason; while closing it writes
+# nothing; either way it delivers the finish notice with that code (1005 when
+# empty) and reason. Once done it is ignored.
+law ws_session_trace_close:
+  for +max: U32
+  for +events: List<&2, S.WsEvent>
+  for +payload: List<&2, U32>
+  for +valid: {Spec.control_fault(True{}, payload, Spec.close_fault(payload)) == None{} : Maybe<&2, U32>}
+  {S.step(max, S.settle(max, events, S.opened()), S.Inbound{F.Frame{True{}, F.OpClose{}, payload}}) == Spec.close_reply(S.settle(max, events, S.opened()), payload) : S.Transition}
+
+law ws_session_close_empty:
+  for +max: U32
+  for +events: List<&2, S.WsEvent>
+  {S.step(max, S.settle(max, events, S.opened()), S.Inbound{F.Frame{True{}, F.OpClose{}, []}}) == Spec.close_reply(S.settle(max, events, S.opened()), []) : S.Transition}
+
+# A valid close after the first fragment of a message that fits: the message
+# is dropped, assembly ends and the close is echoed.
+law ws_session_close_interrupts:
+  for +max: U32
+  for +text: Bool
+  for +first: List<&2, U32>
+  for +fits: {Spec.fits(max, first) == True{} : Bool}
+  for +payload: List<&2, U32>
+  for +valid: {Spec.control_fault(True{}, payload, Spec.close_fault(payload)) == None{} : Maybe<&2, U32>}
+  {S.step(max, S.settle(max, [Spec.opening(text, first)], S.opened()), S.Inbound{F.Frame{True{}, F.OpClose{}, payload}}) == Spec.close_finish(S.WsOpen{}, Spec.close_code_in(payload), Spec.close_reason_in(payload)) : S.Transition}
+
 # After any history, a valid ping (final, at most 125 bytes) gets exactly one
 # identical pong unless the session is done (the peer's close, a failure or a
 # drop), and changes nothing else.
@@ -112,6 +149,33 @@ law ws_session_single_message:
   for +payload: List<&2, U32>
   {S.trace(max, [S.Inbound{F.Frame{True{}, Spec.data_op(text), payload}}], S.opened()) == [Spec.finale(max, text, payload)] : List<&2, S.Action>}
 
+# Where each message leaves the session: open with nothing being assembled
+# (S.opened(), ready for the next message) when it is delivered, done when it
+# fails.
+law ws_session_fragments_end:
+  for +max: U32
+  for +text: Bool
+  for +first: List<&2, U32>
+  for +pieces: List<&2, Spec.Piece>
+  for +last: List<&2, U32>
+  {S.settle(max, Spec.opening(text, first) <> Spec.tail_events(pieces, last), S.opened()) == Spec.expected_end(max, text, first, pieces, last) : S.Session}
+
+law ws_session_single_message_end:
+  for +max: U32
+  for +text: Bool
+  for +payload: List<&2, U32>
+  {S.settle(max, [S.Inbound{F.Frame{True{}, Spec.data_op(text), payload}}], S.opened()) == Spec.finale_end(max, text, payload) : S.Session}
+
+# A data frame that fits and, if text, is UTF-8 delivers its message and
+# leaves the session ready for the next.
+law ws_session_message_ready:
+  for +max: U32
+  for +text: Bool
+  for +payload: List<&2, U32>
+  for +fits: {Spec.fits(max, payload) == True{} : Bool}
+  for +valid: {Spec.utf8_fault(text, payload) == None{} : Maybe<&2, U32>}
+  {S.step(max, S.opened(), S.Inbound{F.Frame{True{}, Spec.data_op(text), payload}}) == S.Transition{M.Idle{}, S.Action{S.WsOpen{}, None{}, S.WsMessage{Spec.message_of(text, payload)}}} : S.Transition}
+
 # Without its final fragment a message is never delivered, whatever its pieces.
 law ws_session_incomplete:
   for +max: U32
@@ -129,6 +193,19 @@ law ws_session_fault_classified:
   for +f: F.Frame
   {Spec.failure_of(M.step(max, st, f)) == Spec.fault(max, st, f) : Maybe<&2, U32>}
 
+# Every failure leaves the assembler Ended, and once ended it absorbs every
+# frame.
+law ws_session_failure_ends:
+  for +max: U32
+  for +st: M.State
+  for +f: F.Frame
+  {Spec.failure_ends(M.step(max, st, f)) == True{} : Bool}
+
+law ws_session_ended_absorbs:
+  for +max: U32
+  for +f: F.Frame
+  {M.step(max, M.Ended{}, f) == M.Advance{M.Ended{}, M.Absorbed{}} : M.Advance}
+
 # A classified error ends the session with that code and, while closing or
 # done, writes no second close.
 law ws_session_fault_closes:
@@ -140,8 +217,25 @@ law ws_session_fault_closes:
   for +bad: {Spec.fault(max, st, f) == Some{code} : Maybe<&2, U32>}
   {S.step(max, S.Session{phase, st}, S.Inbound{f}) == S.Transition{M.Ended{}, Spec.failed_in(phase, code)} : S.Transition}
 
+# The frame decoder rejects only with 1002 or 1009, whether it starts a frame
+# or resumes one waiting for payload bytes (from any body).
+law ws_session_start_rejects:
+  for cfg: F.Config
+  for +bytes: List<&2, U32>
+  for +code: U32
+  for +rejected: {F.start(cfg, bytes) == F.Reject{code} : F.Decoded}
+  {Spec.decoder_code(code) == True{} : Bool}
+
+law ws_session_resume_rejects:
+  for body: F.Body
+  for +bytes: List<&2, U32>
+  for +code: U32
+  for +rejected: {F.resume(body, bytes) == F.Reject{code} : F.Decoded}
+  {Spec.decoder_code(code) == True{} : Bool}
+
 # A decoder rejection carries its own code (1002, or 1009 for a frame over the
-# limit) and ends the session the same way.
+# limit) and ends the session the same way. That the connection's chunked
+# decoding (F.start, F.resume) agrees with whole-buffer F.decode is BND-95.
 law ws_session_rejected:
   for +max: U32
   for +phase: S.Phase

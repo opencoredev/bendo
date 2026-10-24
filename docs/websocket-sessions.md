@@ -65,7 +65,7 @@ back to back; a command sent to an idle connection waits at most `poll_max_ms`
 (below). When the connection ends, commands still queued are discarded, so a
 saved handle does not keep their payloads alive. Do not wait inside a
 handler for an enqueued frame to be delivered: delivery resumes when the handler
-returns. See [the concurrency decision](decisions/0013-websocket-mailbox.md)
+returns. See [the concurrency decision](decisions/0015-websocket-mailbox.md)
 for BND-53's publication seam and the slow-recipient policy.
 
 ## Limits and timers
@@ -88,7 +88,7 @@ An idle connection backs off its socket wait from `poll_ms` to `poll_max_ms`,
 trading up to `poll_max_ms` of latency on the first command after a quiet
 period for less CPU. With the defaults, 1,000 idle connections used about 10%
 of a core on our test server, against 83% for a fixed 5 ms poll. See
-[the concurrency decision](decisions/0013-websocket-mailbox.md) for details.
+[the concurrency decision](decisions/0015-websocket-mailbox.md) for details.
 
 Keepalive pings alone do not reset the idle timer. Received pong bytes do. This
 is an inbound-idle policy, not a matching-pong watchdog. Deadline checks run at
@@ -104,6 +104,8 @@ application-allocation caveat.
 ## Closure
 
 A peer close gets one identical echo and one `close(code, reason)` callback.
+A close that arrives between a message's fragments discards the partial
+message.
 An empty peer close reports 1005 with an empty reason. A server close waits for
 the peer's close, then reports that peer's code and reason. If the peer never
 acknowledges, the callback reports 1006. Abrupt EOF and transport failures also

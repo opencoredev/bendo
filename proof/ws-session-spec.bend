@@ -108,6 +108,23 @@ def watch(actions: List<&2, S.Action>, +closed: Bool, +finished: Bool) -> Bool:
     case S.Action{phase, +frame, +notice} <> rest:
       allowed(finished, closed, frame, notice) && watch(rest, closed || writes_close(frame), finished || finishes(notice))
 
+# `allowed`, and also no message in the action that writes the first close: the
+# connection writes an action's frame before it delivers the notice, so that
+# message would arrive after the close.
+def strict_allowed(finished: Bool, closed: Bool, frame: Maybe<&2, F.Frame>, notice: S.Notice) -> Bool:
+  match finished:
+    case True{}: nothing(frame) && silent(notice)
+    case False{}:
+      match closed:
+        case True{}: pong_or_nothing(frame) && Bool.not(delivers(notice))
+        case False{}: Bool.not(writes_close(frame) && delivers(notice))
+
+def strict_watch(actions: List<&2, S.Action>, +closed: Bool, +finished: Bool) -> Bool:
+  match actions:
+    case Nil{}: True{}
+    case S.Action{phase, +frame, +notice} <> rest:
+      strict_allowed(finished, closed, frame, notice) && strict_watch(rest, closed || writes_close(frame), finished || finishes(notice))
+
 # The answer to a valid ping: one identical pong while the session is live,
 # nothing once it is done. Either way the session is unchanged.
 def ping_reply(s: S.Session, payload: List<&2, U32>) -> S.Transition:
@@ -296,11 +313,25 @@ def fault(+max: U32, st: M.State, f: F.Frame) -> Maybe<&2, U32>:
     case M.Idle{}: frame_fault(max, M.Idle{}, f)
     case M.Collecting{+t, +r, +b}: frame_fault(max, M.Collecting{t, r, b}, f)
 
-# The code with which one assembler step ends the message, if it does.
+# The code of a failed assembler step, whatever state it leaves.
 def failure_of(r: M.Advance) -> Maybe<&2, U32>:
   match r:
-    case M.Advance{M.Ended{}, M.Failed{code}}: Some{code}
-    case M.Advance{st, outcome}: None{}
+    case M.Advance{st, M.Failed{code}}: Some{code}
+    case M.Advance{st, M.Absorbed{}}: None{}
+    case M.Advance{st, M.Deliver{m}}: None{}
+
+def is_ended(st: M.State) -> Bool:
+  match st:
+    case M.Ended{}: True{}
+    case M.Idle{}: False{}
+    case M.Collecting{t, r, b}: False{}
+
+# A failed step leaves the assembler Ended.
+def failure_ends(r: M.Advance) -> Bool:
+  match r:
+    case M.Advance{st, M.Failed{code}}: is_ended(st)
+    case M.Advance{st, M.Absorbed{}}: True{}
+    case M.Advance{st, M.Deliver{m}}: True{}
 
 # How a session ends on an input error: one close frame while open; while
 # closing the close was already sent; once done, nothing.
@@ -329,3 +360,89 @@ def ping_ok(+bytes: List<&2, U32>) -> Bool:
 # whatever max_message is.
 def close_ok(+code: U32, +reason: String) -> Bool:
   peer_code(code) && Nat.is_le(List.length(&2, U32, Utf8.encode(reason)), 123n) && FS.octets(payload(Some{code}, reason))
+
+# ---- Closes from the peer ----
+
+def text_or_empty(m: Maybe<&2, String>) -> String:
+  match m:
+    case None{}: ""
+    case Some{t}: t
+
+# The code a close payload carries: none when empty, else its first two bytes
+# big-endian.
+def close_code_in(payload: List<&2, U32>) -> Maybe<&2, U32>:
+  match payload:
+    case Nil{}: None{}
+    case _ <> Nil{}: None{}
+    case +hi <> +lo <> reason: Some{(hi * 256 + lo : U32)}
+
+# The reason a close payload carries: the UTF-8 text after the code.
+def close_reason_in(payload: List<&2, U32>) -> String:
+  match payload:
+    case Nil{}: ""
+    case _ <> Nil{}: ""
+    case hi <> lo <> reason: text_or_empty(Utf8.decode(reason))
+
+# A valid close from the peer ends message assembly, whatever was in progress.
+# While open it is echoed with the same code and reason; while closing it
+# acknowledges ours and writes nothing; either way the finish notice carries
+# its code (1005 when empty) and reason. Once done it is ignored.
+def close_finish(p: S.Phase, +c: Maybe<&2, U32>, +r: String) -> S.Transition:
+  match p:
+    case S.WsOpen{}: S.Transition{M.Ended{}, S.Action{S.WsDone{}, Some{F.Frame{True{}, F.OpClose{}, payload(c, r)}}, S.WsFinished{code(c), r}}}
+    case S.WsClosing{}: S.Transition{M.Ended{}, S.Action{S.WsDone{}, None{}, S.WsFinished{code(c), r}}}
+    case S.WsDone{}: S.Transition{M.Ended{}, quiet(S.WsDone{})}
+
+def close_reply(s: S.Session, +payload: List<&2, U32>) -> S.Transition:
+  match s:
+    case S.Session{p, a}: close_finish(p, close_code_in(payload), close_reason_in(payload))
+
+# ---- Where a message leaves the session ----
+
+def ended() -> S.Session:
+  S.Session{S.WsDone{}, M.Ended{}}
+
+def ready() -> S.Session:
+  S.Session{S.WsOpen{}, M.Idle{}}
+
+def choose(b: Bool, x: S.Session, y: S.Session) -> S.Session:
+  match b:
+    case True{}: x
+    case False{}: y
+
+def text_end(m: Maybe<&2, String>) -> S.Session:
+  match m:
+    case None{}: ended()
+    case Some{t}: ready()
+
+def delivered_end(text: Bool, bytes: List<&2, U32>) -> S.Session:
+  match text:
+    case True{}: text_end(Utf8.decode(bytes))
+    case False{}: ready()
+
+# A delivered message leaves the session open with nothing being assembled,
+# ready for the next message; a failed one leaves it done.
+def finale_end(+max: U32, +text: Bool, +whole: List<&2, U32>) -> S.Session:
+  choose(fits(max, whole), delivered_end(text, whole), ended())
+
+def expect_end(+max: U32, +text: Bool, pieces: List<&2, Piece>, +seen: List<&2, U32>, +last: List<&2, U32>) -> S.Session:
+  match pieces:
+    case Nil{}: finale_end(max, text, List.append(&2, U32, seen, last))
+    case Interleaved{ping, +b} <> rest: choose(small(b), expect_end(max, text, rest, seen, last), ended())
+    case Middle{+b} <> rest: choose(fits(max, List.append(&2, U32, seen, b)), expect_end(max, text, rest, List.append(&2, U32, seen, b), last), ended())
+
+def expected_end(+max: U32, +text: Bool, +first: List<&2, U32>, pieces: List<&2, Piece>, +last: List<&2, U32>) -> S.Session:
+  choose(fits(max, first), expect_end(max, text, pieces, first, last), ended())
+
+# The message a valid unfragmented data frame carries.
+def message_of(text: Bool, bytes: List<&2, U32>) -> M.Message:
+  match text:
+    case True{}: M.TextMessage{text_or_empty(Utf8.decode(bytes))}
+    case False{}: M.BinaryMessage{bytes}
+
+# ---- Decoder rejections ----
+
+# The codes the frame decoder rejects with: 1002 for a protocol error and 1009
+# for a frame over the limit.
+def decoder_code(+c: U32) -> Bool:
+  U32.is_eq(c, 1002) || U32.is_eq(c, 1009)
