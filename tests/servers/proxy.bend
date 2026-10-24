@@ -64,8 +64,8 @@ def middleware(tag: Tag, c: B.Ctx, env: Env, next: B.Ctx -> IO(B.Res)) -> IO(B.R
     case _: next(c)
 
 def limited(c: Config.Config) -> Config.Config:
-  Config.Config{host, port, limit, headers, idle, head, body, max, keep, router} = c
-  Config.Config{host, port, 4194304, headers, idle, head, body, max, keep, router}
+  Config.Config{host, port, limit, headers, idle, head, body, max, keep, router, mode} = c
+  Config.Config{host, port, 4194304, headers, idle, head, body, max, keep, router, mode}
 
 def config() -> Config.Config:
   limited(Config.defaults())

@@ -7,6 +7,7 @@ import ./proof/manifest-built.bend as ManifestBuiltProof
 import ./proof/manifest-schema.bend as ManifestSchemaProof
 import ./proof/json-schema.bend as JsonSchemaProof
 import ./proof/compose.bend as ComposeProof
+import ./proof/validate.bend as ValidateProof
 import ./proof/plugin.bend as PluginProof
 
 # BND-47
