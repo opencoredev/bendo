@@ -1,0 +1,278 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "Bendo API",
+    "version": "0.0.0"
+  },
+  "tags": [
+    {
+      "name": "users"
+    },
+    {
+      "name": "search"
+    },
+    {
+      "name": "any"
+    },
+    {
+      "name": "caf\u00e9"
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "getRoot",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "x-bendo-route": "GET /"
+      },
+      "options": {
+        "operationId": "optionsRoot",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "x-bendo-route": "OPTIONS /:a?/:b?"
+      }
+    },
+    "/users/{id}": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "getUsersById",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "x-bendo-route": "GET /users/:id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/users/{user_id}/avatar": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "postUsersByUserIdAvatar",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": true
+              }
+            }
+          }
+        },
+        "x-bendo-route": "POST /users/:user_id/avatar",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "url"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/search": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "operationId": "getSearch",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "x-bendo-route": "GET /search",
+        "parameters": [
+          {
+            "name": "x-trace",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/any": {
+      "get": {
+        "tags": [
+          "any"
+        ],
+        "operationId": "getAny",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "x-bendo-route": "ALL /any",
+        "x-bendo-all": true
+      },
+      "post": {
+        "tags": [
+          "any"
+        ],
+        "operationId": "postAny",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "x-bendo-route": "ALL /any",
+        "x-bendo-all": true
+      },
+      "put": {
+        "tags": [
+          "any"
+        ],
+        "operationId": "putAny",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "x-bendo-route": "ALL /any",
+        "x-bendo-all": true
+      },
+      "patch": {
+        "tags": [
+          "any"
+        ],
+        "operationId": "patchAny",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "x-bendo-route": "ALL /any",
+        "x-bendo-all": true
+      },
+      "delete": {
+        "tags": [
+          "any"
+        ],
+        "operationId": "deleteAny",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "x-bendo-route": "ALL /any",
+        "x-bendo-all": true
+      }
+    },
+    "/{a}": {
+      "options": {
+        "operationId": "optionsByA",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "x-bendo-route": "OPTIONS /:a?/:b?",
+        "parameters": [
+          {
+            "name": "a",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Optional in the route; this path is the form that includes it."
+          }
+        ]
+      }
+    },
+    "/{a}/{b}": {
+      "options": {
+        "operationId": "optionsByAByB",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "x-bendo-route": "OPTIONS /:a?/:b?",
+        "parameters": [
+          {
+            "name": "a",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Optional in the route; this path is the form that includes it."
+          },
+          {
+            "name": "b",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Optional in the route; this path is the form that includes it."
+          }
+        ]
+      }
+    },
+    "/caf\u00e9": {
+      "get": {
+        "tags": [
+          "caf\u00e9"
+        ],
+        "operationId": "getCaf\u00e9",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "x-bendo-route": "GET /caf\u00e9"
+      }
+    }
+  }
+}

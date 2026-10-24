@@ -45,6 +45,11 @@ Every command supports `--help`.
 - `bendo gen [entry]` uses the same cached build and manifest validation as `routes`.
   It reports the number of routes. Type generation lands in BND-56; this command
   currently writes no type files or placeholders.
+- `bendo openapi [entry]` builds the app like `routes` and writes an OpenAPI 3.1
+  document from its manifest to `openapi.json`. `--bend <file>` also writes a
+  Bend module that embeds it, `--config <file>` sets info, servers, tags and
+  per-route overrides, and `--manifest <file>` reads a saved manifest instead
+  of building. See [OpenAPI and API docs](openapi.md).
 - `bendo doctor` checks Bend, elan, Lean, clang, and Bun, printing versions and
   paths. Bend must match `.bend-version`; Lean must match `lean-toolchain`. A
   pin is resolved by elan itself (`elan dump-state --no-net` with the pin in
