@@ -127,8 +127,21 @@ def tokens_go(rev: List<&2, String>, +wanted: String, acc: Bool) -> Bool:
 def tokens(parts: List<&2, String>, +wanted: String) -> Bool:
   tokens_go(List.reverse(&2, String, parts), wanted, False{})
 
-def header_hit(n: String, v: List<&2, U32>, +wanted: String) -> Bool:
+def header_hit_spec(n: String, v: List<&2, U32>, +wanted: String) -> Bool:
   String.eq(Bytes.fold(n), "connection") && tokens(Text.split(Bytes.ascii(v), ','), wanted)
+
+def header_value_hit(v: List<&2, U32>, +wanted: String, named: Bool) -> Bool:
+  match named:
+    case True{}:
+      tokens(Text.split(Bytes.ascii(v), ','), wanted)
+    case False{}:
+      False{}
+
+# Bool.and is eager, so header_hit_spec split and decoded every field's
+# value. Only a Connection field's value is parsed now (law
+# hot_connection_header_hit).
+def header_hit(n: String, v: List<&2, U32>, +wanted: String) -> Bool:
+  header_value_hit(v, wanted, String.eq(Bytes.fold(n), "connection"))
 
 def has_token_spec(hs: List<&2, R.Header>, +wanted: String) -> Bool:
   match hs:

@@ -6,6 +6,7 @@ import ../src/http/bytes.bend as Bytes
 import ../src/http/response.bend as Response
 import ../src/app/context.bend as Context
 import ../src/http/request.bend as Request
+import ../src/http/connection.bend as Connection
 import ../src/data/json.bend as Json
 import ../src/mw/cors.bend as Cors
 import ../src/mw/secure_headers.bend as SecureHeaders
@@ -65,3 +66,9 @@ law hot_secure_prepared:
   for +c: Context.Ctx<Vars>
   for next: Context.Ctx<Vars> -> IO(Response.Res)
   {SecureHeaders.middleware(Vars, config, c, next) == SecureHeaders.prepared(Vars, SecureHeaders.policy(config), c, next) : IO(Response.Res)}
+
+law hot_connection_header_hit:
+  for +n: String
+  for +v: List<&2, U32>
+  for +wanted: String
+  {Connection.header_hit(n, v, wanted) == Connection.header_hit_spec(n, v, wanted) : Bool}

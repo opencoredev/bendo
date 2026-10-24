@@ -6,6 +6,8 @@ import ./utf8.bend as UP
 import ../src/http/bytes.bend as B
 import ../src/http/response.bend as R
 import ../src/app/context.bend as C
+import ../src/http/connection.bend as Cn
+import ../src/http/text.bend as Text
 import ../src/data/utf8.bend as U
 
 def Laws.hot_utf8_encode_char(c):
@@ -232,3 +234,15 @@ def Laws.hot_cors_actual(config, g, requested, res): {==}
 def Laws.hot_cors_policy(config, req): {==}
 
 def Laws.hot_secure_prepared(Vars, config, c, next): {==}
+
+# ---- BND-68: only a Connection field's value is parsed ----
+
+def header_value_and(+v: List<&2, U32>, +wanted: String, named: Bool) -> {Cn.header_value_hit(v, wanted, named) == named && Cn.tokens(Text.split(B.ascii(v), ','), wanted) : Bool}:
+  match named:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def Laws.hot_connection_header_hit(n, v, wanted):
+  header_value_and(v, wanted, String.eq(B.fold(n), "connection"))
