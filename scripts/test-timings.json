@@ -37,6 +37,9 @@
     "packages/vite-plugin-bendo/src/lifecycle.test.ts": 3000,
     "packages/vite-plugin-bendo/src/plugin.test.ts": 3000,
     "tests/laws-docs.test.ts": 200,
-    "tests/todo-example.test.ts": 100000
+    "tests/todo-example.test.ts": 100000,
+    "tests/create-bendo-fullstack.test.ts": 130000,
+    "tests/create-bendo-api.test.ts": 100000,
+    "packages/create-bendo/src/cli.test.ts": 1000
   }
 }
