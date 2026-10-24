@@ -104,6 +104,6 @@ def decode_go_equiv(+xs: List<&2, U32>, +state: U.State) -> {J.decode_go(xs, sta
 def decode_equiv(+xs: List<&2, U32>) -> {J.decode(xs) == U.decode(xs) : Maybe<&2, String>}:
   decode_go_equiv(xs, U.UtfReady{""})
 
-def roundtrip(+s: String, valid: {U.valid(s) == True{} : Bool}) -> {J.decode(U.encode(s)) == Some{s} : Maybe<&2, String>}:
+def roundtrip(+s: String, valid: {U.valid_spec(s) == True{} : Bool}) -> {J.decode(U.encode(s)) == Some{s} : Maybe<&2, String>}:
   %Equal.sym(Maybe<&2, String>, J.decode(U.encode(s)), U.decode(U.encode(s)), decode_equiv(U.encode(s))) : {_ == Some{s} : Maybe<&2, String>}
-  P.roundtrip(s, valid)
+  P.roundtrip(s, Equal.trans(Bool, U.valid(s), U.valid_spec(s), True{}, P.valid_equiv(s), valid))

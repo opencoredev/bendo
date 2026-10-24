@@ -443,19 +443,19 @@ def nibble_scalar_evidence(+w: Word(4n), evidence: {B.hex(code(J.nibble(nibble_v
 def nibble_scalar(+w: Word(4n)) -> {U.scalar(code(J.nibble(nibble_value(w)))) == True{} : Bool}:
   nibble_scalar_evidence(w, nibble_inverse(w))
 
-def valid_cons(+char: Char, +tail: String, head: {U.scalar(code(char)) == True{} : Bool}, rest: {U.valid(tail) == True{} : Bool}) -> {U.valid(SCon{char, tail}) == True{} : Bool}:
+def valid_cons(+char: Char, +tail: String, head: {U.scalar(code(char)) == True{} : Bool}, rest: {U.valid_spec(tail) == True{} : Bool}) -> {U.valid_spec(SCon{char, tail}) == True{} : Bool}:
   match char:
     case Chr{c}:
-      %Equal.sym(Bool, U.scalar(c), True{}, head) : {_ && U.valid(tail) == True{} : Bool}
+      %Equal.sym(Bool, U.scalar(c), True{}, head) : {_ && U.valid_spec(tail) == True{} : Bool}
       rest
 
-def hex_digits_valid(+w: Word(16n)) -> {U.valid(hex_digits(w)) == True{} : Bool}:
+def hex_digits_valid(+w: Word(16n)) -> {U.valid_spec(hex_digits(w)) == True{} : Bool}:
   valid_cons(J.nibble(nibble_value(top4(w))), SCon{J.nibble(nibble_value(mid4(w))), SCon{J.nibble(nibble_value(next4(w))), SCon{J.nibble(nibble_value(last4(w))), ""}}}, nibble_scalar(top4(w)), valid_cons(J.nibble(nibble_value(mid4(w))), SCon{J.nibble(nibble_value(next4(w))), SCon{J.nibble(nibble_value(last4(w))), ""}}, nibble_scalar(mid4(w)), valid_cons(J.nibble(nibble_value(next4(w))), SCon{J.nibble(nibble_value(last4(w))), ""}, nibble_scalar(next4(w)), valid_cons(J.nibble(nibble_value(last4(w))), "", nibble_scalar(last4(w)), {==}))))
 
 law hex4_valid:
   for +w: Word(16n)
-  {U.valid(J.hex4(code16(w))) == True{} : Bool}
+  {U.valid_spec(J.hex4(code16(w))) == True{} : Bool}
 
 def hex4_valid(w):
-  %Equal.sym(String, J.hex4(code16(w)), "\\u" ++ hex_digits(w), hex4_shape(w)) : {U.valid(_) == True{} : Bool}
+  %Equal.sym(String, J.hex4(code16(w)), "\\u" ++ hex_digits(w), hex4_shape(w)) : {U.valid_spec(_) == True{} : Bool}
   hex_digits_valid(w)

@@ -194,12 +194,12 @@ def digit_or_sign(+p: J.Phase, +c: U32, ok: {is_inv(J.number_step(p, c)) == Fals
     case True{}: K.digit_scalar(c, e)
     case False{}: sign_minus(p, c, ok, e, U32.is_eq(c, 45), {==})
 
-def num_text_valid(+s: String, +p: J.Phase, +valid: {J.number_valid_go(s, p) == True{} : Bool}) -> {U.valid(s) == True{} : Bool}:
+def num_text_valid(+s: String, +p: J.Phase, +valid: {J.number_valid_go(s, p) == True{} : Bool}) -> {U.valid_spec(s) == True{} : Bool}:
   match s:
     case SNil{}: {==}
     case SCon{Chr{c}, t}:
-      %Equal.sym(Bool, U.scalar(c), True{}, digit_or_sign(p, c, not_inv(J.number_step(p, c), t, valid), J.digit(c), {==})) : {_ && U.valid(t) == True{} : Bool}
+      %Equal.sym(Bool, U.scalar(c), True{}, digit_or_sign(p, c, not_inv(J.number_step(p, c), t, valid), J.digit(c), {==})) : {_ && U.valid_spec(t) == True{} : Bool}
       num_text_valid(t, J.number_step(p, c), valid)
 
-def number_text_valid(+n: String, +valid: {J.number_valid(n) == True{} : Bool}) -> {U.valid(n) == True{} : Bool}:
+def number_text_valid(+n: String, +valid: {J.number_valid(n) == True{} : Bool}) -> {U.valid_spec(n) == True{} : Bool}:
   num_text_valid(n, J.PStart{}, valid)

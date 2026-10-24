@@ -3,20 +3,21 @@ import Base
 import ../src/data/json.bend as J
 import ../src/data/utf8.bend as U
 
-# Relate the writer's tail-recursive scalar check to the codec's predicate.
+# Relate the writer's tail-recursive scalar check to the codec's spec
+# predicate (Utf8.valid_spec; proof/utf8.bend equates it with Utf8.valid).
 def scalar_go_false(+s: String) -> {J.scalar_go(s, False{}) == False{} : Bool}:
   match s:
     case SNil{}: {==}
     case SCon{Chr{c}, t}: {==}
 
-def scalar_go_equiv(+s: String, +ok: Bool) -> {J.scalar_go(s, ok) == ok && U.valid(s) : Bool}:
+def scalar_go_equiv(+s: String, +ok: Bool) -> {J.scalar_go(s, ok) == ok && U.valid_spec(s) : Bool}:
   match s ok:
     case SNil{} False{}: {==}
     case SNil{} True{}: {==}
     case SCon{Chr{c}, t} False{}: {==}
     case SCon{Chr{c}, t} True{}: scalar_go_equiv(t, U.scalar(c))
 
-def scalars_equiv(+s: String) -> {J.scalars(s) == U.valid(s) : Bool}:
+def scalars_equiv(+s: String) -> {J.scalars(s) == U.valid_spec(s) : Bool}:
   scalar_go_equiv(s, True{})
 
 # Exact parser continuation equations. Suffix, stack, depth, and remaining

@@ -219,11 +219,11 @@ def gen_plane(p):
     out.append("")
     # The spelling is valid text, followed by any valid text.
     out.append(
-        f"def pair_valid_{p}({bit_params()}, +tail: String, ok: {{U.valid(tail) == True{{}} : Bool}}) -> "
-        f"{{U.valid(J.unicode_escape({c}, False{{}}) ++ tail) == True{{}} : Bool}}:"
+        f"def pair_valid_{p}({bit_params()}, +tail: String, ok: {{U.valid_spec(tail) == True{{}} : Bool}}) -> "
+        f"{{U.valid_spec(J.unicode_escape({c}, False{{}}) ++ tail) == True{{}} : Bool}}:"
     )
-    out.append("  " + rewrite("U32", he, whi, f"hi_eq_{p}({bit_args()})", f"{{U.valid((J.hex4(_) ++ J.hex4({le})) ++ tail) == True{{}} : Bool}}"))
-    out.append("  " + rewrite("U32", le, wlo, f"lo_eq_{p}({bit_args()})", f"{{U.valid((J.hex4({whi}) ++ J.hex4(_)) ++ tail) == True{{}} : Bool}}"))
+    out.append("  " + rewrite("U32", he, whi, f"hi_eq_{p}({bit_args()})", f"{{U.valid_spec((J.hex4(_) ++ J.hex4({le})) ++ tail) == True{{}} : Bool}}"))
+    out.append("  " + rewrite("U32", le, wlo, f"lo_eq_{p}({bit_args()})", f"{{U.valid_spec((J.hex4({whi}) ++ J.hex4(_)) ++ tail) == True{{}} : Bool}}"))
     out.append(f"  V.valid_cat3(J.hex4({whi}), J.hex4({wlo}), tail, E.hex4_valid({whi_w}), E.hex4_valid({wlo_w}), ok)")
     out.append("")
     return "\n".join(out)
@@ -241,14 +241,14 @@ def gen_dispatch():
         "{J.parse_go(Nat.add(14n, fuel), J.Machine{J.MText{rev, key}, J.unicode_escape(@C@, False{}) ++ suffix, stack, depth}) == "
         "J.parse_go(fuel, J.Machine{J.MText{SCon{Chr{@C@}, rev}, key}, suffix, stack, depth}) : " + R + "}"
     )
-    goal_valid = "{U.valid(J.unicode_escape(@C@, False{}) ++ tail) == True{} : Bool}"
+    goal_valid = "{U.valid_spec(J.unicode_escape(@C@, False{}) ++ tail) == True{} : Bool}"
     specs = [
         ("pair_parse", goal_parse,
          "+rev: String, +key: Bool, +suffix: String, +stack: List<&2, J.Frame>, +depth: Nat, +fuel: Nat",
          "rev, key, suffix, stack, depth, fuel",
          lambda p: f"pair_parse_{p}({bit_args()}, rev, key, suffix, stack, depth, fuel)"),
         ("pair_valid", goal_valid,
-         "+tail: String, ok: {U.valid(tail) == True{} : Bool}",
+         "+tail: String, ok: {U.valid_spec(tail) == True{} : Bool}",
          "tail, ok",
          lambda p: f"pair_valid_{p}({bit_args()}, tail, ok)"),
     ]

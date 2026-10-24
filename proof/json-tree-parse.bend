@@ -163,8 +163,8 @@ def true_cps(+suffix: String, +fs: List<&2, J.Frame>, +dp: Nat, +a: Nat, +v: J.J
 def false_cps(+suffix: String, +fs: List<&2, J.Frame>, +dp: Nat, +a: Nat, +v: J.Json, h: {J.parse_go(J.fuel_go(suffix, a), J.Machine{J.MEmit{J.JBool{False{}}}, suffix, fs, dp}) == Done{v} : Result<&2, &2, J.Error, J.Json>}) -> {J.parse_go(J.fuel_go("false" ++ suffix, a), J.Machine{J.MValue{}, "false" ++ suffix, fs, dp}) == Done{v} : Result<&2, &2, J.Error, J.Json>}:
   C.credit(6n, 14n, suffix, a, J.Machine{J.MValue{}, "false" ++ suffix, fs, dp}, J.Machine{J.MEmit{J.JBool{False{}}}, suffix, fs, dp}, v, JP.parse_false_continuation(J.fuel_go(suffix, Nat.add(14n, a)), suffix, fs, dp), h)
 
-def string_ok(+s: String, good: {J.scalars(s) == True{} : Bool}) -> {U.valid(s) == True{} : Bool}:
-  Equal.trans(Bool, U.valid(s), J.scalars(s), True{}, Equal.sym(Bool, J.scalars(s), U.valid(s), JP.scalars_equiv(s)), good)
+def string_ok(+s: String, good: {J.scalars(s) == True{} : Bool}) -> {U.valid_spec(s) == True{} : Bool}:
+  Equal.trans(Bool, U.valid_spec(s), J.scalars(s), True{}, Equal.sym(Bool, J.scalars(s), U.valid_spec(s), JP.scalars_equiv(s)), good)
 def tree_cps(capacity: Nat, value: J.Json, +inc: Bool, +pretty: Bool, +ascii: Bool, +dp: Nat, +ra: List<&2, J.Json>, +ro: List<&2, J.Field>, +suffix: String, +fs: List<&2, J.Frame>, +a: Nat, +v: J.Json, +good: {ok(inc, capacity, value) == True{} : Bool}, +lim: {Nat.add(dp, capacity) == 512n : Nat}, +stop: {N.ends(suffix) == True{} : Bool}, done: {J.parse_go(J.fuel_go(suffix, a), J.Machine{J.MEmit{end_value(inc, value, ra, ro)}, suffix, fs, dp}) == Done{v} : Result<&2, &2, J.Error, J.Json>}) -> {J.parse_go(J.fuel_go(X.text(capacity, value, inc, pretty, ascii, start_depth(inc, dp), inc) ++ suffix, a), J.Machine{start_mode(inc, value, ra, ro), X.text(capacity, value, inc, pretty, ascii, start_depth(inc, dp), inc) ++ suffix, fs, start_depth(inc, dp)}) == Done{v} : Result<&2, &2, J.Error, J.Json>}:
   match capacity value:
     case cap J.JNull{}:

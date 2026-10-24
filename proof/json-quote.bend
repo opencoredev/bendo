@@ -115,13 +115,13 @@ def quote_spec(+s: String, +ascii: Bool, +rev: String) -> {J.quote_go(s, ascii, 
 def quote_shape(+s: String, +ascii: Bool) -> {J.quote(s, ascii) == SCon{'"', escs(s, ascii) ++ "\""} : String}:
   quote_spec(s, ascii, "\"")
 
-def body_cps(+s: String, +ascii: Bool, +rev: String, +key: Bool, +suffix: String, +stack: List<&2, J.Frame>, +depth: Nat, +a: Nat, +v: J.Json, +valid: {U.valid(s) == True{} : Bool}, h: {J.parse_go(J.fuel_go(suffix, a), J.Machine{J.MText{String.reverse.go(s, rev), key}, suffix, stack, depth}) == Done{v} : Result<&2, &2, J.Error, J.Json>}) -> {J.parse_go(J.fuel_go(escs(s, ascii) ++ suffix, a), J.Machine{J.MText{rev, key}, escs(s, ascii) ++ suffix, stack, depth}) == Done{v} : Result<&2, &2, J.Error, J.Json>}:
+def body_cps(+s: String, +ascii: Bool, +rev: String, +key: Bool, +suffix: String, +stack: List<&2, J.Frame>, +depth: Nat, +a: Nat, +v: J.Json, +valid: {U.valid_spec(s) == True{} : Bool}, h: {J.parse_go(J.fuel_go(suffix, a), J.Machine{J.MText{String.reverse.go(s, rev), key}, suffix, stack, depth}) == Done{v} : Result<&2, &2, J.Error, J.Json>}) -> {J.parse_go(J.fuel_go(escs(s, ascii) ++ suffix, a), J.Machine{J.MText{rev, key}, escs(s, ascii) ++ suffix, stack, depth}) == Done{v} : Result<&2, &2, J.Error, J.Json>}:
   match s:
     case SNil{}: h
     case SCon{Chr{c}, t}:
       %Equal.sym(String, (J.escape_char(c, ascii) ++ escs(t, ascii)) ++ suffix, J.escape_char(c, ascii) ++ (escs(t, ascii) ++ suffix), Sup.append_assoc(J.escape_char(c, ascii), escs(t, ascii), suffix)) : {J.parse_go(J.fuel_go(_, a), J.Machine{J.MText{rev, key}, _, stack, depth}) == Done{v} : Result<&2, &2, J.Error, J.Json>}
-      go = escape_cps(c, ascii, rev, key, escs(t, ascii) ++ suffix, stack, depth, a, v, P.and_left(U.scalar(c), U.valid(t), valid))
-      go(body_cps(t, ascii, SCon{Chr{c}, rev}, key, suffix, stack, depth, a, v, P.and_right(U.scalar(c), U.valid(t), valid), h))
+      go = escape_cps(c, ascii, rev, key, escs(t, ascii) ++ suffix, stack, depth, a, v, P.and_left(U.scalar(c), U.valid_spec(t), valid))
+      go(body_cps(t, ascii, SCon{Chr{c}, rev}, key, suffix, stack, depth, a, v, P.and_right(U.scalar(c), U.valid_spec(t), valid), h))
 
 def text_done(+s: String, +suffix: String, +stack: List<&2, J.Frame>, +depth: Nat, +a: Nat, +v: J.Json, h: {J.parse_go(J.fuel_go(suffix, a), J.Machine{J.MEmit{J.JString{s}}, suffix, stack, depth}) == Done{v} : Result<&2, &2, J.Error, J.Json>}) -> {J.parse_go(J.fuel_go(suffix, a), J.Machine{J.MEmit{J.JString{String.reverse(String.reverse.go(s, ""))}}, suffix, stack, depth}) == Done{v} : Result<&2, &2, J.Error, J.Json>}:
   %Equal.sym(String, String.reverse(String.reverse.go(s, "")), s, Sup.reverse_go_inverse(s, "")) : {J.parse_go(J.fuel_go(suffix, a), J.Machine{J.MEmit{J.JString{_}}, suffix, stack, depth}) == Done{v} : Result<&2, &2, J.Error, J.Json>}
@@ -137,11 +137,11 @@ def quoted_input(+s: String, +ascii: Bool, +suffix: String) -> {J.quote(s, ascii
   %Equal.sym(String, (escs(s, ascii) ++ "\"") ++ suffix, escs(s, ascii) ++ ("\"" ++ suffix), Sup.append_assoc(escs(s, ascii), "\"", suffix)) : {SCon{'"', _} == SCon{'"', escs(s, ascii) ++ SCon{'"', suffix}} : String}
   {==}
 
-def string_cps(+s: String, +ascii: Bool, +suffix: String, +stack: List<&2, J.Frame>, +depth: Nat, +a: Nat, +v: J.Json, +valid: {U.valid(s) == True{} : Bool}, h: {J.parse_go(J.fuel_go(suffix, a), J.Machine{J.MEmit{J.JString{s}}, suffix, stack, depth}) == Done{v} : Result<&2, &2, J.Error, J.Json>}) -> {J.parse_go(J.fuel_go(J.quote(s, ascii) ++ suffix, a), J.Machine{J.MValue{}, J.quote(s, ascii) ++ suffix, stack, depth}) == Done{v} : Result<&2, &2, J.Error, J.Json>}:
+def string_cps(+s: String, +ascii: Bool, +suffix: String, +stack: List<&2, J.Frame>, +depth: Nat, +a: Nat, +v: J.Json, +valid: {U.valid_spec(s) == True{} : Bool}, h: {J.parse_go(J.fuel_go(suffix, a), J.Machine{J.MEmit{J.JString{s}}, suffix, stack, depth}) == Done{v} : Result<&2, &2, J.Error, J.Json>}) -> {J.parse_go(J.fuel_go(J.quote(s, ascii) ++ suffix, a), J.Machine{J.MValue{}, J.quote(s, ascii) ++ suffix, stack, depth}) == Done{v} : Result<&2, &2, J.Error, J.Json>}:
   %Equal.sym(String, J.quote(s, ascii) ++ suffix, SCon{'"', escs(s, ascii) ++ SCon{'"', suffix}}, quoted_input(s, ascii, suffix)) : {J.parse_go(J.fuel_go(_, a), J.Machine{J.MValue{}, _, stack, depth}) == Done{v} : Result<&2, &2, J.Error, J.Json>}
   C.consume('"', escs(s, ascii) ++ SCon{'"', suffix}, a, J.Machine{J.MValue{}, SCon{'"', escs(s, ascii) ++ SCon{'"', suffix}}, stack, depth}, v, body_cps(s, ascii, "", False{}, SCon{'"', suffix}, stack, depth, a, v, valid, C.consume('"', suffix, a, J.Machine{J.MText{String.reverse.go(s, ""), False{}}, SCon{'"', suffix}, stack, depth}, v, text_done(s, suffix, stack, depth, a, v, h), {==})), {==})
 
-def key_cps(+s: String, +ascii: Bool, +k: Bool, +suffix: String, +stack: List<&2, J.Frame>, +depth: Nat, +a: Nat, +v: J.Json, +valid: {U.valid(s) == True{} : Bool}, h: {J.parse_go(J.fuel_go(suffix, a), J.Machine{J.MColon{s}, suffix, stack, depth}) == Done{v} : Result<&2, &2, J.Error, J.Json>}) -> {J.parse_go(J.fuel_go(J.quote(s, ascii) ++ suffix, a), J.Machine{J.MReadKey{k}, J.quote(s, ascii) ++ suffix, stack, depth}) == Done{v} : Result<&2, &2, J.Error, J.Json>}:
+def key_cps(+s: String, +ascii: Bool, +k: Bool, +suffix: String, +stack: List<&2, J.Frame>, +depth: Nat, +a: Nat, +v: J.Json, +valid: {U.valid_spec(s) == True{} : Bool}, h: {J.parse_go(J.fuel_go(suffix, a), J.Machine{J.MColon{s}, suffix, stack, depth}) == Done{v} : Result<&2, &2, J.Error, J.Json>}) -> {J.parse_go(J.fuel_go(J.quote(s, ascii) ++ suffix, a), J.Machine{J.MReadKey{k}, J.quote(s, ascii) ++ suffix, stack, depth}) == Done{v} : Result<&2, &2, J.Error, J.Json>}:
   match k:
     case True{}:
       %Equal.sym(String, J.quote(s, ascii) ++ suffix, SCon{'"', escs(s, ascii) ++ SCon{'"', suffix}}, quoted_input(s, ascii, suffix)) : {J.parse_go(J.fuel_go(_, a), J.Machine{J.MReadKey{True{}}, _, stack, depth}) == Done{v} : Result<&2, &2, J.Error, J.Json>}
