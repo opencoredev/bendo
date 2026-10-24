@@ -94,8 +94,21 @@ def policy(config: Config) -> Policy.Policy:
 def secured(config: Config, res: Response.Res) -> Response.Res:
   Policy.apply(policy(config), res)
 
-def middleware(-Vars: Data, +config: Config, +c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
+# Runs a policy built once, when the middleware was registered (BND-68).
+def prepared(-Vars: Data, +ready: Policy.Policy, +c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
+  do IO<Response.Res>:
+    res : Response.Res <- next(c)
+    Obs.retain(C.observation(Vars, c), ready)
+    return Policy.apply(ready, res)
+
+# The middleware as it ran before BND-68, rebuilding the policy per request.
+# Laws hot_secure_prepared_spec and hot_secure_dispatch equate it with the
+# prepared shell.
+def middleware_spec(-Vars: Data, +config: Config, +c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
   do IO<Response.Res>:
     res : Response.Res <- next(c)
     Obs.retain(C.observation(Vars, c), policy(config))
     return secured(config, res)
+
+def middleware(-Vars: Data, +config: Config, +c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
+  prepared(Vars, policy(config), c, next)

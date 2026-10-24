@@ -30,4 +30,4 @@ MIT
 
 ## Benchmarks
 
-[Five-scenario benchmark chart](bench/results/2026-10-24-full-suite.svg) comparing Bendo’s native server with Hono and Elysia on Bun. See the [method and results](bench/README.md).
+[Five-scenario benchmark chart](bench/results/2026-10-24-bnd68-full-suite.svg) comparing Bendo’s native server with Hono and Elysia on Bun. See the [method and results](bench/README.md).

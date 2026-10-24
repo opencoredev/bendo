@@ -142,16 +142,51 @@ def body(-Vars: Data, c: Ctx<Vars>, bytes: List<&2, U32>, content_type: Maybe<&2
   +res = Response.body(s, type_headers(original, content_type), bytes)
   checked(res, Request.headers_valid(original) && Response.valid(res))
 
-def text(-Vars: Data, c: Ctx<Vars>, value: String) -> Response.Res:
+# Like type_headers, with the Content-Type value already encoded.
+def typed_headers(hs: List<&2, Request.Header>, content_type: List<&2, U32>) -> List<&2, Request.Header>:
+  Request.Header{"content-type", content_type} <> without(hs, "content-type")
+
+# Like body, for the framework's fixed Content-Type values. Laws
+# hot_context_text, hot_context_html and hot_context_json_result equate each
+# caller with the earlier body call that encoded the value per response.
+def body_typed(-Vars: Data, c: Ctx<Vars>, bytes: List<&2, U32>, content_type: List<&2, U32>) -> Response.Res:
+  Ctx{r, p, b, q, s, hs, v, o} = c
+  +original = hs
+  +res = Response.body(s, typed_headers(original, content_type), bytes)
+  checked(res, Request.headers_valid(original) && Response.valid(res))
+
+# "text/plain; charset=utf-8", "text/html; charset=utf-8" and
+# "application/json; charset=utf-8" as bytes.
+def text_type() -> List<&2, U32>:
+  [116, 101, 120, 116, 47, 112, 108, 97, 105, 110, 59, 32, 99, 104, 97, 114, 115, 101, 116, 61, 117, 116, 102, 45, 56]
+
+def html_type() -> List<&2, U32>:
+  [116, 101, 120, 116, 47, 104, 116, 109, 108, 59, 32, 99, 104, 97, 114, 115, 101, 116, 61, 117, 116, 102, 45, 56]
+
+def json_type() -> List<&2, U32>:
+  [97, 112, 112, 108, 105, 99, 97, 116, 105, 111, 110, 47, 106, 115, 111, 110, 59, 32, 99, 104, 97, 114, 115, 101, 116, 61, 117, 116, 102, 45, 56]
+
+def text_spec(-Vars: Data, c: Ctx<Vars>, value: String) -> Response.Res:
   body(Vars, c, Response.utf8(value), Some{"text/plain; charset=utf-8"})
 
-def html(-Vars: Data, c: Ctx<Vars>, value: String) -> Response.Res:
+def text(-Vars: Data, c: Ctx<Vars>, value: String) -> Response.Res:
+  body_typed(Vars, c, Response.utf8(value), text_type())
+
+def html_spec(-Vars: Data, c: Ctx<Vars>, value: String) -> Response.Res:
   body(Vars, c, Response.utf8(value), Some{"text/html; charset=utf-8"})
+
+def html(-Vars: Data, c: Ctx<Vars>, value: String) -> Response.Res:
+  body_typed(Vars, c, Response.utf8(value), html_type())
+
+def json_result_spec(-Vars: Data, c: Ctx<Vars>, result: Result<&2, &2, Json.Error, String>) -> Response.Res:
+  match result:
+    case Fail{error}: Response.body(500, [], [])
+    case Done{s}: body(Vars, c, Response.utf8(s), Some{"application/json; charset=utf-8"})
 
 def json_result(-Vars: Data, c: Ctx<Vars>, result: Result<&2, &2, Json.Error, String>) -> Response.Res:
   match result:
     case Fail{error}: Response.body(500, [], [])
-    case Done{s}: body(Vars, c, Response.utf8(s), Some{"application/json; charset=utf-8"})
+    case Done{s}: body_typed(Vars, c, Response.utf8(s), json_type())
 
 def json(-Vars: Data, c: Ctx<Vars>, value: Json.Json) -> Response.Res:
   json_result(Vars, c, Json.stringify(value))
