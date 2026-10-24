@@ -20,6 +20,7 @@
     "format:check": "oxfmt --threads=4 --check ."
   },
   "devDependencies": {
+    "@seriousme/openapi-schema-validator": "2.11.0",
     "@types/bun": "latest",
     "ajv": "^8.17.1",
     "jose": "^6.2.13",

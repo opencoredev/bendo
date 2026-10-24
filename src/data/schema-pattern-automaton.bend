@@ -335,3 +335,19 @@ def matches(+p: P.Pattern, s: String) -> Bool:
   +bs = table_blocks(p)
   +first = linear(p)
   scan(fits4(bs) && check(bs, bs) && all_found(bs, first), p, attach(bs, bs), follow_of(bs, first), s)
+
+# A table built and checked once, for a pattern matched many times (BND-36):
+# a route builds one per pattern when its table is built, and each request only
+# scans. `run_prepared(prepare(p), s)` is `matches(p, s)` term for term, so the table a
+# scan uses is always the one the check passed, or the derivative matcher runs.
+type Prepared is Data:
+  Prepared{pattern: P.Pattern, table: List<&2, List<&2, Node>>, start: List<&2, U32>, ok: Bool}
+
+def prepare(+p: P.Pattern) -> Prepared:
+  +bs = table_blocks(p)
+  +first = linear(p)
+  Prepared{p, attach(bs, bs), follow_of(bs, first), fits4(bs) && check(bs, bs) && all_found(bs, first)}
+
+def run_prepared(t: Prepared, s: String) -> Bool:
+  match t:
+    case Prepared{p, bs, start, ok}: scan(ok, p, bs, start, s)

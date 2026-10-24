@@ -6,6 +6,7 @@ import ./request.bend as Request
 import ./response.bend as Response
 import ./write_response.bend as Write
 import ./bytes.bend as Bytes
+import ./stream_marker.bend as Marker
 
 def frame(+method: Request.Method, res: Response.Res, body: Bool) -> Response.Res:
   match res body:
@@ -47,8 +48,8 @@ def allowed(+req: Request.Req, res: Response.Res, plan: T.Plan, matched: Bool) -
 def select(req: Request.Req, +res: Response.Res, selected: Maybe<&1, T.Registration>) -> IO(Response.Res & Maybe<&1, T.Plan>):
   match res selected:
     case res None{}: IO.pure(Response.Res & Maybe<&1, T.Plan>, (Stream.strip(res), None{}))
-    case Response.Res{code, hs, bytes, rep} Some{T.Registration{id, plan}}:
-      allowed(req, res, plan, Stream.marked(hs, id))
+    case Response.Res{+code, hs, bytes, rep} Some{T.Registration{id, plan}}:
+      allowed(req, res, plan, Marker.eligible(Marker.BodyClaim{id}, code, hs))
     case res Some{T.Upgrade{id, config, session}}:
       do IO<Response.Res & Maybe<&1, T.Plan>>:
         Stream.abort(session)
