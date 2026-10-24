@@ -168,6 +168,43 @@ test("a QueryClient reuses data only for the same __proto__ field", async () => 
   expect(client.getQueryCache().getAll()).toHaveLength(4);
 });
 
+/** A body nested `depth` arrays deep around `leaf`, built without recursion. */
+function nested(depth: number, leaf: string): unknown {
+  let value: unknown = leaf;
+  for (let i = 0; i < depth; i++) value = [value];
+  return value;
+}
+
+test("a body nested deeper than the call stack still keys by its content", async () => {
+  let calls = 0;
+  const counting: Fetch = async () => {
+    calls += 1;
+    return Response.json({ method: "PUT" });
+  };
+  const api = createClient<Routes>("http://127.0.0.1:1", { fetch: counting });
+  const { client } = harness();
+  const fetchWith = (body: unknown) =>
+    client.fetchQuery({ ...queryOptions(api.any.put, { body }), staleTime: Infinity });
+  // Deep enough to overflow a recursive walk, shallow enough for JSON.stringify,
+  // so the client sends these bodies.
+  const depth = 30_000;
+  expect(typeof JSON.stringify(nested(depth, "a"))).toBe("string");
+  expect(hashKey(queryKey(api.any.put, { body: nested(depth, "a") }))).not.toBe(
+    hashKey(queryKey(api.any.put, { body: nested(depth, "b") })),
+  );
+  await fetchWith(nested(depth, "a"));
+  await fetchWith(nested(depth, "b"));
+  await fetchWith(nested(depth, "a"));
+  expect(calls).toBe(2);
+});
+
+test("header values key as fetch sends them, without surrounding whitespace", () => {
+  const api = createClient<Routes>("http://127.0.0.1:1");
+  const hash = (value: string) => hashKey(queryKey(api.any.get, { headers: { "x-test": value } }));
+  expect(hash(" value\t")).toBe(hash("value"));
+  expect(hash("a  b")).not.toBe(hash("a b"));
+});
+
 test("route keys are prefixes of exactly the queries below them", () => {
   const api = createClient<Routes>("http://127.0.0.1:1");
   const one = queryKey(api.todos({ id: 1 }).get, { query: { page: 2 } });

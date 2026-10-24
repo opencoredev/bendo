@@ -119,27 +119,71 @@ function textKey(entries: readonly [string, string][]): [string, string | string
   });
 }
 
-/** JSON text with object keys sorted at every level. */
-function canonicalText(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalText).join(",")}]`;
-  if (typeof value !== "object" || value === null) return JSON.stringify(value);
-  const fields = Object.keys(value)
-    .sort()
-    .map((name) => `${JSON.stringify(name)}:${canonicalText(Reflect.get(value, name))}`);
-  return `{${fields.join(",")}}`;
+type Piece = { kind: "text"; text: string } | { kind: "value"; value: unknown };
+
+/**
+ * JSON text with object keys sorted at every level. It walks an explicit stack
+ * rather than recursing, so a body nested deeper than the call stack still gets
+ * its own key instead of a shared failure marker.
+ */
+function canonicalText(root: unknown): string {
+  const out: string[] = [];
+  const stack: Piece[] = [{ kind: "value", value: root }];
+  for (let piece = stack.pop(); piece !== undefined; piece = stack.pop()) {
+    if (piece.kind === "text") {
+      out.push(piece.text);
+      continue;
+    }
+    const { value } = piece;
+    if (typeof value !== "object" || value === null) {
+      out.push(JSON.stringify(value));
+      continue;
+    }
+    // Pieces are pushed in reverse so they pop in order.
+    const pending: Piece[] = [];
+    if (Array.isArray(value)) {
+      pending.push({ kind: "text", text: "[" });
+      value.forEach((item: unknown, index) => {
+        if (index > 0) pending.push({ kind: "text", text: "," });
+        pending.push({ kind: "value", value: item });
+      });
+      pending.push({ kind: "text", text: "]" });
+    } else {
+      pending.push({ kind: "text", text: "{" });
+      Object.keys(value)
+        .sort()
+        .forEach((name, index) => {
+          pending.push({ kind: "text", text: `${index > 0 ? "," : ""}${JSON.stringify(name)}:` });
+          pending.push({ kind: "value", value: Reflect.get(value, name) });
+        });
+      pending.push({ kind: "text", text: "}" });
+    }
+    for (let i = pending.length - 1; i >= 0; i--) {
+      const next = pending[i];
+      if (next !== undefined) stack.push(next);
+    }
+  }
+  return out.join("");
 }
 
 /** The body as the client sends it: its JSON text, with object keys sorted. */
 function bodyKey(body: unknown): string | { "!": string } {
+  let json: string | undefined;
   try {
-    const json = JSON.stringify(body);
-    // JSON.parse keeps `__proto__` as an own field, so the sort sees every name.
-    if (typeof json === "string") return canonicalText(JSON.parse(json));
-    return { "!": "body has no JSON form" };
+    json = JSON.stringify(body);
   } catch (cause) {
     // BigInt values and cycles throw; the client refuses them the same way.
     return { "!": `body has no JSON form: ${String(cause)}` };
   }
+  if (typeof json !== "string") return { "!": "body has no JSON form" };
+  // JSON.parse keeps `__proto__` as an own field, so the sort sees every name.
+  // The text came from JSON.stringify, so parsing it does not fail.
+  return canonicalText(JSON.parse(json));
+}
+
+/** Fetch strips leading and trailing HTTP whitespace from header values. */
+function fetchValue(value: string): string {
+  return value.replace(/^[\t\n\r ]+|[\t\n\r ]+$/g, "");
 }
 
 function field(input: unknown, name: string): unknown {
@@ -160,7 +204,9 @@ function requestPart(method: Method, input: unknown): KeyPart {
   const headers = headerEntries(field(input, "headers"));
   if (!headers.ok) part.headers = { "!": headers.reason };
   else if (headers.value.length > 0)
-    part.headers = textKey(headers.value.map(([name, value]) => [name.toLowerCase(), value]));
+    part.headers = textKey(
+      headers.value.map(([name, value]) => [name.toLowerCase(), fetchValue(value)]),
+    );
   const body = field(input, "body");
   if (body !== undefined) part.body = bodyKey(body);
   return part;
