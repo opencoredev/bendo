@@ -9,6 +9,8 @@ type Vars is Data:
   Vars{label: String}
 
 type Tag is Data:
+  DelayAfter{}
+  Slow{}
   Hello{}
   Id{}
   ExplicitId{}
@@ -44,6 +46,11 @@ def handle(tag: Tag, +c: B.Context(Vars), env: Unit) -> IO(B.Res):
     case ExplicitId{}: IO.pure(B.Res, Response.body(200, [Request.Header{"x-request-id", Response.utf8(outgoing_id(Maybe.default(&2, String, C.request_header(Vars, c, "x-outgoing-id"), "")))}], []))
     case EchoId{}: IO.pure(B.Res, Response.body(200, [Request.Header{"x-request-id", Response.utf8(Maybe.default(&2, String, C.request_header(Vars, c, "x-request-id"), ""))}], Response.utf8(Maybe.default(&2, String, C.request_id(Vars, c), "none"))))
     case Id{}: IO.pure(B.Res, C.text(Vars, c, Maybe.default(&2, String, C.request_id(Vars, c), "none")))
+    case Slow{}:
+      do IO<B.Res>:
+        IO.sleep(150)
+        IO.print_err("late-handler-finished " ++ C.path(Vars, c))
+        return C.text(Vars, c, "late")
     case Hello{}: IO.pure(B.Res, C.text(Vars, c, "hello"))
     case HandlerError{}: IO.pure(B.Res, Response.text(500, "handler error"))
     case Broken{}: IO.pure(B.Res, Response.body(200, [Request.Header{"bad", [13]}], []))
@@ -104,6 +111,11 @@ def error_response(res: B.Res, path: String) -> B.Res:
 
 def middleware_go(tag: Tag, +c: B.Context(Vars), env: Unit, next: B.Context(Vars) -> IO(B.Res)) -> IO(B.Res):
   match tag:
+    case DelayAfter{}:
+      do IO<B.Res>:
+        res : B.Res <- next(c)
+        IO.sleep(150)
+        return res
     case Builtin{id}: B.builtin(Vars, id, c, next)
     case HookRequest{}: optional_builtin(B.request_id(), c, next, String.starts_with(C.path(Vars, c), "/hook"))
     case HookTiming{}: optional_builtin(B.server_timing(), c, next, String.starts_with(C.path(Vars, c), "/hook"))
@@ -141,7 +153,11 @@ def main() -> IO(Unit):
     B.map_response(Tag, HookMap{}),
     B.on_error(Tag, HookError{}),
     B.on_after_response(Tag, HookLogger{}),
+    B.use_path(Tag, "/timeout-outer", Builtin{B.timeout(30)}),
     B.use(Tag, Builtin{B.logger()}),
+    B.use_path(Tag, "/timeout-inner", Builtin{B.timeout(30)}),
+    B.use_path(Tag, "/duration", DelayAfter{}),
+    B.use_path(Tag, "/duration", Builtin{B.logger()}),
     B.use(Tag, Custom{}),
     B.use_path(Tag, "/id-echo", Builtin{B.request_id()}),
     B.use_path(Tag, "/id", Builtin{B.request_id()}),
@@ -164,6 +180,9 @@ def main() -> IO(Unit):
     B.get(Tag, "/hook-outgoing-handler", ExplicitId{}),
     B.get(Tag, "/outgoing", ExplicitId{}),
     B.get(Tag, "/id-echo", EchoId{}),
+    B.get(Tag, "/timeout-outer", Slow{}),
+    B.get(Tag, "/timeout-inner", Slow{}),
+    B.get(Tag, "/duration", Hello{}),
     B.get(Tag, "/", Hello{}),
     B.get(Tag, "/id", Id{}),
     B.get(Tag, "/reverse", Id{}),

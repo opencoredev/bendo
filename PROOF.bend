@@ -9,6 +9,9 @@ import ./proof/json-schema.bend as JsonSchemaProof
 import ./proof/compose.bend as ComposeProof
 import ./proof/plugin.bend as PluginProof
 
+# BND-47
+import ./proof/proxy.bend as ProxyProof
+
 # BND-44
 import ./proof/ip.bend as IpProof
 import ./proof/rate-limit.bend as RateLimitProof
@@ -50,6 +53,7 @@ import ./src/http/request.bend as Request
 import ./src/http/parse.bend as Parse
 import ./src/http/write.bend as Write
 import ./LAWS.bend as Laws
+import ./proof/websocket.bend as WebSocketProof
 import ./proof/equality.bend as Equality
 import ./proof/tokens.bend as Tokens
 import ./proof/headers.bend as Headers
@@ -111,6 +115,9 @@ import ./proof/override.bend as OverrideProof
 import ./proof/trailing.bend as TrailingProof
 
 import ./proof/static-path.bend as StaticProof
+import ./proof/ws-frame.bend as WsFrameProof
+import ./proof/ws-frame-roundtrip.bend as WsFrameRoundtrip
+import ./proof/ws-frame-decode.bend as WsFrameDecode
 
 # Check the pure crypto implementations with the strict kernel as well.
 import ./src/crypto/sha1.bend as SHA1
@@ -841,3 +848,30 @@ def Laws.manifest_schema_accepted(Tag, sources, compiled, layers, count, schemas
 def Laws.json_schema_object_node_exact(fields, unknown): JsonSchemaProof.object_node_exact(fields, unknown)
 def Laws.json_schema_string_node_exact(min, max, pattern, format): JsonSchemaProof.string_node_exact(min, max, pattern, format)
 def Laws.json_schema_boolean_node_exact(): {==}
+
+def Laws.websocket_accept_spec(key):
+  WebSocketProof.accept(key)
+
+def Laws.websocket_accept_rfc():
+  WebSocketProof.rfc()
+
+def Laws.websocket_decision_spec(config, req):
+  WebSocketProof.decide(config, req)
+
+def Laws.websocket_response_version():
+  WebSocketProof.response_version()
+
+def Laws.websocket_response_success(key, protocol):
+  WebSocketProof.response_success(key, protocol)
+
+def Laws.websocket_rebuilt_framing(res, accept, protocol):
+  WebSocketProof.rebuilt_framing(res, accept, protocol)
+
+def Laws.websocket_rebuilt_response(res, accept, protocol):
+  WebSocketProof.rebuilt_response(res, accept, protocol)
+
+def Laws.websocket_response_refuse_400():
+  {==}
+
+def Laws.websocket_response_refuse_403():
+  {==}

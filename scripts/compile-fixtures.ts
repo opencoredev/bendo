@@ -7,6 +7,7 @@ import { selectedTestFiles } from "./test-shards.ts";
 // lazily through the harness. Keep these compilers out of the worker pool.
 const selected = new Set(selectedTestFiles());
 const heavyFixtures = [
+  { test: "tests/websocket.test.ts", entry: "tests/servers/websocket.bend", target: "native" },
   { test: "tests/multipart.test.ts", entry: "tests/servers/multipart.bend", target: "native" },
   {
     test: "tests/multipart.test.ts",

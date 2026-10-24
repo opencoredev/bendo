@@ -1,6 +1,8 @@
 # Public Bendo entrypoint. Route tags and startup environments are app-owned Data.
 import Base
 import ./stream.bend as Stream
+import ./websocket.bend as WebSocket
+import ./http/websocket.bend as Handshake
 import ./http/stream_types.bend as StreamTypes
 import ./sse.bend as Sse
 import ./http/sse.bend as SseCodec
@@ -44,6 +46,7 @@ import ./net/conn_info.bend as Conn
 import ./mw/ip_restriction.bend as IpRestriction
 import ./mw/rate_limit.bend as RateLimit
 import ./mw/rate_limit_core.bend as RateCore
+import ./proxy.bend as Proxy
 
 def HttpError() -> Data: Errors.HttpError
 def http_error(status: U32, message: String) -> Errors.HttpError: Errors.http_error(status, message)
@@ -224,6 +227,19 @@ def stream_config() -> StreamTypes.Config: Stream.defaults()
 def stream(~Vars: Data, ~State: Type, ~step: State -> IO(StreamTypes.Step<State>), ~cleanup: State -> IO(Unit), +c: Context.Ctx<Vars>, state: State, config: StreamTypes.Config) -> IO(Response.Res):
   Stream.register(Observation.stream(Context.observation(Vars, c)), Context.body(Vars, c, [], None{}), Stream.plan(~State, ~step, ~cleanup, state, config))
 
+# WebSocket opening handshake (RFC 6455). websocket_config accepts every
+# Origin and offers no subprotocol. After the 101, session receives the state,
+# the socket and the octets already read past the handshake, and owns the
+# socket; cleanup receives the state instead when the handshake is refused or
+# the response is replaced. See docs/websocket.md.
+def WebSocketConfig() -> Data: Handshake.Config
+def websocket_config() -> Handshake.Config: Handshake.defaults()
+def websocket_origins(config: Handshake.Config, origins: List<&2, String>) -> Handshake.Config: Handshake.with_origins(config, origins)
+def websocket_protocols(config: Handshake.Config, protocols: List<&2, String>) -> Handshake.Config: Handshake.with_protocols(config, protocols)
+def websocket_timeout(config: Handshake.Config, milliseconds: U32) -> Handshake.Config: Handshake.with_timeout(config, milliseconds)
+def websocket(~Vars: Data, ~State: Type, ~session: State -> Socket -> List<&2, U32> -> IO(Unit), ~cleanup: State -> IO(Unit), +c: Context.Ctx<Vars>, state: State, config: Handshake.Config) -> IO(Response.Res):
+  WebSocket.respond(~Vars, ~State, ~session, ~cleanup, c, state, config)
+
 # Buffered protection and cache middleware.
 def body_limit(bytes: U32) -> Builtin.Builtin: Builtin.BodyLimit{bytes}
 def timeout(milliseconds: U32) -> Builtin.Builtin: Builtin.Timeout{milliseconds}
@@ -353,3 +369,17 @@ def rate_limit(-Vars: Data, limiter: RateLimit.Limiter, c: Context.Ctx<Vars>, ne
   RateLimit.limit(Vars, limiter, c, next)
 def rate_limit_with(-Vars: Data, limiter: RateLimit.Limiter, key: String, now_ms: Nat, c: Context.Ctx<Vars>, next: Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
   RateLimit.limit_with(Vars, limiter, key, now_ms, c, next)
+
+# Reverse proxy (BND-47); docs/proxy.md. Call B.proxy from a route handler.
+# One upstream connection per request, http:// with a numeric IPv4 host or
+# localhost; the response streams back through B.stream.
+def ProxyOptions() -> Data: Proxy.Options
+def proxy_options(upstream: String) -> Proxy.Options: Proxy.options(upstream)
+def proxy_preserve_host(options: Proxy.Options, on: Bool) -> Proxy.Options: Proxy.preserve_host(options, on)
+def proxy_trust_forwarded(options: Proxy.Options, on: Bool) -> Proxy.Options: Proxy.trust_forwarded(options, on)
+def proxy_forwarded(options: Proxy.Options, on: Bool) -> Proxy.Options: Proxy.forwarded(options, on)
+def proxy_rewrite(options: Proxy.Options, from: String, to: String) -> Proxy.Options: Proxy.rewrite(options, from, to)
+def proxy_timeouts(options: Proxy.Options, connect_ms: U32, send_ms: U32, head_ms: U32, read_ms: U32) -> Proxy.Options: Proxy.timeouts(options, connect_ms, send_ms, head_ms, read_ms)
+def proxy_stream_config(options: Proxy.Options, config: StreamTypes.Config) -> Proxy.Options: Proxy.stream_config(options, config)
+def proxy(c: Handle.Ctx, options: Proxy.Options) -> IO(Response.Res): Proxy.proxy(Unit, c, options)
+def proxy_with(-Vars: Data, c: Context.Ctx<Vars>, options: Proxy.Options) -> IO(Response.Res): Proxy.proxy(Vars, c, options)
