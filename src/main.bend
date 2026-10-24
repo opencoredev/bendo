@@ -8,11 +8,13 @@ import ./sse.bend as Sse
 import ./http/sse.bend as SseCodec
 import ./http/sse_types.bend as SseTypes
 import ./app/observability.bend as Observation
-import ./mw/builtin.bend as Builtin
+import ./mw/builtin_core.bend as Builtin
+import ./mw/builtin.bend as BuiltinShell
 import ./mw/cache.bend as Cache
 import ./mw/server_timing.bend as Timing
 import ./mw/basic_auth.bend as BasicAuth
 import ./mw/jwt.bend as JwtAuth
+import ./mw/jwt_config.bend as JwtConfig
 import ./mw/csrf_policy.bend as CsrfPolicy
 import ./mw/cors_policy.bend as CorsPolicy
 import ./mw/secure_headers.bend as Secure
@@ -211,7 +213,7 @@ def server_timing() -> Builtin.Builtin: Builtin.ServerTiming{}
 def powered_by(name: String) -> Builtin.Builtin: Builtin.PoweredBy{name}
 def pretty_json() -> Builtin.Builtin: Builtin.PrettyJson{}
 def builtin(-Vars: Data, id: Builtin.Builtin, c: Context.Ctx<Vars>, next: Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
-  Builtin.dispatch(Vars, id, c, next)
+  BuiltinShell.dispatch(Vars, id, c, next)
 def timing_mark(-Vars: Data, c: Context.Ctx<Vars>, name: String, duration_ms: Nat) -> IO(Bool):
   Timing.mark(Vars, c, name, duration_ms)
 
@@ -240,11 +242,11 @@ def csrf(origins: List<&2, String>) -> Builtin.Builtin: Builtin.Csrf{CsrfPolicy.
 def csrf_host(scheme: String, origins: List<&2, String>) -> Builtin.Builtin: Builtin.Csrf{CsrfPolicy.policy(origins, Some{scheme})}
 
 # HS256 with a UTF-8 secret; leeway is the allowed clock skew in seconds.
-def JwtConfig() -> Data: JwtAuth.Config
+def JwtConfig() -> Data: JwtConfig.Config
 def JwtError() -> Data: Jwt.Error
-def jwt_config(secret: String, leeway: Nat, realm: String) -> JwtAuth.Config: JwtAuth.Config{Utf8.encode(secret), leeway, realm}
-def jwt(config: JwtAuth.Config) -> Builtin.Builtin: Builtin.Jwt{config}
-def jwt_with(-Vars: Data, config: JwtAuth.Config, c: Context.Ctx<Vars>, next: Json.Json -> Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
+def jwt_config(secret: String, leeway: Nat, realm: String) -> JwtConfig.Config: JwtConfig.Config{Utf8.encode(secret), leeway, realm}
+def jwt(config: JwtConfig.Config) -> Builtin.Builtin: Builtin.Jwt{config}
+def jwt_with(-Vars: Data, config: JwtConfig.Config, c: Context.Ctx<Vars>, next: Json.Json -> Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
   JwtAuth.with_claims(Vars, config, c, next)
 def jwt_sign(secret: String, claims: Json.Json) -> Result<&2, &2, Jwt.Error, String>: Jwt.sign(Utf8.encode(secret), claims)
 def jwt_verify(secret: String, token: String, now: Nat, leeway: Nat) -> Result<&2, &2, Jwt.Error, Json.Json>: Jwt.verify(Utf8.encode(secret), token, now, leeway)
@@ -319,8 +321,8 @@ def secure_defaults() -> Secure.Config: Secure.defaults()
 def secure_set(config: Secure.Config, name: String, value: String) -> Secure.Config: Secure.set(config, name, value)
 def secure_unset(config: Secure.Config, name: String) -> Secure.Config: Secure.unset(config, name)
 def secure_keep_powered_by(config: Secure.Config) -> Secure.Config: Secure.keep_powered_by(config)
-def secure_headers() -> Builtin.Builtin: Builtin.SecureHeaders{Secure.defaults()}
-def secure_headers_with(config: Secure.Config) -> Builtin.Builtin: Builtin.SecureHeaders{config}
+def secure_headers_with(config: Secure.Config) -> Builtin.Builtin: Builtin.SecurePrepared{Secure.policy(config)}
+def secure_headers() -> Builtin.Builtin: secure_headers_with(Secure.defaults())
 
 # Method override for POST requests. Register with B.on_request.
 def method_override() -> Builtin.Builtin: Builtin.MethodOverride{OverridePolicy.defaults()}

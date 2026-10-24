@@ -3,6 +3,7 @@ import Base
 import ../src/http/response.bend as R
 import ../src/data/utf8.bend as U
 import ./utf8.bend as Utf8Proof
+import ./hot-path.bend as HP
 
 def add_zero(+n: Nat) -> {Nat.add(n, 0n) == n : Nat}:
   match n:
@@ -46,5 +47,6 @@ def scalars(+s: String, ok: {U.valid(s) == True{} : Bool}) -> {R.scalars(s) == s
   scalars_go(s, "", Utf8Proof.valid_spec_of(s, ok))
 
 def utf8(+s: String, +ok: {U.valid(s) == True{} : Bool}) -> {U.decode(R.utf8(s)) == Some{s} : Maybe<&2, String>}:
+  %HP.utf8_spec_equiv(s) : {U.decode(_) == Some{s} : Maybe<&2, String>}
   %Equal.sym(String, R.scalars(s), s, scalars(s, ok)) : {U.decode(U.encode(_)) == Some{s} : Maybe<&2, String>}
   Utf8Proof.roundtrip(s, ok)
