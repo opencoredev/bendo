@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import type {
+  DevEnvironment,
   EnvironmentModuleNode,
   ErrorPayload,
   HotUpdateOptions,
@@ -9,6 +10,7 @@ import type {
 } from "vite";
 import { Compiler, canonical, findBendPath, type CompilerOptions } from "./compiler.ts";
 import type { Diagnostic } from "./diagnostic.ts";
+import { FileWatcher } from "./watch.ts";
 
 export { Compiler, Gate, type Outcome } from "./compiler.ts";
 export { locate, type Diagnostic, type Location, type Place } from "./diagnostic.ts";
@@ -24,6 +26,12 @@ export type BendoPluginOptions = {
   diskCache?: boolean;
   /** Replaces the Bend compile, for tests. */
   compile?: CompilerOptions["compile"];
+};
+
+/** For tests and debugging: what the plugin itself watches. */
+export type BendoApi = {
+  /** Files outside Vite's root the plugin watches, sorted. Empty outside dev. */
+  watchedFiles(): string[];
 };
 
 const NAME = "vite-plugin-bendo";
@@ -115,7 +123,7 @@ function thrown(diagnostic: Diagnostic): Error {
  * importers; a compile error goes to the overlay and the page keeps running
  * the last good build.
  */
-export default function bendo(options: BendoPluginOptions = {}): Plugin {
+export default function bendo(options: BendoPluginOptions = {}): Plugin & { api: BendoApi } {
   let settings: CompilerOptions | undefined;
   let compiler: Compiler | undefined;
   let server: ViteDevServer | undefined;
@@ -136,41 +144,83 @@ export default function bendo(options: BendoPluginOptions = {}): Plugin {
     if (writeDeclarations && !ready().disposed) writeIfChanged(declarationPath(file), text);
   };
 
-  // Vite watches the root, and `addWatchFile` skips files that do not exist.
-  // A dependency outside the root, missing or not, gets a watch the plugin
-  // owns, counted per entry so it is dropped once no graph reaches it.
+  // Vite watches the root. Every file outside it that a graph reaches, the
+  // entry and missing files included, gets a watch in the plugin's own
+  // watcher, counted per entry so it is dropped once no graph reaches it.
+  // Vite's watcher is shared with other plugins, so the plugin never adds
+  // or removes those paths there.
+  let watcher: FileWatcher | undefined;
   const external = new Map<string, Set<string>>();
-  const owned = new Map<string, number>();
   const outsideRoot = (file: string) => !file.startsWith(`${root}/`);
 
-  const watchedByOthers = (dev: ViteDevServer, file: string): boolean =>
-    dev.watcher.getWatched()[dirname(file)]?.includes(basename(file)) ?? false;
-
   const watchExternal = (entry: string, files: readonly string[]): void => {
-    if (server === undefined) return;
-    // Vite watches the entry itself, as a module it loaded.
-    const next = new Set(files.filter((file) => file !== entry && outsideRoot(file)));
+    if (watcher === undefined) return;
+    watcher.reopen();
+    const next = new Set(files.filter(outsideRoot));
     const previous = external.get(entry) ?? new Set<string>();
-    external.set(entry, next);
-    for (const file of next) {
-      if (previous.has(file)) continue;
-      const count = owned.get(file);
-      if (count !== undefined) owned.set(file, count + 1);
-      else if (!watchedByOthers(server, file)) {
-        owned.set(file, 1);
-        server.watcher.add(file);
+    if (next.size > 0) external.set(entry, next);
+    else external.delete(entry);
+    for (const file of next) if (!previous.has(file)) watcher.add(file);
+    for (const file of previous) if (!next.has(file)) watcher.remove(file);
+  };
+
+  /** Recompiles the entries that read `file`, and finds the modules to update in `environment`. */
+  const refresh = async (
+    environment: DevEnvironment,
+    file: string,
+  ): Promise<
+    | { kind: "updated"; modules: EnvironmentModuleNode[] }
+    | { kind: "failed"; diagnostic: Diagnostic }
+    | { kind: "cancelled" }
+  > => {
+    const { moduleGraph } = environment;
+    const updated: EnvironmentModuleNode[] = [];
+    let failure: Diagnostic | undefined;
+    for (const entry of ready().importersOf(file)) {
+      const outcome = await ready().compile(entry);
+      if (outcome.kind === "cancelled") return outcome;
+      watchExternal(entry, outcome.files);
+      const modules = moduleGraph.getModulesByFile(entry) ?? new Set<EnvironmentModuleNode>();
+      // A reload must recompile, not reuse the last transform, even after a failure.
+      for (const module of modules) moduleGraph.invalidateModule(module);
+      if (outcome.kind === "failed") {
+        // Only an environment that loaded the entry shows its error.
+        if (modules.size > 0) failure ??= outcome.diagnostic;
+        continue;
+      }
+      declare(entry, outcome.compiled.declarations);
+      updated.push(...modules);
+    }
+    return failure === undefined
+      ? { kind: "updated", modules: updated }
+      : { kind: "failed", diagnostic: failure };
+  };
+
+  /** The plugin's watcher saw `file` change: the same update `hotUpdate` makes, in every environment. */
+  const externalChange = async (dev: ViteDevServer, file: string): Promise<void> => {
+    for (const environment of Object.values(dev.environments)) {
+      const result = await refresh(environment, file);
+      switch (result.kind) {
+        case "cancelled":
+          return;
+        case "failed":
+          environment.hot.send({ type: "error", err: overlayError(result.diagnostic) });
+          break;
+        case "updated":
+          for (const module of result.modules) await environment.reloadModule(module);
+          break;
+        default: {
+          const _exhaustive: never = result;
+          return _exhaustive;
+        }
       }
     }
-    for (const file of previous) {
-      if (next.has(file)) continue;
-      const count = owned.get(file);
-      if (count === undefined) continue;
-      if (count > 1) owned.set(file, count - 1);
-      else {
-        owned.delete(file);
-        server.watcher.unwatch(file);
-      }
-    }
+  };
+
+  const closeWatcher = (): void => {
+    watcher?.close();
+    watcher = undefined;
+    external.clear();
   };
 
   return {
@@ -195,15 +245,30 @@ export default function bendo(options: BendoPluginOptions = {}): Plugin {
 
     configureServer(dev) {
       server = dev;
-      external.clear();
-      owned.clear();
+      closeWatcher();
+      // `server.watch: null` turns file watching off.
+      if (dev.config.server.watch !== null) {
+        // One change at a time, in the order the files changed.
+        let queue = Promise.resolve();
+        watcher = new FileWatcher((file) => {
+          queue = queue
+            .then(() => externalChange(dev, file))
+            .catch((error: unknown) =>
+              dev.config.logger.error(`${NAME}: updating after ${file} changed failed: ${error}`),
+            );
+        });
+      }
       // Stop Bend before Vite's close, which also waits for requests in flight.
       const close = dev.close.bind(dev);
       dev.close = async () => {
+        closeWatcher();
         await dispose();
         await close();
       };
-      dev.httpServer?.once("close", () => void dispose());
+      dev.httpServer?.once("close", () => {
+        closeWatcher();
+        void dispose();
+      });
     },
 
     // A watch-mode build closes its bundle after every run; start afresh.
@@ -225,7 +290,7 @@ export default function bendo(options: BendoPluginOptions = {}): Plugin {
       const outcome = await ready().compile(file);
       if (outcome.kind === "cancelled")
         throw new Error(`${NAME}: Vite closed while ${file} compiled`);
-      // In dev, `addWatchFile` would watch a file outside the root for good.
+      // In dev, a file outside the root goes to the plugin's own watcher instead.
       for (const dependency of outcome.files)
         if (server === undefined || !outsideRoot(dependency)) this.addWatchFile(dependency);
       watchExternal(canonical(file), outcome.files);
@@ -239,32 +304,29 @@ export default function bendo(options: BendoPluginOptions = {}): Plugin {
     // `hotUpdate` (Vite 6+) also fires on create and delete, which
     // `handleHotUpdate` does not see in Vite 8. It runs once per environment.
     async hotUpdate(update: HotUpdateOptions): Promise<EnvironmentModuleNode[] | undefined> {
-      const entries = ready().importersOf(update.file);
-      if (entries.length === 0) return undefined;
-      const { moduleGraph, hot } = this.environment;
-      const updated = new Set(update.modules);
-      let failure: Diagnostic | undefined;
-      for (const entry of entries) {
-        const outcome = await ready().compile(entry);
-        if (outcome.kind === "cancelled") return [];
-        watchExternal(entry, outcome.files);
-        const modules = moduleGraph.getModulesByFile(entry) ?? new Set<EnvironmentModuleNode>();
-        // A reload must recompile, not reuse the last transform, even after a failure.
-        for (const module of modules) moduleGraph.invalidateModule(module);
-        if (outcome.kind === "failed") {
-          // Only an environment that loaded the entry shows its error.
-          if (modules.size > 0) failure ??= outcome.diagnostic;
-          continue;
+      // Vite reports a file outside the root only when another plugin watches
+      // it; the plugin's own watcher already handles it.
+      if (watcher !== undefined && outsideRoot(update.file)) return undefined;
+      if (ready().importersOf(update.file).length === 0) return undefined;
+      const result = await refresh(this.environment, update.file);
+      switch (result.kind) {
+        case "cancelled":
+          return [];
+        case "failed":
+          // Keep the page on its last good build; the next good save clears the overlay.
+          this.environment.hot.send({ type: "error", err: overlayError(result.diagnostic) });
+          return [];
+        case "updated":
+          return [...new Set([...update.modules, ...result.modules])];
+        default: {
+          const _exhaustive: never = result;
+          return _exhaustive;
         }
-        declare(entry, outcome.compiled.declarations);
-        for (const module of modules) updated.add(module);
       }
-      if (failure !== undefined) {
-        // Keep the page on its last good build; the next good save clears the overlay.
-        hot.send({ type: "error", err: overlayError(failure) });
-        return [];
-      }
-      return [...updated];
+    },
+
+    api: {
+      watchedFiles: () => watcher?.files ?? [],
     },
   };
 }

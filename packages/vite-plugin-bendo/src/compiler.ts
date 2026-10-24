@@ -225,10 +225,12 @@ export class Compiler {
     try {
       snapshot = this.snapshot(entry, (file) => reached.add(file));
     } catch (error) {
-      // A missing import: report it at the entry and watch every file reached,
-      // the missing one too, so creating it recompiles the entry.
+      // A missing file: report it at the entry and watch every file reached,
+      // the missing one too, so creating it recompiles the entry. Files the
+      // last graph reached past it cannot fix the error, so they are dropped;
+      // a deleted entry keeps only itself.
       const message = error instanceof Error ? error.message : String(error);
-      const files = [...new Set([entry, ...reached, ...(this.graphs.get(entry) ?? [])])];
+      const files = [...new Set([entry, ...reached])];
       this.graphs.set(entry, files);
       return { kind: "failed", diagnostic: at(message, entry), files };
     }

@@ -1,5 +1,5 @@
-// BND-59: closing Vite stops Bend, and the plugin's watches outside the root
-// follow each entry's import graph instead of piling up.
+// BND-59: closing Vite stops Bend, and the plugin's own watches outside the
+// root follow each entry's import graph instead of piling up.
 import { expect, test } from "bun:test";
 import {
   chmodSync,
@@ -10,8 +10,8 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join } from "node:path";
-import { createServer, type ViteDevServer } from "vite";
+import { basename, dirname, join, relative } from "node:path";
+import { createServer, type Plugin, type ViteDevServer } from "vite";
 import type { CompiledShared } from "bendo/shared";
 import bendo from "./index.ts";
 import { copyFixture } from "./fixture.ts";
@@ -93,75 +93,215 @@ function fake(entry: string): CompiledShared {
   return { source: entry, module: "export default {};", declarations: "", named: [], warnings: [] };
 }
 
-test("watches outside the root follow each entry's graph and spare other watchers", async () => {
+/** The scratch directory beside `app`, outside its Vite root. */
+const outsideOf = (app: ReturnType<typeof copyFixture>) => `${app.root}-outside`;
+
+function writeDep(dir: string, name: string): string {
+  const file = join(dir, `${name}.bend`);
+  writeFileSync(file, `def ${name}() -> Nat:\n  1n\n`);
+  return file;
+}
+
+/** Writes a `.bend` entry that imports each of `deps`. */
+function writeEntry(file: string, deps: string[]): void {
+  const imports = deps.map((dep) => {
+    const path = relative(dirname(file), dep);
+    const name = basename(dep, ".bend").toUpperCase();
+    return `import ${path.startsWith(".") ? path : `./${path}`} as ${name}\n`;
+  });
+  writeFileSync(file, imports.join(""));
+}
+
+/** A dev server whose fake compiles count themselves, plus scratch files outside its root. */
+async function watchServer(
+  app: ReturnType<typeof copyFixture>,
+  plugins: Plugin[] = [],
+): Promise<{
+  dev: ViteDevServer;
+  plugin: ReturnType<typeof bendo>;
+  outside: string;
+  compiles: () => number;
+  dep: (name: string) => string;
+  entry: (file: string, deps: string[]) => void;
+  [Symbol.asyncDispose]: () => Promise<void>;
+}> {
+  const outside = outsideOf(app);
+  mkdirSync(outside, { recursive: true });
+  let compiles = 0;
+  const plugin = bendo({
+    diskCache: false,
+    declarations: false,
+    compile: async (entry) => {
+      compiles++;
+      return fake(entry);
+    },
+  });
+  const dev = await createServer({
+    root: app.root,
+    configFile: false,
+    logLevel: "silent",
+    cacheDir: app.path(".vite"),
+    server: { middlewareMode: true, ws: false },
+    plugins: [...plugins, plugin],
+  });
+  return {
+    dev,
+    plugin,
+    outside,
+    compiles: () => compiles,
+    dep: (name) => writeDep(outside, name),
+    entry: writeEntry,
+    async [Symbol.asyncDispose]() {
+      await dev.close();
+      rmSync(outside, { recursive: true, force: true });
+    },
+  };
+}
+
+async function expectWatched(plugin: ReturnType<typeof bendo>, files: string[]): Promise<void> {
+  const expected = [...files].sort();
+  await until(`the plugin watches ${JSON.stringify(expected)}`, () =>
+    Bun.deepEquals(plugin.api.watchedFiles(), expected),
+  ).catch(() => expect(plugin.api.watchedFiles()).toEqual(expected));
+}
+
+test("watches outside the root follow each entry's graph and leave Vite's watcher alone", async () => {
   using app = copyFixture("watch");
-  const outside = `${app.root}-outside`;
+  // Another plugin watches c through Vite's shared watcher.
+  const seen: string[] = [];
+  const c = `${app.root}-outside/c.bend`;
+  mkdirSync(dirname(c));
+  writeFileSync(c, "def c() -> Nat:\n  1n\n");
+  const other: Plugin = {
+    name: "other-watcher",
+    configureServer(dev) {
+      dev.watcher.add(c);
+      dev.watcher.on("change", (file) => seen.push(file));
+    },
+  };
+  await using s = await watchServer(app, [other]);
+  const [a, b] = [s.dep("a"), s.dep("b")];
+  const viteWatches = (file: string) =>
+    s.dev.watcher.getWatched()[dirname(file)]?.includes(basename(file)) ?? false;
+  await until("Vite watches c for the other plugin", () => viteWatches(c));
+  const one = app.path("shared/one.bend");
+  const two = app.path("shared/two.bend");
+  const load = (file: string) => s.dev.pluginContainer.load(file);
+
+  s.entry(one, [a, c]);
+  await load(one);
+  s.entry(two, [a]);
+  await load(two);
+  await expectWatched(s.plugin, [a, c]);
+
+  // one moves to b; two still needs a.
+  s.entry(one, [b]);
+  await load(one);
+  await expectWatched(s.plugin, [a, b]);
+
+  // two moves to b too, so nothing reaches a.
+  s.entry(two, [b]);
+  await load(two);
+  await expectWatched(s.plugin, [b]);
+
+  // And back again: a returns, b goes once neither entry reaches it.
+  s.entry(one, [a, c]);
+  await load(one);
+  s.entry(two, [a]);
+  await load(two);
+  await expectWatched(s.plugin, [a, c]);
+
+  // Editing c, which both watch, recompiles one through the plugin's watcher,
+  // once, and still reaches the other plugin.
+  const before = s.compiles();
+  writeFileSync(c, "def c() -> Nat:\n  2n\n");
+  await until("one recompiled", () => s.compiles() === before + 1);
+  await until("the other plugin saw the edit", () => seen.includes(c));
+  await Bun.sleep(200);
+  expect(s.compiles()).toBe(before + 1);
+
+  // Dropping c from every graph leaves Vite's watch, and the other plugin's events, alone.
+  s.entry(one, [a]);
+  await load(one);
+  await expectWatched(s.plugin, [a]);
+  expect(viteWatches(c)).toBe(true);
+  seen.length = 0;
+  writeFileSync(c, "def c() -> Nat:\n  3n\n");
+  await until("the other plugin saw the edit after the plugin let go", () => seen.includes(c));
+  expect(viteWatches(a) || viteWatches(b)).toBe(false);
+});
+
+test("an entry outside the root is watched, and deleting entries releases their imports", async () => {
+  using app = copyFixture("restore");
+  // Written before Vite starts: its watcher can miss a file created during its first scan.
+  const outside = outsideOf(app);
   mkdirSync(outside);
-  let server: ViteDevServer | undefined;
-  try {
-    const dep = (name: string) => {
-      const file = join(outside, `${name}.bend`);
-      writeFileSync(file, `def ${name}() -> Nat:\n  1n\n`);
-      return file;
-    };
-    const [a, b, c] = [dep("a"), dep("b"), dep("c")];
-    const entry = (name: string, deps: string[]) => {
-      const imports = deps.map(
-        (file) =>
-          `import ../../${basename(outside)}/${basename(file)} as ${basename(file, ".bend").toUpperCase()}\n`,
-      );
-      app.write(`shared/${name}.bend`, imports.join(""));
-    };
-    const dev = await createServer({
-      root: app.root,
-      configFile: false,
-      logLevel: "silent",
-      cacheDir: app.path(".vite"),
-      server: { middlewareMode: true, ws: false },
-      plugins: [bendo({ diskCache: false, declarations: false, compile: async (e) => fake(e) })],
-    });
-    server = dev;
-    const watched = (file: string) =>
-      dev.watcher.getWatched()[dirname(file)]?.includes(basename(file)) ?? false;
-    const load = (name: string) => dev.pluginContainer.load(app.path(`shared/${name}.bend`));
-    const expectWatched = async (expected: Record<string, boolean>) => {
-      const files: Record<string, string> = { a, b, c };
-      const actual = () =>
-        Object.fromEntries(Object.keys(expected).map((key) => [key, watched(files[key] ?? "")]));
-      await until(`watched is ${JSON.stringify(expected)}`, () =>
-        Object.entries(expected).every(([key, value]) => actual()[key] === value),
-      ).catch(() => expect(actual()).toEqual(expected));
-    };
+  const [a, b] = [writeDep(outside, "a"), writeDep(outside, "b")];
+  const inside = app.path("shared/inside.bend");
+  const outer = join(outside, "outer.bend");
+  writeEntry(inside, [a, b]);
+  writeEntry(outer, [a]);
+  await using s = await watchServer(app);
+  await s.dev.pluginContainer.load(inside);
+  await s.dev.pluginContainer.load(outer);
+  await expectWatched(s.plugin, [a, b, outer]);
 
-    // Another consumer already watches c.
-    dev.watcher.add(c);
-    await expectWatched({ a: false, b: false, c: true });
+  // Editing the outside entry itself recompiles it.
+  const before = s.compiles();
+  s.entry(outer, [b]);
+  await until("outer recompiled", () => s.compiles() === before + 1);
+  await expectWatched(s.plugin, [a, b, outer]);
 
-    entry("one", [a, c]);
-    await load("one");
-    entry("two", [a]);
-    await load("two");
-    await expectWatched({ a: true, b: false, c: true });
+  // A file Vite's watcher never saw has no delete event.
+  const viteKnows = () =>
+    until(
+      "Vite watches inside.bend",
+      () => s.dev.watcher.getWatched()[dirname(inside)]?.includes(basename(inside)) ?? false,
+    );
+  for (let round = 0; round < 3; round++) {
+    await viteKnows();
+    // Vite's watcher reports the inside entry; only its own path stays in its graph.
+    rmSync(inside);
+    await expectWatched(s.plugin, [b, outer]);
+    // The plugin's watcher reports the outside one, which it keeps watching for its return.
+    rmSync(outer);
+    await expectWatched(s.plugin, [outer]);
+    expect(s.plugin.api.watchedFiles().length).toBeLessThanOrEqual(3);
 
-    // one moves to b; two still needs a; c was never the plugin's to drop.
-    entry("one", [b]);
-    await load("one");
-    await expectWatched({ a: true, b: true, c: true });
-
-    // two moves to b too, so nothing reaches a.
-    entry("two", [b]);
-    await load("two");
-    await expectWatched({ a: false, b: true, c: true });
-
-    // And back again: a returns, b goes once neither entry reaches it.
-    entry("one", [a]);
-    await load("one");
-    await expectWatched({ a: true, b: true, c: true });
-    entry("two", [a]);
-    await load("two");
-    await expectWatched({ a: true, b: false, c: true });
-  } finally {
-    await server?.close();
-    rmSync(outside, { recursive: true, force: true });
+    s.entry(inside, [a, b]);
+    await expectWatched(s.plugin, [a, b, outer]);
+    s.entry(outer, [b]);
+    await expectWatched(s.plugin, [a, b, outer]);
   }
+});
+
+test("closing the dev server closes the plugin's watcher", async () => {
+  using app = copyFixture("unwatch");
+  const s = await watchServer(app);
+  const a = s.dep("a");
+  const inside = app.path("shared/inside.bend");
+  s.entry(inside, [a]);
+  await s.dev.pluginContainer.load(inside);
+  await expectWatched(s.plugin, [a]);
+  await s[Symbol.asyncDispose]();
+  expect(s.plugin.api.watchedFiles()).toEqual([]);
+});
+
+test("an import in a missing directory is watched once the entry recompiles after it appears", async () => {
+  using app = copyFixture("late-dir");
+  await using s = await watchServer(app);
+  const inside = app.path("shared/inside.bend");
+  const late = join(s.outside, "later", "late.bend");
+  s.entry(inside, [late]);
+  await s.dev.pluginContainer.load(inside).catch(() => undefined);
+  await expectWatched(s.plugin, [late]);
+
+  mkdirSync(dirname(late));
+  writeFileSync(late, "def late() -> Nat:\n  1n\n");
+  // The next compile of the entry retries the directory.
+  await s.dev.pluginContainer.load(inside);
+  expect(s.compiles()).toBe(1);
+  const before = s.compiles();
+  writeFileSync(late, "def late() -> Nat:\n  2n\n");
+  await until("the late import's edit recompiled inside", () => s.compiles() === before + 1);
 });

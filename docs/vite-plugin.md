@@ -74,11 +74,18 @@ reload. What happens next depends on the importer:
 - If no importer accepts the update, Vite reloads the page.
 
 Creating or deleting a file counts as an edit. Deleting an import sends its
-importers' compile error to the overlay, and restoring it sends the update. A
-file the entry imports from outside Vite's root is watched too, including one
-that does not exist yet: creating it recompiles the entry. Vite needs a moment
-to set up that watch, so a file created within a few milliseconds of the
-failed compile can be missed; save it again.
+importers' compile error to the overlay, and restoring it sends the update.
+
+Vite watches only its root. For a `.bend` entry outside the root, and for
+every file an entry imports from outside it, the plugin runs its own watcher.
+It watches a file that does not exist yet too, so creating it recompiles the
+entry. It never adds paths to Vite's watcher or removes them, so another
+plugin watching the same file keeps its watch. A file stops being watched once
+no entry's import graph reaches it; a deleted entry keeps only a watch on its
+own path, to see it come back. The watch is on the file's directory, so an
+import whose directory does not exist is not watched until the entry
+recompiles after the directory appears. Setting `server.watch` to `null` turns
+this watcher off along with Vite's.
 
 A compiled `.bend` module never accepts itself: its exports are plain values,
 and an importer that captured the old functions would keep calling them.
@@ -121,6 +128,12 @@ restart.
 Bend compiles can take seconds and gigabytes, so the plugin runs one at a time
 by default. Requests for the same graph while it compiles share that compile.
 Raise `concurrency` on a machine with memory to spare.
+
+Closing Vite, or stopping it with Ctrl-C, `SIGTERM` or `SIGHUP`, kills any
+Bend compile in flight. Each compile runs in its own process group, so if
+Vite is killed with `SIGKILL` (`kill -9`, or the kernel's out-of-memory
+killer) nothing stops it: Bend keeps running, detached, until it finishes. Look
+for leftover `bend` processes with `pgrep -a bend` after such a crash.
 
 ## Options
 

@@ -13,6 +13,7 @@ const app = copyFixture("dev");
 // A directory beside the app, outside Vite's root and so outside its watcher.
 const outside = `${app.root}-outside`;
 mkdirSync(outside);
+const plugin = bendo({ diskCache: false });
 let server: ViteDevServer;
 let base = "";
 let socket: WebSocket;
@@ -82,7 +83,7 @@ beforeAll(async () => {
     logLevel: "silent",
     cacheDir: app.path(".vite"),
     server: { host: "127.0.0.1", port: 0, strictPort: true },
-    plugins: [bendo({ diskCache: false })],
+    plugins: [plugin],
   });
   await server.listen();
   const address = server.httpServer?.address();
@@ -180,12 +181,9 @@ test("a broken import outside the root recovers once it is created and fixed", a
     `${app.read("shared/handle.bend")}\ndef extra() -> Nat:\n  Extra.seven()\n`,
   );
   expect(errorMessage(await nextMessage(missing, isType("error")))).toContain(extra);
-  // The plugin asked chokidar to watch the missing path. Its watch on the
-  // directory is set up asynchronously; a file created before then is missed.
-  for (let i = 0; server.watcher.getWatched()[outside] === undefined; i++) {
-    if (i === 200) throw new Error(`${outside} never became watched`);
-    await Bun.sleep(10);
-  }
+  // The plugin's own watcher holds the missing path; Vite's never sees it.
+  expect(plugin.api.watchedFiles()).toContain(extra);
+  expect(server.watcher.getWatched()[outside]).toBeUndefined();
 
   // Creating it fires a create event; its type error must reach the overlay.
   const created = messages.length;
@@ -216,4 +214,31 @@ test("deleting an imported file shows the error, and restoring it sends the upda
   const module = await fetchModule("/shared/handle.bend");
   expect(module.status).toBe(200);
   expect(await run(module.text, "min_length")).toBe(4);
+});
+
+test("editing an entry outside the root sends the update its importer accepts", async () => {
+  const entry = join(outside, "greeting.bend");
+  writeFileSync(entry, 'import Base\n\ndef greeting() -> String:\n  "hello"\n');
+  const specifier = `../../${basename(outside)}/greeting.bend`;
+  app.write(
+    "src/greeting.ts",
+    [
+      `import { greeting } from "${specifier}";`,
+      "export const text = greeting();",
+      `import.meta.hot?.accept("${specifier}", () => {});`,
+      "",
+    ].join("\n"),
+  );
+  expect((await fetch(`${base}/src/greeting.ts`)).status).toBe(200);
+  const url = `/@fs${entry}`;
+  expect((await fetchModule(url)).status).toBe(200);
+  expect(plugin.api.watchedFiles()).toContain(entry);
+
+  const from = messages.length;
+  writeFileSync(entry, 'import Base\n\ndef greeting() -> String:\n  "hi there"\n');
+  const update = await nextMessage(from, isType("update"));
+  expect(updatePaths(update)).toEqual([`/src/greeting.ts <- ${url}`]);
+  const module = await fetchModule(url);
+  expect(module.status).toBe(200);
+  expect(await run(module.text, "greeting")).toBe("hi there");
 });
