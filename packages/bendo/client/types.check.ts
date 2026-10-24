@@ -74,9 +74,9 @@ export async function checks(): Promise<void> {
   const one = await api.todos({ id: 1 }).get();
   if (one.ok) expectType<Equal<typeof one.data, Todo | undefined>>(true);
   else if (one.kind === "http") expectType<Equal<typeof one.status, number>>(true);
-  // Any route may answer 204, so `data` is the response type only under `kind: "data"`.
+  // Any route may answer 204 or 205, so `data` is the response type only under `kind: "data"`.
   if (one.ok && one.kind === "data") expectType<Equal<typeof one.data, Todo>>(true);
-  if (one.ok && one.kind === "no-content") expectType<Equal<typeof one.status, 204>>(true);
+  if (one.ok && one.kind === "no-content") expectType<Equal<typeof one.status, 204 | 205>>(true);
   await api.todos({ id: "1" }).delete();
   await api.todos.get();
   await api.todos.get({ query: { limit: 5, tag: ["a", "b"], extra: true } });

@@ -101,4 +101,64 @@ export type Routes =
       body: unknown;
       response: { "method": string; };
     };
+  }
+  | {
+    method: "GET";
+    path: "/int/:i";
+    all: false;
+    captures: ["i"];
+    input: {
+      params: { "i": (number | string); };
+      query: unknown;
+      headers: unknown;
+      body: unknown;
+      response: unknown;
+    };
+    output: {
+      params: { "i": number; };
+      query: unknown;
+      headers: unknown;
+      body: unknown;
+      response: unknown;
+    };
+  }
+  | {
+    method: "GET";
+    path: "/num/:n";
+    all: false;
+    captures: ["n"];
+    input: {
+      params: { "n": (number | string); };
+      query: unknown;
+      headers: unknown;
+      body: unknown;
+      response: unknown;
+    };
+    output: {
+      params: { "n": number; };
+      query: unknown;
+      headers: unknown;
+      body: unknown;
+      response: unknown;
+    };
+  }
+  | {
+    method: "GET";
+    path: "/big/:n";
+    all: false;
+    captures: ["n"];
+    input: {
+      params: { "n": (number | string); };
+      query: unknown;
+      headers: unknown;
+      body: unknown;
+      response: unknown;
+    };
+    output: {
+      params: { "n": number; };
+      query: unknown;
+      headers: unknown;
+      body: unknown;
+      response: unknown;
+    };
   };

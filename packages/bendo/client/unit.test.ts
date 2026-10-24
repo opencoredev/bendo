@@ -6,7 +6,7 @@ import { parseManifest } from "../src/manifest.ts";
 import { emitResponseSchemas } from "../src/response-schemas.ts";
 import { createClient, type ResponseSchemaTable } from "./index.ts";
 import { headerEntries, pathOf, shapes, textEntries } from "./path.ts";
-import { errorBody, expected, isJson } from "./response.ts";
+import { admits, compareDecimal, errorBody, expected, isJson } from "./response.ts";
 
 test("route patterns become the step shapes the client tree uses", () => {
   expect(shapes("/")).toEqual([[]]);
@@ -118,7 +118,7 @@ const item = (value: unknown) => [
   { kind: "capture" as const, name: "id", value },
 ];
 
-test("a row whose params schema rejects the captures is not a candidate", async () => {
+test("params schemas narrow the candidates but never rule them all out", async () => {
   const param = (schema: object) => ({
     type: "object",
     properties: { id: schema },
@@ -175,7 +175,48 @@ test("a row whose params schema rejects the captures is not a candidate", async 
     kind: "schemas",
     schemas: [{ const: "flag" }],
   });
-  expect(await expected(table, "PUT", item(3))).toMatchObject({ kind: "unreachable" });
+  // No row accepts 3, and the server may not enforce params, so every PUT row counts.
+  expect(await expected(table, "PUT", item(3))).toEqual({
+    kind: "schemas",
+    schemas: [{ const: "int" }, { const: "text" }],
+  });
+  // Every GET row counts for "other", and the read row has no response schema.
+  expect(await expected(table, "GET", item("other"))).toEqual({ kind: "any" });
+});
+
+test("number tokens compare by exact decimal value", () => {
+  const pairs: [string, string, -1 | 0 | 1][] = [
+    ["-0", "0", 0],
+    ["1e3", "1000", 0],
+    ["1000.00000000000000001", "1000", 1],
+    ["9007199254740993", "9007199254740992", 1],
+    ["1e400", "1.7976931348623157e+308", 1],
+    ["-1e400", "-1.5", -1],
+    ["1e-400", "0", 1],
+    ["0.00012", "1.2e-4", 0],
+    ["-2", "-10", 1],
+    ["12", "120e-1", 0],
+  ];
+  for (const [a, b, order] of pairs) {
+    expect([a, b, compareDecimal(a, b)]).toEqual([a, b, order]);
+    // Swapping the operands reverses the order.
+    expect([b, a, compareDecimal(b, a) + order]).toEqual([b, a, 0]);
+  }
+});
+
+test("a __proto__ capture stays an own key of the params object", async () => {
+  // Built as the generated table writes it: a computed key, so it stays an own property.
+  // The object is open because Ajv ignores a __proto__ property schema, so a
+  // closed object would call the key undeclared.
+  const schema = {
+    type: "object",
+    properties: { ["__proto__"]: { type: "string" } },
+    required: ["__proto__"],
+    additionalProperties: true,
+  };
+  const steps = [{ kind: "capture" as const, name: "__proto__", value: "x" }];
+  expect(await admits(schema, steps)).toBe(true);
+  expect(await admits({ ...schema, required: ["__proto__", "id"] }, steps)).toBe(false);
 });
 
 test("the emitted schema table keeps __proto__ as an own key and survives overflowing numbers", async () => {
@@ -314,11 +355,18 @@ const replies = new Map<string, () => Response>([
   // The read handler answers with the write route's shape.
   ["/docs/read", () => Response.json({ count: 1 })],
   ["/docs/write", () => Response.json({ count: 1 })],
+  // No row's params accept these ids, so both docs rows count.
+  ["/docs/other", () => Response.json({ count: 1 })],
+  ["/docs/neither", () => Response.json([])],
   [
     "/empty?mode=json",
     () => new Response(null, { status: 204, headers: { "content-type": "application/json" } }),
   ],
   ["/empty?mode=bare", () => new Response(null, { status: 204 })],
+  [
+    "/empty?mode=reset",
+    () => new Response(null, { status: 205, headers: { "content-type": "application/json" } }),
+  ],
   ["/empty?mode=not-modified", () => new Response(null, { status: 304 })],
 ]);
 const server = Bun.serve({
@@ -362,10 +410,33 @@ test("a narrowed route that returns its sibling's response shape is invalid-resp
   });
 });
 
-test("a 204 is no-content with or without a JSON content type; a 304 is http", async () => {
-  for (const mode of ["json", "bare"]) {
+test("captures no row accepts are checked against every row at the path", async () => {
+  // The server may not enforce exported params, so neither row is ruled out.
+  const loose = createClient<Endpoint<"/docs/:id", { id: string }, unknown>>(
+    `http://127.0.0.1:${server.port}/`,
+    { schemas: table },
+  );
+  expect(await loose.docs({ id: "other" }).get()).toMatchObject({
+    ok: true,
+    kind: "data",
+    data: { count: 1 },
+  });
+  expect(await loose.docs({ id: "neither" }).get()).toMatchObject({
+    ok: false,
+    kind: "invalid-response",
+    status: 200,
+    issues: [{ path: [], message: "must be object (type)" }],
+  });
+});
+
+test("a 204 or 205 is no-content with or without a JSON content type; a 304 is http", async () => {
+  for (const [mode, status] of [
+    ["json", 204],
+    ["bare", 204],
+    ["reset", 205],
+  ] as const) {
     const result = await api.empty.get({ query: { mode } });
-    expect(result).toMatchObject({ ok: true, kind: "no-content", status: 204 });
+    expect(result).toMatchObject({ ok: true, kind: "no-content", status });
     if (result.ok) expect(result.data).toBeUndefined();
   }
   expect(await api.empty.get({ query: { mode: "not-modified" } })).toMatchObject({

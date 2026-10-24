@@ -79,24 +79,91 @@ export function errorBody(text: string): HttpErrorBody {
 }
 
 /** What a 2xx body is checked against. */
-export type Expected =
-  | { kind: "any" }
-  | { kind: "schemas"; schemas: readonly JsonSchema[] }
-  | { kind: "unreachable"; issue: ResponseIssue };
+export type Expected = { kind: "any" } | { kind: "schemas"; schemas: readonly JsonSchema[] };
 
 // A JSON number token; Bendo coerces only these (docs/data/schema.md#coercion-for-text-sources).
-const NUMBER = /^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$/;
+const NUMBER = /^(-?)([0-9]+)(?:\.([0-9]+))?(?:[eE]([+-]?[0-9]+))?$/;
+const STRICT_NUMBER = /^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$/;
+// Bendo's lexical integer rule (`D.is_integer`): no fraction and no exponent.
+const INTEGER = /^-?(0|[1-9][0-9]*)$/;
 const FIRST_MATCH = "Bendo decodes with the first matching member";
 
+/** An exact decimal: `0.digits × 10^exponent`, with `digits` free of leading and trailing zeros. */
+type Decimal = { sign: -1 | 0 | 1; digits: string; exponent: bigint };
+
+function decimal(token: string): Decimal {
+  const parts = NUMBER.exec(token);
+  if (parts === null) return { sign: 0, digits: "", exponent: 0n };
+  const whole = parts[2] ?? "";
+  const all = whole + (parts[3] ?? "");
+  const digits = all.replace(/^0+/, "").replace(/0+$/, "");
+  if (digits === "") return { sign: 0, digits, exponent: 0n };
+  const leading = all.length - all.replace(/^0+/, "").length;
+  // BigInt keeps exponents such as 1e400 and 1e-99999999999999999999 exact.
+  const exponent = BigInt(parts[4] ?? "0") + BigInt(whole.length - leading);
+  return { sign: parts[1] === "-" ? -1 : 1, digits, exponent };
+}
+
+/** Compares two number tokens by exact value, as Bendo's `D.order` does. */
+export function compareDecimal(a: string, b: string): -1 | 0 | 1 {
+  const x = decimal(a);
+  const y = decimal(b);
+  if (x.sign !== y.sign) return x.sign < y.sign ? -1 : 1;
+  if (x.sign === 0) return 0;
+  let magnitude: -1 | 0 | 1 = 0;
+  if (x.exponent !== y.exponent) magnitude = x.exponent < y.exponent ? -1 : 1;
+  else {
+    const width = Math.max(x.digits.length, y.digits.length);
+    const p = x.digits.padEnd(width, "0");
+    const q = y.digits.padEnd(width, "0");
+    magnitude = p === q ? 0 : p < q ? -1 : 1;
+  }
+  const order = x.sign * magnitude;
+  return order < 0 ? -1 : order > 0 ? 1 : 0;
+}
+
+/**
+ * The exported bound as a token. The table holds it as a double, so a bound
+ * beyond the double range is `Infinity` and leaves that side open.
+ */
+function within(token: string, bound: unknown, side: "minimum" | "maximum"): boolean {
+  if (typeof bound !== "number" || Number.isNaN(bound)) return true;
+  if (!Number.isFinite(bound)) return side === "minimum" ? bound < 0 : bound > 0;
+  const order = compareDecimal(token, String(bound));
+  return side === "minimum" ? order >= 0 : order <= 0;
+}
+
+type Coerced = { ok: true; value: unknown } | { ok: false };
+
+/**
+ * Bendo's admission of a number capture: a JSON number token, lexical for an
+ * integer schema, within the bounds by exact decimal order. The server keeps
+ * the token, so this decides alone; the value returned for Ajv is only a
+ * stand-in that passes the same numeric schema (`1e400` would be Infinity).
+ */
+function coerceNumber(schema: Record<string, unknown>, token: string): Coerced {
+  const admitted =
+    STRICT_NUMBER.test(token) &&
+    (schema.type !== "integer" || INTEGER.test(token)) &&
+    within(token, schema.minimum, "minimum") &&
+    within(token, schema.maximum, "maximum");
+  if (!admitted) return { ok: false };
+  let value = Number(token);
+  if (!Number.isFinite(value)) value = value > 0 ? Number.MAX_VALUE : -Number.MAX_VALUE;
+  if (typeof schema.minimum === "number") value = Math.max(value, schema.minimum);
+  if (typeof schema.maximum === "number") value = Math.min(value, schema.maximum);
+  return { ok: true, value };
+}
+
 /** Bendo's text coercion of one scalar, read from the exported schema like `route-schema.ts` does. */
-function coerceScalar(schema: unknown, value: string): unknown {
-  if (!record(schema)) return value;
+function coerceScalar(schema: unknown, value: string): Coerced {
+  if (!record(schema)) return { ok: true, value };
   switch (schema.type) {
     case "number":
     case "integer":
-      return NUMBER.test(value) ? Number(value) : value;
+      return coerceNumber(schema, value);
     case "boolean":
-      return value === "true" ? true : value === "false" ? false : value;
+      return { ok: true, value: value === "true" ? true : value === "false" ? false : value };
   }
   // A nullable coerces its inner schema; a union never coerces.
   const members: unknown = schema.anyOf;
@@ -108,38 +175,44 @@ function coerceScalar(schema: unknown, value: string): unknown {
     schema.$comment !== FIRST_MATCH
   )
     return coerceScalar(members[1], value);
-  const parts: unknown = schema.allOf;
-  if (Array.isArray(parts))
-    for (const part of parts) {
-      const coerced = coerceScalar(part, value);
-      if (coerced !== value) return coerced;
-    }
-  return value;
+  return { ok: true, value };
 }
 
 /** The params object the server decodes: each capture's text, coerced by its field schema. */
-function paramsOf(schema: JsonSchema, steps: readonly Step[]): Record<string, unknown> {
+function paramsOf(
+  schema: JsonSchema,
+  steps: readonly Step[],
+): { ok: true; params: Record<string, unknown> } | { ok: false } {
   const fields: unknown = record(schema) ? schema.properties : undefined;
-  const params: Record<string, unknown> = {};
+  const entries: [string, unknown][] = [];
   for (const step of steps) {
     if (step.kind !== "capture") continue;
     const value = text(step.value) ?? "";
     const field =
       record(fields) && Object.hasOwn(fields, step.name) ? fields[step.name] : undefined;
     // Only a direct array field gathers its key into an array.
-    params[step.name] =
-      record(field) && field.type === "array"
-        ? [coerceScalar(field.items, value)]
-        : coerceScalar(field, value);
+    const array = record(field) && field.type === "array";
+    const coerced = coerceScalar(array ? field.items : field, value);
+    if (!coerced.ok) return { ok: false };
+    entries.push([step.name, array ? [coerced.value] : coerced.value]);
   }
-  return params;
+  // fromEntries defines own properties, so a `__proto__` capture stays a key.
+  return { ok: true, params: Object.fromEntries(entries) };
+}
+
+/** Whether the server's params check would admit the call's captures under `schema`. */
+export async function admits(schema: JsonSchema, steps: readonly Step[]): Promise<boolean> {
+  const params = paramsOf(schema, steps);
+  return params.ok && (await check(schema, params.params)).length === 0;
 }
 
 /**
  * The response schemas of every row that could have answered: the method and
- * step shape match, and the row's params schema accepts the call's captures.
- * `any` means one of them has no response schema, or no row describes the
- * chain at all.
+ * step shape match. Params schemas only narrow: when some of those rows accept
+ * the call's captures, only they count; when none do, all of them count,
+ * because the server may not enforce the exported params schema (a separately
+ * supplied export, `Validate.skip`, or middleware that answers first). `any`
+ * means a counted row has no response schema, or no row describes the chain.
  */
 export async function expected(
   table: ResponseSchemaTable,
@@ -147,26 +220,22 @@ export async function expected(
   steps: readonly Step[],
 ): Promise<Expected> {
   const shape = chainShape(steps).join("/");
-  const schemas: JsonSchema[] = [];
-  let shaped = false;
+  const shaped: ResponseSchemaRow[] = [];
+  const accepting: ResponseSchemaRow[] = [];
   for (const row of table) {
     if (!row.all && row.method !== method) continue;
     if (!shapes(row.path).some((candidate) => candidate.join("/") === shape)) continue;
-    shaped = true;
-    if (
-      row.params !== undefined &&
-      (await check(row.params, paramsOf(row.params, steps))).length > 0
-    )
-      continue;
+    shaped.push(row);
+    if (row.params === undefined || (await admits(row.params, steps))) accepting.push(row);
+  }
+  const candidates = accepting.length > 0 ? accepting : shaped;
+  if (candidates.length === 0) return { kind: "any" };
+  const schemas: JsonSchema[] = [];
+  for (const row of candidates) {
     if (row.response === undefined) return { kind: "any" };
     schemas.push(row.response);
   }
-  if (schemas.length > 0) return { kind: "schemas", schemas };
-  if (!shaped) return { kind: "any" };
-  return {
-    kind: "unreachable",
-    issue: { path: [], message: "no route at this path accepts the call's captures" },
-  };
+  return { kind: "schemas", schemas };
 }
 
 // Ajv generates code, so load it only when a client validates.

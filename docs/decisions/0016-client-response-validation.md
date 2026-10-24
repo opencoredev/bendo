@@ -1,4 +1,4 @@
-# 0014: How response schemas reach the typed client
+# 0016: How response schemas reach the typed client
 
 Date: 2026-10-24. Issue: BND-57. Status: accepted for M7.
 
@@ -15,9 +15,15 @@ from the manifest to the browser.
   registration order with `method`, `path`, `all` and, when the route has
   them, the `params` and `response` schemas as plain object literals. The
   client needs the params schemas to tell apart routes that share a path
-  shape: it keeps only the rows whose params accept the call's coerced
-  captures, so a route narrowed to `id: "read"` is never validated against
-  the response schema of its `id: "write"` sibling.
+  shape: when some rows accept the call's coerced captures it keeps only
+  those, so a route narrowed to `id: "read"` is never validated against the
+  response schema of its `id: "write"` sibling. Params schemas only narrow.
+  When no row accepts the captures, every row at the path stays a candidate,
+  because the export does not prove the server enforces them (a separately
+  supplied list, `Validate.skip`, or middleware that answers first). Number
+  captures follow the server's decoder rather than Ajv: JSON number tokens
+  only, lexical integers for integer schemas, and bounds compared by exact
+  decimal value, so `"1e3"` is not an integer and `"1e400"` is not Infinity.
 
 An app opts in to validation by importing the second file and passing it to
 `createClient<Routes>(baseUrl, { schemas })`. `validate: false` switches it

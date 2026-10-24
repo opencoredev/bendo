@@ -46,8 +46,8 @@ export type ResponseIssue = { path: readonly (string | number)[]; message: strin
 /** Every call resolves to one of these; none rejects. */
 export type ClientResult<T> =
   | { ok: true; kind: "data"; status: number; data: T; response: Response }
-  // A 204 has no body for any route, so narrow on `kind` to read `data` as `T`.
-  | { ok: true; kind: "no-content"; status: 204; data: undefined; response: Response }
+  // A 204 or 205 has no body for any route, so narrow on `kind` to read `data` as `T`.
+  | { ok: true; kind: "no-content"; status: 204 | 205; data: undefined; response: Response }
   | { ok: false; kind: "http"; status: number; error: HttpErrorBody; response: Response }
   | { ok: false; kind: "request"; cause: unknown }
   | { ok: false; kind: "network"; cause: unknown }

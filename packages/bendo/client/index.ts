@@ -160,8 +160,9 @@ async function request(
     const status = response.status;
     const text = await response.text();
     if (!response.ok) return { ok: false, kind: "http", status, error: errorBody(text), response };
-    // 204 has no body whatever its Content-Type says, and Bendo never checks it.
-    if (status === 204) return { ok: true, kind: "no-content", status, data: undefined, response };
+    // 204 and 205 have no body whatever their Content-Type says, and Bendo never checks one.
+    if (status === 204 || status === 205)
+      return { ok: true, kind: "no-content", status, data: undefined, response };
     // Neither has a HEAD response.
     if (method === "HEAD") return { ok: true, kind: "data", status, data: undefined, response };
     const json = isJson(response.headers.get("content-type"));
@@ -175,8 +176,6 @@ async function request(
     switch (expect.kind) {
       case "any":
         break;
-      case "unreachable":
-        return { ok: false, kind: "invalid-response", status, issues: [expect.issue], response };
       case "schemas": {
         if (!json) {
           const type = response.headers.get("content-type") ?? "none";

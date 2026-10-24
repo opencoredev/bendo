@@ -47,7 +47,7 @@ slots, and returns `output.response`. A consumer can also select a route with
 `bendo gen` also writes `.bendo/routes.schemas.ts` beside the types: one row
 per route in the same order with `method`, `path`, `all` and the `params` and
 `response` schemas when the route has them. The client validates responses against it
-([decision 0014](decisions/0014-client-response-validation.md)). Both files are
+([decision 0016](decisions/0016-client-response-validation.md)). Both files are
 generated before either is replaced.
 
 ## Input, decoded values and responses

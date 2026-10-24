@@ -95,17 +95,17 @@ type, or `undefined` for `head`. The promise never rejects.
 
 | Result | When |
 | --- | --- |
-| `{ ok: true, kind: "data", status, data, response }` | a 2xx response other than 204 whose body passed validation |
-| `{ ok: true, kind: "no-content", status: 204, data: undefined, response }` | a 204 |
+| `{ ok: true, kind: "data", status, data, response }` | a 2xx response other than 204 and 205 whose body passed validation |
+| `{ ok: true, kind: "no-content", status, data: undefined, response }` | a 204 or 205; `status` is `204 \| 205` |
 | `{ ok: false, kind: "http", status, error, response }` | any status outside 200 to 299 |
 | `{ ok: false, kind: "request", cause }` | the request could not be built, so nothing was sent |
 | `{ ok: false, kind: "network", cause }` | no response: fetch rejected (refused connection, DNS, abort) or the body could not be read |
 | `{ ok: false, kind: "invalid-response", status, issues, response }` | a 2xx body that is not valid JSON or fails the response schema |
 
 `data` is parsed JSON when the response's content type is `application/json`
-or `+json`, and the body text otherwise. A 204 and a successful `HEAD` have
-`data: undefined` whatever their content type says, since neither has a body.
-Any route can answer 204 and Bendo never checks one against the response
+or `+json`, and the body text otherwise. A 204, a 205 and a successful `HEAD`
+have `data: undefined` whatever their content type says, since none has a body.
+Any route can answer 204 or 205 and Bendo never checks one against the response
 schema, so `data` has the route's type only after narrowing on `kind: "data"`.
 A 304 is an `http` result like any status outside 200 to 299.
 `response` is the `Response` with its body already read.
@@ -136,21 +136,31 @@ indexes into `data`.
 
 With `schemas`, a 2xx body is checked against the response schema of every
 route that could have answered the call (several when duplicate or `B.all`
-routes share the path). A route qualifies when its method and path shape match
-and its params schema accepts the call's captures, coerced from text as the
-server does: `{ id: 7 }` is the integer 7, and a route that only takes
-`id: "read"` is not a candidate for `id: "write"`. The body passes when any
-candidate's response schema accepts it. A candidate without a response schema
-accepts any body, and so does a call no route in the table describes. When
-routes share the path but none accepts the captures, the server cannot have
-sent the 2xx, so it is an `invalid-response`. `HEAD` and 204 responses are
-never validated. A body that is not JSON fails when a schema applies.
+routes share the path). A route qualifies when its method and path shape match.
+Params schemas then narrow the list: if some of those routes accept the call's
+captures, only they remain, so a route that only takes `id: "read"` is not
+checked against the response of its `id: "write"` sibling. If none accepts the
+captures, all of them remain. The exported params schema does not prove the
+server enforced it: the app may export a separately supplied list, serve with
+`Validate.skip`, or run middleware that answers before validation.
+
+Captures are read as the server's text coercion reads them. A number capture
+is admitted only as a JSON number token, compared with the bounds by exact
+decimal value; an integer schema also requires a plain integer token. So
+`{ id: 7 }` is the integer 7, `"1e3"` is not an integer, `"007"` is not a
+number, and an unbounded number takes `"1e400"`. The table holds bounds as
+JavaScript numbers, so a bound beyond the double range leaves that side open.
+
+The body passes when any remaining route's response schema accepts it. A route
+without a response schema accepts any body, and so does a call no route in the
+table describes. `HEAD`, 204 and 205 responses are never validated. A body that
+is not JSON fails when a schema applies.
 
 Pass `validate: false` to switch validation off, for example in production or
 under a Content Security Policy without `unsafe-eval`. Then the body is
 returned as `data` unchecked. Error responses are never validated.
 
-The validator is Ajv, loaded on first use. [Decision 0014](decisions/0014-client-response-validation.md)
+The validator is Ajv, loaded on first use. [Decision 0016](decisions/0016-client-response-validation.md)
 explains the choice and its limits, and
 [the validator differences](data/json-schema.md#decoder-policy-and-validator-differences)
 list where Ajv and Bendo's decoder disagree.

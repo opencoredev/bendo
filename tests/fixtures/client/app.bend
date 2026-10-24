@@ -4,7 +4,9 @@
 # body gets Bendo's own 422. GET /broken breaks its response schema on purpose:
 # under BENDO_ENV=production the server sends it unchanged so the client's own
 # check sees it, and in the default development mode the server answers 500.
-# ALL /any answers HEAD with a JSON Content-Type and no body.
+# ALL /any answers HEAD with a JSON Content-Type and no body. /int, /num and
+# /big only validate a numeric capture, so the client's admission of number
+# tokens can be compared with the server's decoder.
 import Base
 import ../../../src/main.bend as B
 import ../../../src/validated.bend as V
@@ -18,6 +20,7 @@ type Tag is Data:
   CreateTodo{}
   Broken{}
   Any{}
+  Admitted{}
 
 def text_or_empty(s: Maybe<&2, String>) -> String:
   Maybe.default(&2, String, s, "")
@@ -64,6 +67,7 @@ def response(tag: Tag, +c: B.Ctx) -> B.Res:
     case CreateTodo{}: create(c, B.field(B.valid_body(c), "title"))
     case Broken{}: B.json(c, J.JObject{[J.Field{"id", J.JString{"one"}}, J.Field{"done", J.JBool{True{}}}]})
     case Any{}: B.json(c, J.JObject{[J.Field{"method", J.JString{Request.method_text(B.method(c))}}]})
+    case Admitted{}: B.json(c, J.JObject{[]})
 
 def dispatch(tag: Tag, c: B.Ctx, env: Unit) -> IO(B.Res):
   IO.pure(B.Res, response(tag, c))
@@ -104,6 +108,9 @@ def echo_response() -> S.Schema:
 def id_params() -> S.Schema:
   S.ObjectSchema{[S.Field{"id", S.IntegerSchema{Some{"1"}, None{}}, S.Required{}}], S.Strict{}}
 
+def number_params(key: String, s: S.Schema) -> S.Schema:
+  S.ObjectSchema{[S.Field{key, s, S.Required{}}], S.Strict{}}
+
 def any_response() -> S.Schema:
   S.ObjectSchema{[S.Field{"method", text(1n), S.Required{}}], S.Strict{}}
 
@@ -114,6 +121,9 @@ def routes() -> List<&2, B.Registration(Tag)>:
     B.with_schemas(Tag, B.post(Tag, "/todos", CreateTodo{}), B.schemas([B.body_schema(todo_input()), B.response_schema(todo())])),
     B.with_schemas(Tag, B.get(Tag, "/broken", Broken{}), B.schemas([B.response_schema(todo())])),
     B.with_schemas(Tag, B.all(Tag, "/any", Any{}), B.schemas([B.response_schema(any_response())])),
+    B.with_schemas(Tag, B.get(Tag, "/int/:i", Admitted{}), B.schemas([B.params_schema(number_params("i", S.IntegerSchema{Some{"-5"}, Some{"9007199254740992"}}))])),
+    B.with_schemas(Tag, B.get(Tag, "/num/:n", Admitted{}), B.schemas([B.params_schema(number_params("n", S.NumberSchema{Some{"-1.5"}, Some{"1e3"}}))])),
+    B.with_schemas(Tag, B.get(Tag, "/big/:n", Admitted{}), B.schemas([B.params_schema(number_params("n", S.NumberSchema{None{}, None{}}))])),
   ]
 
 def ready(result: Result<&2, &2, B.RouteError, B.Routes(Tag)>) -> IO(Unit):

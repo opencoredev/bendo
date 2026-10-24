@@ -6,6 +6,7 @@ import { build, start, type RunningServer } from "../../../tests/harness.ts";
 import { fetchManifest } from "../src/manifest.ts";
 import { writeRouteTypes } from "../src/route-types.ts";
 import { createClient, type Fetch } from "./index.ts";
+import { admits } from "./response.ts";
 import type { Routes } from "./fixture/routes.ts";
 import { schemas } from "./fixture/routes.schemas.ts";
 
@@ -157,6 +158,51 @@ test("captures are percent-encoded; query and headers follow Bendo's text coerci
     token: "t",
     extra: "default",
   });
+});
+
+// Each route's admitted tokens, as the compiled server's params decoder decides.
+const numeric = {
+  // IntegerSchema{-5, 9007199254740992}: lexical integers only, exact bounds.
+  int: {
+    name: "i",
+    accepted: ["0", "-0", "-5", "9007199254740992"],
+    rejected: ["007", "1e3", "1.0", "-6", "9007199254740993", "1e400", "+1", "1.", "x"],
+  },
+  // NumberSchema{-1.5, 1e3}: any JSON number token within exact bounds.
+  num: {
+    name: "n",
+    accepted: ["1e3", "1000", "1E+3", "-1.5", "-0", "5e-400", "0.25"],
+    rejected: ["1000.00000000000000001", "-1.50000000000000000001", "1e400", "007", "1.", ".5"],
+  },
+  // An unbounded NumberSchema takes tokens beyond the double range.
+  big: {
+    name: "n",
+    accepted: ["1e400", "-1e400", "1e-400", "-0", "1e3", "9007199254740993"],
+    rejected: ["007", ".5", "1.", "-", "Infinity"],
+  },
+} as const;
+
+test("number captures are admitted exactly as the compiled server's decoder admits them", async () => {
+  for (const [route, { name, accepted, rejected }] of Object.entries(numeric)) {
+    const row = schemas.find((candidate) => candidate.path === `/${route}/:${name}`);
+    if (row?.params === undefined) throw new Error(`no params schema for /${route}`);
+    for (const [token, admitted] of [
+      ...accepted.map((token) => [token, true] as const),
+      ...rejected.map((token) => [token, false] as const),
+    ]) {
+      const response = await fetch(`${server.url}/${route}/${encodeURIComponent(token)}`);
+      const client = await admits(row.params, [
+        { kind: "static", name: route },
+        { kind: "capture", name, value: token },
+      ]);
+      expect({ route, token, server: response.status, client }).toEqual({
+        route,
+        token,
+        server: admitted ? 200 : 400,
+        client: admitted,
+      });
+    }
+  }
 });
 
 test("a closed port is a network result, not an exception", async () => {
