@@ -14,7 +14,15 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { main, parseArgs, UsageError, type Io } from "./cli.ts";
-import { locateToolkit, manifest, packageName, TargetNotEmpty, type Toolkit } from "./create.ts";
+import {
+  demote,
+  locateToolkit,
+  manifest,
+  packageName,
+  promote,
+  TargetNotEmpty,
+  type Toolkit,
+} from "./create.ts";
 
 const ROOT = resolve(import.meta.dir, "../../..");
 const CLI = join(import.meta.dir, "index.ts");
@@ -235,5 +243,29 @@ describe("the bin", () => {
     expect(result.stdout.toString()).toStartWith(
       "Usage: bun create bendo <dir> [--template api|fullstack]",
     );
+  });
+});
+
+describe("promote", () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("never replaces a file that appeared in the target, and demote undoes the rest", () => {
+    const root = mkdtempSync(join(tmpdir(), "create-bendo-promote-"));
+    dirs.push(root);
+    mkdirSync(join(root, "staged/src"), { recursive: true });
+    writeFileSync(join(root, "staged/a.txt"), "app");
+    writeFileSync(join(root, "staged/src/b.txt"), "app");
+    writeFileSync(join(root, "staged/z.txt"), "app");
+    mkdirSync(join(root, "target"));
+    // Someone else wrote z.txt after the emptiness check.
+    writeFileSync(join(root, "target/z.txt"), "theirs");
+    const made: string[] = [];
+    expect(() => promote(join(root, "staged"), join(root, "target"), made)).toThrow();
+    expect(readFileSync(join(root, "target/z.txt"), "utf8")).toBe("theirs");
+    demote(made);
+    expect(readdirSync(join(root, "target"))).toEqual(["z.txt"]);
   });
 });
