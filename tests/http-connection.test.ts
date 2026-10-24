@@ -293,6 +293,36 @@ test("101 closes until upgrade handoff is implemented", () =>
 test("417 in pipeline closes before next dispatch", () =>
   closed(request("/", "Expect: kittens\r\n") + request("/ignored"), 417));
 
+// BND-90: the server sends its FIN before the bounded drain, so EOF follows the
+// last response byte instead of waiting out the drain's one second. The client
+// keeps its write side open, as an HTTP client waiting for EOF does. The bound
+// scales with the response latency measured on the same connection, so a slow
+// machine loosens it; the best of three runs absorbs one-off scheduling stalls.
+const prompt: readonly [string, string, number, string?][] = [
+  ["Connection: close", request("/", "Connection: close\r\n"), 1],
+  ["HTTP/1.0", request("/", "", "GET", "1.0"), 1],
+  ["the max-requests cap", [1, 2, 3].map((n) => request(`/${n}`)).join(""), 3, short.url],
+  ["a 400 with unread request bytes", "garbage\r\n\r\n" + "y".repeat(32768), 1],
+];
+for (const [name, wire, responses, url] of prompt) {
+  test(`EOF promptly follows the response after ${name}`, async () => {
+    // Milliseconds by which each EOF missed its bound; negative is in time.
+    const excess: number[] = [];
+    for (let run = 0; run < 3; run++) {
+      using peer = new Peer(url);
+      await new Promise<void>((resolve) => peer.socket.once("connect", () => resolve()));
+      const sent = performance.now();
+      peer.socket.write(wire);
+      for (let i = 0; i < responses; i++) await peer.response();
+      const answered = performance.now();
+      await peer.eof();
+      excess.push(performance.now() - answered - Math.max(400, 4 * (answered - sent)));
+    }
+    // Before BND-90 every delay was about 1000 ms.
+    expect(Math.min(...excess)).toBeLessThan(0);
+  });
+}
+
 const pureOutput = compile("tests/fixtures/http-connection/consumer.bend", "mjs");
 const loaded: unknown = await import(pathToFileURL(pureOutput).href);
 if (typeof loaded !== "object" || loaded === null || !("default" in loaded))

@@ -33,6 +33,9 @@ Every command supports `--help`.
   Saves are debounced for 100 ms, including atomic editor saves. `.cache`, `dist`, `node_modules`, and `.git` are ignored.
 - `bendo build [entry]` builds a native executable at `dist/server`. Run it from
   the app directory. The entry defaults to `main.bend`.
+- `bendo build --shared [dir] [--out dir]` compiles each `dir/*.bend` (default
+  `shared`) to an ES module and its TypeScript declarations in `dist/shared`, for
+  browsers and other JavaScript runtimes. See [shared.md](shared.md).
 - `bendo start` runs `dist/server` without compiling or requiring Bend. It inherits
   your environment, including `PORT`. Run `build` first.
 - `bendo routes [entry]` builds the app if needed, runs it with `--bendo-routes`,
