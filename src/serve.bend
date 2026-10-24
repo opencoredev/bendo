@@ -249,7 +249,7 @@ def serve_config(~app: R.Req -> List<&2, U32> -> List<&2, U32>, config: Config) 
     +port : U32 = port_or(env, fallback)
     l : Listener <- IO.try(Listener, TCP.listen("127.0.0.1", port))
     IO.print("bendo listening on http://127.0.0.1:" ++ U32.show(port))
-    loop(~U32, ~(req => env => env), ~(req => body => env => close => legacy(~app, req, body, env, close)), l, limit, Config.Config{"127.0.0.1", port, limit, 65536, 5000, 10000, 30000, 1, False{}, Router.Spec{}})
+    loop(~U32, ~(req => env => env), ~(req => body => env => close => legacy(~app, req, body, env, close)), l, limit, Config.Config{"127.0.0.1", port, limit, 65536, 5000, 10000, 30000, 1, False{}, Router.Spec{}, Config.Development{}})
 
 def serve(~app: R.Req -> List<&2, U32> -> List<&2, U32>, port: U32) -> IO(Unit):
   serve_config(~app, defaults(port))
@@ -260,10 +260,10 @@ def encoded(res: Response.Res) -> List<&2, U32>:
   Bytes.append(Bytes.encode(Write.status_text(status) ++ Write.headers_text(headers) ++ "\r\n\r\n"), body)
 
 type State<-Tag: Data, -Env: Data> is Data:
-  State{table: Table.Table<Tag>, env: Env, router: Router.RouterKind, body_limit: U32}
+  State{table: Table.Table<Tag>, env: Env, router: Router.RouterKind, body_limit: U32, mode: Config.Mode}
 
 def selected_limit(~Tag: Data, ~Env: Data, ~select: Tag -> Maybe<&2, U32>, req: R.Req, state: State<Tag, Env>) -> U32:
-  State{table, env, router, limit} = state
+  State{table, env, router, limit, mode} = state
   BodyPolicy.for_request(~Tag, ~select, req, table, router, limit)
 
 # Handle returns a normalized response, including HEAD's representation length.
@@ -291,9 +291,9 @@ def prepare_transport(result: Response.Res & (Maybe<&1, StreamTypes.Plan> & IO(U
   prepare_stream(res, close, stream, after)
 
 def respond_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), req: R.Req, body: List<&2, U32>, state: State<Tag, Env>, close: Bool) -> IO(Reply):
-  State{table, env, router, limit} = state
+  State{table, env, router, limit, mode} = state
   do IO<Reply>:
-    result : Response.Res & (Maybe<&1, StreamTypes.Plan> & IO(Unit)) <- Handle.transport_routed(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, router, table, env, req, body)
+    result : Response.Res & (Maybe<&1, StreamTypes.Plan> & IO(Unit)) <- Handle.transport_routed(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, router, mode, table, env, req, body)
     return prepare_transport(result, close)
 
 def startup_limits_with(~Vars: Data, ~Tag: Data, ~select: Tag -> Maybe<&2, U32>, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +table: Table.Table<Tag>, env: Env, +config: Config.Config, manifest: Bool) -> IO(Unit):
@@ -302,13 +302,14 @@ def startup_limits_with(~Vars: Data, ~Tag: Data, ~select: Tag -> Maybe<&2, U32>,
       do IO<Unit>:
         IO.print(Manifest.json(Tag, table))
         IO.exit(0)
-    case Config.Config{+host, +fallback, +limit, header_limit, idle, head, body, max_requests, keep_alive, router} False{}:
+    case Config.Config{+host, +fallback, +limit, header_limit, idle, head, body, max_requests, keep_alive, router, mode} False{}:
       do IO<Unit>:
         port_env : Result<&1, &1, U32 & String, String> <- IO.get_env("PORT")
         +port : U32 = Config.port_env(port_env, fallback)
+        mode_env : Result<&1, &1, U32 & String, String> <- IO.get_env("BENDO_ENV")
         listener : Listener <- IO.try(Listener, TCP.listen(host, port))
         IO.print("bendo listening on http://" ++ host ++ ":" ++ U32.show(port))
-        loop(~State<Tag, Env>, ~(req => state => selected_limit(~Tag, ~Env, ~select, req, state)), ~(req => body => state => close => respond_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, req, body, state, close)), listener, State{table, env, router, limit}, config)
+        loop(~State<Tag, Env>, ~(req => state => selected_limit(~Tag, ~Env, ~select, req, state)), ~(req => body => state => close => respond_with(~Vars, ~Tag, ~Env, ~dispatch, ~middleware, req, body, state, close)), listener, State{table, env, router, limit, Config.mode_env(mode_env, mode)}, config)
 
 def startup_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config, manifest: Bool) -> IO(Unit):
   startup_limits_with(~Vars, ~Tag, ~(tag => None{}), ~Env, ~dispatch, ~middleware, table, env, config, manifest)

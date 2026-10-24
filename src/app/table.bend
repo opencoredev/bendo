@@ -1,6 +1,7 @@
 import Base
 import ../router/methods.bend as Methods
 import ../router/pattern.bend as Pattern
+import ./validate.bend as V
 
 type Stage is Data:
   Request{}
@@ -35,13 +36,16 @@ type Scope is Data:
 type HookSpec<-Tag: Data> is Data:
   HookSpec{stage: Stage, tag: Tag}
 
+# Checks carries a guard's or route's schemas (BND-36). Hook selection skips
+# it; route_schemas folds a route's Checks outer to inner.
 type Placement<-Tag: Data> is Data:
   Placement{scope: Scope, hook: HookSpec<Tag>}
+  Checks{scope: Scope, schemas: V.Schemas}
 
-# BND-33/34 will supply schema descriptions. This closed slot deliberately
-# cannot carry an unchecked string or promise validation that does not exist.
+# A guard's schemas, prepared when the guard options are built (BND-36).
 type SchemaSlot is Data:
   NoSchemas{}
+  WithSchemas{schemas: V.Schemas}
 
 type GuardOptions<-Tag: Data> is Data:
   GuardOptions{hooks: List<&2, HookSpec<Tag>>, schemas: SchemaSlot}
@@ -197,6 +201,7 @@ def hook_ids(-Tag: Data, hooks: List<&2, Placement<Tag>>, +stage: Stage) -> List
     case Nil{}: []
     case Placement{scope, HookSpec{kind, tag}} <> tail:
       include(Tag, tag, hook_ids(Tag, tail, stage), U32.is_eq(stage_number(kind), stage_number(stage)))
+    case Checks{scope, schemas} <> tail: hook_ids(Tag, tail, stage)
 
 def include_hooks(-Tag: Data, hooks: List<&2, Placement<Tag>>, stage: Stage, yes: Bool) -> List<&2, Tag>:
   match yes:
@@ -223,3 +228,25 @@ def scoped_lifecycle(-Tag: Data, +layers: List<&2, Middleware<Tag>>, path: Strin
     scoped_stage_ids(Tag, layers, route, MapResponse{}),
     scoped_stage_ids(Tag, layers, route, Error{}),
     scoped_stage_ids(Tag, layers, route, AfterResponse{})}
+
+# A route's schemas (BND-36): its placements read outer to inner, and per
+# slot the innermost schema wins. No route, or no schemas, validates nothing.
+def placed_schemas(-Tag: Data, hooks: List<&2, Placement<Tag>>, acc: V.Schemas) -> V.Schemas:
+  match hooks:
+    case Nil{}: acc
+    case Placement{scope, hook} <> tail: placed_schemas(Tag, tail, acc)
+    case Checks{scope, schemas} <> tail: placed_schemas(Tag, tail, V.override(acc, schemas))
+
+def schemas_here(-Tag: Data, hooks: List<&2, Placement<Tag>>, yes: Bool) -> V.Schemas:
+  match yes:
+    case True{}: placed_schemas(Tag, hooks, V.none())
+    case False{}: V.none()
+
+def route_schemas(-Tag: Data, layers: List<&2, Middleware<Tag>>, +route: Maybe<&2, Nat>) -> V.Schemas:
+  match layers:
+    case Nil{}: V.none()
+    case Scoped{index, hooks} <> tail:
+      match route:
+        case None{}: V.none()
+        case Some{n}: V.override(route_schemas(Tag, tail, Some{n}), schemas_here(Tag, hooks, Nat.is_eq(index, n)))
+    case _ <> tail: route_schemas(Tag, tail, route)

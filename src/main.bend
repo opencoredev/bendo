@@ -35,6 +35,9 @@ import ./http/request.bend as Request
 import ./http/response.bend as Response
 import ./router/methods.bend as Methods
 import ./router/router.bend as Router
+import ./app/validate.bend as Validate
+import ./data/schema.bend as SchemaLang
+import ./data/schema-prepared.bend as Prepared
 
 def HttpError() -> Data: Errors.HttpError
 def http_error(status: U32, message: String) -> Errors.HttpError: Errors.http_error(status, message)
@@ -113,6 +116,32 @@ def base_path(-Tag: Data, prefix: String, entries: List<&2, Table.Entry<Tag>>) -
 def show_routes(-Tag: Data, table: Table.Table<Tag>) -> IO(Unit): IO.print(Manifest.table_text(Tag, table))
 def route_hooks(-Tag: Data, registration: Methods.Registration(Tag), hooks: List<&2, Table.HookSpec<Tag>>) -> Table.Entry<Tag>:
   Scopes.local(Tag, registration, hooks)
+
+# BND-36 route validation; see docs/validation.md. Each slot's schema is
+# prepared (validity, pattern tables) once, when the slot value is built.
+def Schema() -> Data: SchemaLang.Schema
+def Value() -> Data: SchemaLang.Value
+def Schemas() -> Data: Validate.Schemas
+def SchemaSlot() -> Data: Validate.Slot
+def params_schema(schema: SchemaLang.Schema) -> Validate.Slot: Validate.ParamsSlot{Prepared.check(schema)}
+def query_schema(schema: SchemaLang.Schema) -> Validate.Slot: Validate.QuerySlot{Prepared.check(schema)}
+def headers_schema(schema: SchemaLang.Schema) -> Validate.Slot: Validate.HeadersSlot{Prepared.check(schema)}
+def body_schema(schema: SchemaLang.Schema) -> Validate.Slot: Validate.BodySlot{Prepared.check(schema)}
+def response_schema(schema: SchemaLang.Schema) -> Validate.Slot: Validate.ResponseSlot{Prepared.check(schema)}
+def schemas(slots: List<&2, Validate.Slot>) -> Validate.Schemas: Validate.set_of(slots)
+def with_schemas(-Tag: Data, entry: Table.Entry<Tag>, schemas: Validate.Schemas) -> Table.Entry<Tag>: Scopes.with_schemas(Tag, entry, schemas)
+def route_schemas(-Tag: Data, registration: Methods.Registration(Tag), hooks: List<&2, Table.HookSpec<Tag>>, schemas: Validate.Schemas) -> Table.Entry<Tag>: Scopes.validated(Tag, registration, hooks, schemas)
+def guard_schemas(-Tag: Data, hooks: List<&2, Table.HookSpec<Tag>>, schemas: Validate.Schemas) -> Table.GuardOptions<Tag>: Table.GuardOptions{hooks, Table.WithSchemas{schemas}}
+def valid_params(c: Handle.Ctx) -> Maybe<&2, SchemaLang.Value>: Context.valid_params(Unit, c)
+def valid_query(c: Handle.Ctx) -> Maybe<&2, SchemaLang.Value>: Context.valid_query(Unit, c)
+def valid_headers(c: Handle.Ctx) -> Maybe<&2, SchemaLang.Value>: Context.valid_headers(Unit, c)
+def valid_body(c: Handle.Ctx) -> Maybe<&2, SchemaLang.Value>: Context.valid_body(Unit, c)
+def valid_params_in(-Vars: Data, c: Context.Ctx<Vars>) -> Maybe<&2, SchemaLang.Value>: Context.valid_params(Vars, c)
+def valid_query_in(-Vars: Data, c: Context.Ctx<Vars>) -> Maybe<&2, SchemaLang.Value>: Context.valid_query(Vars, c)
+def valid_headers_in(-Vars: Data, c: Context.Ctx<Vars>) -> Maybe<&2, SchemaLang.Value>: Context.valid_headers(Vars, c)
+def valid_body_in(-Vars: Data, c: Context.Ctx<Vars>) -> Maybe<&2, SchemaLang.Value>: Context.valid_body(Vars, c)
+def field(value: Maybe<&2, SchemaLang.Value>, key: String) -> Maybe<&2, SchemaLang.Value>: Validate.field(value, key)
+def production(config: Config.Config) -> Config.Config: Config.with_mode(config, Config.Production{})
 
 # BND-26 plugins: functions from a Builder to a Builder. See docs/guides/plugins.md.
 def Builder(-Tag: Data) -> Data: Plugin.Builder<Tag>

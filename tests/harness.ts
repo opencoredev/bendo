@@ -13,7 +13,12 @@ export const COMPILE_TEST_TIMEOUT_MS = 200_000;
 /** Per-test timeout for tests that push megabyte inputs through `.mjs` builds. */
 export const SLOW_TEST_TIMEOUT_MS = 120_000;
 
-export type RunningServer = { url: string; [Symbol.asyncDispose]: () => Promise<void> };
+export type RunningServer = {
+  url: string;
+  /** Everything the server has written to stderr so far. */
+  stderr: () => string;
+  [Symbol.asyncDispose]: () => Promise<void>;
+};
 
 type Target = "native" | "mjs" | "js";
 
@@ -133,23 +138,35 @@ type StartAttempt =
   | { kind: "exited"; url: string; stderr: string }
   | { kind: "timeout"; url: string };
 
-async function attempt(binary: string, hostname: string): Promise<StartAttempt> {
+async function attempt(
+  binary: string,
+  hostname: string,
+  env: Record<string, string>,
+): Promise<StartAttempt> {
   // Stay below Linux's default ephemeral range (32768–60999): outbound test
   // traffic can leave those ports in TIME_WAIT and prevent a listener binding.
   const port = 20000 + Math.floor(Math.random() * 10000);
   const proc = Bun.spawn([binary], {
-    env: { ...process.env, PORT: String(port) },
+    env: { ...process.env, ...env, PORT: String(port) },
     stdout: "pipe",
     stderr: "pipe",
   });
   const url = `http://${hostname}:${port}`;
+  let stderr = "";
+  const captured = (async () => {
+    const decoder = new TextDecoder();
+    for await (const chunk of proc.stderr) stderr += decoder.decode(chunk, { stream: true });
+  })();
   let exited = false;
   void proc.exited.then(() => {
     exited = true;
   });
   const deadline = Date.now() + SERVER_START_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    if (exited) return { kind: "exited", url, stderr: await new Response(proc.stderr).text() };
+    if (exited) {
+      await captured;
+      return { kind: "exited", url, stderr };
+    }
     const up = await fetch(url).then(
       () => true,
       () => false,
@@ -159,9 +176,11 @@ async function attempt(binary: string, hostname: string): Promise<StartAttempt> 
         kind: "up",
         server: {
           url,
+          stderr: () => stderr,
           [Symbol.asyncDispose]: async () => {
             proc.kill();
             await proc.exited;
+            await captured;
           },
         },
       };
@@ -176,10 +195,14 @@ async function attempt(binary: string, hostname: string): Promise<StartAttempt> 
  * Starts a compiled server on a random port and waits until it answers.
  * A server that exits before answering (for example on a port collision) is retried on a new port.
  */
-export async function start(binary: string, hostname = "127.0.0.1"): Promise<RunningServer> {
+export async function start(
+  binary: string,
+  hostname = "127.0.0.1",
+  env: Record<string, string> = {},
+): Promise<RunningServer> {
   const failures: string[] = [];
   for (let i = 0; i < START_ATTEMPTS; i++) {
-    const result = await attempt(binary, hostname);
+    const result = await attempt(binary, hostname, env);
     switch (result.kind) {
       case "up":
         return result.server;
