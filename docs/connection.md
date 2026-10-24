@@ -125,6 +125,11 @@ def middleware(tag: Tag, c: B.Context(Unit), env: Env, next: B.Context(Unit) -> 
 #   limiter : B.RateLimiter <- B.rate_limiter(B.fixed_window(100n, 60000n))
 ```
 
+The limiter's table is a [store](store.md), so it counts per process. With
+`N` [workers](workers.md), each worker keeps its own table and a client whose
+connections land on every worker can make up to `N` times the configured
+limit. Serve with one worker (the default) when the limit must hold exactly.
+
 ### Policies
 
 | Constructor | Meaning |
