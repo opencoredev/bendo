@@ -24,6 +24,7 @@ type Tag is Data:
   Replace{}
   Map{}
   Observe{}
+  SizedStream{}
   Builtin{id: B.Builtin}
 
 type State is Data:
@@ -83,6 +84,10 @@ def handler(tag: Tag, c: B.Context(Unit), env: Unit) -> IO(B.Res):
         B.stream(~Unit, ~State, ~step, ~cleanup, c, State{1n, False{}, False{}, [120]}, S.Config{500, 65536})
     case Delayed{}: B.stream(~Unit, ~State, ~delayed_step, ~cleanup, c, State{4n, False{}, False{}, [120]}, S.Config{500, 65536})
     case Empty{}: B.stream(~Unit, ~State, ~step, ~cleanup, c, State{2n, False{}, True{}, [97, 98]}, S.Config{500, 65536})
+    # BND-91: an empty chunk, then `chunks` chunks of "ab", declared as `length` octets.
+    case SizedStream{}:
+      +ctx = c
+      B.stream_sized(~Unit, ~State, ~step, ~cleanup, ctx, State{count(B.query(ctx, "chunks")), False{}, True{}, [97, 98]}, S.Config{500, 65536}, count(B.query(ctx, "length")))
     case _:
       +ctx = c
       B.stream(~Unit, ~State, ~step, ~cleanup, ctx, State{count(B.query(ctx, "chunks")), False{}, False{}, copies(4096n, 120, [])}, S.Config{500, 65536})
@@ -136,6 +141,7 @@ def main() -> IO(Unit):
     B.get(Tag, "/policy/stream", Stream{}),
     B.route_hooks(Tag, Methods.get(Tag, "/policy/recovered", PolicyError{}), [B.hook(Tag, Table.Error{}, RecoverStream{})]),
     B.get(Tag, "/empty", Empty{}),
+    B.get(Tag, "/sized", SizedStream{}),
     B.get(Tag, "/broken", Broken{}),
     B.get(Tag, "/status", Suppress{}),
     B.on(Tag, [Request.Connect{}], "/status", Suppress{}),

@@ -8,10 +8,15 @@
     "bendo": "./src/cli.ts"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./shared": "./src/shared.ts",
+    "./client": "./client/index.ts"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/opencoredev/bendo"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1"
   }
 }

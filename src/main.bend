@@ -158,6 +158,8 @@ def valid_headers_in(-Vars: Data, c: Context.Ctx<Vars>) -> Maybe<&2, SchemaLang.
 def valid_body_in(-Vars: Data, c: Context.Ctx<Vars>) -> Maybe<&2, SchemaLang.Value>: Context.valid_body(Vars, c)
 def field(value: Maybe<&2, SchemaLang.Value>, key: String) -> Maybe<&2, SchemaLang.Value>: Validate.field(value, key)
 def production(config: Config.Config) -> Config.Config: Config.with_mode(config, Config.Production{})
+# Worker processes; 0 is one per CPU. Workers share no memory (decision 0017).
+def workers(config: Config.Config, count: U32) -> Config.Config: Config.with_workers(config, count)
 
 # BND-26 plugins: functions from a Builder to a Builder. See docs/guides/plugins.md.
 def Builder(-Tag: Data) -> Data: Plugin.Builder<Tag>
@@ -259,6 +261,10 @@ def StreamStep(-State: Type) -> Type: StreamTypes.Step<State>
 def stream_config() -> StreamTypes.Config: Stream.defaults()
 def stream(~Vars: Data, ~State: Type, ~step: State -> IO(StreamTypes.Step<State>), ~cleanup: State -> IO(Unit), +c: Context.Ctx<Vars>, state: State, config: StreamTypes.Config) -> IO(Response.Res):
   Stream.register(Observation.stream(Context.observation(Vars, c)), Context.body(Vars, c, [], None{}), Stream.plan(~State, ~step, ~cleanup, state, config))
+# A stream whose body has exactly length octets: Content-Length instead of
+# chunked framing, also over HTTP/1.0. Sending more or fewer aborts.
+def stream_sized(~Vars: Data, ~State: Type, ~step: State -> IO(StreamTypes.Step<State>), ~cleanup: State -> IO(Unit), +c: Context.Ctx<Vars>, state: State, config: StreamTypes.Config, length: Nat) -> IO(Response.Res):
+  Stream.register(Observation.stream(Context.observation(Vars, c)), Context.body(Vars, c, [], None{}), Stream.plan_sized(~State, ~step, ~cleanup, state, config, length))
 
 # One stderr line per configured origin an allow list drops because it is not
 # an http or https URL.

@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -180,6 +180,48 @@ test("HTTP/1.0 streaming is rejected before sending the head", async () => {
   expect(response.status).toBe(505);
   expect(response.headers.has("transfer-encoding")).toBe(false);
   expect(response.rest.length).toBe(0);
+});
+
+describe("a stream of known length (BND-91)", () => {
+  test("sends Content-Length and raw octets, then serves the next pipelined request", async () => {
+    const wire = await exchange(
+      request("/sized?chunks=3&length=6", "GET", "1.1", false) + request("/"),
+    );
+    const first = head(wire);
+    expect(first.status).toBe(200);
+    expect(first.headers.get("content-length")).toBe("6");
+    expect(first.headers.has("transfer-encoding")).toBe(false);
+    expect(first.rest.subarray(0, 6).toString()).toBe("ababab");
+    const next = head(first.rest.subarray(6));
+    expect(next.status).toBe(200);
+    expect(next.rest.toString()).toBe("hello");
+  });
+
+  test("HEAD carries the GET's Content-Length and no body", async () => {
+    const response = head(await exchange(request("/sized?chunks=3&length=6", "HEAD")));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-length")).toBe("6");
+    expect(response.headers.has("transfer-encoding")).toBe(false);
+    expect(response.rest.length).toBe(0);
+  });
+
+  test("HTTP/1.0 accepts it, where an unsized stream gets 505", async () => {
+    const response = head(await exchange(request("/sized?chunks=2&length=4", "GET", "1.0")));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-length")).toBe("4");
+    expect(response.headers.get("connection")).toBe("close");
+    expect(response.rest.toString()).toBe("abab");
+  });
+
+  test("a producer that falls short or overruns aborts the connection", async () => {
+    const short = head(await exchange(request("/sized?chunks=3&length=7")));
+    expect(short.headers.get("content-length")).toBe("7");
+    expect(short.rest.toString()).toBe("ababab");
+    // The third chunk would pass 5 octets, so it is never sent.
+    const over = head(await exchange(request("/sized?chunks=3&length=5")));
+    expect(over.headers.get("content-length")).toBe("5");
+    expect(over.rest.toString()).toBe("abab");
+  });
 });
 
 for (const code of [103, 204, 205, 304]) {

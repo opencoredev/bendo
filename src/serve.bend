@@ -3,6 +3,8 @@
 import Base
 import ./effects/peer.bend as Peer
 import ./effects/shutdown_write.bend as Shutdown
+import ./effects/listen_shared.bend as Shared
+import ./effects/workers.bend as Workers
 import ./net/conn_info.bend as Conn
 import ./stream.bend as Stream
 import ./http/stream_types.bend as StreamTypes
@@ -144,12 +146,12 @@ def talk(~Env: Data, ~select: R.Req -> Env -> U32, ~app: R.Req -> List<&2, U32> 
         out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- TCP.send_bytes(s, dated)
         after
         talk(~Env, ~select, ~app, Sent{out, state, rest, close}, env, config, peer)
-    case Replied{s, state, rest, Streaming{bytes, close, StreamTypes.Plan{+timeout, action}, after}}:
+    case Replied{s, state, rest, Streaming{bytes, close, StreamTypes.Plan{+timeout, length, action}, after}}:
       do IO<Unit>:
         dated : List<&2, U32> <- DateWire.ensure(bytes)
         result : Socket & Bool <- Stream.send(s, dated, timeout)
-        talk(~Env, ~select, ~app, StreamHead{result, state, rest, close, StreamTypes.Plan{timeout, action}, after}, env, config, peer)
-    case StreamHead{(s, True{}), state, rest, close, StreamTypes.Plan{timeout, action}, after}:
+        talk(~Env, ~select, ~app, StreamHead{result, state, rest, close, StreamTypes.Plan{timeout, length, action}, after}, env, config, peer)
+    case StreamHead{(s, True{}), state, rest, close, StreamTypes.Plan{timeout, length, action}, after}:
       do IO<Unit>:
         result : StreamTypes.Outcome <- action(StreamTypes.Start{s})
         after
@@ -286,7 +288,7 @@ def serve_config(~app: R.Req -> List<&2, U32> -> List<&2, U32>, config: Config) 
     +port : U32 = port_or(env, fallback)
     l : Listener <- IO.try(Listener, TCP.listen("127.0.0.1", port))
     IO.print("bendo listening on http://127.0.0.1:" ++ U32.show(port))
-    loop(~U32, ~(req => env => env), ~(req => body => env => close => peer => legacy(~app, req, body, env, close, peer)), l, limit, Config.Config{"127.0.0.1", port, limit, 65536, 5000, 10000, 30000, 1, False{}, Router.Spec{}, Config.Development{}})
+    loop(~U32, ~(req => env => env), ~(req => body => env => close => peer => legacy(~app, req, body, env, close, peer)), l, limit, Config.Config{"127.0.0.1", port, limit, 65536, 5000, 10000, 30000, 1, False{}, Router.Spec{}, Config.Development{}, 1})
 
 def serve(~app: R.Req -> List<&2, U32> -> List<&2, U32>, port: U32) -> IO(Unit):
   serve_config(~app, defaults(port))
@@ -348,13 +350,28 @@ def admitted_table(answer: Validate.Answer, declared: Bool) -> IO(Unit):
     case Validate.Enabled{False{}} True{}: IO.die(Unit, 1, "bendo: this table declares route schemas; serve it with the entrypoints in src/validated.bend (docs/validation.md)")
     case _ _: IO.pure(Unit, Unit{})
 
+# One worker keeps TCP.listen. Several workers each bind their own
+# SO_REUSEPORT listener before Workers.start_workers, and the first process
+# accepts only once every worker is bound (decision 0017).
+def listen(host: String, port: U32, single: Bool) -> IO(Result<&1, &1, U32 & String, Listener>):
+  match single:
+    case True{}: TCP.listen(host, port)
+    case False{}: Shared.listen_shared(host, port)
+
+# Port 0 asks the kernel for any free port, and every worker would get a
+# different one, so several workers need a fixed port (decision 0017).
+def shared_port(zero: Bool, single: Bool) -> IO(Unit):
+  match zero single:
+    case True{} False{}: IO.die(Unit, 22, "bendo: several workers cannot share port 0; set a fixed port or serve with one worker")
+    case _ _: IO.pure(Unit, Unit{})
+
 def startup_serving(~validator: Validate.Job -> Validate.Answer, ~Tag: Data, ~select: Tag -> Maybe<&2, U32>, ~Env: Data, ~respond: R.Req -> List<&2, U32> -> State<Tag, Env> -> Bool -> Maybe<&2, Conn.ConnInfo> -> IO(Reply), +table: Table.Table<Tag>, env: Env, +config: Config.Config, manifest: Bool) -> IO(Unit):
   match config manifest:
     case _ True{}:
       do IO<Unit>:
         IO.print(Manifest.json(Tag, table))
         IO.exit(0)
-    case Config.Config{+host, +fallback, +limit, header_limit, idle, head, body, max_requests, keep_alive, router, mode} False{}:
+    case Config.Config{+host, +fallback, +limit, header_limit, idle, head, body, max_requests, keep_alive, router, mode, workers} False{}:
       do IO<Unit>:
         # Computed once: requests to a table without schemas skip every lookup (BND-96).
         +validates : Bool = Table.declares_schemas(Tag, Table.layers(Tag, table))
@@ -362,7 +379,11 @@ def startup_serving(~validator: Validate.Job -> Validate.Answer, ~Tag: Data, ~se
         port_env : Result<&1, &1, U32 & String, String> <- IO.get_env("PORT")
         +port : U32 = Config.port_env(port_env, fallback)
         mode_env : Result<&1, &1, U32 & String, String> <- IO.get_env("BENDO_ENV")
-        listener : Listener <- IO.try(Listener, TCP.listen(host, port))
+        workers_env : Result<&1, &1, U32 & String, String> <- IO.get_env("BENDO_WORKERS")
+        +count : U32 = Config.workers_env(workers_env, workers)
+        shared_port(U32.is_eq(port, 0), U32.is_eq(count, 1))
+        listener : Listener <- IO.try(Listener, listen(host, port, U32.is_eq(count, 1)))
+        index : U32 <- IO.try(U32, Workers.start_workers(count))
         IO.print("bendo listening on http://" ++ host ++ ":" ++ U32.show(port))
         loop(~State<Tag, Env>, ~(req => state => selected_limit(~Tag, ~Env, ~select, req, state)), ~respond, listener, State{table, env, router, limit, Config.mode_env(mode_env, mode), validates}, config)
 

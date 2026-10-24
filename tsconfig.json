@@ -16,6 +16,8 @@
     "packages/*/src",
     "packages/bendo/shared/*.ts",
     "packages/bendo/gen",
+    "packages/vite-plugin-bendo/fixtures/app/vite.config.ts",
+    "packages/bendo/client",
     "tests",
     "scripts/*.ts"
   ]

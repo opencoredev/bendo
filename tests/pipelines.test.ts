@@ -155,53 +155,49 @@ async function drive(pipeline: Pipeline): Promise<Run> {
   return { responses, traces: masked((await settled(server)).slice(before)) };
 }
 
-test(
-  "an app without schemas answers and traces the same through both pipelines",
-  async () => {
-    const [plain, checked] = await Promise.all([drive("plain"), drive("checked")]);
-    expect(checked.responses).toEqual(plain.responses);
-    expect(checked.traces).toEqual(plain.traces);
+test("an app without schemas answers and traces the same through both pipelines", async () => {
+  const [plain, checked] = await Promise.all([drive("plain"), drive("checked")]);
+  expect(checked.responses).toEqual(plain.responses);
+  expect(checked.traces).toEqual(plain.traces);
 
-    // The cases reached what they name, so equal output is not equal silence.
-    const wire = new Map(cases.map((entry, index) => [entry.name, plain.responses[index] ?? ""]));
-    expect(wire.get("on_error replacement")).toContain("HTTP/1.1 503");
-    expect(wire.get("thrown HTTP error")).toContain("HTTP/1.1 418");
-    expect(wire.get("map_response replacement")).toContain("HTTP/1.1 201");
-    expect(wire.get("on_request rewrite")).toContain("target:7");
-    expect(wire.get("not found")).toContain("HTTP/1.1 404");
-    expect(wire.get("method not allowed")).toContain("HTTP/1.1 405");
-    expect(wire.get("malformed query")).toContain("HTTP/1.1 400");
-    expect(wire.get("CORS and secure headers")).toContain(
-      "access-control-allow-origin: https://app.example",
-    );
-    for (const name of [
-      "map_response replacement with retained policies",
-      "on_error replacement with retained policies",
-    ])
-      expect(wire.get(name)).toContain("access-control-allow-origin: https://app.example");
-    expect(wire.get("stream")).toContain("transfer-encoding: chunked");
-    expect(wire.get("stream with retained policies")).toContain(
-      "access-control-allow-origin: https://app.example",
-    );
-    expect(wire.get("WebSocket upgrade")).toContain("HTTP/1.1 101");
-    expect(wire.get("WebSocket upgrade with retained policies")).toContain("HTTP/1.1 101");
-    if (fixedClock)
-      // A 101 carries no Date.
-      for (const response of plain.responses.filter((r) => !r.includes("HTTP/1.1 101")))
-        expect(response).toContain("date: Thu, 01 Jan 2026 00:00:00 GMT");
-    for (const trace of [
-      "before:/json",
-      "after:/json",
-      "map:/json",
-      "error:/recover",
-      "not-found:/missing",
-      "observed:/target/7",
-      "pull:0",
-      "stream-cleanup",
-      "ws-open:ws:0",
-      "GET /rewrite 200 #ms id=diff-7",
-    ])
-      expect(plain.traces).toContain(trace);
-  },
-  60_000,
-);
+  // The cases reached what they name, so equal output is not equal silence.
+  const wire = new Map(cases.map((entry, index) => [entry.name, plain.responses[index] ?? ""]));
+  expect(wire.get("on_error replacement")).toContain("HTTP/1.1 503");
+  expect(wire.get("thrown HTTP error")).toContain("HTTP/1.1 418");
+  expect(wire.get("map_response replacement")).toContain("HTTP/1.1 201");
+  expect(wire.get("on_request rewrite")).toContain("target:7");
+  expect(wire.get("not found")).toContain("HTTP/1.1 404");
+  expect(wire.get("method not allowed")).toContain("HTTP/1.1 405");
+  expect(wire.get("malformed query")).toContain("HTTP/1.1 400");
+  expect(wire.get("CORS and secure headers")).toContain(
+    "access-control-allow-origin: https://app.example",
+  );
+  for (const name of [
+    "map_response replacement with retained policies",
+    "on_error replacement with retained policies",
+  ])
+    expect(wire.get(name)).toContain("access-control-allow-origin: https://app.example");
+  expect(wire.get("stream")).toContain("transfer-encoding: chunked");
+  expect(wire.get("stream with retained policies")).toContain(
+    "access-control-allow-origin: https://app.example",
+  );
+  expect(wire.get("WebSocket upgrade")).toContain("HTTP/1.1 101");
+  expect(wire.get("WebSocket upgrade with retained policies")).toContain("HTTP/1.1 101");
+  if (fixedClock)
+    // A 101 carries no Date.
+    for (const response of plain.responses.filter((r) => !r.includes("HTTP/1.1 101")))
+      expect(response).toContain("date: Thu, 01 Jan 2026 00:00:00 GMT");
+  for (const trace of [
+    "before:/json",
+    "after:/json",
+    "map:/json",
+    "error:/recover",
+    "not-found:/missing",
+    "observed:/target/7",
+    "pull:0",
+    "stream-cleanup",
+    "ws-open:ws:0",
+    "GET /rewrite 200 #ms id=diff-7",
+  ])
+    expect(plain.traces).toContain(trace);
+}, 60_000);
