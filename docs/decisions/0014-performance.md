@@ -103,3 +103,15 @@ Before enabling it, the job ran 18 times on GitHub's standard 4-vCPU runners, wh
 | Changes 1–4, `4089d73` | 1 | 0.883 | pass |
 
 An unchanged candidate never moved more than 2% from the baseline, while the threshold sits 25% below it. Old main, three times slower, and the commit with only the ASCII change both failed, after the confirming round. Commits missing the later changes (12–15% slower on these runners) passed, as a sub-25% regression should. Absolute hello throughput ranged from 11,000 to 20,500 requests per second across runner models, which is why the gate compares two builds on one runner rather than against a fixed number of requests per second.
+
+## Re-pinned after merging main
+
+The baseline was first pinned at `59ac5e5`, the last hot-path change, on top of main at `4eb320a`. Merging main at `c8c5669` (BND-36 validation, BND-62, BND-79 and BND-58) into this branch lowered hello-world throughput. On GitHub, the `perf` job of the merged head measured a median ratio of 0.907 against `59ac5e5` (pairs 0.913, 0.897 and 0.907). On a Boat large sandbox, using the step-table method above with three samples each, the merged head against `38f86d4` (this branch just before the merge) measured:
+
+| | Hello | Echo | Middleware |
+|---|---:|---:|---:|
+| Before the merge, `38f86d4` | 23,493 (22,826–24,315) | 3,127 (3,087–3,144) | 2,323 (2,297–2,345) |
+| After the merge | 20,259 (19,652–20,503) | 3,065 (2,735–3,068) | 2,162 (2,092–2,259) |
+
+All 18 samples had zero errors. The hello server runs no middleware, so the loss comes from main's request pipeline, not from this change. The gate is meant to catch regressions after BND-68 on the current main, so the baseline is now the merge commit `853687e`. That keeps the full 25% margin. Leaving the pin at `59ac5e5` would have started every later run at about 0.91.
+
