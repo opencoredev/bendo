@@ -48,6 +48,9 @@ import ./proof/response-framing-spec.bend as ResponseFramingSpec
 import ./src/http/chunked.bend as Chunked
 import ./src/http/stream_framing.bend as StreamFraming
 import ./proof/stream-rfc-spec.bend as StreamRfc
+import ./src/http/sse.bend as Sse
+import ./proof/sse-spec.bend as SseSpec
+import ./proof/sse-model.bend as SseModel
 import ./src/http.bend as Http
 import ./src/http/bytes.bend as Bytes
 import ./src/http/request.bend as Request
@@ -1697,3 +1700,56 @@ law etag_middleware_spec:
   for +field: Maybe<&2, String>
   for +res: Response.Res
   {ETag.decide(method, field, res) == LimitsSpec.etag(method, field, res) : Response.Res}
+
+# BND-49: Server-Sent Events, checked against the independent WHATWG HTML
+# event-stream parser in proof/sse-spec.bend (Base only). Over every list of
+# admissible frames, with arbitrary text data: each message reports its retry
+# value as a number, then one event with its type, its data with every CR, LF
+# and CRLF read as one LF, and the last event id in force. Comments
+# (heartbeats) report nothing. Admissible: every field is exactly the UTF-8 of
+# Unicode scalar values (so a browser's UTF-8 decoding replaces nothing and
+# the parsed octets are the UTF-8 of its text), no CR or LF in an event name,
+# id or comment, and no NUL in an id.
+law sse_roundtrip:
+  for +frames: List<&2, Sse.Frame>
+  for valid: {SseModel.admissible(frames) == True{} : Bool}
+  {SseSpec.parse(Sse.wire(frames)) == SseModel.observe(frames, []) : List<&2, SseSpec.Observed>}
+
+# The runtime sends exactly the admissible frames, unchanged, and rejects
+# every other frame whole: no stripping, escaping or truncation.
+law sse_encode_rejects_unsafe:
+  for +frame: Sse.Frame
+  {Sse.encode(frame) == SseModel.guard(frame) : Maybe<&2, List<&2, U32>>}
+
+# No injection, for any frame: whatever octets the runtime sends parse as
+# exactly that frame's observations and nothing else.
+law sse_sent_frame_exact:
+  for +frame: Sse.Frame
+  for +bytes: List<&2, U32>
+  for sent: {Sse.encode(frame) == Some{bytes} : Maybe<&2, List<&2, U32>>}
+  {SseSpec.parse(bytes) == SseModel.observe([frame], []) : List<&2, SseSpec.Observed>}
+
+# A heartbeat comment at any line start, mid-event included, leaves the
+# parser's buffers and every later observation unchanged.
+law sse_heartbeat_ignored:
+  for +buffers: SseSpec.Buffers
+  for +text: List<&2, U32>
+  for +rest: List<&2, U32>
+  for clean: {SseModel.one_line(text) == True{} : Bool}
+  {SseSpec.run(Bytes.append(Sse.render(Sse.Comment{text}), rest), SseSpec.Begin{buffers}) == SseSpec.run(rest, SseSpec.Begin{buffers}) : SseSpec.State}
+
+# Admissibility excludes no text: every String of Unicode scalar values, as
+# B.sse_message encodes it, passes the UTF-8 check.
+law sse_text_utf8:
+  for +s: String
+  for +valid: {Utf8.valid(s) == True{} : Bool}
+  {SseModel.utf8_ok(Response.utf8(s)) == True{} : Bool}
+
+# Retry renders as ASCII digits whose base-ten value is the number sent.
+law sse_retry_decimal:
+  for +ms: U32
+  {SseSpec.digits(Sse.decimal(ms)) == True{} : Bool}
+
+law sse_retry_value:
+  for +ms: U32
+  {SseSpec.decimal_value(Sse.decimal(ms), 0n) == U32.to_nat(ms) : Nat}

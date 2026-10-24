@@ -795,12 +795,25 @@ test(
   () => {
     // Matching a million scalars against this pattern takes seconds in .mjs;
     // max_len 1 rejects it after counting.
+    // If the length check ran after the pattern (the old eager `&&`), rejecting
+    // would cost at least a full scan. Compare with scanning the same input under
+    // the same pattern without max_len, best of two each, rather than a wall clock.
     const huge = { $: "JString", value: "a".repeat(1000000) };
-    const started = performance.now();
-    expect(call("report", call("decode", call("schema", "worst-short"), huge))).toBe(
-      "error:Constraint",
+    const best = (run: () => void): number =>
+      Math.min(
+        ...[0, 1].map(() => {
+          const started = performance.now();
+          run();
+          return performance.now() - started;
+        }),
+      );
+    const rejected = best(() =>
+      expect(call("report", call("decode", call("schema", "worst-short"), huge))).toBe(
+        "error:Constraint",
+      ),
     );
-    expect(performance.now() - started).toBeLessThan(1000);
+    const scanned = best(() => call("decode", call("schema", "worst-6x16"), huge));
+    expect(rejected).toBeLessThan(scanned);
     expect(nativeTimed("worst-short", text("a".repeat(100000))).out).toBe("error:Constraint");
     expect(nativeTimed("worst-short", text("a")).out).toBe('ok:VString:"a"');
   },
