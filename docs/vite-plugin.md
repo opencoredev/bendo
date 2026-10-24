@@ -82,10 +82,20 @@ It watches a file that does not exist yet too, so creating it recompiles the
 entry. It never adds paths to Vite's watcher or removes them, so another
 plugin watching the same file keeps its watch. A file stops being watched once
 no entry's import graph reaches it; a deleted entry keeps only a watch on its
-own path, to see it come back. The watch is on the file's directory, so an
-import whose directory does not exist is not watched until the entry
-recompiles after the directory appears. Setting `server.watch` to `null` turns
-this watcher off along with Vite's.
+own path, to see it come back. Setting `server.watch` to `null` turns this
+watcher off along with Vite's.
+
+The watch is on the file's directory, plus a second watch on that directory's
+parent. If the directory is deleted or renamed and later recreated, as a
+branch switch can do, the parent sees it return and the plugin moves the watch
+to the new directory and recompiles what read files there. If the parent is
+missing too, the directory is picked up the next time an entry compiles.
+
+When another plugin makes Vite watch an entry outside the root, Vite also
+reports its saves. The plugin drops its own `.bend` modules from Vite's update
+for those, so the browser hears about a save once, after the compile succeeds,
+and a broken save shows only the overlay error. Other modules for the same
+file, such as a `?raw` import, keep Vite's update.
 
 A compiled `.bend` module never accepts itself: its exports are plain values,
 and an importer that captured the old functions would keep calling them.
