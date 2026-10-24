@@ -1,3 +1,11 @@
+import ./proof/ws-session.bend as WsSessionProof
+import ./proof/ws-session-trace.bend as WsSessionTraceProof
+import ./proof/ws-session-message.bend as WsSessionMessageProof
+import ./proof/ws-session-fault.bend as WsSessionFaultProof
+import ./proof/ws-session-admit.bend as WsSessionAdmitProof
+import ./proof/ws-session-strict.bend as WsSessionStrictProof
+import ./proof/ws-session-ready.bend as WsSessionReadyProof
+import ./proof/ws-session-decode.bend as WsSessionDecodeProof
 # Proofs of LAWS.bend. Run: bend PROOF.bend --verdict
 import Base
 import ./proof/manifest-schema-documents.bend as ManifestSchemaDocuments

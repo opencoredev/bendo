@@ -3,8 +3,10 @@
 `B.websocket` answers an RFC 6455 opening handshake from an ordinary route
 handler. When the handshake is valid, the server sends `101 Switching
 Protocols`, stops parsing HTTP on that connection, and hands the socket to a
-session template. Bendo does not decode frames yet; the frame codec (BND-51)
-and the open/message/close handler API (BND-52) build on this session seam.
+session template. For the open/message/close API with frame decoding,
+fragmentation, timers, and outbound mailboxes, use
+[WebSocket handlers](websocket-sessions.md). This page covers the lower-level
+handshake and socket handoff API that those handlers use.
 The complete native example is [the WebSocket fixture](../tests/servers/websocket.bend).
 
 ## Register a session

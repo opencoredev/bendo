@@ -2,9 +2,9 @@
 
 Two pure modules implement RFC 6455 framing. `src/ws/frame.bend` encodes and
 decodes single frames. `src/ws/message.bend` turns a sequence of decoded frames
-into messages. Neither does IO: the connection layer (BND-52) reads bytes,
-calls these functions and writes what they return. They are not yet exported
-from `src/main.bend`.
+into messages. Neither does IO: the [session connection layer](websocket-sessions.md)
+reads bytes, calls these functions and writes what they return. The low-level
+codec is imported directly from these modules.
 
 Bytes are `List<&2, U32>`, one octet per entry. No extensions are negotiated,
 so every frame with an RSV bit set is refused.
