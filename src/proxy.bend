@@ -27,6 +27,7 @@ def stream_config(o: U.Options, config: StreamTypes.Config) -> U.Options: U.with
 def bad_gateway() -> String: "Bad Gateway: upstream connection failed"
 def bad_response() -> String: "Bad Gateway: invalid upstream response"
 def gateway_timeout() -> String: "Gateway Timeout: upstream did not answer in time"
+def unresolved() -> String: "Bad Gateway: upstream host did not resolve"
 
 def fail(-Vars: Data, c: Context.Ctx<Vars>, code: U32, message: String) -> IO(Response.Res):
   IO.pure(Response.Res, Context.text(Vars, Context.status(Vars, c, code), message))
@@ -173,10 +174,11 @@ def send_failed(-Vars: Data, s: Socket, c: Context.Ctx<Vars>, late: Bool) -> IO(
     case True{}: close_fail(Vars, s, c, 504, gateway_timeout())
     case False{}: close_fail(Vars, s, c, 502, bad_gateway())
 
-def connect_failed(-Vars: Data, c: Context.Ctx<Vars>, late: Bool) -> IO(Response.Res):
-  match late:
-    case True{}: fail(Vars, c, 504, gateway_timeout())
-    case False{}: fail(Vars, c, 502, bad_gateway())
+def connect_failed(-Vars: Data, c: Context.Ctx<Vars>, late: Bool, unknown: Bool) -> IO(Response.Res):
+  match late unknown:
+    case True{} _: fail(Vars, c, 504, gateway_timeout())
+    case False{} True{}: fail(Vars, c, 502, unresolved())
+    case False{} False{}: fail(Vars, c, 502, bad_gateway())
 
 def sent(-Vars: Data, result: Socket & Bool, +c: Context.Ctx<Vars>, +o: U.Options, +head_request: Bool, +now: Nat, started: Nat) -> IO(Response.Res):
   match result:
@@ -192,11 +194,12 @@ def send(-Vars: Data, s: Socket, bytes: List<&2, U32>, +c: Context.Ctx<Vars>, +o
     now : Nat <- IO.now()
     sent(Vars, result, c, o, head_request, now, started)
 
-# ETIMEDOUT from the connect effect is the connect budget running out.
+# ETIMEDOUT from the connect effect is the connect budget running out; 1001
+# is a host name that did not resolve.
 def connected(-Vars: Data, result: Result<&1, &1, U32 & String, Socket>, bytes: List<&2, U32>, +c: Context.Ctx<Vars>, +o: U.Options, +head_request: Bool) -> IO(Response.Res):
   match result:
     case Done{s}: send(Vars, s, bytes, c, o, head_request)
-    case Fail{(code, message)}: connect_failed(Vars, c, U32.is_eq(code, 110))
+    case Fail{(+code, message)}: connect_failed(Vars, c, U32.is_eq(code, 110), U32.is_eq(code, 1001))
 
 def dial(-Vars: Data, up: U.Upstream, bytes: List<&2, U32>, +c: Context.Ctx<Vars>, +o: U.Options, +head_request: Bool) -> IO(Response.Res):
   U.Upstream{host, port, authority, base} = up

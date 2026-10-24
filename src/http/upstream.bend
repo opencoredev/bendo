@@ -9,6 +9,7 @@ import ./write.bend as Write
 import ./framing.bend as Framing
 import ./chunked.bend as Chunked
 import ./parse.bend as Parse
+import ./origin.bend as Origin
 import ./proxy_headers.bend as Hop
 import ./stream_types.bend as StreamTypes
 import ../net/ip.bend as Ip
@@ -54,63 +55,157 @@ def with_stream(o: Options, config: StreamTypes.Config) -> Options:
 
 # ---------------------------------------------------------------- URL
 
-# host: numeric IPv4 text handed to the connect effect. authority: the Host
-# value for the upstream, as written in the URL. base: a path prefix with no
-# trailing slash.
+# host: the text handed to the connect effect (a DNS name, dotted-quad IPv4
+# or IPv6 text without brackets). authority: the Host value for the upstream.
+# base: a path prefix with no trailing slash.
 type Upstream is Data:
   Upstream{host: String, port: U32, authority: String, base: String}
+
+# An upstream host as the URL writes it, in lowercase. A HostName is a DNS
+# name or a dotted-quad IPv4 address; a HostV6 is IPv6 text in RFC 5952 form,
+# written in brackets, that does not embed an IPv4 address (see embeds_v4).
+type Host is Data:
+  HostName{text: String}
+  HostV6{text: String}
+
+# The host and the port digits as written; None when the URL has no port.
+type Endpoint is Data:
+  Endpoint{host: Host, port: Maybe<&2, String>}
 
 def digit(+c: U32) -> Bool:
   (c >= 48 : U32) && (c <= 57 : U32)
 
-def digit_step(+n: Nat, +c: U32, ok: Bool) -> Maybe<&2, Nat>:
-  match ok:
-    case False{}: None{}
-    case True{}: Some{Nat.add(Nat.mul(n, 10n), U32.to_nat((c - 48 : U32)))}
+# RFC 1123 labels: 1 to 63 characters, no '-' at either end.
+def label_ok(+l: String) -> Bool:
+  Nat.is_lt(0n, String.length(l)) && Nat.is_le(String.length(l), 63n) && Bool.not(String.starts_with(l, "-")) && Bool.not(String.ends_with(l, "-"))
 
-def digits(xs: List<&2, U32>, +n: Nat) -> Maybe<&2, Nat>:
-  match xs:
-    case Nil{}: Some{n}
-    case +c <> t:
-      do Maybe<&2, Nat>:
-        next : Nat <- digit_step(n, c, digit(c))
-        digits(t, next)
+def labels_ok(ls: List<&2, String>) -> Bool:
+  match ls:
+    case Nil{}: True{}
+    case +l <> t: label_ok(l) && labels_ok(t)
 
-def port_value(n: Maybe<&2, Nat>) -> Maybe<&2, U32>:
+# BND-85's origin host grammar outside brackets (a dotted-quad IPv4 address,
+# or a name of a-z, 0-9, '-', '.' and '_' of at most 253 characters that does
+# not end in a number) with RFC 1123 labels. An empty label, and so a
+# trailing root dot, is refused.
+def name_ok(+h: String) -> Bool:
+  Origin.name_host(h) && labels_ok(String.split(h, '.'))
+
+def port_range(n: Maybe<&2, Nat>) -> Bool:
   match n:
-    case None{}: None{}
-    case Some{+v}: Bool.pick(Maybe<&2, U32>, Nat.is_lt(0n, v) && Nat.is_le(v, 65535n), Some{U32.from_nat(v)}, None{})
+    case None{}: False{}
+    case Some{+v}: Nat.is_lt(0n, v) && Nat.is_le(v, 65535n)
 
-def port_text(+s: String, short: Bool) -> Maybe<&2, U32>:
+def port_read(+p: String, short: Bool) -> Bool:
   match short:
+    case True{}: port_range(Nat.read(p))
+    case False{}: False{}
+
+# One to five decimal digits with a value from 1 to 65535. Leading zeros are
+# allowed ("080") and kept in the Host value.
+def port_ok(+p: String) -> Bool:
+  port_read(p, Origin.digits(p) && Nat.is_lt(0n, String.length(p)) && Nat.is_le(String.length(p), 5n))
+
+def v4_groups(gs: List<&2, String>) -> Bool:
+  match gs:
+    case +g <> Nil{}: Bool.not(String.is_empty(g)) && Bool.not(String.eq(g, "1"))
+    case g <> (h <> Nil{}): True{}
+    case f <> (g <> (h <> Nil{})): String.eq(f, "ffff")
+    case _: False{}
+
+def v4_pieces(ps: List<&2, String>) -> Bool:
+  match ps:
+    case SNil{} <> (SNil{} <> rest): v4_groups(rest)
+    case _: False{}
+
+# IPv4-mapped (::ffff:0:0/96) addresses, which a dual-stack socket would reach
+# over IPv4, and deprecated IPv4-compatible ones (::/96 except :: and ::1). In
+# RFC 5952 text they are "::" followed by "ffff" and two groups, or by one or
+# two groups other than "1". Only text Origin.ipv6 accepts is asked.
+def embeds_v4(+t: String) -> Bool:
+  v4_pieces(String.split(t, ':'))
+
+def v6_ok(+t: String) -> Bool:
+  Origin.ipv6(t) && Bool.not(embeds_v4(t))
+
+def endpoint(+host: Host, +port: Maybe<&2, String>, ok: Bool) -> Maybe<&2, Endpoint>:
+  match ok:
+    case True{}: Some{Endpoint{host, port}}
     case False{}: None{}
-    case True{}: port_value(digits(Bytes.encode(s), 0n))
 
-def v4_text(a: Maybe<&2, Ip.Addr>) -> Maybe<&2, String>:
-  match a:
+def bracket_port(+inside: String, +p: String, colon: Bool) -> Maybe<&2, Endpoint>:
+  match colon:
+    case True{}: endpoint(HostV6{inside}, Some{p}, v6_ok(inside) && port_ok(p))
+    case False{}: None{}
+
+def bracket_rest(+inside: String, rest: String) -> Maybe<&2, Endpoint>:
+  match rest:
+    case SNil{}: endpoint(HostV6{inside}, None{}, v6_ok(inside))
+    case SCon{c, p}: bracket_port(inside, p, Char.is_eq(c, ':'))
+
+def bracketed(m: Maybe<&2, Origin.Cut>) -> Maybe<&2, Endpoint>:
+  match m:
     case None{}: None{}
-    case Some{Ip.Addr{Ip.V4{}, bits}}: Some{Ip.format(Ip.Addr{Ip.V4{}, bits})}
-    case Some{Ip.Addr{Ip.V6{}, bits}}: None{}
+    case Some{Origin.Cut{inside, rest}}: bracket_rest(inside, rest)
 
-def host_named(+host: String, local: Bool) -> Maybe<&2, String>:
-  match local:
-    case True{}: Some{"127.0.0.1"}
-    case False{}: v4_text(Ip.parse(host))
+def named_parts(+whole: String, m: Maybe<&2, Origin.Cut>) -> Maybe<&2, Endpoint>:
+  match m:
+    case None{}: endpoint(HostName{whole}, None{}, name_ok(whole))
+    case Some{Origin.Cut{+h, +p}}: endpoint(HostName{h}, Some{p}, name_ok(h) && port_ok(p))
 
-# Only localhost and numeric IPv4 hosts: Base's connector has no resolver.
-def host_text(+host: String) -> Maybe<&2, String>:
-  host_named(host, String.eq(String.to_lower(host), "localhost"))
+def endpoint_at(+c: Char, +t: String, bracket: Bool) -> Maybe<&2, Endpoint>:
+  match bracket:
+    case True{}: bracketed(Origin.cut(t, ']'))
+    case False{}: named_parts(SCon{c, t}, Origin.cut(SCon{c, t}, ':'))
 
-def made(host: Maybe<&2, String>, port: Maybe<&2, U32>, authority: String, base: String) -> Maybe<&2, Upstream>:
-  match host port:
-    case Some{h} Some{p}: Some{Upstream{h, p, authority, base}}
-    case _ _: None{}
+# The host and port of a lowercase authority: host, host:port, [v6] or
+# [v6]:port. proof/upstream-host-spec.bend states the grammar without this
+# module, and LAWS.bend equates the two.
+def read_authority(s: String) -> Maybe<&2, Endpoint>:
+  match s:
+    case SNil{}: None{}
+    case SCon{+c, +t}: endpoint_at(c, t, Char.is_eq(c, '['))
 
-def authority_parts(+authority: String, parts: List<&2, String>, base: String) -> Maybe<&2, Upstream>:
-  match parts:
-    case h <> Nil{}: made(host_text(h), Some{80}, String.to_lower(authority), base)
-    case h <> +p <> Nil{}: made(host_text(h), port_text(p, Nat.is_le(String.length(p), 5n)), String.to_lower(authority), base)
-    case _: None{}
+def port_suffix(p: Maybe<&2, String>) -> String:
+  match p:
+    case None{}: ""
+    case Some{d}: ":" ++ d
+
+def host_text(h: Host) -> String:
+  match h:
+    case HostName{t}: t
+    case HostV6{t}: "[" ++ t ++ "]"
+
+# The Host value sent upstream: the host as written, IPv6 in brackets, then
+# the port exactly when the URL has one. Reading it back with read_authority gives
+# the same endpoint (law proxy_upstream_host_round_trip).
+def host_header(e: Endpoint) -> String:
+  match e:
+    case Endpoint{h, p}: host_text(h) ++ port_suffix(p)
+
+def dial_host(h: Host) -> String:
+  match h:
+    case HostName{t}: t
+    case HostV6{t}: t
+
+def port_number(n: Maybe<&2, Nat>) -> U32:
+  match n:
+    case None{}: 80
+    case Some{v}: U32.from_nat(v)
+
+def port_of(p: Maybe<&2, String>) -> U32:
+  match p:
+    case None{}: 80
+    case Some{d}: port_number(Nat.read(d))
+
+def upstream_of(e: Endpoint, +base: String) -> Upstream:
+  match e:
+    case Endpoint{+h, +p}: Upstream{dial_host(h), port_of(p), host_header(Endpoint{h, p}), base}
+
+def made(m: Maybe<&2, Endpoint>, base: String) -> Maybe<&2, Upstream>:
+  match m:
+    case None{}: None{}
+    case Some{e}: Some{upstream_of(e, base)}
 
 def trim_slash(+p: String, ends: Bool) -> String:
   match ends:
@@ -126,7 +221,7 @@ def no_userinfo(+authority: String) -> Bool:
 def located(+authority: String, +path: String, ok: Bool) -> Maybe<&2, Upstream>:
   match ok:
     case False{}: None{}
-    case True{}: authority_parts(authority, String.split(authority, ':'), trim_slash(path, String.ends_with(path, "/")))
+    case True{}: made(read_authority(String.to_lower(authority)), trim_slash(path, String.ends_with(path, "/")))
 
 def slashed(parts: List<&2, String>) -> String:
   match parts:
@@ -145,8 +240,10 @@ def after_scheme(+s: String, http: Bool) -> Maybe<&2, Upstream>:
     case False{}: None{}
     case True{}: split_rest(String.split(String.drop(s, 7n), '/'))
 
-# http://host[:port][/base], host numeric IPv4 or localhost. No userinfo,
-# query, fragment, https or IPv6 (the path check refuses '?' and '#').
+# http://host[:port][/base], the scheme and host in any case. The host is a
+# DNS name, a dotted-quad IPv4 address or a bracketed IPv6 address without an
+# embedded IPv4 address (see read_authority). No userinfo, query, fragment or https (the path check refuses
+# '?' and '#').
 def parse_url(+s: String) -> Maybe<&2, Upstream>:
   after_scheme(s, String.eq(String.to_lower(String.take(s, 7n)), "http://"))
 
