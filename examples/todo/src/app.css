@@ -10,7 +10,7 @@
   --surface: #ffffff;
   --ink: #15171c;
   --ink-2: #4a505c;
-  --ink-3: #6b7280;
+  --ink-3: #5f6672;
   --line: #e2e5ea;
   --line-strong: #c9ced6;
   --accent: #4636f0;
@@ -395,6 +395,7 @@ textarea {
 
 .row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   min-height: 56px;
@@ -742,4 +743,27 @@ textarea {
   *::after {
     transition-duration: 0ms !important;
   }
+}
+
+.row-error {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin: 0 0 8px 46px;
+  font-size: 13px;
+  color: var(--danger);
+}
+
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
 }

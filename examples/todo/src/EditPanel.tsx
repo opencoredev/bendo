@@ -5,7 +5,7 @@ import { useId, useState, type FormEvent } from "react";
 import { describeFailure, todos } from "./api.ts";
 import { NO_VERDICT, useBrowserCheck, type Verdict } from "./check.ts";
 import { BackIcon } from "./icons.tsx";
-import { TITLE_LIMIT, checkUpdate } from "./rules.ts";
+import { TITLE_LIMIT, checkUpdate, type TodoChange } from "./rules.ts";
 import type { Todo } from "./TodoList.tsx";
 import { VerdictLine } from "./Verdict.tsx";
 
@@ -54,8 +54,13 @@ function Loaded({ id }: { id: number }) {
 function EditForm({ todo }: { todo: Todo }) {
   const browserCheck = useBrowserCheck();
   const navigate = useNavigate();
-  const [title, setTitle] = useState(todo.title);
-  const [done, setDone] = useState(todo.done);
+  // A field shows the server's value until the user edits it, so a change made
+  // elsewhere (the list's checkbox) reaches an open editor, and saving sends
+  // only the fields the user changed.
+  const [titleDraft, setTitleDraft] = useState<string | undefined>(undefined);
+  const [doneDraft, setDoneDraft] = useState<boolean | undefined>(undefined);
+  const title = titleDraft ?? todo.title;
+  const done = doneDraft ?? todo.done;
   const [verdict, setVerdict] = useState<Verdict>(NO_VERDICT);
   const [saved, setSaved] = useState(false);
   const item = todos({ id: todo.id });
@@ -71,7 +76,14 @@ function EditForm({ todo }: { todo: Todo }) {
 
   function onSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
-    const body = { title, done };
+    const body: TodoChange = {
+      ...(title !== todo.title ? { title } : {}),
+      ...(done !== todo.done ? { done } : {}),
+    };
+    if (!changed) {
+      setSaved(true);
+      return;
+    }
     if (browserCheck) {
       const issues = checkUpdate(body);
       if (issues.length > 0) {
@@ -84,17 +96,22 @@ function EditForm({ todo }: { todo: Todo }) {
     save.mutate(
       { body },
       {
-        onSuccess: () => setSaved(true),
+        // The mutation's own onSuccess has already refetched the todo.
+        onSuccess: () => {
+          setTitleDraft(undefined);
+          setDoneDraft(undefined);
+          setSaved(true);
+        },
         onError: (error) => setVerdict({ kind: "server", rejection: describeFailure(error) }),
       },
     );
   }
 
   function onTitle(next: string): void {
-    setTitle(next);
+    setTitleDraft(next);
     setSaved(false);
     if (verdict.kind === "browser") {
-      const issues = checkUpdate({ title: next, done });
+      const issues = checkUpdate({ title: next });
       setVerdict(issues.length === 0 ? NO_VERDICT : { kind: "browser", issues });
     } else if (verdict.kind === "server") setVerdict(NO_VERDICT);
   }
@@ -127,7 +144,7 @@ function EditForm({ todo }: { todo: Todo }) {
           name="done"
           checked={done}
           onChange={(event) => {
-            setDone(event.currentTarget.checked);
+            setDoneDraft(event.currentTarget.checked);
             setSaved(false);
           }}
         />

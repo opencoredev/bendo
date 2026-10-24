@@ -1,6 +1,11 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useMatchRoute, useNavigate, useSearch } from "@tanstack/react-router";
-import { mutationOptions, queryOptions, type ResponseOf } from "bendo/query";
+import {
+  mutationOptions,
+  queryOptions,
+  type BendoMutationError,
+  type ResponseOf,
+} from "bendo/query";
 import { useId, useState, type FormEvent } from "react";
 import { API_BASE, SHOWS, describeFailure, todos, type Show } from "./api.ts";
 import { NO_VERDICT, useBrowserCheck, type Verdict } from "./check.ts";
@@ -196,6 +201,45 @@ function TodoRow({ todo }: { todo: Todo }) {
       >
         <TrashIcon />
       </button>
+      <RowFailure
+        toggle={toggle.error}
+        remove={remove.error}
+        wanted={toggle.variables?.body?.done}
+        retry={() => {
+          if (toggle.isError && toggle.variables !== undefined) toggle.mutate(toggle.variables);
+          else if (remove.isError) remove.mutate();
+        }}
+      />
     </li>
+  );
+}
+
+/** Why the row's last toggle or delete failed, with a way to try it again. */
+function RowFailure({
+  toggle,
+  remove,
+  wanted,
+  retry,
+}: {
+  toggle: BendoMutationError | null;
+  remove: BendoMutationError | null;
+  wanted: boolean | undefined;
+  retry: () => void;
+}) {
+  const failed = toggle ?? remove;
+  if (failed === null) return null;
+  const action =
+    toggle !== null
+      ? `Could not mark it ${wanted === true ? "done" : "not done"}`
+      : "Could not delete it";
+  return (
+    <div className="row-error" role="alert">
+      <span>
+        {action}: {describeFailure(failed).headline}
+      </span>
+      <button type="button" className="link-button" onClick={retry}>
+        Try again
+      </button>
+    </div>
   );
 }
