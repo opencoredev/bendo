@@ -2,6 +2,13 @@
 # Agents may add laws. Never delete or weaken one without a written reason
 # in the pull request.
 import Base
+import ./src/app/route-schemas.bend as RouteSchemas
+import ./src/app/manifest-schemas.bend as ManifestSchemas
+import ./proof/manifest-schema-spec.bend as ManifestSchemaSpec
+import ./src/data/json-schema.bend as JsonSchema
+import ./proof/json-schema-spec.bend as JsonSchemaSpec
+import ./src/data/schema-pattern.bend as SchemaPattern
+import ./src/app/transport_response.bend as WebSocketTransport
 import ./src/mw/etag.bend as ETag
 import ./src/http/conditional.bend as Conditional
 import ./src/mw/body_limit.bend as BodyLimit
@@ -102,6 +109,8 @@ import ./src/mw/trailing_slash_policy.bend as TrailingPolicy
 import ./proof/trailing-spec.bend as TrailingSpec
 
 import ./src/http/date.bend as HttpDate
+import ./src/http/websocket.bend as WebSocket
+import ./proof/websocket-spec.bend as WebSocketSpec
 import ./proof/date-spec.bend as HttpDateSpec
 
 # BND-45
@@ -2078,3 +2087,266 @@ law static_path_index:
   for servable: {StaticSpec.servable(xs) == True{} : Bool}
   for named: {StaticSpec.servable_segment(index) == True{} : Bool}
   {StaticPath.resolve(StaticSpec.directory(xs), index) == Some{StaticSpec.joined_index(xs, index)} : Maybe<&2, String>}
+
+# BND-37: route schemas never change the manifest's rows. A successful
+# attachment lists exactly the version-1 rows of the specification, in
+# registration order with duplicates, so schemas are purely additive.
+law manifest_schema_rows:
+  for -Tag: Data
+  for +sources: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Index<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
+  for +schemas: List<&2, RouteSchemas.RouteSchemas>
+  for +attached: List<&2, ManifestSchemas.Attached>
+  for done: {ManifestSchemas.attach(Tag, Table.Table{sources, compiled, layers, count}, schemas) == Done{attached} : Result<&2, &2, ManifestSchemas.AttachError, List<&2, ManifestSchemas.Attached>>}
+  {ManifestSchemas.attached_rows(attached) == ManifestSpec.describe(Tag, sources, Methods.raw(Tag, Methods.index_valid(Tag, compiled))) : List<&2, Manifest.Row>}
+
+# Schemas are positional: entry i belongs to registration i and appears on
+# every row that registration prints (one per method), so duplicate
+# registrations keep their own schemas.
+law manifest_schema_positions:
+  for -Tag: Data
+  for +sources: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Index<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
+  for +schemas: List<&2, RouteSchemas.RouteSchemas>
+  for +attached: List<&2, ManifestSchemas.Attached>
+  for done: {ManifestSchemas.attach(Tag, Table.Table{sources, compiled, layers, count}, schemas) == Done{attached} : Result<&2, &2, ManifestSchemas.AttachError, List<&2, ManifestSchemas.Attached>>}
+  {ManifestSchemas.attached_schemas(attached) == ManifestSchemaSpec.spread(Tag, sources, Methods.raw(Tag, Methods.index_valid(Tag, compiled)), schemas) : List<&2, RouteSchemas.RouteSchemas>}
+
+# Attachment succeeds exactly when there is one entry per registration and
+# every slot that is set holds a valid schema.
+law manifest_schema_accepted:
+  for -Tag: Data
+  for +sources: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Index<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
+  for +schemas: List<&2, RouteSchemas.RouteSchemas>
+  {ManifestSchemaSpec.accepted(ManifestSchemas.attach(Tag, Table.Table{sources, compiled, layers, count}, schemas)) == (Nat.is_eq(List.length(&2, Methods.Registration(Tag), sources), List.length(&2, RouteSchemas.RouteSchemas, schemas)) && ManifestSchemaSpec.all_valid(schemas)) : Bool}
+
+# BND-37: the decoder rejects every input for an invalid schema, so its JSON
+# Schema is `not: {}`, which accepts nothing.
+law json_schema_invalid_rejects_all:
+  for +schema: Schema.Schema
+  for bad: {Schema.valid(schema) == False{} : Bool}
+  {JsonSchemaSpec.keyword(JsonSchema.export(schema), "not") == Some{Json.JObject{[]}} : Maybe<&2, Json.Json>}
+
+# A valid schema exports its node, the same function that exports every
+# child, so the node laws below hold at every depth of an export.
+law json_schema_valid_exports_node:
+  for +schema: Schema.Schema
+  for ok: {Schema.valid(schema) == True{} : Bool}
+  {JsonSchema.export(schema) == JsonSchema.go(schema, JsonSchema.start(schema)) : Json.Json}
+
+# Every node's "type" names the JSON type its kind requires; literal, enum,
+# nullable and union nodes have none.
+law json_schema_type_keyword:
+  for +schema: Schema.Schema
+  {JsonSchemaSpec.keyword(JsonSchema.go(schema, JsonSchema.start(schema)), "type") == JsonSchemaSpec.type_of(schema) : Maybe<&2, Json.Json>}
+
+# An object requires exactly its Required keys, in order: optional and
+# defaulted fields are never required.
+law json_schema_required_keys:
+  for +fields: List<&2, Schema.Field>
+  for +unknown: Schema.Unknown
+  {JsonSchemaSpec.keyword(JsonSchema.go(Schema.ObjectSchema{fields, unknown}, JsonSchema.start(Schema.ObjectSchema{fields, unknown})), "required") == Some{Json.JArray{JsonSchemaSpec.required(fields)}} : Maybe<&2, Json.Json>}
+
+# Strict objects export additionalProperties false; Strip objects true.
+law json_schema_unknown_keys:
+  for +fields: List<&2, Schema.Field>
+  for +unknown: Schema.Unknown
+  {JsonSchemaSpec.keyword(JsonSchema.go(Schema.ObjectSchema{fields, unknown}, JsonSchema.start(Schema.ObjectSchema{fields, unknown})), "additionalProperties") == Some{Json.JBool{JsonSchemaSpec.allows_unknown(unknown)}} : Maybe<&2, Json.Json>}
+
+# A string's top-level pattern is the ECMAScript source of its own pattern,
+# absent without one, and maxLength is its upper bound, absent without one.
+law json_schema_string_pattern:
+  for +min: Nat
+  for +max: Maybe<&2, Nat>
+  for +pattern: Maybe<&2, SchemaPattern.Pattern>
+  for +format: Schema.Format
+  {JsonSchemaSpec.keyword(JsonSchema.go(Schema.StringSchema{min, max, pattern, format}, JsonSchema.start(Schema.StringSchema{min, max, pattern, format})), "pattern") == JsonSchemaSpec.pattern_of(pattern) : Maybe<&2, Json.Json>}
+
+law json_schema_string_max_length:
+  for +min: Nat
+  for +max: Maybe<&2, Nat>
+  for +pattern: Maybe<&2, SchemaPattern.Pattern>
+  for +format: Schema.Format
+  {JsonSchemaSpec.keyword(JsonSchema.go(Schema.StringSchema{min, max, pattern, format}, JsonSchema.start(Schema.StringSchema{min, max, pattern, format})), "maxLength") == JsonSchemaSpec.upper_of(max) : Maybe<&2, Json.Json>}
+
+# Every string node rejects lone surrogates, which the decoder never accepts.
+law json_schema_string_wellformed:
+  for +min: Nat
+  for +max: Maybe<&2, Nat>
+  for +pattern: Maybe<&2, SchemaPattern.Pattern>
+  for +format: Schema.Format
+  {JsonSchemaSpec.keyword(JsonSchema.go(Schema.StringSchema{min, max, pattern, format}, JsonSchema.start(Schema.StringSchema{min, max, pattern, format})), "not") == Some{Json.JObject{[Json.Field{"pattern", Json.JString{JsonSchemaSpec.lone()}}]}} : Maybe<&2, Json.Json>}
+
+# Empty enums and unions accept nothing, as an always-false schema rather
+# than the invalid `enum: []` or `anyOf: []`.
+law json_schema_empty_enum:
+  {JsonSchema.go(Schema.EnumSchema{[]}, JsonSchema.start(Schema.EnumSchema{[]})) == Json.JObject{[Json.Field{"not", Json.JObject{[]}}]} : Json.Json}
+
+law json_schema_empty_union:
+  {JsonSchema.go(Schema.UnionSchema{[]}, JsonSchema.start(Schema.UnionSchema{[]})) == Json.JObject{[Json.Field{"not", Json.JObject{[]}}]} : Json.Json}
+
+# BND-37: compositional structure and exact annotations, including absence.
+
+law json_schema_object_properties:
+  for +fields: List<&2, Schema.Field>
+  for +unknown: Schema.Unknown
+  {JsonSchemaSpec.keyword(JsonSchema.go(Schema.ObjectSchema{fields, unknown}, JsonSchema.start(Schema.ObjectSchema{fields, unknown})), "properties") == Some{Json.JObject{JsonSchemaSpec.properties(~(+c => JsonSchema.go(c, JsonSchema.start(c))), fields)}} : Maybe<&2, Json.Json>}
+
+law json_schema_literal_const:
+  for +value: Json.Json
+  {JsonSchema.go(Schema.LiteralSchema{value}, JsonSchema.start(Schema.LiteralSchema{value})) == Json.JObject{[Json.Field{"const", value}]} : Json.Json}
+
+law json_schema_enum_values:
+  for +values: List<&2, Json.Json>
+  {JsonSchema.go(Schema.EnumSchema{values}, JsonSchema.start(Schema.EnumSchema{values})) == JsonSchemaSpec.enum(JsonSchemaSpec.unique(values, [])) : Json.Json}
+
+law json_schema_array_items_bounds:
+  for +child: Schema.Schema
+  for +min: Nat
+  for +max: Maybe<&2, Nat>
+  {JsonSchema.go(Schema.ArraySchema{child, min, max}, JsonSchema.start(Schema.ArraySchema{child, min, max})) == JsonSchemaSpec.array(JsonSchema.go(child, JsonSchema.start(child)), min, max) : Json.Json}
+
+law json_schema_nullable_child:
+  for +child: Schema.Schema
+  {JsonSchema.go(Schema.NullableSchema{child}, JsonSchema.start(Schema.NullableSchema{child})) == JsonSchemaSpec.nullable(JsonSchema.go(child, JsonSchema.start(child))) : Json.Json}
+
+law json_schema_union_members:
+  for +members: List<&2, Schema.Schema>
+  {JsonSchema.go(Schema.UnionSchema{members}, JsonSchema.start(Schema.UnionSchema{members})) == JsonSchemaSpec.union(JsonSchemaSpec.nodes(~(+c => JsonSchema.go(c, JsonSchema.start(c))), members)) : Json.Json}
+
+law json_schema_number_bounds:
+  for +min: Maybe<&2, String>
+  for +max: Maybe<&2, String>
+  {JsonSchema.go(Schema.NumberSchema{min, max}, JsonSchema.start(Schema.NumberSchema{min, max})) == JsonSchemaSpec.number("number", min, max, []) : Json.Json}
+
+law json_schema_integer_bounds:
+  for +min: Maybe<&2, String>
+  for +max: Maybe<&2, String>
+  {JsonSchema.go(Schema.IntegerSchema{min, max}, JsonSchema.start(Schema.IntegerSchema{min, max})) == JsonSchemaSpec.number("integer", min, max, [Json.Field{"$comment", Json.JString{"Bendo accepts only integer tokens -?(0|[1-9][0-9]*); 1.0 and 1e0 are rejected"}}]) : Json.Json}
+
+law json_schema_string_min_length:
+  for +min: Nat
+  for +max: Maybe<&2, Nat>
+  for +pattern: Maybe<&2, SchemaPattern.Pattern>
+  for +format: Schema.Format
+  {JsonSchemaSpec.keyword(JsonSchema.go(Schema.StringSchema{min, max, pattern, format}, JsonSchema.start(Schema.StringSchema{min, max, pattern, format})), "minLength") == Some{Json.JNumber{Nat.show(min)}} : Maybe<&2, Json.Json>}
+
+law json_schema_string_format:
+  for +min: Nat
+  for +max: Maybe<&2, Nat>
+  for +pattern: Maybe<&2, SchemaPattern.Pattern>
+  for +format: Schema.Format
+  {JsonSchemaSpec.keyword(JsonSchema.go(Schema.StringSchema{min, max, pattern, format}, JsonSchema.start(Schema.StringSchema{min, max, pattern, format})), "allOf") == JsonSchemaSpec.format(format) : Maybe<&2, Json.Json>}
+
+law json_schema_default_annotation:
+  for +fields: List<&2, Json.Field>
+  for +presence: Schema.Presence
+  {JsonSchema.with_default(Json.JObject{fields}, presence) == JsonSchemaSpec.annotate(Json.JObject{fields}, presence) : Json.Json}
+
+# A node acquires a default only when its parent declares Default{value}.
+law json_schema_no_default:
+  for +schema: Schema.Schema
+  {JsonSchemaSpec.keyword(JsonSchema.go(schema, JsonSchema.start(schema)), "default") == None{} : Maybe<&2, Json.Json>}
+
+law json_schema_document_dialect:
+  for +schema: Schema.Schema
+  {JsonSchema.document(schema) == JsonSchemaSpec.document(JsonSchema.export(schema)) : Json.Json}
+
+# Each attached bundle serializes exactly its present slots as standalone
+# 2020-12 documents, or reports the first unwritable slot.
+law manifest_schema_documents:
+  for +route: Nat
+  for +row: Manifest.Row
+  for +bundle: RouteSchemas.RouteSchemas
+  {ManifestSchemas.attached_json(ManifestSchemas.Attached{route, row, bundle}) == ManifestSchemaSpec.attached(ManifestSchemas.row_open(row), ManifestSchemaSpec.schema_text(ManifestSchemaSpec.documents(~(+c => JsonSchemaSpec.document(JsonSchema.export(c))), ManifestSchemaSpec.document_slots(bundle), route, Done{[]}))) : Result<&2, &2, ManifestSchemas.AttachError, String>}
+
+# Exact outer keys and order rule out duplicate or contradictory keywords.
+law json_schema_object_node_exact:
+  for +fields: List<&2, Schema.Field>
+  for +unknown: Schema.Unknown
+  {JsonSchema.go(Schema.ObjectSchema{fields, unknown}, JsonSchema.start(Schema.ObjectSchema{fields, unknown})) == JsonSchemaSpec.object(JsonSchemaSpec.properties(~(+c => JsonSchema.go(c, JsonSchema.start(c))), fields), JsonSchemaSpec.required(fields), unknown) : Json.Json}
+
+law json_schema_string_node_exact:
+  for +min: Nat
+  for +max: Maybe<&2, Nat>
+  for +pattern: Maybe<&2, SchemaPattern.Pattern>
+  for +format: Schema.Format
+  {JsonSchema.go(Schema.StringSchema{min, max, pattern, format}, JsonSchema.start(Schema.StringSchema{min, max, pattern, format})) == JsonSchemaSpec.string(min, max, pattern, format) : Json.Json}
+
+# A boolean node is exactly {"type": "boolean"}: no other keyword can narrow
+# the two values the decoder accepts.
+law json_schema_boolean_node_exact:
+  {JsonSchema.go(Schema.BooleanSchema{}, JsonSchema.start(Schema.BooleanSchema{})) == Json.JObject{[Json.Field{"type", Json.JString{"boolean"}}]} : Json.Json}
+
+# BND-50: the WebSocket opening handshake (RFC 6455 section 4).
+
+# For every key, Sec-WebSocket-Accept is the padded standard base64 of the
+# SHA-1 of the key's octets followed by the RFC's GUID, which the spec spells
+# out as literal octets.
+# SHA-1 and base64 correctness rest on BND-42's NIST vectors,
+# base64_roundtrip, and the RFC example law below.
+law websocket_accept_spec:
+  for +key: List<&2, U32>
+  {WebSocket.accept(key) == WebSocketSpec.accept(key) : String}
+
+# The worked example of RFC 6455 section 1.3.
+law websocket_accept_rfc:
+  {WebSocket.accept(Bytes.encode("dGhlIHNhbXBsZSBub25jZQ==")) == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=" : String}
+
+# For every configuration and request, the handshake decision equals
+# WebSocketSpec.decide: 400 unless the request is a GET over HTTP/1.1 with no
+# Transfer-Encoding and at most one zero Content-Length, a "websocket" Upgrade
+# element and an "upgrade" Connection element (ASCII case ignored), and exactly
+# one key that is the canonical padded base64 of 16 octets; then 400 for a
+# missing or repeated version and 426 for one that is not "13"; then 403 when
+# a listed origin policy does not list the single Origin field's
+# serialization; otherwise accept with the computed key and the first
+# configured subprotocol the client offered, or none.
+# Domain: canonical requests with lowercase header names. Origin.canonical
+# is shared by the implementation and spec; independent coverage is BND-85.
+law websocket_decision_spec:
+  for +config: WebSocket.Config
+  for +req: Request.Req
+  {WebSocket.decide(config, req) == WebSocketSpec.decide(config, req) : WebSocket.Decision}
+
+# The pure opening response names exactly version 13 on a 426.
+law websocket_response_version:
+  {WebSocket.response(WebSocket.Refuse{426}) == Response.Res{426, [Request.Header{"sec-websocket-version", Bytes.encode("13")}], [], None{}} : Response.Res}
+
+# A successful pure opening response has precisely the RFC fields, with the
+# selected protocol present exactly in the Some case (including its value).
+law websocket_response_success:
+  for +key: List<&2, U32>
+  for +protocol: Maybe<&2, String>
+  {WebSocket.response(WebSocket.Accept{WebSocket.accept(key), protocol}) == Response.Res{101, Request.Header{"upgrade", Bytes.encode("websocket")} <> (Request.Header{"connection", Bytes.encode("Upgrade")} <> (Request.Header{"sec-websocket-accept", Bytes.encode(WebSocketSpec.accept(key))} <> WebSocketSpec.protocol_field(protocol))), [], None{}} : Response.Res}
+
+# Even arbitrary middleware responses rebuild to an empty 101 with neither
+# Content-Length nor Transfer-Encoding, checking field names case-insensitively.
+law websocket_rebuilt_framing:
+  for +res: Response.Res
+  for +accept: String
+  for +protocol: Maybe<&2, String>
+  {WebSocketSpec.frameless(WebSocketTransport.rebuilt(res, accept, protocol)) == True{} : Bool}
+
+# Every middleware field survives unchanged, in its original order and with
+# duplicates intact, except handshake-owned fields, framing and the marker.
+# The independent spec puts the computed handshake first, with no body or rep.
+law websocket_rebuilt_response:
+  for +res: Response.Res
+  for +accept: String
+  for +protocol: Maybe<&2, String>
+  {WebSocketTransport.rebuilt(res, accept, protocol) == WebSocketSpec.rebuilt(res, accept, protocol) : Response.Res}
+
+# Pure refusal responses are empty; the context layer supplies error bodies.
+law websocket_response_refuse_400:
+  {WebSocket.response(WebSocket.Refuse{400}) == Response.Res{400, [], [], None{}} : Response.Res}
+
+law websocket_response_refuse_403:
+  {WebSocket.response(WebSocket.Refuse{403}) == Response.Res{403, [], [], None{}} : Response.Res}
