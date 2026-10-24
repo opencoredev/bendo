@@ -63,7 +63,12 @@ bendo new my-app
 cd my-app
 ```
 
-`new` prints `Created my-app. Run bendo dev in that directory.` The app holds:
+`new` prints `Created my-app. Run bendo dev in that directory.` For an app
+with typed routes or a React front end, start from
+[create-bendo](../packages/create-bendo/README.md) instead. This page stays
+with the smallest app.
+
+The app holds:
 
 | File | What it is |
 | --- | --- |
@@ -222,7 +227,7 @@ changes.
 
 | Now | After the release |
 | --- | --- |
-| Clone the repo and alias `bendo` (step 2), then `bendo new my-app` | `bun create bendo my-app`, from the `create-bendo` package |
+| Clone the repo and alias `bendo` (step 2), then `bendo new my-app` | `bun create bendo my-app --template api`, from the `create-bendo` package |
 | Run `bendo dev` through the alias | `bun run dev`, because the app's `package.json` scripts call the `bendo` package |
 
 The app will also be able to import Bendo from BendHub (`import bendo@0.1/main.bend as B`)
