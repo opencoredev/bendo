@@ -2,6 +2,7 @@
 # configuration and the request. src/websocket.bend registers the session;
 # LAWS.bend states what the decision is.
 import Base
+import ./response.bend as Response
 import ./request.bend as Request
 import ./origin.bend as Origin
 import ./bytes.bend as Bytes
@@ -235,8 +236,14 @@ def handshake(accept: String, protocol: Maybe<&2, String>) -> List<&2, Request.H
 
 # Fields the handshake owns, plus framing a 101 never carries. Middleware
 # copies of them are replaced by the computed handshake.
+def framing(+name: String) -> Bool:
+  String.eq(name, "content-length") || String.eq(name, "transfer-encoding")
+
+def handshake_owned(+name: String) -> Bool:
+  String.eq(name, "upgrade") || String.eq(name, "connection") || String.eq(name, "sec-websocket-accept") || String.eq(name, "sec-websocket-protocol") || String.eq(name, "sec-websocket-extensions") || String.eq(name, "sec-websocket-version")
+
 def owned(+name: String) -> Bool:
-  String.eq(name, "upgrade") || String.eq(name, "connection") || String.eq(name, "sec-websocket-accept") || String.eq(name, "sec-websocket-protocol") || String.eq(name, "sec-websocket-extensions") || String.eq(name, "sec-websocket-version") || String.eq(name, "content-length") || String.eq(name, "transfer-encoding")
+  framing(name) || handshake_owned(name)
 
 def kept(h: Request.Header) -> Bool:
   Request.Header{name, value} = h
@@ -248,3 +255,15 @@ def handshake_field(h: Request.Header) -> Bool:
   Request.Header{name, value} = h
   +folded = Bytes.fold(name)
   Bool.not(String.eq(folded, "upgrade") || String.eq(folded, "sec-websocket-accept") || String.eq(folded, "sec-websocket-protocol") || (String.eq(folded, "connection") && String.eq(Bytes.fold(Bytes.ascii(value)), "upgrade")))
+
+# Pure opening response; context formatting adds an ordinary error body for a
+# refusal. All opening-handshake fields originate here.
+def refusal_fields(status: U32) -> List<&2, Request.Header>:
+  match status:
+    case 426: [Request.Header{"sec-websocket-version", Bytes.encode("13")}]
+    case _: []
+
+def response(decision: Decision) -> Response.Res:
+  match decision:
+    case Refuse{+status}: Response.Res{status, refusal_fields(status), [], None{}}
+    case Accept{accept, protocol}: Response.Res{101, handshake(accept, protocol), [], None{}}

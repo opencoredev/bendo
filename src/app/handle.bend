@@ -1,5 +1,6 @@
 # Network-free entrypoint; only the app dispatcher may perform IO.
 import Base
+import ../mw/logger.bend as Logger
 import ../mw/response_policy.bend as Policy
 import ../stream.bend as Stream
 import ../http/stream_types.bend as StreamTypes
@@ -88,9 +89,11 @@ def error_response(res: Response.Res) -> Bool:
   U32.is_ge(code, 400)
 
 # Transport owns the deferred action. This internal entrypoint never runs it.
-def transport_selected(~Vars: Data, ~Tag: Data, ~Env: Data, ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), ids: List<&2, Tag>, ctx: Context.Ctx<Vars>, env: Env, selected: Response.Res & StreamTypes.Transport) -> IO(Response.Res & (StreamTypes.Transport & IO(Unit))):
+def transport_selected(~Vars: Data, ~Tag: Data, ~Env: Data, ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), ids: List<&2, Tag>, +ctx: Context.Ctx<Vars>, env: Env, selected: Response.Res & StreamTypes.Transport) -> IO(Response.Res & (StreamTypes.Transport & IO(Unit))):
   (+res, stream) = selected
-  IO.pure(Response.Res & (StreamTypes.Transport & IO(Unit)), (res, (stream, Hooks.observe(~Vars, ~Tag, ~Env, ~middleware, ids, ctx, env, res))))
+  do IO<Response.Res & (StreamTypes.Transport & IO(Unit))>:
+    Logger.flush(Obs.access(Context.observation(Vars, ctx)), res)
+    return (res, (stream, Hooks.observe(~Vars, ~Tag, ~Env, ~middleware, ids, Context.with_observation(Vars, ctx, Obs.without_access(Context.observation(Vars, ctx))), env, res)))
 
 def parsed_transport(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +kind: Router.RouterKind, +table: Table.Table<Tag>, +env: Env, +req: Request.Req, body: List<&2, U32>, network: Bool, parsed_query: Result<&2, &2, Query.Error, List<&2, Query.Entry>>) -> IO(Response.Res & (StreamTypes.Transport & IO(Unit))):
   Table.Table{entries, +compiled, +layers, +count} = table
@@ -101,11 +104,14 @@ def parsed_transport(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Cont
       +initial = RouteSlot.identity(Tag, count, Methods.resolve_with(Tag, kind, compiled, path, method, Methods.defaults()))
       request_ids = Table.scoped_stage_ids(Tag, layers, initial, Table.Request{})
       do IO<Response.Res & (StreamTypes.Transport & IO(Unit))>:
+        +access : Chan(List<&2, Obs.Access>) <- Chan.new(List<&2, Obs.Access>, 1)
+        access_seeded : Result<&1, &1, List<&2, Obs.Access>, Unit> <- Chan.send(List<&2, Obs.Access>, access, [])
+        Hooks.sent(List<&2, Obs.Access>, access_seeded)
         +policies : Chan(List<&2, Policy.Policy>) <- Chan.new(List<&2, Policy.Policy>, 1)
         policy_seeded : Result<&1, &1, List<&2, Policy.Policy>, Unit> <- Chan.send(List<&2, Policy.Policy>, policies, [])
         Hooks.sent(List<&2, Policy.Policy>, policy_seeded)
         +stream_slot : Chan(StreamTypes.Registration) <- Chan.new(StreamTypes.Registration, 1)
-        +ctx : Context.Ctx<Vars> = Context.with_observation(Vars, Context.variables(Vars, Context.create(req, [], body, pairs)), Obs.with_policies(Obs.with_stream(Obs.empty(), stream_slot), policies))
+        +ctx : Context.Ctx<Vars> = Context.with_observation(Vars, Context.variables(Vars, Context.create(req, [], body, pairs)), Obs.with_access(Obs.with_policies(Obs.with_stream(Obs.empty(), stream_slot), policies), access))
         +route_slot : Chan(Maybe<&2, Nat>) <- Chan.new(Maybe<&2, Nat>, 1)
         route_seeded : Result<&1, &1, Maybe<&2, Nat>, Unit> <- Chan.send(Maybe<&2, Nat>, route_slot, initial)
         Hooks.sent(Maybe<&2, Nat>, route_seeded)

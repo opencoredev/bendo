@@ -59,12 +59,12 @@ def close(store: Store.Store<List<&2, Obs.Mark>>) -> IO(Unit):
   Store.Store{requests, timeout_ms} = store
   Chan.close(Store.Message<List<&2, Obs.Mark>>, requests)
 
-def run(-Vars: Data, c: C.Ctx<Vars>, id: Maybe<&2, String>, stream: Maybe<&2, Chan(StreamTypes.Registration)>, policies: Maybe<&2, Chan(List<&2, Policy.Policy>)>, next: C.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
+def run(-Vars: Data, c: C.Ctx<Vars>, id: Maybe<&2, String>, stream: Maybe<&2, Chan(StreamTypes.Registration)>, policies: Maybe<&2, Chan(List<&2, Policy.Policy>)>, access: Maybe<&2, Chan(List<&2, Obs.Access>)>, next: C.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
   do IO<Response.Res>:
     +store : Store.Store<List<&2, Obs.Mark>> <- StoreActor.store(List<&2, Obs.Mark>, [])
     +finalized : Chan(Maybe<&2, String>) <- Chan.new(Maybe<&2, String>, 1)
     before : Nat <- IO.now()
-    res : Response.Res <- next(C.with_observation(Vars, c, Obs.State{id, Some{store}, Some{finalized}, policies, stream}))
+    res : Response.Res <- next(C.with_observation(Vars, c, Obs.State{id, Some{store}, Some{finalized}, policies, stream, access}))
     after : Nat <- IO.now()
     marks : Result<&2, &2, Store.Error, List<&2, Obs.Mark>> <- Store.get(List<&2, Obs.Mark>, store)
     close(store)
@@ -75,8 +75,8 @@ def run(-Vars: Data, c: C.Ctx<Vars>, id: Maybe<&2, String>, stream: Maybe<&2, Ch
 # Nested registrations share the outer owner's collector and never close it.
 def existing(-Vars: Data, c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res), state: Obs.State) -> IO(Response.Res):
   match state:
-    case Obs.State{id, None{}, finalized, policies, stream}: run(Vars, c, id, stream, policies, next)
-    case Obs.State{id, Some{store}, finalized, policies, stream}: next(c)
+    case Obs.State{id, None{}, finalized, policies, stream, access}: run(Vars, c, id, stream, policies, access, next)
+    case Obs.State{id, Some{store}, finalized, policies, stream, access}: next(c)
 
 def middleware(-Vars: Data, +c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
   existing(Vars, c, next, C.observation(Vars, c))

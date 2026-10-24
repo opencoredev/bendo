@@ -68,6 +68,9 @@ timeout; the fixture's echo loop shows one way.
   Entries that are not HTTP tokens are dropped.
 - `B.websocket_timeout(config, milliseconds)` sets the write budget for the 101.
 
+Cookie-authenticated sockets need an explicit origin allowlist. CORS does not
+protect WebSockets; configure `B.websocket_origins` even when CORS is enabled.
+
 Extensions are never negotiated. A `Sec-WebSocket-Extensions` offer such as
 `permessage-deflate` is ignored, and the 101 never carries that field, so the
 connection uses uncompressed frames.
@@ -137,6 +140,10 @@ handling finished (for example after timeout middleware gave up), answers an
 empty 500 and runs that registration's cleanup. The first registration is
 cleaned up too, because the 500 no longer carries its marker.
 
+The access logger records the status after transport selection, including a
+400 refusal caused by a method rewrite. Cache middleware skips all 1xx
+responses.
+
 `on_after_response` observers run once, after the 101 has been sent and before
 the session starts. A 101 does not take the connection's keep-alive or
 `Connection: close` policy: the connection belongs to the session. Network-free
@@ -150,7 +157,7 @@ Run `bun test tests/websocket.test.ts --timeout 30000`. It opens a real Bun
 through the validation table, pipelined suffixes, middleware finalization,
 replacement, duplicate and late registrations, and the wire-method check.
 
-Three laws in `LAWS.bend` cover the pure handshake, against an independent
+Six laws in `LAWS.bend` cover the pure handshake, against an independent
 statement in [`proof/websocket-spec.bend`](../proof/websocket-spec.bend):
 
 - `websocket_accept_spec`: for every key, the accept value is the base64 of the
@@ -159,3 +166,9 @@ statement in [`proof/websocket-spec.bend`](../proof/websocket-spec.bend):
 - `websocket_decision_spec`: for every configuration and request, the decision
   (accept with the computed key and subprotocol, or the refusal status) equals
   the spec's rules above.
+
+- `websocket_response_version`: a pure 426 response names exactly version 13.
+- `websocket_response_success`: a pure 101 response carries the required fields
+  and the selected protocol exactly when one was selected.
+- `websocket_rebuilt_framing`: rebuilding any middleware response as a 101
+  leaves an empty body and no Content-Length or Transfer-Encoding fields.

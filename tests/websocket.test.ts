@@ -6,7 +6,13 @@ import { build } from "./harness.ts";
 // Compilation stays at module scope, so the harness's compile budget applies.
 const binary = build("tests/servers/websocket.bend");
 
-type Logged = { url: string; port: number; log: () => string; stop: () => Promise<void> };
+type Logged = {
+  url: string;
+  port: number;
+  log: () => string;
+  accessLog: () => string;
+  stop: () => Promise<void>;
+};
 
 // The harness's start() discards stdout; these tests read the fixture's
 // session, cleanup and observer lines, so they collect it themselves.
@@ -19,9 +25,14 @@ async function startLogged(): Promise<Logged> {
       stderr: "pipe",
     });
     let output = "";
+    let accessOutput = "";
     void (async () => {
       const decoder = new TextDecoder();
       for await (const part of proc.stdout) output += decoder.decode(part, { stream: true });
+    })();
+    void (async () => {
+      const decoder = new TextDecoder();
+      for await (const part of proc.stderr) accessOutput += decoder.decode(part, { stream: true });
     })();
     const url = `http://127.0.0.1:${port}`;
     const deadline = Date.now() + 20_000;
@@ -35,6 +46,7 @@ async function startLogged(): Promise<Logged> {
           url,
           port,
           log: () => output,
+          accessLog: () => accessOutput,
           stop: async () => {
             proc.kill();
             await proc.exited;
@@ -51,13 +63,13 @@ async function startLogged(): Promise<Logged> {
 const server = await startLogged();
 afterAll(() => server.stop());
 
-async function waitForLog(text: string, timeoutMs = 3000): Promise<string> {
+async function waitForLog(text: string, timeoutMs = 3000, read = server.log): Promise<string> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (server.log().includes(text)) return server.log();
+    if (read().includes(text)) return read();
     await Bun.sleep(20);
   }
-  throw new Error(`log never contained ${JSON.stringify(text)}:\n${server.log()}`);
+  throw new Error(`log never contained ${JSON.stringify(text)}:\n${read()}`);
 }
 
 const count = (text: string) =>
@@ -502,4 +514,42 @@ test("the server keeps serving after upgrades and refusals", async () => {
   const response = await fetch(`${server.url}/ws`);
   expect(response.status).toBe(400);
   expect(await response.text()).toBe("Bad Request");
+});
+
+for (const method of ["GET", "POST"]) {
+  test(`access log status matches the wire for ${method} upgrade`, async () => {
+    const id = `logged-${method}`;
+    const wire = await open(
+      handshake({ method, fields: { "x-rewrite-get": "1", "x-request-id": id } }),
+    );
+    const response = head(await wire.waitFor(hasHead));
+    wire.socket.destroy();
+    expect(response.status).toBe(method === "GET" ? 101 : 400);
+    const log = await waitForLog(`id=${id}`, 3000, server.accessLog);
+    const line = log.split("\n").find((entry) => entry.includes(`id=${id}`));
+    expect(line?.split(" ")[2]).toBe(String(response.status));
+    const deadline = Date.now() + 3000;
+    while (
+      Date.now() < deadline &&
+      server
+        .accessLog()
+        .split("\n")
+        .filter((entry) => entry.includes(`id=${id}`)).length < 2
+    )
+      await Bun.sleep(20);
+    const entries = server
+      .accessLog()
+      .split("\n")
+      .filter((entry) => entry.includes(`id=${id}`));
+    expect(entries).toHaveLength(2);
+    for (const entry of entries) expect(entry.split(" ")[2]).toBe(String(response.status));
+  });
+}
+
+test("cache middleware skips the informational upgrade response", async () => {
+  const wire = await open(handshake({ path: "/cache" }));
+  const response = head(await wire.waitFor(hasHead));
+  wire.socket.destroy();
+  expect(response.status).toBe(101);
+  expect(response.headers.has("cache-control")).toBe(false);
 });

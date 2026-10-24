@@ -2,6 +2,7 @@
 # module's helpers. It uses only Base, the request types, the proven Base64
 # and SHA-1 primitives, and origin serialization (src/http/origin.bend).
 import Base
+import ../src/http/response.bend as Response
 import ../src/http/request.bend as Request
 import ../src/http/bytes.bend as Bytes
 import ../src/http/origin.bend as Origin
@@ -183,3 +184,20 @@ def decide(config: W.Config, req: Request.Req) -> W.Decision:
   Request.Req{method, path, query, v, +hs} = req
   +keys = fields(hs, "sec-websocket-key")
   judge(((((is_get(method) && is_http11(v)) && no_body(hs)) && has_folded(elements(fields(hs, "upgrade")), "websocket")) && has_folded(elements(fields(hs, "connection")), "upgrade")) && good_key(keys), version(fields(hs, "sec-websocket-version")), origin_ok(origins, hs), keys, protocols, fields(hs, "sec-websocket-protocol"))
+
+def protocol_field(protocol: Maybe<&2, String>) -> List<&2, Request.Header>:
+  match protocol:
+    case None{}: []
+    case Some{p}: [Request.Header{"sec-websocket-protocol", Bytes.encode(p)}]
+
+# No field with either framing name, irrespective of ASCII name case.
+def unframed(hs: List<&2, Request.Header>) -> Bool:
+  match hs:
+    case Nil{}: True{}
+    case Request.Header{name, value} <> tail:
+      +folded = String.to_lower(name)
+      Bool.not(String.eq(folded, "content-length") || String.eq(folded, "transfer-encoding")) && unframed(tail)
+
+def frameless(res: Response.Res) -> Bool:
+  Response.Res{status, hs, body, rep} = res
+  U32.is_eq(status, 101) && List.is_empty(&2, U32, body) && unframed(hs)

@@ -144,10 +144,12 @@ def ready(result: Result<&2, &2, Methods.BuildError, B.Routes(Tag)>) -> IO(Unit)
 
 def main() -> IO(Unit):
   ready(B.routes(Tag, [
+    B.on_request(Tag, Builtin{B.logger()}),
     B.on_request(Tag, Rewrite{}),
     B.on_request(Tag, Builtin{B.request_id()}),
     B.on_request(Tag, Builtin{B.server_timing()}),
     B.on_after_response(Tag, Observe{}),
+    B.on_after_response(Tag, Builtin{B.logger()}),
     B.use_path(Tag, "/policy/*", Builtin{B.cors(B.cors_allow([B.cors_origin_credentials("https://app.example")]))}),
     B.use_path(Tag, "/policy/*", Builtin{B.secure_headers()}),
     B.use_path(Tag, "/override", Builtin{B.method_override_header("x-http-method-override", ["PUT"])}),
@@ -157,6 +159,8 @@ def main() -> IO(Unit):
     B.use_path(Tag, "/late", Late{}),
     B.all(Tag, "/ws", Echo{}),
     B.get(Tag, "/policy/ws", Policy{}),
+    B.use_path(Tag, "/cache", Builtin{B.cache_control(B.cache_no_store())}),
+    B.get(Tag, "/cache", Echo{}),
     B.get(Tag, "/chat", Chat{}),
     B.get(Tag, "/subprotocol", Subprotocol{}),
     B.get(Tag, "/duplicate", Duplicate{}),

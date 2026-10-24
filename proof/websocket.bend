@@ -1,5 +1,8 @@
 # BND-50: the handshake module agrees with proof/websocket-spec.bend.
 import Base
+import ../src/app/transport_response.bend as Transport
+import ../src/http/response.bend as Response
+import ../src/http/stream_marker.bend as Stream
 import ../src/http/websocket.bend as W
 import ../src/http/request.bend as Request
 import ../src/http/bytes.bend as Bytes
@@ -267,3 +270,36 @@ def decide_spec(+config: W.Config, +req: Request.Req) -> {Spec.decide(config, re
 # The law's direction: the runtime decision equals the spec.
 def decide(+config: W.Config, +req: Request.Req) -> {W.decide(config, req) == Spec.decide(config, req) : W.Decision}:
   Equal.sym(W.Decision, Spec.decide(config, req), W.decide(config, req), decide_spec(config, req))
+
+def response_version() -> {W.response(W.Refuse{426}) == Response.Res{426, [Request.Header{"sec-websocket-version", Bytes.encode("13")}], [], None{}} : Response.Res}:
+  {==}
+
+def response_success(+key: List<&2, U32>, +protocol: Maybe<&2, String>) -> {W.response(W.Accept{W.accept(key), protocol}) == Response.Res{101, Request.Header{"upgrade", Bytes.encode("websocket")} <> (Request.Header{"connection", Bytes.encode("Upgrade")} <> (Request.Header{"sec-websocket-accept", Bytes.encode(Spec.accept(key))} <> Spec.protocol_field(protocol))), [], None{}} : Response.Res}:
+  match protocol:
+    case None{}: {==}
+    case Some{p}: {==}
+
+def filter_step(+name: String, +value: List<&2, U32>, +tail: List<&2, Request.Header>, +framing: Bool, +other: Bool, eq: {W.framing(Bytes.fold(name)) == framing : Bool}, e: {Spec.unframed(tail) == True{} : Bool}) -> {Spec.unframed(List.filter.put(Request.Header, Request.Header{name, value}, tail, Bool.not(framing || other))) == True{} : Bool}:
+  match framing other:
+    case True{} True{}: e
+    case True{} False{}: e
+    case False{} True{}: e
+    case False{} False{}:
+      %Equal.sym(Bool, W.framing(Bytes.fold(name)), False{}, eq) : {Bool.not(_) && Spec.unframed(tail) == True{} : Bool}
+      e
+
+def filtered(+hs: List<&2, Request.Header>) -> {Spec.unframed(List.filter(~Request.Header, ~W.kept, hs)) == True{} : Bool}:
+  match hs:
+    case Nil{}: {==}
+    case Request.Header{+name, +value} <> +tail:
+      filter_step(name, value, List.filter(~Request.Header, ~W.kept, tail), W.framing(Bytes.fold(name)), W.handshake_owned(Bytes.fold(name)), {==}, filtered(tail))
+
+def handshake_framing(+hs: List<&2, Request.Header>, +accept: String, +protocol: Maybe<&2, String>, e: {Spec.unframed(hs) == True{} : Bool}) -> {Spec.frameless(Transport.opening_with(W.response(W.Accept{accept, protocol}), hs)) == True{} : Bool}:
+  match protocol:
+    case None{}: e
+    case Some{p}: e
+
+def rebuilt_framing(+res: Response.Res, +accept: String, +protocol: Maybe<&2, String>) -> {Spec.frameless(Transport.rebuilt(res, accept, protocol)) == True{} : Bool}:
+  match res:
+    case Response.Res{status, +hs, body, rep}:
+      handshake_framing(List.filter(~Request.Header, ~W.kept, List.filter(~Request.Header, ~Stream.keep, hs)), accept, protocol, filtered(List.filter(~Request.Header, ~Stream.keep, hs)))

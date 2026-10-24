@@ -6,7 +6,7 @@ import ./http/stream_types.bend as T
 import ./http/websocket.bend as Handshake
 import ./http/response.bend as Response
 import ./app/context.bend as Context
-import ./app/transport.bend as Transport
+import ./app/transport_response.bend as Transport
 import ./app/observability.bend as Observation
 
 # Open runs the session with the socket and the octets read past the
@@ -22,8 +22,7 @@ def protocol_header(-Vars: Data, c: Context.Ctx<Vars>, protocol: Maybe<&2, Strin
     case Some{p}: Context.header(Vars, c, "sec-websocket-protocol", p)
 
 def switching(-Vars: Data, c: Context.Ctx<Vars>, accept: String, protocol: Maybe<&2, String>) -> Response.Res:
-  +headed = protocol_header(Vars, Context.header(Vars, Context.header(Vars, Context.header(Vars, Context.status(Vars, c, 101), "upgrade", "websocket"), "connection", "Upgrade"), "sec-websocket-accept", accept), protocol)
-  Context.body(Vars, headed, [], None{})
+  Context.body(Vars, Transport.opening_context(Vars, c, Handshake.response(Handshake.Accept{accept, protocol})), [], None{})
 
 def answer(~Vars: Data, ~State: Type, ~session: State -> Socket -> List<&2, U32> -> IO(Unit), ~cleanup: State -> IO(Unit), +c: Context.Ctx<Vars>, state: State, +config: Handshake.Config, decision: Handshake.Decision) -> IO(Response.Res):
   match decision:

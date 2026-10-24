@@ -1,5 +1,6 @@
 # Thin IO shell. Producer state is affine; no producer task runs ahead of TCP.
 import Base
+import ./http/stream_marker.bend as Marker
 import ./http/stream_types.bend as T
 import ./http/websocket.bend as WebSocket
 import ./http/stream_framing.bend as Frame
@@ -111,25 +112,11 @@ def cancel(plan: T.Plan) -> IO(Unit):
 
 # The marker is request-private protocol metadata, never a wire header. Random
 # identity prevents a second registration or stale response from selecting a plan.
-def marker() -> String: "x-bendo-stream-internal"
-
-def keep(h: Request.Header) -> Bool:
-  Request.Header{name, value} = h
-  Bool.not(String.eq(Bytes.fold(name), marker()))
-
-def strip(res: Response.Res) -> Response.Res:
-  Response.Res{status, hs, body, rep} = res
-  Response.Res{status, List.filter(~Request.Header, ~keep, hs), body, rep}
-
-def marked(hs: List<&2, Request.Header>, +id: String) -> Bool:
-  match hs:
-    case Nil{}: False{}
-    case Request.Header{name, value} <> rest:
-      (String.eq(Bytes.fold(name), marker()) && String.eq(Bytes.ascii(value), id)) || marked(rest, id)
-
-def mark(res: Response.Res, id: String) -> Response.Res:
-  Response.Res{code, hs, body, rep} = res
-  Response.Res{code, Request.Header{marker(), Bytes.encode(id)} <> hs, [], None{}}
+def marker() -> String: Marker.marker()
+def keep(h: Request.Header) -> Bool: Marker.keep(h)
+def strip(res: Response.Res) -> Response.Res: Marker.strip(res)
+def marked(hs: List<&2, Request.Header>, id: String) -> Bool: Marker.marked(hs, id)
+def mark(res: Response.Res, id: String) -> Response.Res: Marker.mark(res, id)
 
 # What a handler asks the transport to do with its response.
 type Claim is Type:

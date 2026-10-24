@@ -804,3 +804,12 @@ def Laws.websocket_accept_rfc():
 
 def Laws.websocket_decision_spec(config, req):
   WebSocketProof.decide(config, req)
+
+def Laws.websocket_response_version():
+  WebSocketProof.response_version()
+
+def Laws.websocket_response_success(key, protocol):
+  WebSocketProof.response_success(key, protocol)
+
+def Laws.websocket_rebuilt_framing(res, accept, protocol):
+  WebSocketProof.rebuilt_framing(res, accept, protocol)

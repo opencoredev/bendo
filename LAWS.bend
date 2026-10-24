@@ -2,6 +2,7 @@
 # Agents may add laws. Never delete or weaken one without a written reason
 # in the pull request.
 import Base
+import ./src/app/transport_response.bend as WebSocketTransport
 import ./src/mw/etag.bend as ETag
 import ./src/http/conditional.bend as Conditional
 import ./src/mw/body_limit.bend as BodyLimit
@@ -2079,6 +2080,8 @@ law static_path_index:
 # For every key, Sec-WebSocket-Accept is the padded standard base64 of the
 # SHA-1 of the key's octets followed by the RFC's GUID, which the spec spells
 # out as literal octets.
+# SHA-1 and base64 correctness rest on BND-42's NIST vectors,
+# base64_roundtrip, and the RFC example law below.
 law websocket_accept_spec:
   for +key: List<&2, U32>
   {WebSocket.accept(key) == WebSocketSpec.accept(key) : String}
@@ -2096,7 +2099,28 @@ law websocket_accept_rfc:
 # a listed origin policy does not list the single Origin field's
 # serialization; otherwise accept with the computed key and the first
 # configured subprotocol the client offered, or none.
+# Domain: canonical requests with lowercase header names. Origin.canonical
+# is shared by the implementation and spec; independent coverage is BND-85.
 law websocket_decision_spec:
   for +config: WebSocket.Config
   for +req: Request.Req
   {WebSocket.decide(config, req) == WebSocketSpec.decide(config, req) : WebSocket.Decision}
+
+# The pure opening response names exactly version 13 on a 426.
+law websocket_response_version:
+  {WebSocket.response(WebSocket.Refuse{426}) == Response.Res{426, [Request.Header{"sec-websocket-version", Bytes.encode("13")}], [], None{}} : Response.Res}
+
+# A successful pure opening response has precisely the RFC fields, with the
+# selected protocol present exactly in the Some case (including its value).
+law websocket_response_success:
+  for +key: List<&2, U32>
+  for +protocol: Maybe<&2, String>
+  {WebSocket.response(WebSocket.Accept{WebSocket.accept(key), protocol}) == Response.Res{101, Request.Header{"upgrade", Bytes.encode("websocket")} <> (Request.Header{"connection", Bytes.encode("Upgrade")} <> (Request.Header{"sec-websocket-accept", Bytes.encode(WebSocketSpec.accept(key))} <> WebSocketSpec.protocol_field(protocol))), [], None{}} : Response.Res}
+
+# Even arbitrary middleware responses rebuild to an empty 101 with neither
+# Content-Length nor Transfer-Encoding, checking field names case-insensitively.
+law websocket_rebuilt_framing:
+  for +res: Response.Res
+  for +accept: String
+  for +protocol: Maybe<&2, String>
+  {WebSocketSpec.frameless(WebSocketTransport.rebuilt(res, accept, protocol)) == True{} : Bool}
