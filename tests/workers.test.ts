@@ -4,7 +4,7 @@ import { get } from "node:http";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { build, start, type RunningServer } from "./harness.ts";
+import { build, COMPILE_TEST_TIMEOUT_MS, start, type RunningServer } from "./harness.ts";
 
 // Workers (BND-69, decision 0017): tests/servers/workers.bend serves with
 // B.workers(config, 3) and answers each request with the serving PID.
@@ -282,7 +282,9 @@ describe.skipIf(process.platform !== "linux")("multi-worker serving", () => {
     await withServer({}, async (server) => {
       const tree = await workerTree(server, 3);
       await servingPids(server.url, 3);
-      await server[Symbol.asyncDispose]();
+      // Bounded: a worker left alive by a regression would hold stderr open
+      // and keep disposal from settling, and withServer's cleanup must still run.
+      await bounded(server[Symbol.asyncDispose](), 5000);
       expect(await until(() => tree.every((pid) => !running(pid)), 3000)).toBe(true);
       expect(await refused(server.url)).toBe(true);
     });
@@ -387,4 +389,31 @@ describe.skipIf(process.platform !== "linux")("multi-worker serving", () => {
     expect(exit.workers).toBe(2);
     expect(exit.workersGone).toBe(true);
   });
+
+  test(
+    "several workers refuse config port 0",
+    async () => {
+      const port0 = build("tests/servers/workers-port0.bend");
+      // PORT=0 is not a valid override, so the config's port 0 stays.
+      const proc = Bun.spawn([port0], {
+        env: { ...process.env, PORT: "0" },
+        stdout: "ignore",
+        stderr: "pipe",
+      });
+      const tracker = processTracker();
+      tracker.root(proc.pid);
+      try {
+        await bounded(proc.exited, 20_000);
+        // EINVAL.
+        expect(proc.exitCode).toBe(22);
+        expect(children(proc.pid)).toEqual([]);
+        expect(await new Response(proc.stderr).text()).toContain(
+          "bendo: several workers cannot share port 0",
+        );
+      } finally {
+        await tracker.stop();
+      }
+    },
+    COMPILE_TEST_TIMEOUT_MS,
+  );
 });

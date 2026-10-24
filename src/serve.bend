@@ -350,6 +350,13 @@ def listen(host: String, port: U32, single: Bool) -> IO(Result<&1, &1, U32 & Str
     case True{}: TCP.listen(host, port)
     case False{}: Shared.listen_shared(host, port)
 
+# Port 0 asks the kernel for any free port, and every worker would get a
+# different one, so several workers need a fixed port (decision 0017).
+def shared_port(zero: Bool, single: Bool) -> IO(Unit):
+  match zero single:
+    case True{} False{}: IO.die(Unit, 22, "bendo: several workers cannot share port 0; set a fixed port or serve with one worker")
+    case _ _: IO.pure(Unit, Unit{})
+
 def startup_limits_with(~validator: Validate.Job -> Validate.Answer, ~Vars: Data, ~Tag: Data, ~select: Tag -> Maybe<&2, U32>, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), +table: Table.Table<Tag>, env: Env, +config: Config.Config, manifest: Bool) -> IO(Unit):
   match config manifest:
     case _ True{}:
@@ -364,6 +371,7 @@ def startup_limits_with(~validator: Validate.Job -> Validate.Answer, ~Vars: Data
         mode_env : Result<&1, &1, U32 & String, String> <- IO.get_env("BENDO_ENV")
         workers_env : Result<&1, &1, U32 & String, String> <- IO.get_env("BENDO_WORKERS")
         +count : U32 = Config.workers_env(workers_env, workers)
+        shared_port(U32.is_eq(port, 0), U32.is_eq(count, 1))
         listener : Listener <- IO.try(Listener, listen(host, port, U32.is_eq(count, 1)))
         index : U32 <- IO.try(U32, Workers.start_workers(count))
         IO.print("bendo listening on http://" ++ host ++ ":" ++ U32.show(port))

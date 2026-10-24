@@ -58,6 +58,11 @@ change that. A worker that has not reported in time, for example one stuck in
 not report its listener within <ms> ms; stopping the server` and exit with
 status 110 (ETIMEDOUT).
 
+Several workers need a fixed port. A config with port `0` (any free port)
+and a worker count other than 1 stops startup with `bendo: several workers cannot
+share port 0` and status 22 (EINVAL), because each worker would get a
+different port.
+
 Because every listener sets `SO_REUSEPORT`, a second multi-worker server
 started by the same user on the same port joins the first one instead of
 failing with "address in use". A one-worker server binds without
