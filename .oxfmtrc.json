@@ -8,7 +8,8 @@
     "tests/fixtures/openapi/openapi.json",
     "tests/fixtures/openapi/golden/*.openapi.json",
     "tests/fixtures/static/vite-app/build/**",
-    "packages/bendo/client/fixture/**"
+    "packages/bendo/client/fixture/**",
+    "packages/create-bendo/templates/*/.bendo/**"
   ],
   "sortPackageJson": false
 }
