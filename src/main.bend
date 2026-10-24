@@ -12,6 +12,11 @@ import ./mw/server_timing.bend as Timing
 import ./mw/basic_auth.bend as BasicAuth
 import ./mw/jwt.bend as JwtAuth
 import ./mw/csrf_policy.bend as CsrfPolicy
+import ./mw/cors_policy.bend as CorsPolicy
+import ./mw/secure_headers.bend as Secure
+import ./mw/method_override_policy.bend as OverridePolicy
+import ./mw/trailing_slash.bend as Trailing
+import ./mw/trailing_slash_policy.bend as TrailingPolicy
 import ./crypto/jwt.bend as Jwt
 import ./data/utf8.bend as Utf8
 import ./app/config.bend as Config
@@ -242,6 +247,44 @@ def stream_sse(~Vars: Data, ~State: Type, ~step: State -> IO(SseTypes.Step<State
   do IO<Response.Res>:
     now : Nat <- IO.now()
     stream(~Vars, ~SseTypes.Pump<State>, ~(p => Sse.pull(~State, ~step, p)), ~(p => Sse.release(~State, ~cleanup, p)), Sse.headers(Vars, c), SseTypes.Pump{state, config, now}, Sse.stream_config(config))
+
+# CORS. cors_defaults answers every origin with "*" and never allows
+# credentials. cors_allow lists origins; each entry says whether its
+# responses may carry credentials. See docs/web-middleware.md.
+def CorsConfig() -> Data: CorsPolicy.Config
+def CorsOrigin() -> Data: CorsPolicy.Entry
+def cors_defaults() -> CorsPolicy.Config: CorsPolicy.any_defaults()
+def cors_origin(origin: String) -> CorsPolicy.Entry: CorsPolicy.Entry{origin, False{}}
+def cors_origin_credentials(origin: String) -> CorsPolicy.Entry: CorsPolicy.Entry{origin, True{}}
+def cors_allow(origins: List<&2, CorsPolicy.Entry>) -> CorsPolicy.Config: CorsPolicy.allow(origins)
+def cors_methods(config: CorsPolicy.Config, methods: List<&2, String>) -> CorsPolicy.Config: CorsPolicy.with_methods(config, methods)
+def cors_headers(config: CorsPolicy.Config, headers: List<&2, String>) -> CorsPolicy.Config: CorsPolicy.with_headers(config, headers)
+def cors_expose(config: CorsPolicy.Config, headers: List<&2, String>) -> CorsPolicy.Config: CorsPolicy.with_expose(config, headers)
+def cors_max_age(config: CorsPolicy.Config, seconds: Nat) -> CorsPolicy.Config: CorsPolicy.with_max_age(config, seconds)
+def cors(config: CorsPolicy.Config) -> Builtin.Builtin: Builtin.Cors{config}
+
+# Security headers with Hono's secureHeaders defaults.
+def SecureConfig() -> Data: Secure.Config
+def secure_defaults() -> Secure.Config: Secure.defaults()
+def secure_set(config: Secure.Config, name: String, value: String) -> Secure.Config: Secure.set(config, name, value)
+def secure_unset(config: Secure.Config, name: String) -> Secure.Config: Secure.unset(config, name)
+def secure_keep_powered_by(config: Secure.Config) -> Secure.Config: Secure.keep_powered_by(config)
+def secure_headers() -> Builtin.Builtin: Builtin.SecureHeaders{Secure.defaults()}
+def secure_headers_with(config: Secure.Config) -> Builtin.Builtin: Builtin.SecureHeaders{config}
+
+# Method override for POST requests. Register with B.on_request.
+def method_override() -> Builtin.Builtin: Builtin.MethodOverride{OverridePolicy.defaults()}
+def method_override_form(field: String, methods: List<&2, String>) -> Builtin.Builtin: Builtin.MethodOverride{OverridePolicy.form(field, methods)}
+def method_override_header(name: String, methods: List<&2, String>) -> Builtin.Builtin: Builtin.MethodOverride{OverridePolicy.header(name, methods)}
+
+# Trailing-slash redirects for GET and HEAD. The plain forms redirect only
+# when the route answers 404; the _always forms redirect before calling next,
+# whether or not a route exists (register them with B.on_request to redirect
+# before routing).
+def trim_trailing_slash() -> Builtin.Builtin: Builtin.TrailingSlash{Trailing.Config{TrailingPolicy.Trim{}, False{}}}
+def trim_trailing_slash_always() -> Builtin.Builtin: Builtin.TrailingSlash{Trailing.Config{TrailingPolicy.Trim{}, True{}}}
+def append_trailing_slash() -> Builtin.Builtin: Builtin.TrailingSlash{Trailing.Config{TrailingPolicy.Append{}, False{}}}
+def append_trailing_slash_always() -> Builtin.Builtin: Builtin.TrailingSlash{Trailing.Config{TrailingPolicy.Append{}, True{}}}
 
 # Static files (BND-45). Register a GET wildcard route and call serve_static
 # from its handler; docs/static.md describes paths, caching and ranges.

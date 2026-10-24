@@ -95,6 +95,49 @@ test("streams bytes with chunked framing and final Date/observability headers", 
   expect(decoded.rest.length).toBe(0);
 });
 
+for (const path of ["/policy/stream?chunks=1", "/policy/recovered"]) {
+  test(`stream head retains CORS, security and observability after finalization: ${path}`, async () => {
+    const response = head(
+      await exchange(
+        `GET ${path} HTTP/1.1\r\nHost: test\r\nOrigin: https://app.example\r\nX-Request-Id: stream-policy-id\r\nConnection: close\r\n\r\n`,
+      ),
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("transfer-encoding")).toBe("chunked");
+    expect(response.headers.get("access-control-allow-origin")).toBe("https://app.example");
+    expect(response.headers.get("access-control-allow-credentials")).toBe("true");
+    expect(response.headers.get("vary")?.split(/,\s*/)).toContain("Origin");
+    for (const [name, value] of new Map([
+      ["cross-origin-resource-policy", "same-origin"],
+      ["cross-origin-opener-policy", "same-origin"],
+      ["origin-agent-cluster", "?1"],
+      ["referrer-policy", "no-referrer"],
+      ["strict-transport-security", "max-age=15552000; includeSubDomains"],
+      ["x-content-type-options", "nosniff"],
+      ["x-dns-prefetch-control", "off"],
+      ["x-download-options", "noopen"],
+      ["x-frame-options", "SAMEORIGIN"],
+      ["x-permitted-cross-domain-policies", "none"],
+      ["x-xss-protection", "0"],
+    ])) {
+      expect(response.headers.get(name)).toBe(value);
+    }
+    expect(response.headers.has("x-powered-by")).toBe(false);
+    expect(response.headers.has("x-bendo-stream-internal")).toBe(false);
+    expect(response.headers.get("x-request-id")).toBe("stream-policy-id");
+    expect(response.headers.get("server-timing")).toMatch(/^total;dur=/);
+    expect(response.headers.get("date")).toMatch(/GMT$/);
+    const decoded = chunks(response.rest);
+    expect(decoded.body).toEqual(
+      path === "/policy/recovered" ? Buffer.from("abab") : Buffer.alloc(4096, 120),
+    );
+    expect(decoded.rest.length).toBe(0);
+    if (path === "/policy/recovered") {
+      expect(response.headers.get("vary")).toBe("Accept-Encoding, Origin");
+    }
+  });
+}
+
 test("skips empty chunks rather than ending the response", async () => {
   const response = head(await exchange(request("/empty")));
   expect(response.rest.toString()).toBe("2\r\nab\r\n2\r\nab\r\n0\r\n\r\n");
@@ -115,6 +158,13 @@ test("completed streams preserve a pipelined next request", async () => {
   const next = head(decoded.rest);
   expect(next.status).toBe(200);
   expect(next.rest.toString()).toBe("hello");
+});
+
+test("buffered HEAD keeps the GET representation length after policy finalization", async () => {
+  const response = head(await exchange(request("/", "HEAD")));
+  expect(response.status).toBe(200);
+  expect(response.headers.get("content-length")).toBe("5");
+  expect(response.rest.length).toBe(0);
 });
 
 test("HEAD has neither a body nor a fabricated content length", async () => {
