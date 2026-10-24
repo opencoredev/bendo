@@ -24,23 +24,18 @@ x64.
 ```sh
 sudo apt-get install -y git curl unzip build-essential clang
 curl -fsSL https://bun.sh/install | bash
-curl -fsSL https://bend-lang.com/install.sh | sh
+mkdir -p ~/.bend
+curl -fsSL https://github.com/bendlang/bend/releases/download/v2.0.38/bend-2.0.38-linux-x64.tar.gz \
+  | tar -xz -C ~/.bend --strip-components=1
 export PATH="$HOME/.bun/bin:$HOME/.bend/bin:$PATH"
 bend version
 ```
 
-`bend version` prints `2.0.38`. Bendo pins that version, `bendo doctor` reports
-any other one as a mismatch, and other versions are untested. If the installer
-gave you a different release, download
-`bend-2.0.38-linux-x64.tar.gz` from the
-[Bend releases page](https://github.com/bendlang/bend/releases/tag/v2.0.38) and
-unpack it into `~/.bend`:
-
-```sh
-mkdir -p ~/.bend
-curl -fsSL https://github.com/bendlang/bend/releases/download/v2.0.38/bend-2.0.38-linux-x64.tar.gz \
-  | tar -xz -C ~/.bend --strip-components=1
-```
+`bend version` prints `bend 2.0.38`. Bendo pins that release: `bendo doctor`
+reports any other version as a mismatch, and other versions are untested. The
+script at bend-lang.com installs the newest release instead, so this page
+downloads the pinned one from the
+[Bend releases page](https://github.com/bendlang/bend/releases/tag/v2.0.38).
 
 Add the `export PATH=...` line to your shell profile so new terminals find
 `bun` and `bend`.
