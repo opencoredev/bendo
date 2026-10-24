@@ -225,7 +225,24 @@ def claim(-A: Data, l: Ledger<A>, +k: String) -> Ledger<A>:
   claim_registry(A, r, k, cs)
 
 # The close path: removes every ID claimed under `k` from every topic,
-# revokes it, and forgets the claims.
+# revokes it, and forgets the claims. Other tokens' claims are kept.
 def release(-A: Data, l: Ledger<A>, +k: String) -> Ledger<A>:
   Ledger{r, +cs} = l
   Ledger{remove_all(A, claimed(cs, k), r), unclaimed(cs, k)}
+
+def pruned_claim(c: Claim, +ids: List<&2, Nat>) -> Bool:
+  Claim{token, id} = c
+  holds(ids, id)
+
+# The claims whose ID is not in `ids`.
+def unpruned(cs: List<&2, Claim>, +ids: List<&2, Nat>) -> List<&2, Claim>:
+  match cs:
+    case Nil{}: []
+    case +c <> rest: keep_claim(c, unpruned(rest, ids), pruned_claim(c, ids))
+
+# A publication's cleanup of connections it found closed: removes each ID from
+# every topic, revokes it, and forgets its claim, so the ledger shrinks back
+# even when that connection's own release never arrives.
+def prune(-A: Data, l: Ledger<A>, +ids: List<&2, Nat>) -> Ledger<A>:
+  Ledger{r, cs} = l
+  Ledger{remove_all(A, ids, r), unpruned(cs, ids)}

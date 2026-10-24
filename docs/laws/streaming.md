@@ -139,10 +139,12 @@ shell can reach is well-formed: no pair is recorded twice, every record
 belongs to an active connection, and every active ID was already handed out.
 Together they say a publication selects each subscribed connection exactly
 once as a target, minus the sender, a closed connection can never subscribe
-again, and a close whose release reaches the hub revokes the connection's ID
-even when its join timed out. Delivery is not proven: a copy for a full
-mailbox or an oversized message is dropped, and a release that cannot enter a
-hub queue that stays full is lost (BND-98). See
+again, and a close's release revokes the connection's ID even when its join
+timed out, whatever other connections did in between. Delivery is not proven:
+a copy for a full mailbox or an oversized message is dropped. That the release
+reaches the hub is a property of the IO shell, not a law: it waits for room in
+a full hub queue instead of giving up (BND-98), and an integration test holds
+the queue full to check it. See
 [publish and subscribe](../websocket-pubsub.md) and
 [decision 0018](../decisions/0018-websocket-pubsub.md).
 
@@ -184,11 +186,21 @@ token, so the close revokes whatever ID the token got.
 - `ws_topics_change_keeps_claims`: every registry change keeps every claim.
 - `ws_topics_release_revokes`, `ws_topics_release_leaves`, `ws_topics_release_unclaims`: a release revokes every ID claimed under its token, removes it from every topic, and forgets those claims.
 - `ws_topics_late_join_released`: a claim followed by any registry changes and then a release of the same token leaves the claimed ID inactive.
+- `ws_topics_claim_others`, `ws_topics_release_others`: a claim or release under one token keeps every other token's claimed IDs, in order, so one connection's join or close cannot drop another connection's claim.
+- `ws_topics_history_release_revokes`, `ws_topics_history_release_leaves`: a claim, then any ledger history (registry changes, prunes, other tokens' claims and releases, even earlier claims and releases of the same token), then a release of that token leaves the ID the claim got inactive and in no topic.
+
+Pruning:
+
+A publication removes the subscribers it found closed. It also forgets their
+claims, so the ledger shrinks back even when a closed connection's own release
+never arrives.
+
+- `ws_topics_prune_registry`, `ws_topics_prune_claims`, `ws_topics_prune_unclaims`: a prune changes the registry exactly as `T.remove_all` does, keeps exactly the claims whose ID it did not prune, in order, and leaves no token claiming a pruned ID.
 
 Well-formedness:
 
-- `ws_topics_wf_empty`, `ws_topics_wf_join`, `ws_topics_wf_admit`, `ws_topics_wf_unsubscribe`, `ws_topics_wf_remove`, `ws_topics_wf_remove_all`, `ws_topics_wf_claim`, `ws_topics_wf_release`: the empty registry is well-formed, and every operation the shell uses preserves it.
-- `ws_topics_history_wf`, `ws_topics_ledger_history_wf`: so every registry reachable through any history of joins, subscribes, unsubscribes, closes and prunes is well-formed, including histories of claims and releases.
+- `ws_topics_wf_empty`, `ws_topics_wf_join`, `ws_topics_wf_admit`, `ws_topics_wf_unsubscribe`, `ws_topics_wf_remove`, `ws_topics_wf_remove_all`, `ws_topics_wf_claim`, `ws_topics_wf_release`, `ws_topics_wf_prune`: the empty registry is well-formed, and every operation the shell uses preserves it.
+- `ws_topics_history_wf`, `ws_topics_ledger_history_wf`: so every registry reachable through any history of joins, subscribes, unsubscribes, closes and prunes is well-formed, including histories of claims, releases and ledger prunes.
 
 ## Static files
 

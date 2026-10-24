@@ -180,12 +180,13 @@ def run(-A: Data, chs: List<&2, Change<A>>) -> T.Registry<A>:
 # ---- Ledger histories ----
 
 # Each change the pub/sub shell makes to the hub's ledger: a registry change
-# through `within`, a session joining under a token, or a session closing by
-# token.
+# through `within`, a session joining under a token, a session closing by
+# token, or a publication pruning the connections it found closed (BND-98).
 type Step<-A: Data> is Data:
   EvChange{ch: Change<A>}
   EvClaim{k: String}
   EvRelease{k: String}
+  EvPrune{gone: List<&2, Nat>}
 
 def lift(-A: Data, l: T.Ledger<A>, ch: Change<A>) -> T.Ledger<A>:
   T.within(A, l, r => change(A, r, ch))
@@ -195,6 +196,7 @@ def event(-A: Data, l: T.Ledger<A>, ev: Step<A>) -> T.Ledger<A>:
     case EvChange{ch}: lift(A, l, ch)
     case EvClaim{k}: T.claim(A, l, k)
     case EvRelease{k}: T.release(A, l, k)
+    case EvPrune{gone}: T.prune(A, l, gone)
 
 def play_from(-A: Data, evs: List<&2, Step<A>>, l: T.Ledger<A>) -> T.Ledger<A>:
   match evs:
@@ -209,3 +211,11 @@ def changes(-A: Data, chs: List<&2, Change<A>>) -> List<&2, Step<A>>:
   match chs:
     case Nil{}: []
     case ch <> rest: EvChange{ch} <> changes(A, rest)
+
+# ---- Pruned claims (BND-98) ----
+
+# The IDs in order, without those in `gone`.
+def outside(xs: List<&2, Nat>, +gone: List<&2, Nat>) -> List<&2, Nat>:
+  match xs:
+    case Nil{}: []
+    case +h <> t: T.pick(h, outside(t, gone), Bool.not(has(gone, h)))
