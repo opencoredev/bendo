@@ -1,4 +1,21 @@
 // Pure request-side helpers. `shapes` mirrors the `Steps` type in ./types.ts.
+import type { Method, MethodKey } from "./types.ts";
+
+const METHODS: Record<MethodKey, Method> = {
+  get: "GET",
+  head: "HEAD",
+  post: "POST",
+  put: "PUT",
+  delete: "DELETE",
+  options: "OPTIONS",
+  patch: "PATCH",
+};
+
+/** The method a final `.get`, `.post`, ... step names. */
+export function methodOf(name: string): Method | undefined {
+  for (const [key, method] of Object.entries(METHODS)) if (key === name) return method;
+  return undefined;
+}
 
 export type Step =
   | { kind: "static"; name: string }

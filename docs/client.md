@@ -19,6 +19,9 @@ await api.todos.post({ body: { title: "Write docs" } });
 await api.todos.get({ query: { limit: 20, tag: ["home", "urgent"] } });
 ```
 
+For React, [`bendo/query`](query.md) builds TanStack Query options from these
+calls.
+
 Run `bendo gen` first. It writes `.bendo/routes.ts` (the [route types](route-types.md))
 and `.bendo/routes.schemas.ts` (the params and response schemas used for validation).
 Rerun it after changing a route or schema.
