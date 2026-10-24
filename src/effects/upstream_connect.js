@@ -21,13 +21,14 @@ const BENDO_NO_ADDRESS = 1001;
 const BENDO_EAGAIN = 11;
 // The worker stamps its beat word with the time this often; one whose stamp
 // is BENDO_RESOLVER_STALE_MS old is taken for dead and replaced. A parked lookup
-// wakes every BENDO_RESOLVER_CHECK_MS to look, so it survives a dead worker.
+// wakes every BENDO_RESOLVER_CHECK_MS to look, so it survives a dead worker,
+// and so does the janitor that closes write ends left behind.
 const BENDO_RESOLVER_BEAT_MS = 200;
 const BENDO_RESOLVER_STALE_MS = 2000;
 const BENDO_RESOLVER_CHECK_MS = 500;
-// A slot word is ticket << 3 | phase, or 0 when free. The ticket tells one
-// use of a slot from the next, so a late or duplicate answer never touches a
-// newer lookup.
+// A slot word is ticket << 3 | phase, or 0 when free. Every ticket goes to
+// exactly one worker, once, so a late or duplicate answer never touches a
+// newer lookup and a slot in (ticket, WRITING) names the worker writing it.
 const BENDO_ASKED = 1;
 const BENDO_WRITING = 2;
 const BENDO_ABANDONED = 3;
@@ -52,18 +53,25 @@ function bendo_upstream_pipe() {
 // death shows only as a beat stamp that stops moving. Stamps are
 // performance.timeOrigin + performance.now(), which both threads share.
 //
-// Descriptor ownership: the request that makes a pipe owns both ends and
-// closes each exactly once, when it finishes (bendo_upstream_resolved). A
-// worker only writes, and only after it moves the slot from (ticket, ASKED)
-// to (ticket, WRITING); it frees the slot when the write returns. A request
-// that gives up moves (ticket, ASKED) to (ticket, ABANDONED) first, so no
-// worker can write after the close. One that finds WRITING waits for the
-// write, unless it has read the whole answer; if the write does not end, the
-// write end is kept in `deferred` and closed once the slot moves on, never
-// while a write may still use its number. Recovery closes nothing: it frees
-// the slots of a worker that has not beaten for BENDO_RESOLVER_STALE_MS and
-// has been terminated, and sends the still-asked lookups, with their write
-// ends, to the new worker.
+// Descriptor ownership. Each lookup is a record in res.lookups, and this
+// thread owns both ends of its pipe; only this thread closes them, each once.
+// A worker only writes, synchronously on its own thread, and only between
+// moving the slot from (ticket, ASKED) to (ticket, WRITING) and moving it on
+// to 0. So the write end is closed only when one of these holds:
+// - the slot was moved from (ticket, ASKED) to anything by this thread, so no
+//   worker can claim that ticket (a request giving up, or recovery handing
+//   the lookup to a new worker under a new ticket);
+// - the slot has left (ticket, WRITING), so the write returned;
+// - the whole answer line has been read and the lookup was never sent again,
+//   so its one writer has no bytes left to write;
+// - the thread of the worker that took the ticket has ended.
+// A stale beat proves nothing on its own: a paused worker may still write.
+// Before it claims anything a worker publishes its kernel thread id and start
+// time, and a retired worker counts as ended only once /proc/self/task no
+// longer lists that thread. Until then its WRITING slots, and their write
+// ends, stay as they are. Where /proc cannot say (the id is -1), they stay
+// for good: a leak of at most one slot and one descriptor per lookup caught
+// mid-write, never a write into a reused descriptor number.
 function bendo_upstream_spawn(res) {
   const { Worker } = require("worker_threads");
   const source = `
@@ -71,14 +79,25 @@ function bendo_upstream_spawn(res) {
     const dns = require("dns");
     const fs = require("fs");
     const slots = new Int32Array(workerData.slots);
-    const beat = new BigInt64Array(workerData.beat);
+    const id = new BigInt64Array(workerData.id);
+    let tid = -1n;
+    let start = 0n;
+    try {
+      const stat = fs.readFileSync("/proc/thread-self/stat", "utf8");
+      start = BigInt(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19]);
+      tid = BigInt(stat.slice(0, stat.indexOf(" ")));
+    } catch {}
+    Atomics.store(id, 2, start);
+    Atomics.store(id, 1, tid);
     const stamp = () =>
-      Atomics.store(beat, 0, BigInt(Math.round(performance.timeOrigin + performance.now())));
+      Atomics.store(id, 0, BigInt(Math.round(performance.timeOrigin + performance.now())));
     stamp();
     setInterval(stamp, ${BENDO_RESOLVER_BEAT_MS});
-    parentPort.on("message", ({ slot, ticket, host, fd, exit }) => {
-      if (exit !== undefined) {
-        setTimeout(() => process.exit(1), exit);
+    let hook;
+    parentPort.on("message", ({ slot, ticket, host, fd, test }) => {
+      if (test !== undefined) {
+        if (test.exit !== undefined) setTimeout(() => process.exit(1), test.exit);
+        else hook = test;
         return;
       }
       dns.lookup(host, { all: true, verbatim: true }, (error, list) => {
@@ -87,6 +106,15 @@ function bendo_upstream_spawn(res) {
         if (Atomics.compareExchange(slots, slot, asked, writing) !== asked) {
           Atomics.compareExchange(slots, slot, ticket * 8 + ${BENDO_ABANDONED}, 0);
           return;
+        }
+        if (hook !== undefined) {
+          const { stall } = hook;
+          hook = undefined;
+          if (stall === undefined) {
+            process.exit(1);
+            return;
+          }
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, stall);
         }
         const answer = error
           ? { error: String(error.code) }
@@ -98,90 +126,192 @@ function bendo_upstream_spawn(res) {
         Atomics.notify(slots, slot);
       });
     });`;
-  const beat = new SharedArrayBuffer(8);
+  // Beat stamp, thread id (0 until published) and thread start time.
+  const id = new SharedArrayBuffer(24);
+  const words = new BigInt64Array(id);
   // Startup gets a full BENDO_RESOLVER_STALE_MS before its first stamp.
-  new BigInt64Array(beat)[0] = BigInt(Math.round(performance.timeOrigin + performance.now()));
-  const worker = new Worker(source, { eval: true, workerData: { slots: res.slots.buffer, beat } });
+  words[0] = BigInt(Math.round(performance.timeOrigin + performance.now()));
+  const worker = new Worker(source, { eval: true, workerData: { slots: res.slots.buffer, id } });
   worker.unref();
+  res.gen += 1;
   res.worker = worker;
-  res.beat = new BigInt64Array(beat);
+  res.id = words;
 }
 
-// Replaces a worker whose beat has stopped. A slot it was writing or had
-// abandoned will never be freed by it; a lookup still asked is sent again.
+// True once a retired worker can no longer write: its thread has ended. One
+// that never published an id never ran, so it claimed nothing, and recovery
+// has already moved every ticket it was sent.
+function bendo_upstream_gone(id) {
+  const tid = Atomics.load(id, 1);
+  if (tid === 0n) return true;
+  if (tid < 0n) return false;
+  try {
+    const stat = require("fs").readFileSync(`/proc/self/task/${tid}/stat`, "utf8");
+    return stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19] !== String(Atomics.load(id, 2));
+  } catch (e) {
+    return e?.code === "ENOENT" || e?.code === "ESRCH";
+  }
+}
+
+// Moves a lookup's slot from the word `from` to a new ticket, ASKED, and
+// sends it to the current worker. False only when the message fails.
+function bendo_upstream_send(res, look, from, resent) {
+  res.ticket = (res.ticket % 0xfffffff) + 1;
+  const ticket = res.ticket;
+  if (Atomics.compareExchange(res.slots, look.slot, from, ticket * 8 + BENDO_ASKED) !== from) {
+    return true;
+  }
+  look.ticket = ticket;
+  look.gen = res.gen;
+  look.resent ||= resent;
+  try {
+    res.worker.postMessage({ slot: look.slot, ticket, host: look.host, fd: look.w });
+  } catch {
+    return false;
+  }
+  return true;
+}
+
+// Replaces a worker whose beat has stopped. Its waiting lookups not yet
+// claimed move to the new worker under new tickets, and slots abandoned to
+// it are freed. Its WRITING slots wait in bendo_upstream_reap for its thread
+// to end.
 function bendo_upstream_recover(res) {
   try {
     res.worker.terminate();
   } catch {}
+  res.retired.push({ gen: res.gen, id: res.id });
   bendo_upstream_spawn(res);
+  for (const look of res.lookups) {
+    if (look.waiting && look.gen !== res.gen) {
+      bendo_upstream_send(res, look, look.ticket * 8 + BENDO_ASKED, false);
+    }
+  }
   for (let i = 0; i < BENDO_RESOLVERS; i += 1) {
     const word = Atomics.load(res.slots, i);
-    const entry = res.entries[i];
-    if (word === 0) continue;
-    if ((word & 7) === BENDO_ASKED && entry !== undefined && entry.ticket === word >> 3) {
-      try {
-        res.worker.postMessage({ slot: i, ticket: entry.ticket, host: entry.host, fd: entry.w });
-      } catch {}
-      continue;
-    }
-    Atomics.compareExchange(res.slots, i, word, 0);
+    if ((word & 7) === BENDO_ABANDONED) Atomics.compareExchange(res.slots, i, word, 0);
   }
 }
 
-// The resolver state, after replacing a dead worker and closing the deferred
-// write ends whose writes are over. Shared with every worker: a beat word of
-// its own and the slot words.
+// Closes the write ends whose writes are over and forgets their lookups.
+// Once a retired worker's thread has ended, its WRITING slots are freed, or
+// sent to the current worker under a new ticket if their request still
+// waits. Keeps the janitor running while a write end waits on a worker that
+// can still finish.
+function bendo_upstream_reap(sys, res) {
+  res.retired = res.retired.filter(({ id }) => !bendo_upstream_gone(id));
+  const retired = new Map(res.retired.map(({ gen, id }) => [gen, id]));
+  let parked = false;
+  for (const look of res.lookups) {
+    const writing = look.ticket * 8 + BENDO_WRITING;
+    const held = Atomics.load(res.slots, look.slot) === writing;
+    if (held && (look.gen === res.gen || retired.has(look.gen))) {
+      parked ||=
+        !look.waiting && (look.gen === res.gen || Atomics.load(retired.get(look.gen), 1) > 0n);
+      continue;
+    }
+    if (held && look.waiting) {
+      bendo_upstream_send(res, look, writing, true);
+      continue;
+    }
+    if (look.waiting) continue;
+    if (look.w >= 0) sys.close(look.w);
+    if (held) Atomics.compareExchange(res.slots, look.slot, writing, 0);
+    res.lookups.delete(look);
+  }
+  if (parked) bendo_upstream_janitor(sys, res);
+}
+
+// Replaces a dead worker, then reaps.
+function bendo_upstream_maintain(sys, res) {
+  const now = performance.timeOrigin + performance.now();
+  if (now - Number(Atomics.load(res.id, 0)) > BENDO_RESOLVER_STALE_MS) {
+    bendo_upstream_recover(res);
+  }
+  bendo_upstream_reap(sys, res);
+}
+
+// Parks a wait with no computation behind it, which maintains the resolver
+// every BENDO_RESOLVER_CHECK_MS while write ends wait, with no lookups to do
+// it. It never resumes anything, so it keeps no run alive. One whose turn is
+// long overdue is taken as lost, say with the run that parked it, and
+// replaced; the old one, if it fires after all, does not park again.
+function bendo_upstream_janitor(sys, res) {
+  const now = performance.now();
+  if (res.janitor !== undefined && now < res.janitor.at + BENDO_RESOLVER_CHECK_MS) return;
+  const mine = { at: now + BENDO_RESOLVER_CHECK_MS };
+  res.janitor = mine;
+  const more = () => {
+    if (res.janitor === mine) res.janitor = undefined;
+    try {
+      bendo_upstream_maintain(sys, res);
+    } catch {}
+    return undefined;
+  };
+  io_park_on(undefined, false, undefined, more, mine.at);
+}
+
+// The resolver state, maintained. Shared with every worker: the slot words,
+// and with each worker its own beat and id words.
 function bendo_upstream_resolver(sys) {
   let res = globalThis.BENDO_RESOLVER;
   if (res === undefined) {
     res = {
       slots: new Int32Array(new SharedArrayBuffer(4 * BENDO_RESOLVERS)),
-      entries: Array.from({ length: BENDO_RESOLVERS }),
-      deferred: [],
+      lookups: new Set(),
+      retired: [],
+      gen: 0,
       ticket: 0,
+      janitor: undefined,
     };
     bendo_upstream_spawn(res);
     globalThis.BENDO_RESOLVER = res;
   }
-  const now = performance.timeOrigin + performance.now();
-  if (now - Number(Atomics.load(res.beat, 0)) > BENDO_RESOLVER_STALE_MS) {
-    bendo_upstream_recover(res);
-  }
-  res.deferred = res.deferred.filter(({ slot, word, w }) => {
-    if (Atomics.load(res.slots, slot) === word) return true;
-    sys.close(w);
-    return false;
-  });
+  bendo_upstream_maintain(sys, res);
   return res;
 }
 
-// Ends a lookup's use of its pipe: abandons its slot if no worker has taken
-// it and closes both ends, as the ownership rule above says. A whole answer
-// read means the write is over, so answered skips the wait.
-function bendo_upstream_resolved(sys, res, slot, ticket, r, w, answered) {
-  const asked = ticket * 8 + BENDO_ASKED;
-  const writing = ticket * 8 + BENDO_WRITING;
-  res.entries[slot] = undefined;
+// Ends a request's use of its lookup: closes the read end, abandons the slot
+// if no worker has claimed it, and closes the write end when the ownership
+// rule above allows; otherwise the record stays for bendo_upstream_reap. A
+// whole answer read from a lookup never sent again means its write is over.
+function bendo_upstream_resolved(sys, res, look, r, answered) {
+  const asked = look.ticket * 8 + BENDO_ASKED;
+  const writing = look.ticket * 8 + BENDO_WRITING;
   sys.close(r);
-  if (Atomics.compareExchange(res.slots, slot, asked, ticket * 8 + BENDO_ABANDONED) === asked) {
-    sys.close(w);
+  look.waiting = false;
+  if (
+    Atomics.compareExchange(res.slots, look.slot, asked, look.ticket * 8 + BENDO_ABANDONED) ===
+    asked
+  ) {
+    sys.close(look.w);
+    res.lookups.delete(look);
     return;
   }
-  if (!answered && Atomics.load(res.slots, slot) === writing) {
-    Atomics.wait(res.slots, slot, writing, 100);
+  const over = answered && !look.resent;
+  if (!over && Atomics.load(res.slots, look.slot) === writing) {
+    Atomics.wait(res.slots, look.slot, writing, 100);
   }
-  if (!answered && Atomics.load(res.slots, slot) === writing) {
-    res.deferred.push({ slot, word: writing, w });
+  if (Atomics.load(res.slots, look.slot) === writing) {
+    if (over) {
+      sys.close(look.w);
+      look.w = -1;
+    }
+    bendo_upstream_janitor(sys, res);
     return;
   }
-  sys.close(w);
+  sys.close(look.w);
+  res.lookups.delete(look);
 }
 
 // Test-only probes, enabled by BENDO_RESOLVER_TEST_HOOKS=1: a code, or
 // undefined when host is not a probe. pending.resolver.bendo.test counts the
 // used slots, fds.resolver.bendo.test the open descriptors,
-// terminate.resolver.bendo.test terminates the worker and
-// exit.resolver.bendo.test makes it exit after port milliseconds.
+// terminate.resolver.bendo.test terminates the worker,
+// exit.resolver.bendo.test makes it exit after port milliseconds, and
+// after its next claim, claimexit.resolver.bendo.test makes it exit and
+// claimstall.resolver.bendo.test makes it block for port milliseconds before
+// writing.
 function bendo_upstream_probe(host, port) {
   if (globalThis.BENDO_RESOLVER_HOOKS === undefined) {
     globalThis.BENDO_RESOLVER_HOOKS = process.env.BENDO_RESOLVER_TEST_HOOKS === "1";
@@ -199,7 +329,13 @@ function bendo_upstream_probe(host, port) {
       res?.worker.terminate();
       return 0;
     case "exit.resolver.bendo.test":
-      res?.worker.postMessage({ exit: port });
+      res?.worker.postMessage({ test: { exit: port } });
+      return 0;
+    case "claimexit.resolver.bendo.test":
+      res?.worker.postMessage({ test: {} });
+      return 0;
+    case "claimstall.resolver.bendo.test":
+      res?.worker.postMessage({ test: { stall: port } });
       return 0;
     default:
       return undefined;
@@ -389,15 +525,11 @@ function bendo_upstream_connect(host, port, ms, k) {
   }
   const [r, w] = fds;
   sys.fcntl(r, 4, sys.fcntl(r, 3, 0) | (sys.mac ? 4 : 0x800));
-  res.ticket = (res.ticket % 0xfffffff) + 1;
-  const ticket = res.ticket;
   // Only this thread fills a free slot; workers only free them.
-  Atomics.store(res.slots, slot, ticket * 8 + BENDO_ASKED);
-  res.entries[slot] = { ticket, host, w };
-  try {
-    res.worker.postMessage({ slot, ticket, host, fd: w });
-  } catch {
-    bendo_upstream_resolved(sys, res, slot, ticket, r, w, false);
+  const look = { slot, ticket: 0, host, w, gen: 0, waiting: true, resent: false };
+  res.lookups.add(look);
+  if (!bendo_upstream_send(res, look, 0, false)) {
+    bendo_upstream_resolved(sys, res, look, r, false);
     return bendo_upstream_connect_failure(38);
   }
   let text = "";
@@ -420,13 +552,15 @@ function bendo_upstream_connect(host, port, ms, k) {
         } catch {}
         return park();
       }
-      bendo_upstream_resolved(sys, res, slot, ticket, r, w, false);
+      bendo_upstream_resolved(sys, res, look, r, false);
       return bendo_upstream_connect_failure(110);
     }
-    bendo_upstream_resolved(sys, res, slot, ticket, r, w, true);
+    bendo_upstream_resolved(sys, res, look, r, true);
+    // The first line: a lookup sent again after its worker died mid-write
+    // may also get the new worker's.
     let answer;
     try {
-      answer = JSON.parse(text);
+      answer = JSON.parse(text.slice(0, text.indexOf("\n")));
     } catch {
       return bendo_upstream_connect_failure(BENDO_NO_ADDRESS);
     }

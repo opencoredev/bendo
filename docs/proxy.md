@@ -260,22 +260,29 @@ applies, counted in 32 slots of memory shared with the worker. A slot stays
 taken until the worker has finished with the lookup, even after its request
 gives up. Address order and the connect logic match the C effect.
 
-The request owns both ends of its pipe and closes them itself when it gets
-the answer or reaches its deadline. The worker only writes, and only after
-claiming the slot with a compare-and-swap. A request that gives up marks its
-slot abandoned the same way before closing, so the worker never writes to a
-descriptor number that may have been reused. Each slot carries a ticket, so
-a late answer can't reach the next lookup that uses the slot.
+The request owns both ends of its pipe, and only the main thread closes
+them. The worker only writes, and only after claiming the slot with a
+compare-and-swap. A request that gives up marks its slot abandoned the same
+way before closing, so no worker can claim it afterwards. Each slot carries a
+ticket, and each ticket goes to one worker once, so a late answer can't reach
+the next lookup that uses the slot. If the request gives up while the worker
+is writing, the write end stays open until the write is over, and a parked
+timer closes it then, even if no more lookups come.
 
 The worker can die without the main thread hearing about it: exit events
 never run while the loop is in `select`, and Bun accepts messages to a dead
 worker without an error. The worker therefore stamps the time into shared
-memory every 200 ms. A new lookup, or a waiting one that checks every
-500 ms, that finds the stamp more than 2 s old terminates the worker and
-starts another. Slots the dead worker held are freed, and lookups still
-waiting move to the new worker with their pipes. A request sent in those 2 s
-waits for the replacement. The C build starts a thread per lookup and has no
-shared worker to lose.
+memory every 200 ms. A new lookup, a waiting one that checks every 500 ms, or
+that parked timer, on finding the stamp more than 2 s old, terminates the
+worker and starts another. Lookups it had not claimed move to the new worker
+under new tickets, and slots abandoned to it are freed. A stale stamp doesn't
+prove the worker has stopped, so a lookup it was writing keeps its slot and
+write end until Linux no longer lists the worker's thread in
+`/proc/self/task`. Then the slot is freed, or the lookup, if its request
+still waits, goes to the new worker. Where `/proc` can't say, the slot and
+descriptor stay taken rather than risk a write into a reused descriptor
+number. A request sent in those 2 s waits for the replacement. The C build
+starts a thread per lookup and has no shared worker to lose.
 
 ## Connections and cleanup
 
@@ -325,8 +332,11 @@ upstream. It covers:
   IPv4 one still reach the IPv4 address. In the JS build it also kills the
   resolver worker through test-only probes, enabled by
   `BENDO_RESOLVER_TEST_HOOKS=1`, and checks that named upstreams work again,
-  that waiting lookups move to the new worker, and that the slot count and
-  open descriptors return to where they started;
+  that waiting lookups move to the new worker, including one the worker died
+  while answering, that a worker stalled mid-write gets its write end closed
+  once it is replaced, and that the slot count and open descriptors return to
+  where they started. Function-level tests drive the recovery by hand with a
+  fake worker and a fake `/proc`;
 - cleanup: the upstream socket closes on client disconnect, HEAD and
   middleware replacement.
 
