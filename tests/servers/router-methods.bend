@@ -6,6 +6,7 @@ import ../../src/http/response.bend as Response
 import ../../src/http/write_response.bend as Write
 
 import ../../src/router/methods.bend as M
+import ../../src/router/router.bend as R
 import ../../src/router/spec.bend as S
 import ../../src/router/pattern.bend as P
 
@@ -33,7 +34,8 @@ def registrations() -> List<&2, M.Registration(Tag)>:
     M.post(Tag, "/overlap/:id", Message{"overlap-post"}),
     M.get(Tag, "/overlap/new", Message{"overlap-get"}),
     M.on(Tag, [], "/empty", Message{"empty"}),
-    M.get(Tag, "/unicode", Message{"hé 🌍"})
+    M.get(Tag, "/unicode", Message{"hé 🌍"}),
+    M.on(Tag, M.standard_methods(), "/finite", Message{"finite"})
   ]
 
 def params_text(ps: P.Params) -> String:
@@ -69,18 +71,24 @@ def options(q: Maybe<&2, String>) -> M.Options:
     case _:
       M.defaults()
 
-def respond(table: M.Valid<Tag>, parsed: Request.ParseResult) -> List<&2, U32>:
+# This fixture handles one request per socket. Advertise the close so fetch
+# never races a reused connection against Socket.close under parallel load.
+def closing(res: Response.Res) -> Response.Res:
+  Response.Res{status, hs, body, rep} = res
+  Response.Res{status, Request.Header{"connection", Bytes.encode("close")} <> hs, body, rep}
+
+def respond(table: M.Index<Tag>, parsed: Request.ParseResult) -> List<&2, U32>:
   match parsed:
     case Request.Parsed{Request.Req{+m, p, q, v, hs}, rest}:
-      Write.write(m, answer(M.resolve(Tag, table, p, m, options(q))))
+      Write.write(m, closing(answer(M.resolve_with(Tag, R.default_kind(), table, p, m, options(q)))))
     case _:
-      Write.write(Request.Get{}, Response.body(400, [], []))
+      Write.write(Request.Get{}, closing(Response.body(400, [], [])))
 
 def sent(m: Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>) -> IO(Unit):
   (s, r) = m
   Socket.close(s)
 
-def finished(table: M.Valid<Tag>, s: Socket, result: Request.ParseResult) -> IO(Unit):
+def finished(table: M.Index<Tag>, s: Socket, result: Request.ParseResult) -> IO(Unit):
   do IO<Unit>:
     out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- TCP.send_bytes(s, respond(table, result))
     sent(out)
@@ -93,7 +101,7 @@ def received(m: Socket & Result<&1, &1, U32 & String, Maybe<&1, List<&2, U32>>>,
     case _:
       (sock, (state, Request.Rejected{Request.InvalidRequestLine{}}))
 
-def talk(+table: M.Valid<Tag>, fuel: Nat, m: Socket & (Parse.State & Request.ParseResult)) -> IO(Unit):
+def talk(+table: M.Index<Tag>, fuel: Nat, m: Socket & (Parse.State & Request.ParseResult)) -> IO(Unit):
   match fuel:
     case 0n:
       (sock, step) = m
@@ -109,10 +117,10 @@ def talk(+table: M.Valid<Tag>, fuel: Nat, m: Socket & (Parse.State & Request.Par
         case _:
           finished(table, sock, result)
 
-def read(table: M.Valid<Tag>, s: Socket) -> IO(Unit):
+def read(table: M.Index<Tag>, s: Socket) -> IO(Unit):
   talk(table, 128n, (s, (Parse.initial(), Request.NeedMore{})))
 
-def conn(table: M.Valid<Tag>, m: Listener & Result<&1, &1, U32 & String, Socket>) -> IO(Listener):
+def conn(table: M.Index<Tag>, m: Listener & Result<&1, &1, U32 & String, Socket>) -> IO(Listener):
   (l, r) = m
   do IO<Listener>:
     s : Socket <- IO.pass(Socket, r)
@@ -120,7 +128,7 @@ def conn(table: M.Valid<Tag>, m: Listener & Result<&1, &1, U32 & String, Socket>
     return l
 
 @unsafe
-def loop(+table: M.Valid<Tag>, l: Listener) -> IO(Unit):
+def loop(+table: M.Index<Tag>, l: Listener) -> IO(Unit):
   do IO<Unit>:
     m : Listener & Result<&1, &1, U32 & String, Socket> <- TCP.accept(l)
     l2 : Listener <- conn(table, m)
@@ -149,7 +157,7 @@ def start(table_result: Result<&2, &2, M.BuildError, M.Valid<Tag>>) -> IO(Unit):
         env : Result<&1, &1, U32 & String, String> <- IO.get_env("PORT")
         port : U32 = port_or(env, 18789)
         listener : Listener <- IO.try(Listener, TCP.listen("127.0.0.1", port))
-        loop(table, listener)
+        loop(M.prepare(Tag, table), listener)
 
 def main() -> IO(Unit):
   start(M.build_table(Tag, registrations()))

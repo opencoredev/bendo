@@ -3,31 +3,14 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import fixture from "./fixtures/hono-router-cases.json";
-import { findBend } from "../packages/bendo/src/bend.ts";
-import { BEND_COMPILE_TIMEOUT } from "./harness.ts";
+import { compile } from "./harness.ts";
 
 const directory = mkdtempSync(join(tmpdir(), "bendo-hono-cases-"));
 afterAll(() => {
   rmSync(directory, { recursive: true, force: true });
 });
 
-const binary = join(directory, "driver");
-const bend = findBend();
-if (bend.kind === "missing") throw new Error("bend is not installed");
-const compilation = Bun.spawnSync(
-  [
-    "timeout",
-    "--foreground",
-    BEND_COMPILE_TIMEOUT,
-    bend.path,
-    join(import.meta.dir, "router-hono-driver.bend"),
-    "-o",
-    binary,
-  ],
-  { stdout: "pipe", stderr: "pipe" },
-);
-if (compilation.exitCode !== 0)
-  throw new Error(`Bend compilation failed:\n${compilation.stdout}${compilation.stderr}`);
+const binary = compile("tests/router-hono-driver.bend", "native");
 
 const decisions = readFileSync(
   new URL("../docs/decisions/0008-router-differences.md", import.meta.url),
@@ -69,17 +52,15 @@ test("Hono fixture provenance and every difference remain documented", () => {
       "verbatim upstream request",
       "upstream registration rejection; Bendo probe request added",
       "ALL method matrix from this upstream registration table",
+      "greedy span regression queried against Hono TrieRouter 4.13.13",
     ]).toContain(entry.origin);
     if (entry.honoError) {
       expect(entry.honoError, entry.id).toBe("UnsupportedPathError");
       expect(entry.hono, entry.id).toEqual([]);
       expect(entry.differences, entry.id).toContain("registration-rejection");
     }
-    if (entry.gap !== undefined || entry.gapKinds !== undefined) {
-      expect(entry.gap, entry.id).toBe("BND-78");
-      expect(entry.gapKinds?.length, entry.id).toBeGreaterThan(0);
-    }
-    for (const difference of [...entry.differences, ...(entry.gapKinds ?? [])]) {
+    expect("gap" in entry || "gapKinds" in entry, entry.id).toBe(false);
+    for (const difference of entry.differences) {
       const row = decisions.split("\n").find((line) => line.startsWith(`| ${difference} |`));
       expect(row, `${entry.id}: missing decision group ${difference}`).toBeDefined();
       expect(row, `${entry.id}: not listed in ${difference}`).toContain(entry.id);

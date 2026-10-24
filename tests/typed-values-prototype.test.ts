@@ -1,3 +1,4 @@
+import { compile } from "./harness.ts";
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -175,11 +176,11 @@ describe("typed-value research gate", () => {
     run(["bun", join(source, "generate.js"), out]);
     const fixture = `import Base\nimport ./app.bend as A\nimport ./value.bend as V\nimport ./schema.bend as S\n\ndef main() -> IO(Unit):\n  do IO<Unit>:\n${cases.map((c) => `    IO.print(A.dispatch(S.CreateTodo{}, ${bendValue(c.input)}, V.${modes[c.mode]}{}))`).join("\n")}\n`;
     writeFileSync(join(out, "fixtures.bend"), fixture);
-    run(["bend", join(out, "fixtures.bend"), "-o", join(out, "native")]);
-    run(["bend", join(out, "app.bend"), "-o", join(out, "app.mjs")]);
-    const native = run([join(out, "native"), "+RTS", "--threads", "1"]).split("\n");
+    const nativePath = compile(join(out, "fixtures.bend"), "native");
+    const appPath = compile(join(out, "app.bend"), "mjs");
+    const native = run([nativePath, "+RTS", "--threads", "1"]).split("\n");
     const { validateTodo, toBend } = await import(pathToFileURL(join(out, "validator.js")).href);
-    const { default: app } = await import(pathToFileURL(join(out, "app.mjs")).href);
+    const { default: app } = await import(pathToFileURL(appPath).href);
     expect(native).toHaveLength(cases.length);
     for (const [i, c] of cases.entries()) {
       // The same JSON.parse boundary is used by the browser page.
@@ -221,10 +222,10 @@ describe("typed-value research gate", () => {
   });
 
   test("schema-indexed alternative really compiles to both targets", async () => {
-    run(["bend", join(source, "indexed.bend"), "-o", join(out, "indexed")]);
-    run(["bend", join(source, "indexed.bend"), "-o", join(out, "indexed.mjs")]);
-    expect(run([join(out, "indexed"), "+RTS", "--threads", "1"])).toBe("typed");
-    const { default: indexed } = await import(pathToFileURL(join(out, "indexed.mjs")).href);
+    const nativePath = compile(join(source, "indexed.bend"), "native");
+    const modulePath = compile(join(source, "indexed.bend"), "mjs");
+    expect(run([nativePath, "+RTS", "--threads", "1"])).toBe("typed");
+    const { default: indexed } = await import(pathToFileURL(modulePath).href);
     const title: unknown = indexed.title_of(indexed.example());
     expect(title).toBe("typed");
   });

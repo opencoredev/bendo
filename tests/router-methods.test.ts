@@ -81,15 +81,20 @@ describe("method-aware router", () => {
     expect(head.body).toBe("");
   });
 
-  test("all registers nine standard methods and excludes extension methods", async () => {
+  test("all accepts standard and extension methods without a finite Allow header", async () => {
     await using server = await start(binary);
     for (const method of ["GET", "POST", "PUT", "DELETE", "OPTIONS", "TRACE", "PATCH"]) {
       expect(splitResponse(await exchange(server.url, method, "/all")).body).toBe("all:8");
     }
     expect(splitResponse(await exchange(server.url, "HEAD", "/all")).body).toBe("");
-    const denied = splitResponse(await exchange(server.url, "PROPFIND", "/all"));
-    expect(denied.head).toStartWith("HTTP/1.1 405 ");
-    expect(denied.head.split("\r\n")).toContain(`allow: ${standardAllow}`);
+    for (const method of ["PROPFIND", "PURGE", "UNKNOWN_METHOD", "purge", "X-!#$%&'*+.^`|~"]) {
+      for (const path of ["/all", "/all/?lenient", "/ALL?case", "/ALL///?relaxed"]) {
+        const accepted = splitResponse(await exchange(server.url, method, path));
+        expect(accepted.head, `${method} ${path}`).toStartWith("HTTP/1.1 200 ");
+        expect(accepted.body).toBe("all:8");
+        expect(accepted.head.toLowerCase()).not.toContain("allow:");
+      }
+    }
   });
 
   test("405 lists exactly the union of matching routes, canonical, deduplicated and HEAD-inclusive", async () => {
@@ -102,6 +107,15 @@ describe("method-aware router", () => {
     const overlap = await fetch(`${server.url}/overlap/new`, { method: "DELETE" });
     expect(overlap.status).toBe(405);
     expect(overlap.headers.get("allow")).toBe("GET, HEAD, POST");
+  });
+
+  test("an explicit finite list of standard methods still rejects extensions exactly", async () => {
+    await using server = await start(binary);
+    for (const method of ["PURGE", "UNKNOWN_METHOD"]) {
+      const denied = splitResponse(await exchange(server.url, method, "/finite"));
+      expect(denied.head).toStartWith("HTTP/1.1 405 ");
+      expect(denied.head.split("\r\n")).toContain(`allow: ${standardAllow}`);
+    }
   });
 
   test("404 means no path match; empty on still creates a path and OPTIONS is not automatic", async () => {
@@ -153,8 +167,8 @@ describe("method-aware router", () => {
   });
 });
 
+const binary = build("tests/router-methods-driver.bend");
 test("public construction normalizes standards, rejects invalid tokens atomically and preserves extension case", () => {
-  const binary = build("tests/router-methods-driver.bend");
   const result = Bun.spawnSync(["timeout", "--foreground", "10s", binary], {
     stdout: "pipe",
     stderr: "pipe",
@@ -167,7 +181,7 @@ test("public construction normalizes standards, rejects invalid tokens atomicall
     "first:4:fallback",
     "405:HEAD",
     "first:0:direct",
-    `405:${standardAllow}`,
+    "first:0:direct",
     "1:bad:MissingSlash: bad",
     "405:GET, HEAD",
     "first:0:direct",
@@ -189,6 +203,7 @@ test("public construction normalizes standards, rejects invalid tokens atomicall
     "405:GET, HEAD, get",
     "first:0:direct",
     "0:/a:InvalidMethod:BAD TOKEN",
+    '{"bendo":1,"routes":[{"method":"ALL","all":true,"path":"/all","params":[]},{"method":"ALL","path":"/literal","params":[]},{"method":"*","path":"/literal","params":[]}]}',
   ]);
 }, 30000);
 

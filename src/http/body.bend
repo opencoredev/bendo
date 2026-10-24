@@ -12,6 +12,7 @@ type State is Data:
   Chunks{req: R.Req, decoder: C.State}
   Complete{req: R.Req, body: List<&2, U32>, trailers: List<&2, R.Header>, rest: List<&2, U32>}
   Bad{status: U32}
+  Limited{req: R.Req}
 
 def fixed(left: Nat, xs: List<&2, U32>, r: R.Req, rev: List<&2, U32>) -> State:
   match left xs:
@@ -59,36 +60,64 @@ def expected(+r: R.Req, +xs: List<&2, U32>, +limit: U32, expect: U32) -> State &
     case e:
       can_continue(begin(r, xs, F.framing(r, limit), limit), e, List.is_empty(&2, U32, xs))
 
-def head_advance(s: Parse.State, c: U32, over: Bool) -> Parse.State:
+# Limit includes leading CRLFs and the head terminator, never body/suffix bytes.
+def head_step(s: Parse.State, c: U32, bytes: U32, over: Bool) -> State:
   match over:
-    case True{}:
-      Parse.Bad{R.InvalidHeaderValue{}}
-    case False{}:
-      Parse.advance(s, c)
+    case True{}: Bad{431}
+    case False{}: Head{Parse.advance(s, c), (bytes + 1 : U32)}
 
-# Count only consumed head octets. Body bytes coalesced in the same receive
-# must not change whether the head fits the limit.
-def head_feed(xs: List<&2, U32>, s: Parse.State, +bytes: U32, +limit: U32) -> State & Bool:
-  match xs s:
-    case xs Parse.Complete{+r}:
-      expected(r, xs, limit, F.expectation(r))
-    case _ Parse.Bad{e}:
+# Retain the request for negotiated route-limit errors, without buffering data.
+def admitted(state: State, req: R.Req, custom: Bool) -> State:
+  match state custom:
+    case Bad{413} True{}: Limited{req}
+    case state _: state
+
+def admission(pair: State & Bool, req: R.Req, custom: Bool) -> State & Bool:
+  (state, interim) = pair
+  (admitted(state, req, custom), interim)
+
+def expected_policy(+r: R.Req, xs: List<&2, U32>, +limit: U32, fallback: U32) -> State & Bool:
+  admission(expected(r, xs, limit, F.expectation(r)), r, Bool.not(U32.is_eq(limit, fallback)))
+
+def head_scan_policy(~Policy: Data, ~select: R.Req -> Policy -> U32, +policy: Policy, xs: List<&2, U32>, state: State, +limit: U32, +headers: U32) -> State & Bool:
+  match xs state:
+    case xs Head{Parse.Complete{+r}, bytes}:
+      expected_policy(r, xs, select(r, policy), limit)
+    case _ Head{Parse.Bad{e}, bytes}:
       (Bad{400}, False{})
     case Nil{} s:
-      (Head{s, bytes}, False{})
-    case c <> t s:
-      head_feed(t, head_advance(s, c, (bytes >= 65536 : U32)), (bytes + 1 : U32), limit)
+      (s, False{})
+    case c <> t Head{s, +bytes}:
+      head_scan_policy(~Policy, ~select, policy, t, head_step(s, c, bytes, (bytes >= headers : U32)), limit, headers)
+    case _ s:
+      (s, False{})
 
-def feed(+xs: List<&2, U32>, state: State, limit: U32) -> State & Bool:
+def head_feed_policy(~Policy: Data, ~select: R.Req -> Policy -> U32, policy: Policy, xs: List<&2, U32>, s: Parse.State, bytes: U32, limit: U32, headers: U32) -> State & Bool:
+  head_scan_policy(~Policy, ~select, policy, xs, Head{s, bytes}, limit, headers)
+
+def feed_policy(~Policy: Data, ~select: R.Req -> Policy -> U32, policy: Policy, xs: List<&2, U32>, state: State, limit: U32, headers: U32) -> State & Bool:
   match state:
-    case Head{s, +bytes}:
-      head_feed(xs, s, bytes, limit)
+    case Head{s, bytes}:
+      head_feed_policy(~Policy, ~select, policy, xs, s, bytes, limit, headers)
     case Fixed{r, n, rev}:
       (fixed(U32.to_nat(n), xs, r, rev), False{})
-    case Chunks{r, s}:
-      (chunks_result(r, C.feed(xs, s)), False{})
+    case Chunks{+r, s}:
+      (admitted(chunks_result(r, C.feed(xs, s)), r, Bool.not(U32.is_eq(select(r, policy), limit))), False{})
     case s:
       (s, False{})
+
+def head_scan(xs: List<&2, U32>, state: State, +limit: U32, headers: U32) -> State & Bool:
+  head_scan_policy(~U32, ~(req => n => n), limit, xs, state, limit, headers)
+
+def head_feed(xs: List<&2, U32>, parser: Parse.State, bytes: U32, +limit: U32, headers: U32) -> State & Bool:
+  head_feed_policy(~U32, ~(req => n => n), limit, xs, parser, bytes, limit, headers)
+
+# Existing low-level consumers retain a constant per-connection budget.
+def feed_limits(xs: List<&2, U32>, state: State, +limit: U32, headers: U32) -> State & Bool:
+  feed_policy(~U32, ~(req => n => n), limit, xs, state, limit, headers)
+
+def feed(xs: List<&2, U32>, state: State, limit: U32) -> State & Bool:
+  feed_limits(xs, state, limit, 65536)
 
 def initial() -> State:
   Head{Parse.initial(), 0}

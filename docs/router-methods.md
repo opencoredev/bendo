@@ -59,10 +59,12 @@ from GET and does not supply HEAD fallback. Duplicate methods in a registration
 are harmless. An empty `on` list
 registers a path that accepts no method.
 
-`all(T, path, tag)` registers these nine standard methods, in this order:
-`GET, HEAD, POST, PUT, DELETE, CONNECT, OPTIONS, TRACE, PATCH`. It does not accept
-extension methods. The current request parser rejects CONNECT targets, so a
-pure router call can select CONNECT even though the current HTTP server cannot
+`all(T, path, tag)` accepts every method, including extension tokens such as
+PURGE. It stores `AllMethods` rather than enumerating a finite list. `on` stores
+`OnlyMethods{methods}`. A matching `all` always resolves directly, so it never
+contributes a partial or invented method list to a 405 response.
+
+The current request parser rejects CONNECT targets, so a pure router call can select CONNECT even though the current HTTP server cannot
 serve it. CONNECT framing remains the response writer's responsibility.
 
 Call `resolve(T, table, path, request_method, opts)` with the `Valid<T>` returned
@@ -73,12 +75,12 @@ one of:
   first registration matching both path and method wins. An earlier path match
   for another method does not shadow it.
 - `NotFound{}`: no registration's pattern matches the path, regardless of its
-  method list.
+  method selector.
 - `MethodNotAllowed{allow}`: at least one pattern matches, but the method is
   unavailable, including HEAD fallback. `allow` is the deduplicated union of
   methods from every matching registration, with HEAD added whenever GET is
-  present. Standards use the order above; extensions follow in case-sensitive
-  lexical order. `allow_text(allow)` joins them with `", "` for an `Allow`
+  present. Standards use `GET, HEAD, POST, PUT, DELETE, CONNECT, OPTIONS, TRACE,
+  PATCH` order; extensions follow in case-sensitive lexical order. `allow_text(allow)` joins them with `", "` for an `Allow`
   header. Empty `on` registrations can produce an empty `Allow` value.
 
 For HEAD, the resolver first searches the entire table for a direct HEAD match.
@@ -114,11 +116,41 @@ constraint still rejects `ABC`. Non-ASCII text is unchanged. Static segments
 remain raw rather than percent-decoded, following the
 [pattern grammar](router-patterns.md).
 
+## Router selection
+
+`resolve` is the reference resolver. Applications resolve through the
+configured router instead:
+
+```python
++index = M.prepare(Tag, valid)
+M.resolve_with(Tag, Router.Trie{}, index, path, method, M.defaults())
+```
+
+`prepare(T, valid)` returns `Index<T>`, which holds the validated table and its
+[trie](router-trie.md), built once. `index_valid(T, index)` returns the
+`Valid<T>`. `resolve_with(T, kind, index, path, method, opts)` takes a
+`Router.RouterKind`. With `Spec{}` it calls `resolve`. With `Trie{}` it takes the
+trie's ordered candidates for the path and walks them like `find`: it stops at
+the first candidate that allows the method and whose pattern matches. A HEAD
+request that finds no direct match walks them again for GET. Only when both
+miss does it collect the matching registrations once and read the 404 decision
+and `Allow` set from that list. The trie keys raw static segments, so it prefilters only under the
+default strict, case-sensitive options. The other three option combinations
+scan every registration, as `resolve` does.
+
+The law `methods_router_resolve` proves `resolve_with(T, kind, prepare(T,
+valid), path, method, opts) == resolve(T, valid, path, method, opts)` for every
+kind, valid table, path, method and option combination. Every BND-18 law above
+therefore also holds for the trie path. `B.routes` builds the index, `B.handle`
+uses `Router.default_kind()` (`Trie`), and `B.serve` uses the configured
+`router` field.
+
 ## Verification
 
 `bun test tests/router-methods.test.ts` compiles a native Bend server and checks
 method dispatch, exact Allow values, raw HEAD bytes, 404/405, extension methods,
-and all four option combinations. `bun run prove` checks the BND-18 laws;
+and all four option combinations through `resolve_with` with the default
+trie. `bun run prove` checks the BND-18 laws and `methods_router_resolve`;
 `methods_build_valid` proves that successful builds carry valid method-token
 evidence. All table-based BND-18 laws quantify over `Valid<T>`;
 `methods_allow_exact` obtains table validity from the value and has no separate

@@ -1,14 +1,27 @@
 # Method-aware reference routing; app tags remain copyable data.
 import Base
 import ./spec.bend as S
+import ./trie.bend as Tr
+import ./router.bend as Router
 import ./pattern.bend as P
 import ./encoding.bend as E
 import ./proofs.bend as Core
 import ../http/request.bend as R
 import ../http/bytes.bend as B
 
+type MethodSelector is Data:
+  AllMethods{}
+  OnlyMethods{methods: List<&2, R.Method>}
+
+# Only finite registrations contribute to Allow. A matching AllMethods entry
+# always resolves directly, so its unbounded set never needs serialization.
+def finite(methods: MethodSelector) -> List<&2, R.Method>:
+  match methods:
+    case AllMethods{}: []
+    case OnlyMethods{xs}: xs
+
 type Binding<-T: Data> is Data:
-  Binding{methods: List<&2, R.Method>, tag: T}
+  Binding{methods: MethodSelector, tag: T}
 
 def Table(-T: Data) -> Data:
   S.Table(Binding<T>)
@@ -22,7 +35,7 @@ def TableValid(-T: Data, table: Table(T)) -> Bool:
   match table:
     case Nil{}: True{}
     case S.Route{pattern, Binding{methods, tag}} <> tail:
-      list_valid(methods) && TableValid(T, tail)
+      list_valid(finite(methods)) && TableValid(T, tail)
 
 # Public resolution requires evidence for the exact stored table. Constructors
 # remain exported, but invalid method tokens cannot inhabit this type.
@@ -48,7 +61,7 @@ type Resolution<-T: Data> is Data:
   NotFound{}
 
 def on(-T: Data, methods: List<&2, R.Method>, path: String, tag: T) -> Registration(T):
-  S.Registration{path, Binding{methods, tag}}
+  S.Registration{path, Binding{OnlyMethods{methods}, tag}}
 
 def standard_methods() -> List<&2, R.Method>:
   [R.Get{}, R.Head{}, R.Post{}, R.Put{}, R.Delete{}, R.Connect{}, R.Options{}, R.Trace{}, R.Patch{}]
@@ -75,7 +88,7 @@ def head(-T: Data, path: String, tag: T) -> Registration(T):
   on(T, [R.Head{}], path, tag)
 
 def all(-T: Data, path: String, tag: T) -> Registration(T):
-  on(T, standard_methods(), path, tag)
+  S.Registration{path, Binding{AllMethods{}, tag}}
 
 type BuildError is Data:
   InvalidPattern{index: Nat, source: String, error: P.PatternError}
@@ -87,6 +100,11 @@ def normalize_methods(xs: List<&2, R.Method>) -> List<&2, R.Method>:
     case Nil{}: Nil{}
     case h <> tail:
       R.method(R.method_text(h)) <> normalize_methods(tail)
+
+def normalize_selector(methods: MethodSelector) -> MethodSelector:
+  match methods:
+    case AllMethods{}: AllMethods{}
+    case OnlyMethods{xs}: OnlyMethods{normalize_methods(xs)}
 
 def invalid_method(xs: List<&2, R.Method>) -> Maybe<&2, String>:
   match xs:
@@ -133,7 +151,7 @@ def build_pattern(-T: Data, index: Nat, source: String, binding: Binding<T>, com
     case Done{pattern}: prepend_built(T, pattern, binding, rest(Unit{}))
 
 # A caller-supplied None must carry evidence that every method is valid.
-def build_methods(-T: Data, index: Nat, +source: String, methods: List<&2, R.Method>, tag: T, invalid: Maybe<&2, String>, -checked: InvalidChecked(methods, invalid), rest: Unit -> Result<&2, &2, BuildError, Table(T)>) -> Result<&2, &2, BuildError, Table(T)>:
+def build_methods(-T: Data, index: Nat, +source: String, methods: MethodSelector, tag: T, invalid: Maybe<&2, String>, -checked: InvalidChecked(finite(methods), invalid), rest: Unit -> Result<&2, &2, BuildError, Table(T)>) -> Result<&2, &2, BuildError, Table(T)>:
   match invalid:
     case Some{token}: Fail{InvalidMethod{index, source, token}}
     case None{}: build_pattern(T, index, source, Binding{methods, tag}, P.compile(source), rest)
@@ -144,8 +162,8 @@ def build_go(-T: Data, entries: List<&2, Registration(T)>, +index: Nat) -> Resul
   match entries:
     case Nil{}: Done{Nil{}}
     case S.Registration{+source, Binding{methods, tag}} <> rest:
-      +normalized = normalize_methods(methods)
-      build_methods(T, index, source, normalized, tag, invalid_method(normalized), invalid_checked(normalized), u => build_go(T, rest, 1n+index))
+      +normalized = normalize_selector(methods)
+      build_methods(T, index, source, normalized, tag, invalid_method(finite(normalized)), invalid_checked(finite(normalized)), u => build_go(T, rest, 1n+index))
 
 # A successful public build has no invalid methods, including raw on entries.
 def BuildValid(-T: Data, result: Result<&2, &2, BuildError, Table(T)>) -> Bool:
@@ -153,30 +171,30 @@ def BuildValid(-T: Data, result: Result<&2, &2, BuildError, Table(T)>) -> Bool:
     case Fail{error}: True{}
     case Done{table}: TableValid(T, table)
 
-def prepend_valid(-T: Data, +pattern: P.Pattern, +methods: List<&2, R.Method>, +tag: T,
+def prepend_valid(-T: Data, +pattern: P.Pattern, +methods: MethodSelector, +tag: T,
     +result: Result<&2, &2, BuildError, Table(T)>,
-    valid: {list_valid(methods) == True{} : Bool},
+    valid: {list_valid(finite(methods)) == True{} : Bool},
     rest: {BuildValid(T, result) == True{} : Bool}) ->
     {BuildValid(T, prepend_built(T, pattern, Binding{methods, tag}, result)) == True{} : Bool}:
   match result:
     case Fail{error}: {==}
     case Done{table}:
-      %Equal.sym(Bool, list_valid(methods), True{}, valid) : {_ && TableValid(T, table) == True{} : Bool}
+      %Equal.sym(Bool, list_valid(finite(methods)), True{}, valid) : {_ && TableValid(T, table) == True{} : Bool}
       rest
 
-def build_pattern_valid(-T: Data, +index: Nat, +source: String, +methods: List<&2, R.Method>, +tag: T,
+def build_pattern_valid(-T: Data, +index: Nat, +source: String, +methods: MethodSelector, +tag: T,
     +compiled: Result<&2, &2, P.PatternError, P.Pattern>,
     rest: Unit -> Result<&2, &2, BuildError, Table(T)>,
-    valid: {list_valid(methods) == True{} : Bool},
+    valid: {list_valid(finite(methods)) == True{} : Bool},
     good: {BuildValid(T, rest(Unit{})) == True{} : Bool}) ->
     {BuildValid(T, build_pattern(T, index, source, Binding{methods, tag}, compiled, rest)) == True{} : Bool}:
   match compiled:
     case Fail{error}: {==}
     case Done{pattern}: prepend_valid(T, pattern, methods, tag, rest(Unit{}), valid, good)
 
-def build_methods_valid(-T: Data, +index: Nat, +source: String, +methods: List<&2, R.Method>, +tag: T,
+def build_methods_valid(-T: Data, +index: Nat, +source: String, +methods: MethodSelector, +tag: T,
     +invalid: Maybe<&2, String>, rest: Unit -> Result<&2, &2, BuildError, Table(T)>,
-    checked: InvalidChecked(methods, invalid), good: {BuildValid(T, rest(Unit{})) == True{} : Bool}) ->
+    checked: InvalidChecked(finite(methods), invalid), good: {BuildValid(T, rest(Unit{})) == True{} : Bool}) ->
     {BuildValid(T, build_methods(T, index, source, methods, tag, invalid, checked, rest)) == True{} : Bool}:
   match invalid:
     case Some{token}: {==}
@@ -187,8 +205,8 @@ def build_go_valid(-T: Data, +entries: List<&2, Registration(T)>, +index: Nat) -
   match entries:
     case Nil{}: {==}
     case S.Registration{+source, Binding{methods, +tag}} <> +tail:
-      +normalized = normalize_methods(methods)
-      build_methods_valid(T, index, source, normalized, tag, invalid_method(normalized), u => build_go(T, tail, 1n+index), invalid_checked(normalized), build_go_valid(T, tail, 1n+index))
+      +normalized = normalize_selector(methods)
+      build_methods_valid(T, index, source, normalized, tag, invalid_method(finite(normalized)), u => build_go(T, tail, 1n+index), invalid_checked(finite(normalized)), build_go_valid(T, tail, 1n+index))
 
 def certify(-T: Data, result: Result<&2, &2, BuildError, Table(T)>, good: {BuildValid(T, result) == True{} : Bool}) -> Result<&2, &2, BuildError, Valid<T>>:
   match result:
@@ -257,13 +275,32 @@ def slash_pattern(segs: List<&2, P.Segment>, strict: Bool) -> List<&2, P.Segment
     case False{}:
       List.reverse(&2, P.Segment, trim_pattern_rev(List.reverse(&2, P.Segment, segs)))
 
-def match_path(pattern: P.Pattern, path: String, opts: Options) -> Maybe<&2, P.Params>:
+def folded_equal(a: String, b: String) -> Bool:
+  String.eq(B.fold(a), B.fold(b))
+
+def folded_starts(a: String, b: String) -> Bool:
+  String.starts_with(B.fold(a), B.fold(b))
+
+def compare_path(pattern: P.Pattern, path: String, sensitive: Bool) -> Maybe<&2, P.Params>:
+  match sensitive:
+    case True{}:
+      P.match_path(pattern, path)
+    case False{}:
+      P.match_path_with(~folded_equal, ~folded_starts, pattern, path)
+
+def adapted_path(pattern: P.Pattern, path: String, opts: Options) -> Maybe<&2, P.Params>:
   match pattern path opts:
-    case P.Pattern{segs} SCon{'/', tail} Options{+strict, +sensitive}:
-      +normalized = slash_pattern(segs, strict)
-      P.match_path(P.Pattern{pattern_segments(normalized, sensitive)}, "/" ++ String.join(adapt_segments(normalized, slash_segments(P.path_segments(tail), strict), sensitive), "/"))
+    case P.Pattern{segs} SCon{'/', tail} Options{+strict, sensitive}:
+      compare_path(P.Pattern{slash_pattern(segs, strict)}, "/" ++ String.join(slash_segments(P.path_segments(tail), strict), "/"), sensitive)
     case _ _ _:
       None{}
+
+# Default matching delegates directly to the reference matcher, including new
+# pattern constructors, without splitting and rejoining the request path.
+def match_path(pattern: P.Pattern, path: String, opts: Options) -> Maybe<&2, P.Params>:
+  match opts:
+    case Options{True{}, True{}}: P.match_path(pattern, path)
+    case other: adapted_path(pattern, path, other)
 
 def contains(methods: List<&2, R.Method>, +method: R.Method) -> Bool:
   match methods:
@@ -272,8 +309,13 @@ def contains(methods: List<&2, R.Method>, +method: R.Method) -> Bool:
     case h <> tail:
       String.eq(R.method_text(h), R.method_text(method)) || contains(tail, method)
 
-def eligible(methods: List<&2, R.Method>, method: R.Method, hit: Maybe<&2, P.Params>) -> Maybe<&2, P.Params>:
-  E.choose(Maybe<&2, P.Params>, contains(methods, method), u => hit, u => None{})
+def accepts(methods: MethodSelector, method: R.Method) -> Bool:
+  match methods:
+    case AllMethods{}: True{}
+    case OnlyMethods{xs}: contains(xs, method)
+
+def eligible(methods: MethodSelector, method: R.Method, hit: Maybe<&2, P.Params>) -> Maybe<&2, P.Params>:
+  E.choose(Maybe<&2, P.Params>, accepts(methods, method), u => hit, u => None{})
 
 def select(-T: Data, tag: T, hit: Maybe<&2, P.Params>, rest: Unit -> Maybe<&2, S.Match<T>>) -> Maybe<&2, S.Match<T>>:
   S.select(T, tag, hit, rest)
@@ -327,7 +369,7 @@ def matching_methods(-T: Data, table: Table(T), +path: String, +opts: Options) -
     case Nil{}:
       Nil{}
     case S.Route{pattern, Binding{methods, tag}} <> +tail:
-      E.choose(List<&2, R.Method>, Maybe.is_some(&2, P.Params, match_path(pattern, path, opts)), u => List.append(&2, R.Method, methods, matching_methods(T, tail, path, opts)), u => matching_methods(T, tail, path, opts))
+      E.choose(List<&2, R.Method>, Maybe.is_some(&2, P.Params, match_path(pattern, path, opts)), u => List.append(&2, R.Method, finite(methods), matching_methods(T, tail, path, opts)), u => matching_methods(T, tail, path, opts))
 
 def path_exists(-T: Data, table: Table(T), +path: String, +opts: Options) -> Bool:
   match table:
@@ -373,3 +415,91 @@ def allow_text(xs: List<&2, R.Method>) -> String:
       R.method_text(h)
     case h <> tail:
       R.method_text(h) ++ ", " ++ allow_text(tail)
+
+# BND-17: resolution through the configured router. The trie supplies the
+# ordered path-matching candidates; direct hits stop at the first match.
+
+# A validated table with its trie, built once at startup.
+type Index<-T: Data> is Data:
+  Index{valid: Valid<T>, trie: Tr.Trie<Binding<T>>}
+
+def prepare(-T: Data, +valid: Valid<T>) -> Index<T>:
+  Index{valid, Tr.build_trie(Binding<T>, raw(T, valid))}
+
+def index_valid(-T: Data, index: Index<T>) -> Valid<T>:
+  Index{valid, trie} = index
+  valid
+
+# Every registration that matches the path, ascending by index.
+def hits(-T: Data, entries: List<&2, Tr.Candidate<Binding<T>>>, +path: String, +opts: Options) -> List<&2, S.Match<Binding<T>>>:
+  match entries:
+    case Nil{}:
+      Nil{}
+    case Tr.Candidate{index, S.Route{pattern, binding}} <> rest:
+      Tr.keep(Binding<T>, index, binding, match_path(pattern, path, opts), hits(T, rest, path, opts))
+
+# The first hit allowing `method`; the proof's reference for first_direct.
+def first_allowed(-T: Data, xs: List<&2, S.Match<Binding<T>>>, +method: R.Method) -> Maybe<&2, S.Match<T>>:
+  match xs:
+    case Nil{}:
+      None{}
+    case S.Match{index, Binding{methods, tag}, params} <> rest:
+      E.choose(Maybe<&2, S.Match<T>>, accepts(methods, method), u => Some{S.Match{index, tag, params}}, u => first_allowed(T, rest, method))
+
+def any_hit(-T: Data, xs: List<&2, S.Match<Binding<T>>>) -> Bool:
+  match xs:
+    case Nil{}:
+      False{}
+    case h <> rest:
+      True{}
+
+def hit_methods(-T: Data, xs: List<&2, S.Match<Binding<T>>>) -> List<&2, R.Method>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case S.Match{index, Binding{methods, tag}, params} <> rest:
+      List.append(&2, R.Method, finite(methods), hit_methods(T, rest))
+
+# The first candidate allowing `method` whose pattern matches; later
+# candidates are never evaluated, as in find.
+def first_direct(-T: Data, entries: List<&2, Tr.Candidate<Binding<T>>>, +path: String, +method: R.Method, +opts: Options) -> Maybe<&2, S.Match<T>>:
+  match entries:
+    case Nil{}:
+      None{}
+    case Tr.Candidate{index, S.Route{pattern, Binding{methods, tag}}} <> rest:
+      Tr.candidate_hit(T, index, tag, eligible(methods, method, match_path(pattern, path, opts)), u => first_direct(T, rest, path, method, opts))
+
+# Existence and Allow read one matching list, built only after a direct miss.
+def miss_hits(-T: Data, +xs: List<&2, S.Match<Binding<T>>>) -> Resolution<T>:
+  miss(T, any_hit(T, xs), canonical(hit_methods(T, xs)))
+
+# The same decisions as resolve_direct, read from the ordered candidates.
+def decide(-T: Data, hit: Maybe<&2, S.Match<T>>, +entries: List<&2, Tr.Candidate<Binding<T>>>, +path: String, method: R.Method, +opts: Options) -> Resolution<T>:
+  match hit:
+    case Some{hit}:
+      Found{hit, False{}}
+    case None{}:
+      match method:
+        case R.Head{}:
+          fallback(T, first_direct(T, entries, path, R.Get{}, opts), u => miss_hits(T, hits(T, entries, path, opts)))
+        case _:
+          miss_hits(T, hits(T, entries, path, opts))
+
+def resolve_entries(-T: Data, +entries: List<&2, Tr.Candidate<Binding<T>>>, +path: String, +method: R.Method, +opts: Options) -> Resolution<T>:
+  decide(T, first_direct(T, entries, path, method, opts), entries, path, method, opts)
+
+# The trie indexes raw static segments, so it prefilters only the default
+# strict, case-sensitive options. Other options scan every registration.
+def entries(-T: Data, valid: Valid<T>, trie: Tr.Trie<Binding<T>>, +path: String, opts: Options) -> List<&2, Tr.Candidate<Binding<T>>>:
+  match opts:
+    case Options{True{}, True{}}:
+      Tr.candidates(Binding<T>, trie, path)
+    case _:
+      Tr.indexed(Binding<T>, raw(T, valid), 0n)
+
+def resolve_with(-T: Data, kind: Router.RouterKind, index: Index<T>, +path: String, +method: R.Method, +opts: Options) -> Resolution<T>:
+  match kind index:
+    case Router.Spec{} Index{valid, trie}:
+      resolve(T, valid, path, method, opts)
+    case Router.Trie{} Index{valid, trie}:
+      resolve_entries(T, entries(T, valid, trie, path, opts), path, method, opts)

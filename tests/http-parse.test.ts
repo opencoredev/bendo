@@ -1,10 +1,6 @@
-import { BEND_COMPILE_TIMEOUT } from "./harness.ts";
-import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { compile } from "./harness.ts";
+import { describe, expect, test } from "bun:test";
 import { pathToFileURL } from "node:url";
-import { findBend } from "../packages/bendo/src/bend.ts";
 import valid from "./fixtures/http-parse/valid.json";
 import invalid from "./fixtures/http-parse/invalid.json";
 
@@ -52,27 +48,7 @@ function expectedRequest(fixture: (typeof valid)[number]["expected"]) {
   };
 }
 
-const directory = mkdtempSync(join(tmpdir(), "bendo-http-parse-"));
-afterAll(() => rmSync(directory, { recursive: true, force: true }));
-const output = join(directory, "parser.mjs");
-const bend = findBend();
-if (bend.kind === "missing") throw new Error("bend is not installed");
-const compilation = Bun.spawnSync(
-  [
-    "timeout",
-    "--foreground",
-    BEND_COMPILE_TIMEOUT,
-    bend.path,
-    join(import.meta.dir, "fixtures/http-parse/consumer.bend"),
-    "-o",
-    output,
-  ],
-  { stdout: "pipe", stderr: "pipe" },
-);
-if (compilation.exitCode !== 0) {
-  throw new Error(`Bend parser compilation failed:\n${compilation.stdout}${compilation.stderr}`);
-}
-
+const output = compile("tests/fixtures/http-parse/consumer.bend", "mjs");
 // The generated module has no TS declarations. Validate exports at this
 // boundary and compare results with independent constructor-shaped literals.
 const module: unknown = await import(pathToFileURL(output).href);

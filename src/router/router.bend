@@ -10,8 +10,9 @@ type RouterKind is Data:
 type Prepared<-Tag: Data> is Data:
   Prepared{table: S.Table(Tag), trie: T.Trie<Tag>}
 
+# BND-17 proved the trie equivalent to the reference router (LAWS.bend).
 def default_kind() -> RouterKind:
-  Spec{}
+  Trie{}
 
 def prepare(-Tag: Data, +table: S.Table(Tag)) -> Prepared<Tag>:
   Prepared{table, T.build_trie(Tag, table)}

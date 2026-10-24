@@ -94,8 +94,8 @@ describe("spec router", () => {
   });
 });
 
+const binary = build("tests/router-spec-driver.bend");
 test("table construction fails atomically at the original index and preserves tags", () => {
-  const binary = build("tests/router-spec-driver.bend");
   const result = Bun.spawnSync([binary], { stdout: "pipe", stderr: "pipe" });
   expect(result.exitCode).toBe(0);
   expect(result.stdout.toString().trim().split("\n")).toEqual([

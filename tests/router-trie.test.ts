@@ -1,7 +1,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { build } from "./harness.ts";
 
 type Case = { patterns: string[]; path: string };
@@ -29,7 +29,7 @@ function generatedPattern(next: (limit: number) => number): FilledPattern {
           new TextEncoder().encode(value),
           (n) => `%${n.toString(16).padStart(2, "0")}`,
         ).join("");
-  switch (next(9)) {
+  switch (next(15)) {
     case 0: {
       const source = `${prefix}/${choose(next, ["new", "fixed", "", "a", "%", "%2f", "é"])}`;
       return { source, filled: source };
@@ -76,6 +76,27 @@ function generatedPattern(next: (limit: number) => number): FilledPattern {
         source: `${prefix}/:a/:b{int}`,
         filled: `${prefix}/${encoded("left/right")}/${encoded("42")}`,
       };
+    case 9:
+      return { source: "*", filled: `${prefix}/x/y` };
+    case 10:
+      return {
+        source: `${prefix}/assets*`,
+        filled: `${prefix}/assets${choose(next, ["", "-v2", "/a/b"])}`,
+      };
+    case 11:
+      return { source: `${prefix}/*/end/*`, filled: `${prefix}/x/y/end/z` };
+    case 12:
+      return {
+        source: `${prefix}/:a?/:b?`,
+        filled: choose(next, [prefix || "/", `${prefix}/x`, `${prefix}/x/y`]),
+      };
+    case 13:
+      return { source: `${prefix}/name:activate`, filled: `${prefix}/name:activate` };
+    case 14:
+      return {
+        source: `${prefix}/:a{.+}/contents/:b?`,
+        filled: `${prefix}/x/y/contents${choose(next, ["", "/42"])}`,
+      };
     default:
       return { source: `${prefix}/:a/end`, filled: `${prefix}/${encoded("x")}/end` };
   }
@@ -116,7 +137,6 @@ function generatedCases(count: number): Case[] {
 const binary = build("tests/router-trie-driver.bend");
 const directory = mkdtempSync(join(tmpdir(), "bendo-trie-cases-"));
 afterAll(() => {
-  rmSync(dirname(binary), { recursive: true, force: true });
   rmSync(directory, { recursive: true, force: true });
 });
 
@@ -134,7 +154,7 @@ function run(cases: Case[]): string[][] {
   });
   expect(result.exitCode, result.stderr.toString()).toBe(0);
   const [header, ...lines] = result.stdout.toString().trimEnd().split("\n");
-  expect(header).toBe("default=Spec");
+  expect(header).toBe("default=Trie");
   expect(lines).toHaveLength(cases.length);
   return lines.map((line) => {
     const fields = line.split("\t");
@@ -179,7 +199,7 @@ function minimize(input: Case): Case {
   return current;
 }
 
-test("trie and Spec-default config preserve first registration, tags, and decoded params", () => {
+test("trie-default and Spec config preserve first registration, tags, and decoded params", () => {
   const cases: (Case & { expected: string })[] = [
     { patterns: [], path: "/", expected: "none" },
     { patterns: ["/"], path: "/", expected: "0:1000" },
@@ -206,31 +226,38 @@ test("trie and Spec-default config preserve first registration, tags, and decode
   }
 });
 
-test("10,000 seeded generated table/path pairs have no disagreements", () => {
-  const cases = generatedCases(10000);
-  const start = performance.now();
-  for (let offset = 0; offset < cases.length; offset += 250) {
-    const batch = cases.slice(offset, offset + 250);
-    for (const [index, fields] of run(batch).entries()) {
-      const input = batch[index];
-      if (input && disagrees(fields)) {
-        throw new Error(
-          JSON.stringify(
-            {
-              seed: SEED,
-              pair: offset + index,
-              input,
-              results: fields,
-              minimized: minimize(input),
-            },
-            null,
-            2,
-          ),
-        );
+// One seeded sequence of 10,000 pairs, checked in four slices so each slice
+// gets its own deadline on a slow machine.
+const GENERATED = generatedCases(10000);
+const SLICE = 2500;
+
+for (let first = 0; first < GENERATED.length; first += SLICE) {
+  const last = Math.min(first + SLICE, GENERATED.length);
+  test(`seeded generated pairs ${first}-${last - 1} of 10,000 have no disagreements`, () => {
+    const start = performance.now();
+    for (let offset = first; offset < last; offset += 250) {
+      const batch = GENERATED.slice(offset, Math.min(offset + 250, last));
+      for (const [index, fields] of run(batch).entries()) {
+        const input = batch[index];
+        if (input && disagrees(fields)) {
+          throw new Error(
+            JSON.stringify(
+              {
+                seed: SEED,
+                pair: offset + index,
+                input,
+                results: fields,
+                minimized: minimize(input),
+              },
+              null,
+              2,
+            ),
+          );
+        }
       }
     }
-  }
-  console.log(
-    `seed=0x${SEED.toString(16)} pairs=${cases.length} disagreements=0 elapsed_ms=${Math.round(performance.now() - start)}`,
-  );
-}, 60000);
+    console.log(
+      `seed=0x${SEED.toString(16)} pairs=${first}-${last - 1} disagreements=0 elapsed_ms=${Math.round(performance.now() - start)}`,
+    );
+  }, 60000);
+}
