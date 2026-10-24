@@ -3,10 +3,13 @@ import ../../src/http/request.bend as Request
 import ../../src/main.bend as B
 import ../../src/http/stream_types.bend as S
 import ../../src/http/response.bend as Response
+import ../../src/app/table.bend as Table
 import ../../src/app/context.bend as C
 import ../../src/router/methods.bend as Methods
 
 type Tag is Data:
+  RecoverStream{}
+  PolicyError{}
   Hello{}
   Stream{}
   Empty{}
@@ -61,6 +64,7 @@ def copies(n: Nat, +byte: U32, acc: List<&2, U32>) -> List<&2, U32>:
 
 def handler(tag: Tag, c: B.Context(Unit), env: Unit) -> IO(B.Res):
   match tag:
+    case PolicyError{}: IO.pure(B.Res, B.text(B.status(c, 500), "recover me"))
     case Hello{}: IO.pure(B.Res, B.text(c, "hello"))
     case Broken{}: B.stream(~Unit, ~State, ~broken_step, ~cleanup, c, State{1n, False{}, False{}, [0, 128, 255]}, S.Config{500, 65536})
     case Suppress{}:
@@ -95,6 +99,7 @@ def timed(result: Maybe<&1, B.Res>) -> B.Res:
 
 def middleware(tag: Tag, c: B.Context(Unit), env: Unit, next: B.Context(Unit) -> IO(B.Res)) -> IO(B.Res):
   match tag:
+    case RecoverStream{}: B.stream(~Unit, ~State, ~step, ~cleanup, B.header(B.header(B.status(c, 200), "vary", "Accept-Encoding"), "x-powered-by", "replacement"), State{2n, False{}, False{}, [97, 98]}, B.stream_config())
     case Builtin{id}: B.builtin(Unit, id, c, next)
     case Timeout{}:
       do IO<B.Res>:
@@ -122,10 +127,14 @@ def main() -> IO(Unit):
     B.on_request(Tag, Builtin{B.request_id()}),
     B.on_request(Tag, Builtin{B.server_timing()}),
     B.on_after_response(Tag, Observe{}),
+    B.use_path(Tag, "/policy/*", Builtin{B.cors(B.cors_allow([B.cors_origin_credentials("https://app.example")]))}),
+    B.use_path(Tag, "/policy/*", Builtin{B.secure_headers()}),
     B.use_path(Tag, "/replace", Map{}),
     B.use_path(Tag, "/late", Timeout{}),
     B.get(Tag, "/", Hello{}),
     B.get(Tag, "/stream", Stream{}),
+    B.get(Tag, "/policy/stream", Stream{}),
+    B.route_hooks(Tag, Methods.get(Tag, "/policy/recovered", PolicyError{}), [B.hook(Tag, Table.Error{}, RecoverStream{})]),
     B.get(Tag, "/empty", Empty{}),
     B.get(Tag, "/broken", Broken{}),
     B.get(Tag, "/status", Suppress{}),

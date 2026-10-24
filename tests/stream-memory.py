@@ -182,7 +182,7 @@ def clock_failure(binary, preload):
     server = Server(binary, {"LD_PRELOAD": preload})
     try:
         with socket.create_connection(("127.0.0.1", server.port), timeout=5) as peer:
-            peer.sendall(b"GET /stream HTTP/1.1\r\nHost: test\r\n\r\nGET / HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n")
+            peer.sendall(b"GET /policy/stream HTTP/1.1\r\nHost: test\r\nOrigin: https://app.example\r\nX-Request-Id: clock-policy-id\r\n\r\nGET / HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n")
             wire = b""
             while True:
                 data = peer.recv(4096)
@@ -193,6 +193,11 @@ def clock_failure(binary, preload):
         assert len(responses) == 3 and responses[-1] == b"", wire
         assert all(head.startswith(b"HTTP/1.1 500 ") for head in responses[:2]), wire
         assert all(b"content-length: 0" in head for head in responses[:2]), wire
+        assert b"access-control-allow-origin: https://app.example" in responses[0], wire
+        assert b"vary: Origin" in responses[0], wire
+        assert b"x-content-type-options: nosniff" in responses[0], wire
+        assert b"x-request-id: clock-policy-id" in responses[0], wire
+        assert b"server-timing: total;dur=" in responses[0], wire
         assert b"transfer-encoding" not in wire and b"x-bendo-stream-internal" not in wire, wire
         time.sleep(0.05)
         assert server.counts == {"pull": 0, "cleanup": 1, "after": 2}, server.counts

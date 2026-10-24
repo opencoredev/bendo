@@ -142,7 +142,9 @@ type StartAttempt =
   | { kind: "timeout"; url: string };
 
 async function attempt(binary: string, hostname: string): Promise<StartAttempt> {
-  const port = 20000 + Math.floor(Math.random() * 20000);
+  // Stay below Linux's default ephemeral range (32768–60999): outbound test
+  // traffic can leave those ports in TIME_WAIT and prevent a listener binding.
+  const port = 20000 + Math.floor(Math.random() * 10000);
   const proc = Bun.spawn([binary], {
     env: { ...process.env, PORT: String(port) },
     stdout: "pipe",

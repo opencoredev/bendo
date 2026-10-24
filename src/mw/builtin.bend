@@ -11,6 +11,12 @@ import ./bearer_auth.bend as Bearer
 import ./jwt.bend as JwtAuth
 import ./csrf.bend as Csrf
 import ./csrf_policy.bend as CsrfPolicy
+import ./cors.bend as Cors
+import ./cors_policy.bend as CorsPolicy
+import ./secure_headers.bend as Secure
+import ./method_override.bend as Override
+import ./method_override_policy.bend as OverridePolicy
+import ./trailing_slash.bend as Trailing
 
 import ./body_limit.bend as BodyLimit
 import ./timeout.bend as Timeout
@@ -31,6 +37,10 @@ type Builtin is Data:
   BearerAuth{realm: String, tokens: List<&2, String>}
   Jwt{config: JwtAuth.Config}
   Csrf{policy: CsrfPolicy.Policy}
+  Cors{config: CorsPolicy.Config}
+  SecureHeaders{config: Secure.Config}
+  MethodOverride{config: OverridePolicy.Config}
+  TrailingSlash{config: Trailing.Config}
 
 def dispatch(-Vars: Data, id: Builtin, c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
   match id:
@@ -47,6 +57,10 @@ def dispatch(-Vars: Data, id: Builtin, c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(R
     case BearerAuth{realm, tokens}: Bearer.middleware(Vars, realm, tokens, c, next)
     case Jwt{config}: JwtAuth.middleware(Vars, config, c, next)
     case Csrf{policy}: Csrf.middleware(Vars, policy, c, next)
+    case Cors{config}: Cors.middleware(Vars, config, c, next)
+    case SecureHeaders{config}: Secure.middleware(Vars, config, c, next)
+    case MethodOverride{config}: Override.middleware(Vars, config, c, next)
+    case TrailingSlash{config}: Trailing.middleware(Vars, config, c, next)
 
 # A pure selector for transport admission; all other built-ins have no limit.
 def body_limit(id: Builtin) -> Maybe<&2, U32>:
