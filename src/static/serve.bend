@@ -11,6 +11,7 @@ import ../http/request.bend as Request
 import ../http/response.bend as Response
 import ../http/date.bend as HttpDate
 import ../http/etag.bend as Etag
+import ../http/conditional.bend as Conditional
 import ../effects/static_file.bend as StaticFile
 import ../router/encoding.bend as E
 import ./path.bend as Path
@@ -216,8 +217,9 @@ def nonempty(+s: String) -> Maybe<&2, String>:
 
 # Validators exist only for a settled file, one whose mtime and ctime are at
 # least two seconds old (see static_file.bend). A file still being written
-# gets no ETag or Last-Modified and every conditional field is ignored, so a
-# change within the same second can never produce a stale 304.
+# gets no ETag or Last-Modified and every conditional field except
+# "If-None-Match: *" is ignored, so a change within the same second can never
+# produce a stale 304.
 # changed is the later of mtime and ctime, in seconds.
 type Validators is Data:
   Settled{tag: String, modified: String, mtime: Nat, changed: Nat}
@@ -252,16 +254,35 @@ def since(+changed: Nat, value: Maybe<&2, String>) -> Bool:
     case None{}: False{}
     case Some{v}: since_parsed(changed, HttpDate.parse_imf(v))
 
-def fresh_settled(+tags: List<&2, String>, +tag: String, +changed: Nat, modified_since: Maybe<&2, String>) -> Bool:
-  match tags:
-    case Nil{}: since(changed, modified_since)
-    case h <> t: Etag.none_match(tags, tag)
+# Repeated If-None-Match fields are one comma-separated list (RFC 9110
+# section 5.3), so they are joined before Conditional.matches parses them.
+def joined_after(values: List<&2, String>) -> String:
+  match values:
+    case Nil{}: ""
+    case h <> t: ", " ++ h ++ joined_after(t)
+
+def joined(values: List<&2, String>) -> Maybe<&2, String>:
+  match values:
+    case Nil{}: None{}
+    case h <> t: Some{h ++ joined_after(t)}
+
+def fresh_settled(+field: Maybe<&2, String>, +tag: String, +changed: Nat, modified_since: Maybe<&2, String>) -> Bool:
+  match field:
+    case None{}: since(changed, modified_since)
+    case Some{s}: Conditional.matches(field, tag)
+
+# "If-None-Match: *" asks only whether the file exists, which an unsettled
+# file does, so it gives 304 too. Tags and dates are still ignored there.
+def wildcard(field: Maybe<&2, String>) -> Bool:
+  match field:
+    case None{}: False{}
+    case Some{s}: String.eq(Conditional.trim(s), "*")
 
 # If-None-Match decides when present; If-Modified-Since only without it.
 def fresh(+tags: List<&2, String>, v: Validators, modified_since: Maybe<&2, String>) -> Bool:
   match v:
-    case Unsettled{}: False{}
-    case Settled{+tag, modified, mtime, +changed}: fresh_settled(tags, tag, changed, modified_since)
+    case Unsettled{}: wildcard(joined(tags))
+    case Settled{+tag, modified, mtime, +changed}: fresh_settled(joined(tags), tag, changed, modified_since)
 
 # If-Range: a strong tag that matches, or the exact Last-Modified date of a
 # file whose ctime is no later than that date. Anything else, including any

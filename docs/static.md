@@ -106,18 +106,21 @@ exact nanosecond of an earlier ctime.
 
 A file settles when its mtime and ctime are both at least two seconds old,
 which covers filesystems with two-second timestamps. Until then it gets no
-`ETag` and no `Last-Modified`, and conditional fields are ignored, so a change
-within the same second cannot produce a stale 304. Hashing the content would
+`ETag` and no `Last-Modified`, and tags and dates in conditional fields are
+ignored, so a change within the same second cannot produce a stale 304.
+`If-None-Match: *` still gives 304, because it asks only whether the file
+exists. Hashing the content would
 also be exact, but it reads the whole file on every request, which defeats
 streaming large files; the metadata tag costs one `fstat`.
 
-`src/http/etag.bend` holds the tag and its weak and strong comparisons.
-`Etag.none_match` is the only place static files compare `If-None-Match`. When
-BND-41's `Conditional.matches` reaches main it becomes the canonical
-comparison, and `none_match` should call it.
+`src/http/etag.bend` holds the tag and the strong comparison `If-Range` uses.
+`If-None-Match` goes through `Conditional.matches` (`src/http/conditional.bend`,
+BND-41), the same RFC 9110 weak comparison the ETag middleware uses. Repeated
+`If-None-Match` fields are joined with commas into one list first.
 
-`If-None-Match` decides when present: `*` or any listed tag that matches by
-weak comparison gives 304. Without it, `If-Modified-Since` gives 304 when
+`If-None-Match` decides when present: `*` alone, or a well-formed list with a
+tag that matches by weak comparison, gives 304. A malformed list gives 200
+even if it also names the current tag. Without it, `If-Modified-Since` gives 304 when
 neither the mtime nor the ctime is later than the date. Counting ctime means a
 copy that restored an old mtime (`cp -p`, `rsync -t`) is never reported
 unmodified; such files still revalidate through `ETag`. A date that is not an

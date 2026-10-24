@@ -81,7 +81,12 @@ afterAll(async () => {
 type RawResponse = { status: number; head: string; body: Buffer };
 
 /** Sends a request target byte for byte; fetch would normalize dot segments. */
-async function raw(target: string, method = "GET", version = "1.1"): Promise<RawResponse> {
+async function raw(
+  target: string,
+  method = "GET",
+  version = "1.1",
+  extra = "",
+): Promise<RawResponse> {
   const port = Number(new URL(server.url).port);
   const bytes = await new Promise<Buffer>((done, fail) => {
     const socket = connect(port, "127.0.0.1");
@@ -92,7 +97,10 @@ async function raw(target: string, method = "GET", version = "1.1"): Promise<Raw
         Buffer.concat([
           Buffer.from(`${method} `, "latin1"),
           Buffer.from(target, "latin1"),
-          Buffer.from(` HTTP/${version}\r\nHost: test\r\nConnection: close\r\n\r\n`, "latin1"),
+          Buffer.from(
+            ` HTTP/${version}\r\nHost: test\r\n${extra}Connection: close\r\n\r\n`,
+            "latin1",
+          ),
         ]),
       ),
     );
@@ -238,6 +246,26 @@ describe("conditional requests", () => {
     }
   });
 
+  test("repeated If-None-Match fields are read as one list", async () => {
+    const extra = `If-None-Match: "other"\r\nIf-None-Match: ${tagOf(file())}\r\n`;
+    const response = await raw("/static/hello.txt", "GET", "1.1", extra);
+    expect(response.status).toBe(304);
+  });
+
+  // A malformed field matches nothing, even when it also lists the current tag.
+  test.each([
+    ["garbage before the tag", (tag: string) => `garbage, ${tag}`],
+    ["* in a list", () => "*, garbage"],
+    ["an unterminated quote around the tag", (tag: string) => `"unterminated, ${tag}`],
+  ])("If-None-Match with %s gives 200", async (_name, field) => {
+    const response = await get("/static/hello.txt", {
+      "if-none-match": field(tagOf(file())),
+      "if-modified-since": modifiedOf(file()),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("hello world");
+  });
+
   test("a different tag gives 200 even when If-Modified-Since would match", async () => {
     const response = await get("/static/hello.txt", {
       "if-none-match": 'W/"1-1"',
@@ -260,17 +288,36 @@ describe("conditional requests", () => {
 });
 
 describe("validators follow content", () => {
-  test("a file changed in the last two seconds has no validators and ignores conditionals", async () => {
+  test("a file changed in the last two seconds has no validators and ignores tags and dates", async () => {
     const path = join(root, "fresh.txt");
     writeFileSync(path, "fresh");
     const response = await get("/static/fresh.txt", {
-      "if-none-match": "*",
+      "if-none-match": tagOf(path),
       "if-modified-since": new Date(Date.now() + 3_600_000).toUTCString(),
     });
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("fresh");
     expect(response.headers.get("etag")).toBeNull();
     expect(response.headers.get("last-modified")).toBeNull();
+    const dated = await get("/static/fresh.txt", {
+      "if-modified-since": new Date(Date.now() + 3_600_000).toUTCString(),
+    });
+    expect(dated.status).toBe(200);
+  });
+
+  // "*" asks only whether the file exists, not whether its timestamps settled.
+  test("If-None-Match: * gives 304 for a file changed in the last two seconds", async () => {
+    const path = join(root, "fresh-star.txt");
+    writeFileSync(path, "fresh");
+    for (const method of ["GET", "HEAD"]) {
+      const response = await fetch(`${server.url}/static/fresh-star.txt`, {
+        method,
+        headers: { "if-none-match": "*" },
+      });
+      expect(response.status).toBe(304);
+      expect(response.headers.get("etag")).toBeNull();
+      expect(await response.text()).toBe("");
+    }
   });
 
   test("a same-size rewrite that restores mtime still changes the tag", async () => {
