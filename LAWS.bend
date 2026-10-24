@@ -19,6 +19,9 @@ import ./proof/manifest-built-spec.bend as ManifestBuiltSpec
 import ./proof/compose-laws.bend as ComposeLaws
 import ./proof/plugin-laws.bend as PluginLaws
 
+# BND-47
+import ./proof/proxy-laws.bend as ProxyLaws
+
 # BND-44
 import ./proof/ip-laws.bend as IpLaws
 import ./proof/rate-limit-laws.bend as RateLimitLaws

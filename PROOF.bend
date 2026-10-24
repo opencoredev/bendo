@@ -9,6 +9,9 @@ import ./proof/json-schema.bend as JsonSchemaProof
 import ./proof/compose.bend as ComposeProof
 import ./proof/plugin.bend as PluginProof
 
+# BND-47
+import ./proof/proxy.bend as ProxyProof
+
 # BND-44
 import ./proof/ip.bend as IpProof
 import ./proof/rate-limit.bend as RateLimitProof

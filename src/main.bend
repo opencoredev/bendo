@@ -46,6 +46,7 @@ import ./net/conn_info.bend as Conn
 import ./mw/ip_restriction.bend as IpRestriction
 import ./mw/rate_limit.bend as RateLimit
 import ./mw/rate_limit_core.bend as RateCore
+import ./proxy.bend as Proxy
 
 def HttpError() -> Data: Errors.HttpError
 def http_error(status: U32, message: String) -> Errors.HttpError: Errors.http_error(status, message)
@@ -368,3 +369,17 @@ def rate_limit(-Vars: Data, limiter: RateLimit.Limiter, c: Context.Ctx<Vars>, ne
   RateLimit.limit(Vars, limiter, c, next)
 def rate_limit_with(-Vars: Data, limiter: RateLimit.Limiter, key: String, now_ms: Nat, c: Context.Ctx<Vars>, next: Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
   RateLimit.limit_with(Vars, limiter, key, now_ms, c, next)
+
+# Reverse proxy (BND-47); docs/proxy.md. Call B.proxy from a route handler.
+# One upstream connection per request, http:// with a numeric IPv4 host or
+# localhost; the response streams back through B.stream.
+def ProxyOptions() -> Data: Proxy.Options
+def proxy_options(upstream: String) -> Proxy.Options: Proxy.options(upstream)
+def proxy_preserve_host(options: Proxy.Options, on: Bool) -> Proxy.Options: Proxy.preserve_host(options, on)
+def proxy_trust_forwarded(options: Proxy.Options, on: Bool) -> Proxy.Options: Proxy.trust_forwarded(options, on)
+def proxy_forwarded(options: Proxy.Options, on: Bool) -> Proxy.Options: Proxy.forwarded(options, on)
+def proxy_rewrite(options: Proxy.Options, from: String, to: String) -> Proxy.Options: Proxy.rewrite(options, from, to)
+def proxy_timeouts(options: Proxy.Options, connect_ms: U32, send_ms: U32, head_ms: U32, read_ms: U32) -> Proxy.Options: Proxy.timeouts(options, connect_ms, send_ms, head_ms, read_ms)
+def proxy_stream_config(options: Proxy.Options, config: StreamTypes.Config) -> Proxy.Options: Proxy.stream_config(options, config)
+def proxy(c: Handle.Ctx, options: Proxy.Options) -> IO(Response.Res): Proxy.proxy(Unit, c, options)
+def proxy_with(-Vars: Data, c: Context.Ctx<Vars>, options: Proxy.Options) -> IO(Response.Res): Proxy.proxy(Vars, c, options)
