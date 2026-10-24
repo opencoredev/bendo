@@ -56,6 +56,13 @@ only path characters). Otherwise the request gets `500`
 `Proxy rewrite produced an invalid target` and nothing is sent upstream.
 `OPTIONS *` is forwarded as `*`.
 
+The upstream host and port come only from the configured URL; a request can't
+change where Bendo connects. The `base` path and rewrites are not an access
+boundary, though: Bendo forwards dot segments as sent, so `/api/../admin`
+reaches whatever the upstream resolves it to. If the upstream must only see
+paths under `base`, enforce that upstream or reject such paths before calling
+`B.proxy`.
+
 ## What is sent upstream
 
 The upstream request line is `METHOD target HTTP/1.1`. Bendo builds the header

@@ -122,6 +122,12 @@ const scripts = new Map<string, Script>([
   ],
   ["/fixed-extra", respond("HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhelloEXTRA")],
   ["/no-content", respond("HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")],
+  ["/empty-close", respond("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")],
+  // Answers and keeps the connection open: the proxy must finish on the length alone.
+  [
+    "/empty-open",
+    (socket) => socket.write("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n", "latin1"),
+  ],
   [
     "/bad-chunk",
     respond("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\nzz\r\n"),
@@ -579,6 +585,21 @@ describe("upstream response framing", () => {
     expect(chunked.body.toString()).toBe("hello world");
     expect(chunked.terminated).toBe(true);
   });
+
+  for (const path of ["/empty-close", "/empty-open"])
+    test(`${path}: a zero-length upstream body ends the client response and keeps it usable`, async () => {
+      const request = `GET /raw${path} HTTP/1.1\r\nHost: client.example\r\n\r\n${get("/raw/fixed-extra")}`;
+      const { wire, ended } = await exchange(request);
+      const second = wire.indexOf("HTTP/1.1", 1);
+      expect(second).toBeGreaterThan(0);
+      const first = parse(wire.subarray(0, second));
+      expect(first.status).toBe(200);
+      expect(first.body.length).toBe(0);
+      expect(first.terminated).toBe(true);
+      const next = parse(wire.subarray(second));
+      expect(next.body.toString()).toBe("hello");
+      expect(ended).toBe(true);
+    });
 
   test("204 from upstream has no body", async () => {
     const res = await rawGet("/raw/no-content");

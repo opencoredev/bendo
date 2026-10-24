@@ -500,10 +500,17 @@ type Fed is Data:
 
 def max_u32() -> U32: 4294967295
 
+# A zero-length fixed body is already complete: waiting for its bytes would
+# leave the client's chunked response unterminated.
+def fixed_start(n: Nat) -> Body:
+  match n:
+    case 0n: Finished{}
+    case 1n+m: Remaining{1n+m}
+
 def start(f: Framing) -> Body:
   match f:
     case NoBody{}: Finished{}
-    case Fixed{n}: Remaining{n}
+    case Fixed{n}: fixed_start(n)
     case Chunks{}: Decoding{Chunked.initial(max_u32())}
     case UntilClose{}: ToClose{}
     case Invalid{}: Finished{}
