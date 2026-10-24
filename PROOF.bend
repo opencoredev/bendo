@@ -103,6 +103,8 @@ import ./proof/secure-headers.bend as SecureHeadersProof
 import ./proof/override.bend as OverrideProof
 import ./proof/trailing.bend as TrailingProof
 
+import ./proof/static-path.bend as StaticProof
+
 # Check the pure crypto implementations with the strict kernel as well.
 import ./src/crypto/sha1.bend as SHA1
 import ./src/crypto/sha256.bend as SHA256
@@ -772,3 +774,23 @@ def Laws.trailing_trim_target(base, q, m, r, ok):
 
 def Laws.trailing_append_target(path, q, m, r, ends, ok):
   TrailingProof.append_target(path, q, m, r, ends, ok)
+
+# BND-45: static path confinement.
+
+def Laws.static_path_confined(raw, index):
+  StaticProof.confined(raw, index)
+
+def Laws.static_path_target(root, raw, index):
+  StaticProof.target(root, raw, index)
+
+def Laws.static_path_segments(raw, index):
+  StaticProof.segments(raw, index)
+
+def Laws.static_path_no_dotfiles(raw, index):
+  StaticProof.no_dotfiles(raw, index)
+
+def Laws.static_path_complete(first, rest, index, servable):
+  StaticProof.complete(first, rest, index, servable)
+
+def Laws.static_path_index(xs, index, servable, named):
+  StaticProof.index_law(xs, index, servable, named)

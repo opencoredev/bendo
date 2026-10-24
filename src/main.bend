@@ -38,6 +38,7 @@ import ./http/request.bend as Request
 import ./http/response.bend as Response
 import ./router/methods.bend as Methods
 import ./router/router.bend as Router
+import ./static/serve.bend as Static
 
 def HttpError() -> Data: Errors.HttpError
 def http_error(status: U32, message: String) -> Errors.HttpError: Errors.http_error(status, message)
@@ -284,3 +285,14 @@ def trim_trailing_slash() -> Builtin.Builtin: Builtin.TrailingSlash{Trailing.Con
 def trim_trailing_slash_always() -> Builtin.Builtin: Builtin.TrailingSlash{Trailing.Config{TrailingPolicy.Trim{}, True{}}}
 def append_trailing_slash() -> Builtin.Builtin: Builtin.TrailingSlash{Trailing.Config{TrailingPolicy.Append{}, False{}}}
 def append_trailing_slash_always() -> Builtin.Builtin: Builtin.TrailingSlash{Trailing.Config{TrailingPolicy.Append{}, True{}}}
+
+# Static files (BND-45). Register a GET wildcard route and call serve_static
+# from its handler; docs/static.md describes paths, caching and ranges.
+def StaticOptions() -> Data: Static.Options
+def static_options(root: String) -> Static.Options: Static.defaults(root)
+def static_mounted(options: Static.Options, prefix: String) -> Static.Options: Static.mounted(options, prefix)
+def static_index(options: Static.Options, index: String) -> Static.Options: Static.with_index(options, index)
+def static_buffer_bytes(options: Static.Options, max: Nat) -> Static.Options: Static.with_buffer_bytes(options, max)
+def static_cache_control(options: Static.Options, value: String) -> Static.Options: Static.with_cache_control(options, value)
+def serve_static(c: Handle.Ctx, options: Static.Options) -> IO(Response.Res): Static.serve(Unit, c, options)
+def serve_static_with(-Vars: Data, c: Context.Ctx<Vars>, options: Static.Options) -> IO(Response.Res): Static.serve(Vars, c, options)
