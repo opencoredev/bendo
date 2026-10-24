@@ -6,9 +6,34 @@ import ./bytes.bend as Bytes
 
 def marker() -> String: "x-bendo-stream-internal"
 
+# Whether a field name is the marker, in any case: the specification of
+# `named`, and the test every function here used before BND-96.
+def named_spec(name: String) -> Bool:
+  String.eq(Bytes.fold(name), marker())
+
+# Char.to_lower's code point.
+def lower_code(c: Char) -> U32:
+  match c:
+    case Chr{+x}: U32.add(x, U32.mul(Bool.to_u32(Char.is_upper(Chr{x})), 32))
+
+# String.order over the lowered name, without building it: each character is
+# lowered as it is compared, and the walk stops at the first difference.
+def named_go(name: String, lit: String, c: Cmp) -> Bool:
+  match name lit c:
+    case SCon{h, t} SCon{Chr{y}, u} EQ{}: named_go(t, u, U32.cmp(lower_code(h), y))
+    case SNil{} SNil{} EQ{}: True{}
+    case _ _ _: False{}
+
+# BND-96: every response runs this test on each field several times
+# (finalization reserves the marker, transport strips it), and lowering a
+# whole name first allocated two strings per field. Law hot_marker_named
+# states named == named_spec for every name.
+def named(name: String) -> Bool:
+  named_go(name, marker(), EQ{})
+
 def keep(h: Request.Header) -> Bool:
   Request.Header{name, value} = h
-  Bool.not(String.eq(Bytes.fold(name), marker()))
+  Bool.not(named(name))
 
 def strip(res: Response.Res) -> Response.Res:
   Response.Res{status, hs, body, rep} = res
@@ -18,7 +43,7 @@ def marked(hs: List<&2, Request.Header>, +id: String) -> Bool:
   match hs:
     case Nil{}: False{}
     case Request.Header{name, value} <> rest:
-      (String.eq(Bytes.fold(name), marker()) && String.eq(Bytes.ascii(value), id)) || marked(rest, id)
+      (named(name) && String.eq(Bytes.ascii(value), id)) || marked(rest, id)
 
 def mark(res: Response.Res, id: String) -> Response.Res:
   Response.Res{code, hs, body, rep} = res
@@ -38,7 +63,7 @@ def claim_field(h: Request.Header, tail: List<&2, Request.Header>, same: Bool) -
 def claims(hs: List<&2, Request.Header>) -> List<&2, Request.Header>:
   match hs:
     case Nil{}: []
-    case Request.Header{+name, value} <> rest: claim_field(Request.Header{name, value}, claims(rest), String.eq(Bytes.fold(name), marker()))
+    case Request.Header{+name, value} <> rest: claim_field(Request.Header{name, value}, claims(rest), named(name))
 
 def other_field(h: Request.Header, tail: List<&2, Request.Header>, same: Bool) -> List<&2, Request.Header>:
   match same:
@@ -48,7 +73,7 @@ def other_field(h: Request.Header, tail: List<&2, Request.Header>, same: Bool) -
 def unclaimed(hs: List<&2, Request.Header>) -> List<&2, Request.Header>:
   match hs:
     case Nil{}: []
-    case Request.Header{+name, value} <> rest: other_field(Request.Header{name, value}, unclaimed(rest), String.eq(Bytes.fold(name), marker()))
+    case Request.Header{+name, value} <> rest: other_field(Request.Header{name, value}, unclaimed(rest), named(name))
 
 def reserved(original: Response.Res, changed: Response.Res) -> Response.Res:
   Response.Res{code, hs, b, r} = original

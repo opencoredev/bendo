@@ -384,6 +384,23 @@ def declares(set: Schemas) -> Bool:
   Schemas{p, q, h, b, r} = set
   Bool.not(requests_nothing(Schemas{p, q, h, b, None{}})) || Maybe.is_some(&2, SP.Checked, r)
 
+# Whether a validator's Probe answer says it decodes.
+def enabled(a: Answer) -> Bool:
+  match a:
+    case Enabled{on}: on
+    case _: False{}
+
+# BND-96: whether the request step must run for a route's schemas. With a
+# decoder, only the params, query, headers and body slots check a request, so
+# a route with just a response schema is admitted unchanged (law
+# request_free_route_is_admitted_run). Without one, any declared schema, a
+# response schema included, runs the step so it can refuse the route (law
+# request_free_route_is_admitted_skip).
+def checks_request(decodes: Bool, set: Schemas) -> Bool:
+  match decodes:
+    case True{}: Bool.not(requests_nothing(set))
+    case False{}: declares(set)
+
 # Without a decoder, a route that declares any schema, a response schema
 # included, is rejected before its handler runs.
 def skip(job: Job) -> Answer:

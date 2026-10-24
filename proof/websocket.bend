@@ -15,6 +15,7 @@ import ./origin.bend as OriginProof
 import ../src/http/text.bend as T
 import ./text.bend as TP
 import ./bytes-tail.bend as BT
+import ./stream-marker.bend as SM
 import ./parse-tail.bend as PT
 import ./fold-tail.bend as FoldTail
 import ./misc-tail.bend as MiscTail
@@ -354,7 +355,10 @@ def middleware_step(+h: Request.Header, +tail: List<&2, Request.Header>, +marker
 
 # The spec folds names with String.to_lower; Bytes.fold is equal to it (BND-84).
 def allowed_fold(+name: String, +value: List<&2, U32>) -> {Spec.middleware_allowed(name) == Stream.keep(Request.Header{name, value}) && W.kept(Request.Header{name, value}) : Bool}:
-  Equal.cong(String, Bool, n => Bool.not(String.eq(n, "x-bendo-stream-internal")) && Bool.not((String.eq(n, "content-length") || String.eq(n, "transfer-encoding")) || (String.eq(n, "upgrade") || String.eq(n, "connection") || String.eq(n, "sec-websocket-accept") || String.eq(n, "sec-websocket-protocol") || String.eq(n, "sec-websocket-extensions") || String.eq(n, "sec-websocket-version"))), String.to_lower(name), Bytes.fold(name), Equal.sym(String, Bytes.fold(name), String.to_lower(name), BT.fold_equiv(name)))
+  Equal.trans(Bool, Spec.middleware_allowed(name), Bool.not(Stream.named_spec(name)) && W.kept(Request.Header{name, value}), Stream.keep(Request.Header{name, value}) && W.kept(Request.Header{name, value}),
+    Equal.cong(String, Bool, n => Bool.not(String.eq(n, "x-bendo-stream-internal")) && Bool.not((String.eq(n, "content-length") || String.eq(n, "transfer-encoding")) || (String.eq(n, "upgrade") || String.eq(n, "connection") || String.eq(n, "sec-websocket-accept") || String.eq(n, "sec-websocket-protocol") || String.eq(n, "sec-websocket-extensions") || String.eq(n, "sec-websocket-version"))), String.to_lower(name), Bytes.fold(name), Equal.sym(String, Bytes.fold(name), String.to_lower(name), BT.fold_equiv(name))),
+    # BND-96: Stream.keep tests the name with the fused Stream.named.
+    Equal.cong(Bool, Bool, z => Bool.not(z) && W.kept(Request.Header{name, value}), Stream.named_spec(name), Stream.named(name), Equal.sym(Bool, Stream.named(name), Stream.named_spec(name), SM.named_equiv(name))))
 
 def middleware_fields(+hs: List<&2, Request.Header>) -> {Spec.middleware_fields(hs) == List.filter(~Request.Header, ~W.kept, List.filter(~Request.Header, ~Stream.keep, hs)) : List<&2, Request.Header>}:
   match hs:
