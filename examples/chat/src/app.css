@@ -18,7 +18,10 @@
   --rail-ink: #f1f2f4;
   --rail-ink-2: #a3a9b4;
   --rail-line: #2c3038;
-  --accent: #d9480f;
+  /* 5.3:1 on white and 4.7:1 on --accent-soft; text on the dark rail uses
+     --rail-accent instead. */
+  --accent: #bf3f0b;
+  --rail-accent: #ff7a45;
   --accent-ink: #ffffff;
   --accent-soft: #fdeee6;
   --live: #2b8a3e;
@@ -964,4 +967,10 @@ textarea {
     animation: none !important;
     transition: none !important;
   }
+}
+
+/* Accent text on the charcoal rail: 6.8:1 there, where --accent is 3.3:1. */
+.rail .you,
+.rail .hash {
+  color: var(--rail-accent);
 }
