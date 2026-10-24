@@ -68,3 +68,5 @@ lines.push(" match c:");
 lines.push("  case Chr{U32{w0}}:");
 trie(0, matched, 3);
 process.stdout.write(header + lines.join("\n") + "\n");
+
+export {};

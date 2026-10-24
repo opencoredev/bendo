@@ -243,3 +243,5 @@ emit(`def percent(+xs: ${L}) -> {Url.percent_decode(xs, False{}) == Spec.unperce
   Equal.trans(${R}, Url.percent_decode(xs, False{}), prepend([], Spec.unpercent(xs)), Spec.unpercent(xs), equiv(xs, []), prepend_nil(Spec.unpercent(xs)))`);
 
 process.stdout.write(lines.join("\n") + "\n");
+
+export {};
