@@ -10,13 +10,15 @@ export type Status =
  * `next` is the first seq the welcome snapshot left out, or null before this
  * socket's welcome. Lines below it are already counted in `people`. Until the
  * welcome, live lines wait in `early` and `lines` still shows what the last
- * socket saw, so a reconnect doesn't blank the room.
+ * socket saw, so a reconnect doesn't blank the room. `truncated` is true when
+ * the welcome left out older lines to fit in one frame.
  */
 export type ChatState = {
   status: Status;
   you: number | null;
   next: number | null;
   lines: Line[];
+  truncated: boolean;
   early: Line[];
   people: Person[];
   counts: ReadonlyMap<string, number>;
@@ -35,6 +37,7 @@ const initial: ChatState = {
   you: null,
   next: null,
   lines: [],
+  truncated: false,
   early: [],
   people: [],
   counts: new Map(),
@@ -89,6 +92,7 @@ function apply(state: ChatState, room: RoomId, event: ServerEvent): ChatState {
         you: event.you,
         next: event.next,
         lines,
+        truncated: event.truncated,
         early: [],
         people: roster(event.people, lines, event.next),
         counts: new Map(event.rooms.map((r) => [r.id, r.online])),

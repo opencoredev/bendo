@@ -232,7 +232,13 @@ function Chat({ name, room, onRename }: { name: string; room: RoomId; onRename: 
             </button>
           </section>
         )}
-        <Transcript lines={state.lines} you={state.you} room={room} ready={live} />
+        <Transcript
+          lines={state.lines}
+          you={state.you}
+          room={room}
+          ready={live}
+          truncated={state.truncated}
+        />
         <div className="notice-slot" role="status">
           {state.notice !== null && <p className="toast">{state.notice.text}</p>}
         </div>

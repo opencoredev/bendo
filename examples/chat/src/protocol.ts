@@ -28,6 +28,8 @@ export type ServerEvent =
       room: string;
       you: number;
       next: number;
+      /** Older lines were left out so the welcome fits one frame. */
+      truncated: boolean;
       people: Person[];
       history: Line[];
       rooms: RoomCount[];
@@ -56,6 +58,10 @@ function fields(value: unknown): Fields | null {
 
 function text(value: unknown): string | null {
   return typeof value === "string" ? value : null;
+}
+
+function flag(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
 }
 
 function count(value: unknown): number | null {
@@ -128,6 +134,7 @@ export function parseEvent(data: string): ServerEvent | null {
       const room = text(f.get("room"));
       const you = count(f.get("you"));
       const next = count(f.get("next"));
+      const truncated = flag(f.get("truncated"));
       const people = list(f.get("people"), person);
       const history = list(f.get("history"), line);
       const rooms = list(f.get("rooms"), roomCount);
@@ -135,12 +142,13 @@ export function parseEvent(data: string): ServerEvent | null {
         room === null ||
         you === null ||
         next === null ||
+        truncated === null ||
         people === null ||
         history === null ||
         rooms === null
       )
         return null;
-      return { kind: "welcome", room, you, next, people, history, rooms };
+      return { kind: "welcome", room, you, next, truncated, people, history, rooms };
     }
     case "presence": {
       const rooms = list(f.get("rooms"), roomCount);

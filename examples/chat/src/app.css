@@ -644,6 +644,18 @@ textarea {
   margin-bottom: 4px;
 }
 
+/* Shown above the oldest line when the welcome left older ones out. */
+.earlier {
+  margin: auto 24px 0 var(--gutter);
+  padding: 12px 0 4px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.earlier + ol {
+  margin-top: 0;
+}
+
 /* The hint sits just above the room's notices, at the bottom. */
 .empty + ol {
   margin-top: 0;
@@ -938,7 +950,8 @@ textarea {
     opacity: 0.8;
   }
 
-  .day {
+  .day,
+  .earlier {
     margin-right: 16px;
   }
 

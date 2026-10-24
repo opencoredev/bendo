@@ -41,14 +41,37 @@ def publish(hub: P.Hub, topic: String, text: String) -> IO(Unit):
     got : Result<&2, &2, Store.Error, P.Delivery> <- P.publish(hub, topic, text)
     return Unit{}
 
-# Tells the client why, then closes with 1011. The seat keeps ID 0, so its
-# close records nothing.
+# Tells the client why, then closes with 1011. A seat with ID 0 never
+# entered the lobby, so its close records nothing.
 def refuse(+peer: P.Peer, seat: Seat, reason: String) -> IO(Seat):
   do IO<Seat>:
     told : Bool <- W.text(P.handle(peer), Chat.error(reason))
     closing : Bool <- W.close(P.handle(peer), 1011, "unavailable")
     return seat
 
+# None once the welcome is queued, or why it could not be.
+def offered(sent: Bool) -> Maybe<&2, String>:
+  match sent:
+    case True{}: None{}
+    case False{}: Some{"Could not send the room. Try again."}
+
+def offer(welcome: Maybe<&2, String>, +peer: P.Peer) -> IO(Maybe<&2, String>):
+  match welcome:
+    case None{}: IO.pure(Maybe<&2, String>, Some{"This room is full. Try another room."})
+    case Some{text}:
+      do IO<Maybe<&2, String>>:
+        sent : Bool <- W.text(P.handle(peer), text)
+        return offered(sent)
+
+# The seat keeps its ID even when the welcome failed: the connection is in
+# the lobby, so its close records the departure.
+def greeted(problem: Maybe<&2, String>, +peer: P.Peer, seat: Seat) -> IO(Seat):
+  match problem:
+    case None{}: IO.pure(Seat, seat)
+    case Some{reason}: refuse(peer, seat, reason)
+
+# The welcome goes first, so no presence frame reaches the newcomer before
+# the snapshot its counts would overwrite.
 def welcomed(got: Result<&2, &2, Store.Error, Chat.Lobby>, +peer: P.Peer, room: String, name: String, env: Env) -> IO(Seat):
   match got:
     case Fail{e}: refuse(peer, Seat{room, name, 0n, env}, "The chat is busy. Try again.")
@@ -56,10 +79,10 @@ def welcomed(got: Result<&2, &2, Store.Error, Chat.Lobby>, +peer: P.Peer, room: 
       Env{+hub, store} = env
       +r = room
       do IO<Seat>:
-        sent : Bool <- W.text(P.handle(peer), Chat.welcome(lobby, r, P.id(peer)))
+        problem : Maybe<&2, String> <- offer(Chat.welcome(lobby, r, P.id(peer)), peer)
         others : Result<&2, &2, Store.Error, P.Delivery> <- P.publish_others(peer, r, Chat.newest(lobby))
         publish(hub, presence_topic(), Chat.presence(lobby))
-        return Seat{r, name, P.id(peer), Env{hub, store}}
+        greeted(problem, peer, Seat{r, name, P.id(peer), Env{hub, store}})
 
 def entered(+peer: P.Peer, +room: String, +name: String, env: Env) -> IO(Seat):
   Env{hub, +store} = env
@@ -150,11 +173,11 @@ def closed(seat: Seat, code: U32, reason: String) -> IO(Unit):
   leave(id, room, name, env)
 
 # Fields: max_message, mailbox_capacity, poll_ms, poll_max_ms, idle_ms,
-# ping_ms, close_ms, write_ms. A message is at most 2000 characters, so 16 KiB
-# covers any UTF-8 spelling of one. Pings every 20 s keep an open tab inside
+# ping_ms, close_ms, write_ms. Chat.frame_limit() bounds frames both ways,
+# and the welcome is cut to fit it. Pings every 20 s keep an open tab inside
 # the 60 s idle limit; browsers answer them on their own.
 def session() -> W.Config:
-  W.Config{16384, 64, 10, 100, 60000, 20000, 1000, 30000}
+  W.Config{Chat.frame_limit(), 64, 10, 100, 60000, 20000, 1000, 30000}
 
 def socket(known: Bool, name: Maybe<&2, String>, +c: B.Ctx, env: Env, room: String) -> IO(B.Res):
   match known name:

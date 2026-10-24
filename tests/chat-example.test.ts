@@ -29,10 +29,13 @@ type Waiter = { match: (e: ServerEvent) => boolean; resolve: (e: ServerEvent) =>
 /** A Bun WebSocket that records every event and lets a test wait for the next one it cares about. */
 class Client {
   readonly events: ServerEvent[] = [];
+  /** Every text frame as it arrived, for checking sizes. */
+  readonly frames: string[] = [];
   private waiters: Waiter[] = [];
   private closed: Promise<void>;
   private constructor(readonly ws: WebSocket) {
     ws.onmessage = (message) => {
+      this.frames.push(String(message.data));
       const event = parseEvent(String(message.data));
       if (event === null) throw new Error(`unparsed frame: ${String(message.data)}`);
       this.events.push(event);
@@ -137,6 +140,29 @@ async function countsBecome(expected: Record<string, number>): Promise<void> {
 }
 
 const EMPTY = { general: 0, random: 0, bend: 0 };
+
+/** The server's frame limit (Chat.frame_limit), which bounds every frame it sends. */
+const FRAME_LIMIT = 16384;
+
+const bytes = (text: string) => Buffer.byteLength(text, "utf8");
+
+/** A line as the server spells it in JSON, fields in its order. */
+function wire(line: Line): string {
+  const { kind, seq, room, id, name, at } = line;
+  const head = { type: kind, seq, room, id, name, at };
+  return JSON.stringify(line.kind === "said" ? { ...head, text: line.text } : head);
+}
+
+/**
+ * A 2000-character message that is heavy on the wire: quotes, backslashes and
+ * tabs escape to two bytes, and emoji take four bytes of UTF-8. It ends in a
+ * period, so trimming leaves it whole.
+ */
+function heavy(i: number, unit: string): string {
+  const tag = `#${i} `;
+  const body = [...unit.repeat(2000)].slice(0, 2000 - tag.length - 1).join("");
+  return `${tag}${body}.`;
+}
 
 describe("HTTP", () => {
   test("lists the rooms with nobody in them", async () => {
@@ -260,6 +286,7 @@ describe("history and presence", () => {
     const grace = await Client.open("general", "Grace");
     const welcome = await grace.welcome();
     const said = welcome.history.filter((l) => l.kind === "said");
+    expect(welcome.truncated).toBe(false);
     expect(said.at(-1)).toMatchObject({ text: "before you came", name: "Ada" });
     expect(welcome.history.every((l) => l.room === "general")).toBe(true);
     expect(welcome.history.every((l) => l.seq < welcome.next)).toBe(true);
@@ -283,6 +310,65 @@ describe("history and presence", () => {
     expect(history.at(-2)).toMatchObject({ kind: "said", text: "n105" });
     await Promise.all([ada.close(), late.close()]);
     await countsBecome(EMPTY);
+  });
+
+  /**
+   * Fills `room` with `count` heavy messages from Ada, then checks that a
+   * newcomer's welcome fits one frame, holds the newest lines that fit and no
+   * gap, says older lines were left out, and that the newcomer goes live.
+   */
+  async function welcomeFits(room: string, count: number, unit: string): Promise<void> {
+    const ada = await Client.open(room, "Ada");
+    await ada.welcome();
+    const sent: string[] = [];
+    for (let i = 1; i <= count; i++) {
+      const text = heavy(i, unit);
+      expect([...text]).toHaveLength(2000);
+      ada.ws.send(text);
+      await ada.said(text);
+      sent.push(text);
+    }
+
+    const late = await Client.open(room, "Late");
+    const welcome = await late.welcome();
+    const frame = late.frames.find((f) => parseEvent(f)?.kind === "welcome") ?? "";
+    expect(bytes(frame)).toBeLessThanOrEqual(FRAME_LIMIT);
+    expect(welcome.truncated).toBe(true);
+    expect(welcome.people.map((p) => p.name).sort()).toEqual(["Ada", "Late"]);
+
+    // The newest lines, oldest first, with no gap: Ada's last messages, then
+    // Late's arrival.
+    const history = welcome.history;
+    expect(history.at(-1)).toMatchObject({ kind: "joined", name: "Late", id: welcome.you });
+    const said = history.flatMap((l) => (l.kind === "said" ? [l.text] : []));
+    expect(said.length).toBeGreaterThan(0);
+    expect(said).toEqual(sent.slice(-said.length));
+    expect(history.map((l) => l.seq)).toEqual(
+      Array.from({ length: history.length }, (_, i) => (history[0]?.seq ?? 0) + i),
+    );
+
+    // The line just before the history would not have fit. The server
+    // budgets with "truncated":false (one byte more) and a comma per line.
+    const first = history[0]?.seq ?? 0;
+    const older = ada.lines().filter((l) => l.seq === first - 1)[0];
+    if (older === undefined) throw new Error("no older line at Ada");
+    expect(bytes(frame) + 2 + bytes(wire(older)) + 1).toBeGreaterThan(FRAME_LIMIT);
+
+    // Late is live: a new line reaches both.
+    ada.ws.send("still here");
+    await late.said("still here");
+    expect(late.ws.readyState).toBe(WebSocket.OPEN);
+    await Promise.all([ada.close(), late.close()]);
+    await countsBecome(EMPTY);
+  }
+
+  test("a welcome fits one frame after many long messages", async () => {
+    // Nine 2000-character messages used to push the welcome past the limit.
+    await welcomeFits("general", 12, '"\\😀é\t');
+  });
+
+  test("a welcome fits one frame with the history at its cap", async () => {
+    await welcomeFits("random", 100, "😀");
   });
 
   test("a close is announced and updates every connection's room counts", async () => {

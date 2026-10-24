@@ -105,11 +105,13 @@ export function Transcript({
   you,
   room,
   ready,
+  truncated,
 }: {
   lines: Line[];
   you: number | null;
   room: string;
   ready: boolean;
+  truncated: boolean;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   const stuck = useRef(true);
@@ -169,6 +171,7 @@ export function Transcript({
             <p>Messages show up here for everyone in the room as soon as they're sent.</p>
           </div>
         )}
+        {truncated && <p className="earlier">Earlier messages not shown</p>}
         <ol aria-label={`Messages in #${room}`} aria-live="polite" aria-relevant="additions">
           {items}
         </ol>

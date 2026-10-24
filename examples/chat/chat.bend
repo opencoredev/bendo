@@ -236,12 +236,70 @@ def rooms_json(lobby: Lobby) -> J.Json:
 def presence(lobby: Lobby) -> String:
   encode(J.JObject{[field("type", str("presence")), field("rooms", counts(lobby))]})
 
+# The largest frame the server sends or accepts, in bytes (session() in
+# main.bend). A message is at most 2000 characters, so 16 KiB covers any
+# UTF-8 spelling of one, quotes and backslashes escaped.
+def frame_limit() -> U32:
+  16384
+
+def width(one: Bool, two: Bool, three: Bool) -> U32:
+  match one two three:
+    case True{} _ _: 1
+    case False{} True{} _: 2
+    case False{} False{} True{}: 3
+    case False{} False{} False{}: 4
+
+def char_bytes(+c: U32) -> U32:
+  width((c < 128 : U32), (c < 2048 : U32), (c < 65536 : U32))
+
+# The UTF-8 length of `s`, plus `n`. Encoded JSON holds no surrogates (the
+# writer refuses them), so every char is one scalar.
+def utf8_bytes(s: String, n: U32) -> U32:
+  match s:
+    case SNil{}: n
+    case SCon{Chr{c}, t}: utf8_bytes(t, (n + char_bytes(c) : U32))
+
+# A line's bytes in the welcome's history, with the comma before it.
+def line_cost(line: Line) -> U32:
+  utf8_bytes(encode(line_json(line)), 1)
+
+def left(fits: Bool, budget: U32, cost: U32) -> U32:
+  match fits:
+    case True{}: (budget - cost : U32)
+    case False{}: 0
+
+# Takes lines, newest first, while their bytes fit the budget, and returns
+# them oldest first. The first line that does not fit spends the budget, so
+# no older line is taken and the history has no gaps.
+def fit(lines: List<&2, Line>, budget: U32, acc: List<&2, Line>) -> List<&2, Line>:
+  match lines:
+    case Nil{}: acc
+    case +line <> rest:
+      +cost = line_cost(line)
+      +b = budget
+      +fits = (cost <= b : U32)
+      fit(rest, left(fits, b, cost), add_line(line, fits, acc))
+
+def shape(+room: String, id: Nat, next: Nat, +people: List<&2, Person>, history: List<&2, Line>, truncated: Bool) -> J.Json:
+  J.JObject{[field("type", str("welcome")), field("room", str(room)), field("you", num(id)), field("next", num(next)), field("truncated", J.JBool{truncated}), field("people", J.JArray{people_json(room_people(people, room))}), field("history", J.JArray{lines_json(history)}), field("rooms", J.JArray{counts_json(rooms(), people)})]}
+
+def fitted(fits: Bool, +room: String, id: Nat, next: Nat, +people: List<&2, Person>, +lines: List<&2, Line>, base: U32) -> Maybe<&2, String>:
+  match fits:
+    case False{}: None{}
+    case True{}:
+      +kept = fit(lines, (frame_limit() - base : U32), [])
+      Some{encode(shape(room, id, next, people, kept, Nat.is_lt(List.length(&2, Line, kept), List.length(&2, Line, lines))))}
+
 # The first frame a connection gets: who it is, who is in the room, the
 # room's history, the room counts, and `next`, the first seq the snapshot
-# does not include.
-def welcome(lobby: Lobby, +room: String, id: Nat) -> String:
-  Lobby{next, lines, +people} = lobby
-  encode(J.JObject{[field("type", str("welcome")), field("room", str(room)), field("you", num(id)), field("next", num(next)), field("people", J.JArray{people_json(room_people(people, room))}), field("history", J.JArray{lines_json(room_lines(lines, room, []))}), field("rooms", J.JArray{counts_json(rooms(), people)})]})
+# does not include. The history is the room's newest lines that fit in
+# frame_limit() bytes; `truncated` says older ones were left out. None if the
+# rest of the welcome alone is too big, which takes well over a hundred
+# people in the room.
+def welcome(lobby: Lobby, +room: String, +id: Nat) -> Maybe<&2, String>:
+  Lobby{+next, lines, +people} = lobby
+  +base = utf8_bytes(encode(shape(room, id, next, people, [], False{})), 0)
+  fitted((base <= frame_limit() : U32), room, id, next, people, List.reverse(&2, Line, room_lines(lines, room, [])), base)
 
 def head_text(lines: List<&2, Line>) -> String:
   match lines:

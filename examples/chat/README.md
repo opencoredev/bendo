@@ -4,7 +4,8 @@ Chat rooms on Bendo's [WebSocket publish and subscribe](../../docs/websocket-pub
 with a small React client on Vite. Each room is a topic on one `P.Hub`. A
 message goes to everyone in its room, the sender included, and to no other
 room. People see who joins and leaves, who is in the room now, and how many
-people are in every room. A newcomer gets the room's last 100 lines.
+people are in every room. A newcomer gets the room's last 100 lines, or as
+many of the newest as fit in one 16 KiB frame.
 
 ## Run it
 
@@ -73,7 +74,7 @@ The server sends JSON text frames. `type` says which:
 
 | `type` | Fields | When |
 | --- | --- | --- |
-| `welcome` | `room`, `you` (this connection's ID), `next`, `people`, `history`, `rooms` | First, to the new connection |
+| `welcome` | `room`, `you` (this connection's ID), `next`, `truncated`, `people`, `history`, `rooms` | First, to the new connection |
 | `said` | `seq`, `room`, `id`, `name`, `at`, `text` | Someone in the room sent a message |
 | `joined`, `left` | `seq`, `room`, `id`, `name`, `at` | Someone entered or left the room |
 | `presence` | `rooms` | Anyone entered or left any room |
@@ -83,6 +84,14 @@ The server sends JSON text frames. `type` says which:
 welcome's `history` and `people` leave out: a `joined` or `left` line below it
 is already reflected in `people`. `rooms` is `[{"id", "online"}]` for every
 room. `GET /api/rooms` returns the same list as `{"rooms": [...]}`.
+
+Every frame the server sends or accepts is at most 16 KiB. One message fits
+with room to spare, but a hundred long ones do not, so the welcome's `history`
+holds the room's newest lines that fit, with no gaps. `truncated` is `true`
+when older lines were left out, and the app then shows "Earlier messages not
+shown" above them. If even an empty history would not fit, which takes well
+over a hundred people in one room, the server sends an `error` and closes the
+connection with 1011.
 
 There are no accounts. Anyone who can reach the server can pick any name, and
 two people can share one. The server accepts any `Origin`, which is safe only
@@ -98,5 +107,7 @@ The tests compile the server and connect real Bun WebSocket clients. They
 check that a message reaches everyone in its room once, in order, and no other
 room; that bad names, rooms and messages are refused; that a newcomer gets the
 history and the people list; that history stops at 100 lines per room; that
+the welcome fits one frame, keeping the newest lines, however long the
+messages; that
 departures are announced, including a dropped TCP connection; and that the
 React app builds and typechecks.
