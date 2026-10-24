@@ -3,6 +3,8 @@ import Base
 import ./proof/limits.bend as LimitsProof
 import ./proof/manifest.bend as ManifestProof
 import ./proof/manifest-built.bend as ManifestBuiltProof
+import ./proof/manifest-schema.bend as ManifestSchemaProof
+import ./proof/json-schema.bend as JsonSchemaProof
 import ./proof/compose.bend as ComposeProof
 import ./proof/plugin.bend as PluginProof
 
@@ -646,6 +648,24 @@ def Laws.manifest_exact_routes(Tag, sources, compiled, layers, count):
   ManifestProof.describe(Tag, sources, Methods.raw(Tag, Methods.index_valid(Tag, compiled)))
 def Laws.manifest_built_routes(Tag, entries, table, built):
   ManifestBuiltProof.built_rows(Tag, entries, table, built)
+
+# BND-37
+def Laws.manifest_schema_rows(Tag, sources, compiled, layers, count, schemas, attached, done):
+  ManifestSchemaProof.attached_rows(Tag, sources, compiled, layers, count, schemas, attached, done)
+def Laws.manifest_schema_positions(Tag, sources, compiled, layers, count, schemas, attached, done):
+  ManifestSchemaProof.attached_schemas(Tag, sources, compiled, layers, count, schemas, attached, done)
+def Laws.manifest_schema_accepted(Tag, sources, compiled, layers, count, schemas):
+  ManifestSchemaProof.accepted(Tag, sources, compiled, layers, count, schemas)
+def Laws.json_schema_invalid_rejects_all(schema, bad): JsonSchemaProof.invalid_rejects_all(schema, bad)
+def Laws.json_schema_valid_exports_node(schema, ok): JsonSchemaProof.valid_export(schema, ok)
+def Laws.json_schema_type_keyword(schema): JsonSchemaProof.type_keyword(schema)
+def Laws.json_schema_required_keys(fields, unknown): JsonSchemaProof.required_keys(fields, unknown)
+def Laws.json_schema_unknown_keys(fields, unknown): JsonSchemaProof.unknown_keys(fields, unknown)
+def Laws.json_schema_string_pattern(min, max, pattern, format): JsonSchemaProof.string_pattern(min, max, pattern, format)
+def Laws.json_schema_string_max_length(min, max, pattern, format): JsonSchemaProof.string_lengths(min, max, pattern, format)
+def Laws.json_schema_string_wellformed(min, max, pattern, format): JsonSchemaProof.string_wellformed(min, max, pattern, format)
+def Laws.json_schema_empty_enum(): {==}
+def Laws.json_schema_empty_union(): {==}
 
 
 def Laws.stream_roundtrip(chunks, limit, suffix, valid):

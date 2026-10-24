@@ -9,6 +9,12 @@ import ./proof/limits-spec.bend as LimitsSpec
 import ./src/app/manifest.bend as Manifest
 import ./proof/manifest-spec.bend as ManifestSpec
 import ./proof/manifest-built-spec.bend as ManifestBuiltSpec
+import ./src/app/route-schemas.bend as RouteSchemas
+import ./src/app/manifest-schemas.bend as ManifestSchemas
+import ./proof/manifest-schema-spec.bend as ManifestSchemaSpec
+import ./src/data/json-schema.bend as JsonSchema
+import ./proof/json-schema-spec.bend as JsonSchemaSpec
+import ./src/data/schema-pattern.bend as SchemaPattern
 import ./proof/compose-laws.bend as ComposeLaws
 import ./proof/plugin-laws.bend as PluginLaws
 
@@ -1642,6 +1648,110 @@ law manifest_built_routes:
   for built: {Table.build(Tag, entries) == Done{table} : Result<&2, &2, Methods.BuildError, Table.Table<Tag>>}
   {Manifest.rows(Tag, table) == ManifestBuiltSpec.enumerate(Tag, entries) : List<&2, Manifest.Row>}
 
+
+# BND-37: route schemas never change the manifest's rows. A successful
+# attachment lists exactly the version-1 rows of the specification, in
+# registration order with duplicates, so schemas are purely additive.
+law manifest_schema_rows:
+  for -Tag: Data
+  for +sources: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Index<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
+  for +schemas: List<&2, RouteSchemas.RouteSchemas>
+  for +attached: List<&2, ManifestSchemas.Attached>
+  for done: {ManifestSchemas.attach(Tag, Table.Table{sources, compiled, layers, count}, schemas) == Done{attached} : Result<&2, &2, ManifestSchemas.AttachError, List<&2, ManifestSchemas.Attached>>}
+  {ManifestSchemas.attached_rows(attached) == ManifestSpec.describe(Tag, sources, Methods.raw(Tag, Methods.index_valid(Tag, compiled))) : List<&2, Manifest.Row>}
+
+# Schemas are positional: entry i belongs to registration i and appears on
+# every row that registration prints (one per method), so duplicate
+# registrations keep their own schemas.
+law manifest_schema_positions:
+  for -Tag: Data
+  for +sources: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Index<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
+  for +schemas: List<&2, RouteSchemas.RouteSchemas>
+  for +attached: List<&2, ManifestSchemas.Attached>
+  for done: {ManifestSchemas.attach(Tag, Table.Table{sources, compiled, layers, count}, schemas) == Done{attached} : Result<&2, &2, ManifestSchemas.AttachError, List<&2, ManifestSchemas.Attached>>}
+  {ManifestSchemas.attached_schemas(attached) == ManifestSchemaSpec.spread(Tag, sources, Methods.raw(Tag, Methods.index_valid(Tag, compiled)), schemas) : List<&2, RouteSchemas.RouteSchemas>}
+
+# Attachment succeeds exactly when there is one entry per registration and
+# every slot that is set holds a valid schema.
+law manifest_schema_accepted:
+  for -Tag: Data
+  for +sources: List<&2, Methods.Registration(Tag)>
+  for +compiled: Methods.Index<Tag>
+  for +layers: List<&2, Table.Middleware<Tag>>
+  for +count: Nat
+  for +schemas: List<&2, RouteSchemas.RouteSchemas>
+  {ManifestSchemaSpec.accepted(ManifestSchemas.attach(Tag, Table.Table{sources, compiled, layers, count}, schemas)) == (Nat.is_eq(List.length(&2, Methods.Registration(Tag), sources), List.length(&2, RouteSchemas.RouteSchemas, schemas)) && ManifestSchemaSpec.all_valid(schemas)) : Bool}
+
+# BND-37: the decoder rejects every input for an invalid schema, so its JSON
+# Schema is `not: {}`, which accepts nothing.
+law json_schema_invalid_rejects_all:
+  for +schema: Schema.Schema
+  for bad: {Schema.valid(schema) == False{} : Bool}
+  {JsonSchemaSpec.keyword(JsonSchema.export(schema), "not") == Some{Json.JObject{[]}} : Maybe<&2, Json.Json>}
+
+# A valid schema exports its node, the same function that exports every
+# child, so the node laws below hold at every depth of an export.
+law json_schema_valid_exports_node:
+  for +schema: Schema.Schema
+  for ok: {Schema.valid(schema) == True{} : Bool}
+  {JsonSchema.export(schema) == JsonSchema.go(schema, JsonSchema.start(schema)) : Json.Json}
+
+# Every node's "type" names the JSON type its kind requires; literal, enum,
+# nullable and union nodes have none.
+law json_schema_type_keyword:
+  for +schema: Schema.Schema
+  {JsonSchemaSpec.keyword(JsonSchema.go(schema, JsonSchema.start(schema)), "type") == JsonSchemaSpec.type_of(schema) : Maybe<&2, Json.Json>}
+
+# An object requires exactly its Required keys, in order: optional and
+# defaulted fields are never required.
+law json_schema_required_keys:
+  for +fields: List<&2, Schema.Field>
+  for +unknown: Schema.Unknown
+  {JsonSchemaSpec.keyword(JsonSchema.go(Schema.ObjectSchema{fields, unknown}, JsonSchema.start(Schema.ObjectSchema{fields, unknown})), "required") == Some{Json.JArray{JsonSchemaSpec.required(fields)}} : Maybe<&2, Json.Json>}
+
+# Strict objects export additionalProperties false; Strip objects true.
+law json_schema_unknown_keys:
+  for +fields: List<&2, Schema.Field>
+  for +unknown: Schema.Unknown
+  {JsonSchemaSpec.keyword(JsonSchema.go(Schema.ObjectSchema{fields, unknown}, JsonSchema.start(Schema.ObjectSchema{fields, unknown})), "additionalProperties") == Some{Json.JBool{JsonSchemaSpec.allows_unknown(unknown)}} : Maybe<&2, Json.Json>}
+
+# A string's top-level pattern is the ECMAScript source of its own pattern,
+# absent without one, and maxLength is its upper bound, absent without one.
+law json_schema_string_pattern:
+  for +min: Nat
+  for +max: Maybe<&2, Nat>
+  for +pattern: Maybe<&2, SchemaPattern.Pattern>
+  for +format: Schema.Format
+  {JsonSchemaSpec.keyword(JsonSchema.go(Schema.StringSchema{min, max, pattern, format}, JsonSchema.start(Schema.StringSchema{min, max, pattern, format})), "pattern") == JsonSchemaSpec.pattern_of(pattern) : Maybe<&2, Json.Json>}
+
+law json_schema_string_max_length:
+  for +min: Nat
+  for +max: Maybe<&2, Nat>
+  for +pattern: Maybe<&2, SchemaPattern.Pattern>
+  for +format: Schema.Format
+  {JsonSchemaSpec.keyword(JsonSchema.go(Schema.StringSchema{min, max, pattern, format}, JsonSchema.start(Schema.StringSchema{min, max, pattern, format})), "maxLength") == JsonSchemaSpec.upper_of(max) : Maybe<&2, Json.Json>}
+
+# Every string node rejects lone surrogates, which the decoder never accepts.
+law json_schema_string_wellformed:
+  for +min: Nat
+  for +max: Maybe<&2, Nat>
+  for +pattern: Maybe<&2, SchemaPattern.Pattern>
+  for +format: Schema.Format
+  {JsonSchemaSpec.keyword(JsonSchema.go(Schema.StringSchema{min, max, pattern, format}, JsonSchema.start(Schema.StringSchema{min, max, pattern, format})), "not") == Some{Json.JObject{[Json.Field{"pattern", Json.JString{JsonSchema.lone()}}]}} : Maybe<&2, Json.Json>}
+
+# Empty enums and unions accept nothing, as an always-false schema rather
+# than the invalid `enum: []` or `anyOf: []`.
+law json_schema_empty_enum:
+  {JsonSchema.go(Schema.EnumSchema{[]}, JsonSchema.start(Schema.EnumSchema{[]})) == Json.JObject{[Json.Field{"not", Json.JObject{[]}}]} : Json.Json}
+
+law json_schema_empty_union:
+  {JsonSchema.go(Schema.UnionSchema{[]}, JsonSchema.start(Schema.UnionSchema{[]})) == Json.JObject{[Json.Field{"not", Json.JObject{[]}}]} : Json.Json}
 
 # BND-48: incremental writes use the existing proven chunked framing, over
 # every admissible partition (including empty chunks), with suffix preservation.
