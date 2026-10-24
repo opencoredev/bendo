@@ -17,6 +17,24 @@ bend examples/hello/main.bend -o hello && ./hello
 curl http://127.0.0.1:8787/todos/42
 ```
 
+## Start an app
+
+`create-bendo` writes an API-only app or a fullstack React app. Until it is on
+npm, run it from this checkout:
+
+```sh
+bun packages/create-bendo/src/index.ts ../my-app --template fullstack
+```
+
+See [packages/create-bendo](packages/create-bendo/README.md) for the templates.
+
+## Examples
+
+- [`examples/todo`](examples/todo/README.md): a fullstack todo list. A Bend API with validation, a store and CORS, and a React app that uses the typed client, the TanStack Query helpers and the shared validators.
+- [`examples/hello`](examples/hello/main.bend): the smallest app.
+- [`examples/store`](examples/store/main.bend): shared state in a `B.Store`.
+- [`examples/mandelbrot`](examples/mandelbrot/README.md): a handler that renders on every CPU core or the GPU.
+
 ## Develop
 
 ```sh
