@@ -2128,3 +2128,19 @@ law websocket_rebuilt_framing:
   for +accept: String
   for +protocol: Maybe<&2, String>
   {WebSocketSpec.frameless(WebSocketTransport.rebuilt(res, accept, protocol)) == True{} : Bool}
+
+# Every middleware field survives unchanged, in its original order and with
+# duplicates intact, except handshake-owned fields, framing and the marker.
+# The independent spec puts the computed handshake first, with no body or rep.
+law websocket_rebuilt_response:
+  for +res: Response.Res
+  for +accept: String
+  for +protocol: Maybe<&2, String>
+  {WebSocketTransport.rebuilt(res, accept, protocol) == WebSocketSpec.rebuilt(res, accept, protocol) : Response.Res}
+
+# Pure refusal responses are empty; the context layer supplies error bodies.
+law websocket_response_refuse_400:
+  {WebSocket.response(WebSocket.Refuse{400}) == Response.Res{400, [], [], None{}} : Response.Res}
+
+law websocket_response_refuse_403:
+  {WebSocket.response(WebSocket.Refuse{403}) == Response.Res{403, [], [], None{}} : Response.Res}

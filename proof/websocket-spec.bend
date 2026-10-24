@@ -201,3 +201,28 @@ def unframed(hs: List<&2, Request.Header>) -> Bool:
 def frameless(res: Response.Res) -> Bool:
   Response.Res{status, hs, body, rep} = res
   U32.is_eq(status, 101) && List.is_empty(&2, U32, body) && unframed(hs)
+
+# Independent response field contract. Preserve unrelated fields byte for byte,
+# including duplicates and order; remove private metadata, framing, and every
+# handshake-owned field, regardless of ASCII name case.
+def middleware_allowed(name: String) -> Bool:
+  +n = String.to_lower(name)
+  Bool.not(String.eq(n, "x-bendo-stream-internal")) && Bool.not((String.eq(n, "content-length") || String.eq(n, "transfer-encoding")) || (String.eq(n, "upgrade") || String.eq(n, "connection") || String.eq(n, "sec-websocket-accept") || String.eq(n, "sec-websocket-protocol") || String.eq(n, "sec-websocket-extensions") || String.eq(n, "sec-websocket-version")))
+
+def middleware_pick(h: Request.Header, tail: List<&2, Request.Header>, allowed: Bool) -> List<&2, Request.Header>:
+  match allowed:
+    case True{}: h <> tail
+    case False{}: tail
+
+def middleware_fields(hs: List<&2, Request.Header>) -> List<&2, Request.Header>:
+  match hs:
+    case Nil{}: []
+    case Request.Header{+name, value} <> tail:
+      middleware_pick(Request.Header{name, value}, middleware_fields(tail), middleware_allowed(name))
+
+def opening_fields(accept: String, protocol: Maybe<&2, String>) -> List<&2, Request.Header>:
+  Request.Header{"upgrade", Bytes.encode("websocket")} <> (Request.Header{"connection", Bytes.encode("Upgrade")} <> (Request.Header{"sec-websocket-accept", Bytes.encode(accept)} <> protocol_field(protocol)))
+
+def rebuilt(res: Response.Res, accept: String, protocol: Maybe<&2, String>) -> Response.Res:
+  Response.Res{status, hs, body, rep} = res
+  Response.Res{101, List.append(&2, Request.Header, opening_fields(accept, protocol), middleware_fields(hs)), [], None{}}

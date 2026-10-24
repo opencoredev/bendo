@@ -271,3 +271,42 @@ test("echoing an unsafe incoming ID cannot bypass generated request-ID validatio
   expect(retained).toMatch(/^[0-9a-f]{32}$/);
   expect(res.headers.get("x-request-id")).toBe(retained);
 });
+
+for (const path of ["/timeout-outer", "/timeout-inner"]) {
+  test(`logger emits exactly once with the wire status for ${path}`, async () => {
+    const res = await fetch(url + path);
+    expect(res.status).toBe(504);
+    await res.text();
+    const line = await lineFor(path);
+    expect(line).toMatch(new RegExp(`^GET ${path} ${res.status} \\d+ms$`));
+    const duration = / (\d+)ms$/.exec(line);
+    expect(Number(duration?.[1])).toBeGreaterThanOrEqual(30);
+    const deadline = Date.now() + 3000;
+    while (!logs.includes(`late-handler-finished ${path}`) && Date.now() < deadline) {
+      await Bun.sleep(10);
+    }
+    expect(logs).toContain(`late-handler-finished ${path}`);
+    // A further request lets the losing onion resume through its logger.
+    await (await fetch(url + "/")).text();
+    expect(logs.filter((entry) => entry.startsWith(`GET ${path} `))).toEqual([line]);
+  });
+}
+
+test("completed logger layers keep their own onion duration", async () => {
+  const res = await fetch(url + "/duration");
+  expect(res.status).toBe(200);
+  await res.text();
+  const deadline = Date.now() + 3000;
+  let entries: string[] = [];
+  while (Date.now() < deadline) {
+    entries = logs.filter((line) => line.startsWith("GET /duration "));
+    if (entries.length === 2) break;
+    await Bun.sleep(10);
+  }
+  expect(entries).toHaveLength(2);
+  const durations = entries.map((line) => {
+    expect(line).toMatch(/^GET \/duration 200 \d+ms$/);
+    return Number(/ (\d+)ms$/.exec(line)?.[1]);
+  });
+  expect(Math.max(...durations) - Math.min(...durations)).toBeGreaterThanOrEqual(100);
+});

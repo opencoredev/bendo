@@ -303,3 +303,29 @@ def rebuilt_framing(+res: Response.Res, +accept: String, +protocol: Maybe<&2, St
   match res:
     case Response.Res{status, +hs, body, rep}:
       handshake_framing(List.filter(~Request.Header, ~W.kept, List.filter(~Request.Header, ~Stream.keep, hs)), accept, protocol, filtered(List.filter(~Request.Header, ~Stream.keep, hs)))
+
+def middleware_put(+h: Request.Header, +tail: List<&2, Request.Header>, +keep: Bool) -> {Spec.middleware_pick(h, tail, keep) == List.filter.put(Request.Header, h, tail, keep) : List<&2, Request.Header>}:
+  match keep:
+    case False{}: {==}
+    case True{}: {==}
+
+def middleware_step(+h: Request.Header, +tail: List<&2, Request.Header>, +marker: Bool) -> {Spec.middleware_pick(h, List.filter(~Request.Header, ~W.kept, tail), marker && W.kept(h)) == List.filter(~Request.Header, ~W.kept, List.filter.put(Request.Header, h, tail, marker)) : List<&2, Request.Header>}:
+  match marker:
+    case False{}: {==}
+    case True{}: middleware_put(h, List.filter(~Request.Header, ~W.kept, tail), W.kept(h))
+
+def middleware_fields(+hs: List<&2, Request.Header>) -> {Spec.middleware_fields(hs) == List.filter(~Request.Header, ~W.kept, List.filter(~Request.Header, ~Stream.keep, hs)) : List<&2, Request.Header>}:
+  match hs:
+    case Nil{}: {==}
+    case Request.Header{+name, +value} <> +tail:
+      %Equal.sym(List<&2, Request.Header>, Spec.middleware_fields(tail), List.filter(~Request.Header, ~W.kept, List.filter(~Request.Header, ~Stream.keep, tail)), middleware_fields(tail)) : {Spec.middleware_pick(Request.Header{name, value}, _, Spec.middleware_allowed(name)) == List.filter(~Request.Header, ~W.kept, List.filter.put(Request.Header, Request.Header{name, value}, List.filter(~Request.Header, ~Stream.keep, tail), Stream.keep(Request.Header{name, value}))) : List<&2, Request.Header>}
+      middleware_step(Request.Header{name, value}, List.filter(~Request.Header, ~Stream.keep, tail), Stream.keep(Request.Header{name, value}))
+
+def rebuilt_response(+res: Response.Res, +accept: String, +protocol: Maybe<&2, String>) -> {Transport.rebuilt(res, accept, protocol) == Spec.rebuilt(res, accept, protocol) : Response.Res}:
+  match res protocol:
+    case Response.Res{status, +hs, body, rep} None{}:
+      %Equal.sym(List<&2, Request.Header>, Spec.middleware_fields(hs), List.filter(~Request.Header, ~W.kept, List.filter(~Request.Header, ~Stream.keep, hs)), middleware_fields(hs)) : {Transport.rebuilt(Response.Res{status, hs, body, rep}, accept, None{}) == Response.Res{101, List.append(&2, Request.Header, Spec.opening_fields(accept, None{}), _), [], None{}} : Response.Res}
+      {==}
+    case Response.Res{status, +hs, body, rep} Some{p}:
+      %Equal.sym(List<&2, Request.Header>, Spec.middleware_fields(hs), List.filter(~Request.Header, ~W.kept, List.filter(~Request.Header, ~Stream.keep, hs)), middleware_fields(hs)) : {Transport.rebuilt(Response.Res{status, hs, body, rep}, accept, Some{p}) == Response.Res{101, List.append(&2, Request.Header, Spec.opening_fields(accept, Some{p}), _), [], None{}} : Response.Res}
+      {==}

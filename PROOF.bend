@@ -817,3 +817,12 @@ def Laws.websocket_response_success(key, protocol):
 
 def Laws.websocket_rebuilt_framing(res, accept, protocol):
   WebSocketProof.rebuilt_framing(res, accept, protocol)
+
+def Laws.websocket_rebuilt_response(res, accept, protocol):
+  WebSocketProof.rebuilt_response(res, accept, protocol)
+
+def Laws.websocket_response_refuse_400():
+  {==}
+
+def Laws.websocket_response_refuse_403():
+  {==}

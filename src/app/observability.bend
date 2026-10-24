@@ -14,7 +14,7 @@ type Mark is Data:
   Mark{name: String, duration_ms: Nat}
 
 type Access is Data:
-  Access{prefix: String, elapsed: Nat, fallback: Maybe<&2, String>}
+  Access{index: Nat, prefix: String, started: Nat, elapsed: Maybe<&2, Nat>, fallback: Maybe<&2, String>}
 
 type State is Data:
   State{id: Maybe<&2, String>, timing: Maybe<&2, Store.Store<List<&2, Mark>>>, finalized: Maybe<&2, Chan(Maybe<&2, String>)>, policies: Maybe<&2, Chan(List<&2, Policy.Policy>)>, stream: Maybe<&2, Chan(StreamTypes.Registration)>, peer: Maybe<&2, Conn.ConnInfo>, access: Maybe<&2, Chan(List<&2, Access>)>}
