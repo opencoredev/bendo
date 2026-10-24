@@ -64,9 +64,10 @@ See [accept a WebSocket upgrade](../websocket.md).
 
 These laws cover the frame encoder and the whole-buffer decoder (`F.decode`)
 against RFC 6455 sections 5.1 to 5.5 (`proof/ws-frame-spec.bend`). The
-connection decodes incrementally with `F.start` and `F.resume`; proving that
-those agree with `F.decode` is BND-95, so the decoder laws do not yet cover the
-bytes a live connection reads in pieces. See
+connection decodes incrementally with `F.start` and `F.resume`, through
+`F.next`; `F.feed` is its read loop folded over the chunks its reads return.
+The incremental laws tie that loop to one decode of the concatenated bytes, so
+the decoder laws also cover the bytes a live connection reads in pieces. See
 [WebSocket frames and messages](../websocket-frames.md).
 
 - `ws_mask_spec`: masking is the RFC 6455 section 5.3 rule, for every key and payload.
@@ -80,6 +81,8 @@ bytes a live connection reads in pieces. See
 - `ws_roundtrip_plain`: a client does the same for every valid unmasked server frame.
 - `ws_decode_sound`: whatever the decoder accepts, from any bytes, re-encodes to exactly the bytes it consumed, so non-minimal lengths, reserved bits and similar tricks cannot pass.
 - `ws_decode_valid`: every accepted frame is one the peer may send under the receiver's size cap, masked exactly when the peer is a client.
+- `ws_decode_incremental`: from any decoder state, with no frame started or any frame in progress, and for every split of the input into chunks, the connection's read loop ends with exactly what one decode of all the bytes gives: the same frame, key and remaining bytes, the same rejection code, or the same payload progress, mask position included.
+- `ws_decode_chunks`: so a fresh connection reading any split of a buffer settles on exactly `F.decode` of the whole buffer, the decoder `ws_decode_sound` and `ws_decode_valid` describe.
 
 ## WebSocket sessions
 

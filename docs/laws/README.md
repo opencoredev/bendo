@@ -55,9 +55,6 @@ that every byte reached the socket. Other limits worth knowing:
 - The route-validation laws trust the JSON parser, `Bytes.fold` and the raw
   query parser, which the implementation and its specification share. BND-92
   tracks independent specifications for those.
-- The WebSocket frame decoder laws cover the whole-buffer decoder. The
-  connection decodes incrementally, and proving that the incremental decoder
-  agrees with it is BND-95.
 - The CSRF and WebSocket handshake specifications reuse the shared origin
   parser, which has its own laws against an independent origin specification.
 - SHA-1, SHA-256 and HMAC are checked against published test vectors, not

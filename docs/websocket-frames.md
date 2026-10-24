@@ -62,6 +62,13 @@ While `start` answers `NeedMore`, append the next read to the buffer and call
 `start` again. A header is at most 14 bytes, so this retry stays cheap, and the
 payload costs linear work even when bytes arrive one at a time.
 
+`F.next(cfg, body, bytes)` makes that choice: `start` without a body, `resume`
+with one. `F.feed(cfg, body, pending, chunks)` runs the whole loop over a list
+of reads, and the law `ws_decode_incremental` proves it gives exactly what
+`F.next` gives on `pending` followed by every chunk. However reads split the
+input, the connection sees the same frame, key and remaining bytes, or the same
+rejection, as `F.decode` on the whole buffer.
+
 ## Encode frames
 
 `F.encode(max, frame, key)` answers `Some{bytes}` for a frame RFC 6455 lets an
