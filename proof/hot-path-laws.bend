@@ -15,6 +15,8 @@ import ../src/mw/secure_headers.bend as SecureHeaders
 import ../src/mw/cors_policy.bend as CorsPolicy
 import ../src/mw/cors_request.bend as CorsRequest
 import ../src/mw/response_policy.bend as ResponsePolicy
+import ../src/mw/builtin_core.bend as Builtin
+import ../src/mw/jwt_config.bend as JwtConfig
 
 law hot_utf8_encode_char:
   for +c: U32
@@ -69,6 +71,48 @@ law hot_secure_prepared:
   for next: Context.Ctx<Vars> -> IO(Response.Res)
   {SecureHeaders.middleware(Vars, config, c, next) == SecureHeaders.prepared(Vars, SecureHeaders.policy(config), c, next) : IO(Response.Res)}
 
+# The prepared shell with the config's policy runs exactly the pre-BND-68
+# middleware: next, then the retained policy, then the decorated response.
+law hot_secure_prepared_spec:
+  for -Vars: Data
+  for +config: SecureHeaders.Config
+  for +c: Context.Ctx<Vars>
+  for next: Context.Ctx<Vars> -> IO(Response.Res)
+  {SecureHeaders.prepared(Vars, SecureHeaders.policy(config), c, next) == SecureHeaders.middleware_spec(Vars, config, c, next) : IO(Response.Res)}
+
+# Registering SecurePrepared{policy(config)}, as secure_headers_with now
+# does, runs the pre-BND-68 middleware and the SecureHeaders{config}
+# registration it replaced. src/mw/builtin.bend's dispatch is dispatch_with
+# with the Server-Timing and JWT middleware as templates; these laws hold for
+# any templates.
+law hot_secure_dispatch:
+  for ~timing: @-V:Data -> @+c:Context.Ctx<V> -> (Context.Ctx<V> -> IO(Response.Res)) -> IO(Response.Res)
+  for ~jwt: @-V:Data -> JwtConfig.Config -> Context.Ctx<V> -> (Context.Ctx<V> -> IO(Response.Res)) -> IO(Response.Res)
+  for -Vars: Data
+  for +config: SecureHeaders.Config
+  for +c: Context.Ctx<Vars>
+  for next: Context.Ctx<Vars> -> IO(Response.Res)
+  {Builtin.dispatch_with(~timing, ~jwt, Vars, Builtin.SecurePrepared{SecureHeaders.policy(config)}, c, next) == SecureHeaders.middleware_spec(Vars, config, c, next) : IO(Response.Res)}
+
+law hot_secure_dispatch_registration:
+  for ~timing: @-V:Data -> @+c:Context.Ctx<V> -> (Context.Ctx<V> -> IO(Response.Res)) -> IO(Response.Res)
+  for ~jwt: @-V:Data -> JwtConfig.Config -> Context.Ctx<V> -> (Context.Ctx<V> -> IO(Response.Res)) -> IO(Response.Res)
+  for -Vars: Data
+  for +config: SecureHeaders.Config
+  for +c: Context.Ctx<Vars>
+  for next: Context.Ctx<Vars> -> IO(Response.Res)
+  {Builtin.dispatch_with(~timing, ~jwt, Vars, Builtin.SecurePrepared{SecureHeaders.policy(config)}, c, next) == Builtin.dispatch_with(~timing, ~jwt, Vars, Builtin.SecureHeaders{config}, c, next) : IO(Response.Res)}
+
+# The CORS middleware runs exactly the pre-BND-68 sequence for every config,
+# context and continuation: a preflight is answered without next, any other
+# request runs next and is decorated, and the same policy is retained.
+law hot_cors_middleware:
+  for -Vars: Data
+  for +config: CorsPolicy.Config
+  for +c: Context.Ctx<Vars>
+  for next: Context.Ctx<Vars> -> IO(Response.Res)
+  {Cors.middleware(Vars, config, c, next) == Cors.middleware_spec(Vars, config, c, next) : IO(Response.Res)}
+
 law hot_connection_header_hit:
   for +n: String
   for +v: List<&2, U32>
@@ -84,3 +128,15 @@ law hot_body_head_feed:
   for +limit: U32
   for +headers: U32
   {Body.head_feed_policy(~U32, ~(req => n => n), limit, xs, s, bytes, limit, headers) == Body.head_feed_policy_spec(~U32, ~(req => n => n), limit, xs, s, bytes, limit, headers) : Body.State & Bool}
+
+# The same equation for any policy type, selector template and policy value.
+law hot_body_head_feed_policy:
+  for ~Policy: Data
+  for ~select: Request.Req -> Policy -> U32
+  for +policy: Policy
+  for +xs: List<&2, U32>
+  for +s: Parse.State
+  for +bytes: U32
+  for +limit: U32
+  for +headers: U32
+  {Body.head_feed_policy(~Policy, ~select, policy, xs, s, bytes, limit, headers) == Body.head_feed_policy_spec(~Policy, ~select, policy, xs, s, bytes, limit, headers) : Body.State & Bool}

@@ -33,6 +33,15 @@ def respond_with(-Vars: Data, +config: P.Config, +c: C.Ctx<Vars>, next: C.Ctx<Va
         res : Response.Res <- next(c)
         return Policy.apply(ready, res)
 
+# The middleware as it ran before BND-68. Law hot_cors_middleware equates it
+# with middleware below.
+def middleware_spec(-Vars: Data, +config: P.Config, +c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
+  +req = C.request(Vars, c)
+  do IO<Response.Res>:
+    res : Response.Res <- respond(Vars, config, c, next, RequestPolicy.grant(config, req), RequestPolicy.preflight(req))
+    Obs.retain(C.observation(Vars, c), RequestPolicy.policy(config, req))
+    return res
+
 # A preflight is answered here with 204 and never reaches the application.
 # Every other request, including other OPTIONS requests, calls next. The
 # grant, preflight test and policy are each derived once per request.

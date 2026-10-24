@@ -12,6 +12,10 @@ import ../src/http/body.bend as Body
 import ../src/http/parse.bend as Parse
 import ../src/http/request.bend as Req
 import ../src/data/utf8.bend as U
+import ../src/mw/cors.bend as Cors
+import ../src/mw/cors_request.bend as CR
+import ../src/mw/cors_policy.bend as CP
+import ../src/app/observability.bend as Obs
 
 def Laws.hot_utf8_encode_char(c):
   Equal.sym(List<&2, U32>, Utf8.encode_char_spec(c), Utf8.encode_char(c), UP.encode_char_equiv(c))
@@ -238,6 +242,37 @@ def Laws.hot_cors_policy(config, req): {==}
 
 def Laws.hot_secure_prepared(Vars, config, c, next): {==}
 
+def Laws.hot_secure_prepared_spec(Vars, config, c, next): {==}
+
+def Laws.hot_secure_dispatch(timing, jwt, Vars, config, c, next): {==}
+
+def Laws.hot_secure_dispatch_registration(timing, jwt, Vars, config, c, next): {==}
+
+# The two CORS shells with the grant, requested headers and preflight test
+# abstracted, so the proof can split on the preflight Bool.
+def cors_new(-Vars: Data, +config: CP.Config, +c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(R.Res), +g: Maybe<&2, CP.Grant>, +requested: Maybe<&2, String>, +p: Bool) -> IO(R.Res):
+  +ready = CR.chosen(config, g, requested, p)
+  do IO<R.Res>:
+    res : R.Res <- Cors.respond_with(Vars, config, c, next, g, ready, p)
+    Obs.retain(C.observation(Vars, c), ready)
+    return res
+
+def cors_old(-Vars: Data, +config: CP.Config, +c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(R.Res), +g: Maybe<&2, CP.Grant>, +requested: Maybe<&2, String>, +p: Bool) -> IO(R.Res):
+  do IO<R.Res>:
+    res : R.Res <- Cors.respond(Vars, config, c, next, g, p)
+    Obs.retain(C.observation(Vars, c), CR.chosen(config, g, requested, p))
+    return res
+
+def cors_shells(-Vars: Data, +config: CP.Config, +c: C.Ctx<Vars>, next: C.Ctx<Vars> -> IO(R.Res), +g: Maybe<&2, CP.Grant>, +requested: Maybe<&2, String>, +p: Bool) -> {cors_new(Vars, config, c, next, g, requested, p) == cors_old(Vars, config, c, next, g, requested, p) : IO(R.Res)}:
+  match p:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def Laws.hot_cors_middleware(Vars, config, c, next):
+  cors_shells(Vars, config, c, next, CR.grant(config, C.request(Vars, c)), CR.requested(C.request(Vars, c)), CR.preflight(C.request(Vars, c)))
+
 # ---- BND-68: only a Connection field's value is parsed ----
 
 def header_value_and(+v: List<&2, U32>, +wanted: String, named: Bool) -> {Cn.header_value_hit(v, wanted, named) == named && Cn.tokens(Text.split(B.ascii(v), ','), wanted) : Bool}:
@@ -297,3 +332,6 @@ def head_feed_equiv(~Policy: Data, ~select: Req.Req -> Policy -> U32, +policy: P
 
 def Laws.hot_body_head_feed(xs, s, bytes, limit, headers):
   head_feed_equiv(~U32, ~(req => n => n), limit, xs, s, bytes, limit, headers)
+
+def Laws.hot_body_head_feed_policy(Policy, select, policy, xs, s, bytes, limit, headers):
+  head_feed_equiv(~Policy, ~select, policy, xs, s, bytes, limit, headers)
