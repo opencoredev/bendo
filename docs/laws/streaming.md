@@ -137,9 +137,12 @@ membership against an independent model in `proof/ws-topics-spec.bend`, pin
 each operation's effect on whole records, and prove that every registry the
 shell can reach is well-formed: no pair is recorded twice, every record
 belongs to an active connection, and every active ID was already handed out.
-Together they say a publication reaches each subscribed connection exactly
-once, minus the sender, a closed connection can never subscribe again, and a
-close revokes the connection's ID even when its join timed out. See
+Together they say a publication selects each subscribed connection exactly
+once as a target, minus the sender, a closed connection can never subscribe
+again, and a close whose release reaches the hub revokes the connection's ID
+even when its join timed out. Delivery is not proven: a copy for a full
+mailbox or an oversized message is dropped, and a release that cannot enter a
+hub queue that stays full is lost (BND-98). See
 [publish and subscribe](../websocket-pubsub.md) and
 [decision 0018](../decisions/0018-websocket-pubsub.md).
 
@@ -153,7 +156,7 @@ Membership:
 Publication:
 
 - `ws_topics_publish_targets`: a publication to a topic targets exactly its members, minus the sender when one is given.
-- `ws_topics_publish_once`: over any history, a publication reaches each connection once if the model says it is a member and it is not the sender, and otherwise never.
+- `ws_topics_publish_once`: over any history, a publication selects each connection as a target once if the model says it is a member and it is not the sender, and otherwise never.
 - `ws_topics_targets_records`: a publication selects exactly the topic's complete records, minus the sender's, in registry order, so each copy goes to the mailbox stored for that connection.
 - `ws_topics_publish_once_wf`, `ws_topics_history_once`: in a well-formed registry, and so after every runtime history, a publication selects each connection exactly once if a record pairs it with the topic and it is not the sender, and otherwise never.
 
