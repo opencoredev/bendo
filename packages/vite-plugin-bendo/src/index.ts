@@ -223,6 +223,19 @@ export default function bendo(options: BendoPluginOptions = {}): Plugin & { api:
     external.clear();
   };
 
+  /**
+   * Stops what `configureServer` started for one server. A restart configures
+   * the new server before the old one's HTTP server closes, so leave the new
+   * server's compiler and watcher running.
+   */
+  const stopServer = async (mine: {
+    compiler: Compiler | undefined;
+    watcher: FileWatcher | undefined;
+  }) => {
+    if (mine.watcher !== undefined && watcher === mine.watcher) closeWatcher();
+    await mine.compiler?.dispose();
+  };
+
   return {
     name: NAME,
     enforce: "pre",
@@ -258,17 +271,14 @@ export default function bendo(options: BendoPluginOptions = {}): Plugin & { api:
             );
         });
       }
+      const mine = { compiler, watcher };
       // Stop Bend before Vite's close, which also waits for requests in flight.
       const close = dev.close.bind(dev);
       dev.close = async () => {
-        closeWatcher();
-        await dispose();
+        await stopServer(mine);
         await close();
       };
-      dev.httpServer?.once("close", () => {
-        closeWatcher();
-        void dispose();
-      });
+      dev.httpServer?.once("close", () => void stopServer(mine));
     },
 
     // A watch-mode build closes its bundle after every run; start afresh.
@@ -277,7 +287,9 @@ export default function bendo(options: BendoPluginOptions = {}): Plugin & { api:
     },
 
     async closeBundle() {
-      await dispose();
+      // A dev server stops Bend in its own close. A restart closes the old
+      // server's bundle after the new server started, so leave its compiler be.
+      if (server === undefined) await dispose();
     },
 
     resolveId(source, importer) {

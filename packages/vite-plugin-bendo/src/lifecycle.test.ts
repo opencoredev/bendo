@@ -305,3 +305,20 @@ test("an import in a missing directory is watched once the entry recompiles afte
   writeFileSync(late, "def late() -> Nat:\n  2n\n");
   await until("the late import's edit recompiled inside", () => s.compiles() === before + 1);
 });
+
+test("restarting the dev server keeps the new server's watcher", async () => {
+  using app = copyFixture("restart");
+  await using s = await watchServer(app);
+  const a = s.dep("a");
+  const inside = app.path("shared/inside.bend");
+  s.entry(inside, [a]);
+  await s.dev.restart();
+  await s.dev.pluginContainer.load(inside);
+  await expectWatched(s.plugin, [a]);
+  const before = s.compiles();
+  writeFileSync(a, "def a() -> Nat:\n  2n\n");
+  await until(
+    "the restarted server's watcher recompiled inside",
+    () => s.compiles() === before + 1,
+  );
+});
