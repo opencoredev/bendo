@@ -33,6 +33,9 @@ The working example is the signup fixture in
 `main.bend` serves it from a native route, and `web/` is a React form that
 imports the compiled module.
 
+The [todo example](../examples/todo/README.md) shares its route schemas with a
+React app the same way, through [vite-plugin-bendo](vite-plugin.md).
+
 ## Exports
 
 | Export | Contains | Typed as |

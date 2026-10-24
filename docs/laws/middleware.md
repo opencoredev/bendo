@@ -172,3 +172,16 @@ The store and clock are IO and are tested separately. See
 
 - `proxy_forward_spec`: the forwarded header list is exactly the clean fields of the original, unchanged and in order: nothing clean is dropped, added or reordered. See [proxy requests](../proxy.md).
 - `proxy_forward_clean`: no forwarded field is hop-by-hop or named by a `Connection` option of the original message.
+
+The upstream host laws compare `Upstream.read_authority` with `proof/upstream-host-spec.bend`, which splits the authority at every `]` or `:` and states labels, ports and embedded IPv4 in its own terms, where the parser cuts at the first separator. It reuses BND-85's origin specification for IPv6 form and the name grammar. See [the upstream URL](../proxy.md#options).
+
+- `proxy_upstream_authority_spec`: every authority string yields the same acceptance, host kind, host text and optional port digits as the specification.
+- `proxy_upstream_host_round_trip`: serializing a parsed endpoint as the `Host` value and parsing that again gives back exactly the same endpoint.
+- `proxy_upstream_ipv6_url`, `proxy_upstream_name_url`: `http://[::1]:8080/api/` dials `::1` port 8080 with `Host: [::1]:8080` and base `/api`, and `HTTP://Api.Internal` dials `api.internal` port 80 with no base.
+- `proxy_upstream_rejects_ipv4_shorthand`: `127.1`, which a resolver would read as IPv4, is refused.
+- `proxy_upstream_rejects_noncanonical_ipv6`: `[0::1]` is refused, because RFC 5952 writes it `[::1]`.
+- `proxy_upstream_rejects_ipv4_mapped`, `proxy_upstream_rejects_ipv4_compatible`: `[::ffff:c000:201]` and `[::c000:201]`, which carry the IPv4 address 192.0.2.1, are refused.
+- `proxy_upstream_rejects_empty_label`, `proxy_upstream_rejects_trailing_dot`: `a..b` and `a.example.` are refused for their empty label.
+- `proxy_upstream_rejects_hyphen_edge`, `proxy_upstream_rejects_trailing_hyphen`: `-a.example` and `a-.example` are refused, because a label may not start or end with `-`.
+- `proxy_upstream_rejects_port_zero`: `a.example:0` is refused.
+- `proxy_upstream_keeps_port_digits`: `a.example:080` is accepted and keeps the port digits `080` as written.

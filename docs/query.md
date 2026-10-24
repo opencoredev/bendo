@@ -35,6 +35,8 @@ peer dependency: only `bendo/query` imports it.
 > or clear the cache (`queryClient.clear()`) when the user changes. Otherwise
 > one client's queries can return data cached by another.
 
+The [todo example](../examples/todo/README.md) uses these helpers in a full React app.
+
 ## Queries
 
 `queryOptions(endpoint, input?, options?)` takes a client method, the input you

@@ -4,7 +4,8 @@
   "type": "module",
   "workspaces": [
     "packages/*",
-    "examples/chat"
+    "examples/chat",
+    "examples/todo"
   ],
   "scripts": {
     "test:shards": "bun scripts/test-shards.ts",

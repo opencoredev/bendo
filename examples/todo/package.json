@@ -1,0 +1,27 @@
+{
+  "name": "bendo-example-todo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "api": "bendo dev",
+    "gen": "bendo gen",
+    "web": "vite",
+    "build": "vite build",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "5.104.5",
+    "@tanstack/react-router": "1.170.46",
+    "bendo": "workspace:*",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "typescript": "5.9.3",
+    "vite": "8.3.5",
+    "vite-plugin-bendo": "workspace:*"
+  }
+}
