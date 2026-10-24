@@ -311,3 +311,41 @@ def response(c: Maybe<&2, SP.Checked>, +status: U32, +hs: List<&2, Request.Heade
 # {"error": reason, "status": code, "errors": [{"path", "code", "message"}...]}.
 def rejection(+status: U32, reason: String, errors: List<&2, S.Error>) -> J.Json:
   J.JObject{[J.Field{"error", J.JString{reason}}, J.Field{"status", J.JNumber{Nat.show(U32.to_nat(status))}}, J.Field{"errors", S.errors_json(errors)}]}
+
+# The runtime asks a validator, passed as a template, to check requests and
+# responses. `run` decodes; `skip` links no decoder, so apps that declare no
+# schemas do not compile one. B.serve and friends pass `skip` and refuse to
+# start a table with schemas; src/validated.bend passes `run`.
+type Job is Data:
+  RequestJob{schemas: Schemas, input: Input}
+  ResponseJob{schema: Maybe<&2, SP.Checked>, status: U32, headers: List<&2, Request.Header>, body: List<&2, U32>}
+  Probe{}
+
+type Answer is Data:
+  Judged{verdict: Verdict}
+  Inspected{check: Check}
+  Enabled{on: Bool}
+
+def run(job: Job) -> Answer:
+  match job:
+    case RequestJob{s, i}: Judged{request(s, i)}
+    case ResponseJob{c, code, hs, bytes}: Inspected{response(c, code, hs, bytes)}
+    case Probe{}: Enabled{True{}}
+
+def unvalidated() -> S.Error:
+  S.Error{S.InvalidSchema{}, "route schemas need the validating entrypoints in src/validated.bend", []}
+
+def skipped(empty: Bool) -> Verdict:
+  match empty:
+    case True{}: Valid{no_values()}
+    case False{}: Invalid{500, [unvalidated()]}
+
+def skip(job: Job) -> Answer:
+  match job:
+    case RequestJob{+s, i}: Judged{skipped(requests_nothing(s))}
+    case ResponseJob{c, code, hs, bytes}: Inspected{Unchecked{}}
+    case Probe{}: Enabled{False{}}
+
+def declares(set: Schemas) -> Bool:
+  Schemas{p, q, h, b, r} = set
+  Bool.not(requests_nothing(Schemas{p, q, h, b, None{}})) || Maybe.is_some(&2, SP.Checked, r)

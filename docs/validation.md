@@ -9,6 +9,7 @@ handler with the decoded values, so the handler does not parse anything again.
 ```python
 import Base
 import ../src/main.bend as B
+import ../src/validated.bend as V
 import ../src/data/schema.bend as S
 import ../src/data/json.bend as J
 
@@ -23,6 +24,11 @@ def page() -> S.Schema:
 def routes() -> List<&2, B.Registration(Tag)>:
   [B.with_schemas(Tag, B.get(Tag, "/todos", ListTodos{}), B.schemas([B.query_schema(page())])),
    B.with_schemas(Tag, B.post(Tag, "/todos", CreateTodo{}), B.schemas([B.body_schema(todo_input())]))]
+
+def ready(result: Result<&2, &2, B.RouteError, B.Routes(Tag)>) -> IO(Unit):
+  match result:
+    case Done{table}: V.serve(~Tag, ~Unit, ~dispatch, table, Unit{}, B.config())
+    case Fail{error}: IO.die(Unit, 1, "invalid routes")
 ```
 
 `POST /todos` with `{"title":""}` answers 422:
@@ -34,6 +40,20 @@ def routes() -> List<&2, B.Registration(Tag)>:
 `tests/servers/validate.bend` is a complete server with a route per slot, a
 guard, a mounted sub-app and hooks around validation; `tests/validate.test.ts`
 drives it over HTTP.
+
+## Serve with validation
+
+Serve an app that declares schemas with the entrypoints in
+`src/validated.bend`: `V.serve`, `V.serve_with`, `V.serve_limits_with`,
+`V.handle` and `V.handle_with` take the same arguments as their `B.` namesakes
+and add validation. The `B.` entrypoints link no schema decoder, which keeps
+apps without schemas small: linking the decoder adds about 1 MB (27%) to a
+hello app's generated C and 0.5 GB to its peak compile memory. They never
+ignore schemas, though: `B.serve`, `B.serve_with` and `B.serve_limits_with` exit
+at startup with a
+message naming `src/validated.bend` when any route declares a schema, and
+`B.handle` and `B.handle_with` answer such a route's requests with a 500 whose
+single error says the same.
 
 ## Declare schemas
 
@@ -162,9 +182,9 @@ What a violation does depends on the server's mode:
   bendo: response schema violation: GET /report [{"path":["body","count"],"code":"type_mismatch","message":"expected schema scalar kind"}]
   ```
 
-Choose production with `B.serve(..., B.production(B.config()))`, or start the
+Choose production with `V.serve(..., B.production(B.config()))`, or start the
 server with `BENDO_ENV=production`, which overrides the configured mode at
-startup the way `$PORT` overrides the port. `B.handle` and `B.handle_with` always
+startup the way `$PORT` overrides the port. `V.handle` and `V.handle_with` always
 run in development mode.
 
 ## Guarantees
@@ -186,5 +206,6 @@ so the BND-33/34/35 schema laws describe what each slot accepts and reports.
 
 The lifecycle wiring is IO and is covered by `tests/validate.test.ts` instead:
 it checks that the handler does not run on a rejection, that transform hooks run
-before validation and `before_handle` hooks after it, and both response modes.
+before validation and `before_handle` hooks after it, both response modes, and
+that the plain entrypoints refuse schemas.
 JSON Schema export of route schemas is BND-37.

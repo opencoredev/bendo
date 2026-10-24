@@ -144,7 +144,8 @@ With [request-ID middleware](observability.md#request-id), handlers read
 from the app's typed variables. `B.timing_mark(Vars, c, name, duration_ms)` records
 a named duration in the active request's timing collector and returns `IO(Bool)`.
 
-On a route with [schemas](validation.md), `B.valid_params(c)`, `B.valid_query(c)`,
+On a route with [schemas](validation.md), served through `src/validated.bend`,
+`B.valid_params(c)`, `B.valid_query(c)`,
 `B.valid_headers(c)` and `B.valid_body(c)` return the decoded values, with
 defaults filled in; each is `None{}` for a slot the route does not declare.
 

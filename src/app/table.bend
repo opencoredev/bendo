@@ -70,6 +70,10 @@ type Middleware<-Tag: Data> is Data:
 type Table<-Tag: Data> is Data:
   Table{entries: List<&2, Methods.Registration(Tag)>, compiled: Methods.Index<Tag>, middleware: List<&2, Middleware<Tag>>, count: Nat}
 
+def layers(-Tag: Data, table: Table<Tag>) -> List<&2, Middleware<Tag>>:
+  Table{entries, compiled, middleware, count} = table
+  middleware
+
 def route_entries(-Tag: Data, xs: List<&2, Entry<Tag>>) -> List<&2, Methods.Registration(Tag)>:
   match xs:
     case Nil{}: []
@@ -250,3 +254,17 @@ def route_schemas(-Tag: Data, layers: List<&2, Middleware<Tag>>, +route: Maybe<&
         case None{}: V.none()
         case Some{n}: V.override(route_schemas(Tag, tail, Some{n}), schemas_here(Tag, hooks, Nat.is_eq(index, n)))
     case _ <> tail: route_schemas(Tag, tail, route)
+
+# Whether any route declares a schema; entrypoints that do not validate refuse
+# to start such a table rather than ignore its schemas.
+def placed_declares(-Tag: Data, hooks: List<&2, Placement<Tag>>) -> Bool:
+  match hooks:
+    case Nil{}: False{}
+    case Placement{scope, hook} <> tail: placed_declares(Tag, tail)
+    case Checks{scope, schemas} <> tail: V.declares(schemas) || placed_declares(Tag, tail)
+
+def declares_schemas(-Tag: Data, layers: List<&2, Middleware<Tag>>) -> Bool:
+  match layers:
+    case Nil{}: False{}
+    case Scoped{index, hooks} <> tail: placed_declares(Tag, hooks) || declares_schemas(Tag, tail)
+    case _ <> tail: declares_schemas(Tag, tail)

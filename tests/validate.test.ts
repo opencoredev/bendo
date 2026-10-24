@@ -3,6 +3,7 @@ import { build, start, type RunningServer } from "./harness.ts";
 
 // BND-36: route schemas for params, query, headers, body and response.
 const binary = build("tests/servers/validate.bend");
+const unchecked = build("tests/servers/validate-unchecked.bend");
 let server: RunningServer;
 let production: RunningServer;
 beforeAll(async () => {
@@ -280,5 +281,21 @@ describe("prepared schemas", () => {
         issue(["headers", "x-wide-3"], "constraint", SCALAR),
       ],
     );
+  });
+});
+
+describe("plain entrypoints", () => {
+  test("B.handle answers a schema route 500 and B.serve refuses to start", () => {
+    const run = Bun.spawnSync([unchecked], {
+      env: { ...process.env, PORT: "1" },
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 20_000,
+    });
+    expect(run.exitCode).toBe(1);
+    expect(run.stdout.toString()).toBe(
+      'handle 500 {"error":"Internal Server Error","status":500,"errors":[{"path":[],"code":"invalid_schema","message":"route schemas need the validating entrypoints in src/validated.bend"}]}\n',
+    );
+    expect(run.stderr.toString()).toContain("serve it with the entrypoints in src/validated.bend");
   });
 });

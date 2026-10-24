@@ -3,6 +3,7 @@
 import Base
 import ../../src/main.bend as B
 import ../../src/app/table.bend as T
+import ../../src/validated.bend as V
 import ../../src/app/context.bend as C
 import ../../src/router/methods.bend as M
 import ../../src/data/schema.bend as S
@@ -150,7 +151,7 @@ def entries() -> List<&2, B.Registration(Tag)>:
 def ready(result: Result<&2, &2, M.BuildError, B.Routes(Tag)>) -> IO(Unit):
   match result:
     case Fail{error}: IO.die(Unit, 1, "bad validation table")
-    case Done{table}: B.serve_with(~Unit, ~Tag, ~Unit, ~handler, ~middleware, table, Unit{}, B.config())
+    case Done{table}: V.serve_with(~Unit, ~Tag, ~Unit, ~handler, ~middleware, table, Unit{}, B.config())
 
 def main() -> IO(Unit):
   ready(B.routes(Tag, entries()))
