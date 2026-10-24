@@ -47,6 +47,14 @@ export function bendFile(id: string): string | undefined {
   return path;
 }
 
+/**
+ * Whether the plugin compiles `module`. Vite loads every other module for a
+ * `.bend` file, such as `?raw`, so it watches the file and updates those.
+ */
+function managed(module: EnvironmentModuleNode): boolean {
+  return bendFile(module.id ?? module.url) !== undefined;
+}
+
 /** Where the declarations for `file` go: TypeScript reads `x.d.bend.ts` for `import "./x.bend"`. */
 export function declarationPath(file: string): string {
   return join(dirname(file), `${basename(file, ".bend")}.d.bend.ts`);
@@ -180,12 +188,12 @@ export default function bendo(options: BendoPluginOptions = {}): Plugin & { api:
       const outcome = await ready().compile(entry);
       if (outcome.kind === "cancelled") return outcome;
       watchExternal(entry, outcome.files);
-      const modules = moduleGraph.getModulesByFile(entry) ?? new Set<EnvironmentModuleNode>();
+      const modules = [...(moduleGraph.getModulesByFile(entry) ?? [])].filter(managed);
       // A reload must recompile, not reuse the last transform, even after a failure.
       for (const module of modules) moduleGraph.invalidateModule(module);
       if (outcome.kind === "failed") {
         // Only an environment that loaded the entry shows its error.
-        if (modules.size > 0) failure ??= outcome.diagnostic;
+        if (modules.length > 0) failure ??= outcome.diagnostic;
         continue;
       }
       declare(entry, outcome.compiled.declarations);
@@ -317,8 +325,14 @@ export default function bendo(options: BendoPluginOptions = {}): Plugin & { api:
     // `handleHotUpdate` does not see in Vite 8. It runs once per environment.
     async hotUpdate(update: HotUpdateOptions): Promise<EnvironmentModuleNode[] | undefined> {
       // Vite reports a file outside the root only when another plugin watches
-      // it; the plugin's own watcher already handles it.
-      if (watcher !== undefined && outsideRoot(update.file)) return undefined;
+      // it; the plugin's own watcher already handles it, and sends the Bend
+      // modules' update once their compile succeeds. Vite must not update
+      // them first, or a broken save would reach the browser before its
+      // error. Other modules for the file, such as `?raw`, keep Vite's update.
+      if (watcher !== undefined && outsideRoot(update.file)) {
+        const others = update.modules.filter((module) => !managed(module));
+        return others.length === update.modules.length ? undefined : others;
+      }
       if (ready().importersOf(update.file).length === 0) return undefined;
       const result = await refresh(this.environment, update.file);
       switch (result.kind) {
