@@ -103,3 +103,12 @@ Every example on these pages is compiled as part of the test above.
 Blocks that show a signature are not compiled. They use the
 library's public names (`B.Ctx`, `B.Res`) where the source uses internal
 module names.
+
+## Opt-in modules
+
+| Page | Alias | Module | Covers |
+| --- | --- | --- | --- |
+| [SQLite](bend/sqlite.md) | `Sql` | `bendo/sqlite.bend` | Connections, statements with bound parameters, rows as JSON or schema values, transactions |
+
+An opt-in module is not imported by `main.bend`, so an app that does not
+import it does not compile it.

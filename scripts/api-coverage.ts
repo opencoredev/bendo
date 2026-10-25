@@ -56,6 +56,7 @@ export const companionAliases: ReadonlyMap<string, string> = new Map([
   ["src/mw/cors_policy.bend", "CorsPolicy"],
   ["src/router/methods.bend", "Methods"],
   ["src/router/pattern.bend", "RoutePattern"],
+  ["src/sqlite.bend", "Sql"],
   ["src/validated.bend", "V"],
   ["src/ws/connection.bend", "W"],
   ["src/ws/frame.bend", "Frame"],
