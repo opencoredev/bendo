@@ -246,6 +246,11 @@ describe("every failing location is listed with its path", () => {
       { path: [], code: "constraint", message: "value matches no union member" },
     ]);
   });
+  test("a repeated undeclared key is listed once per member", () => {
+    expect(paths(both("json", "people", '{"x":1,"id":1,"x":2,"people":[{"name":"Bob"}]}'))).toEqual(
+      ["/x", "/x"],
+    );
+  });
   test("the list stops at 100 errors", () => {
     const strings = `[${Array(1000).fill('"x"').join(",")}]`;
     const listed = paths(both("json", "ints", strings));
@@ -599,7 +604,7 @@ function candidates(t: Tree, prefix: Part[], out: Part[][]): void {
 }
 
 test(
-  "seeded random schemas: errors name failing paths and every failing path is named",
+  "seeded random schemas: errors name failing paths, every failing path is named, and the list is exact",
   () => {
     const g = generators(random(35));
     let rejected = 0;
@@ -610,6 +615,7 @@ test(
       const v = json(t);
       const decoded = call("decode", s, v);
       expect(flag("located", s, v, decoded)).toBe(true);
+      expect({ i, exact: flag("exact", s, v, decoded) }).toEqual({ i, exact: true });
       const ok = Reflect.get(Object(decoded), "$") === "Done";
       if (!ok) rejected++;
       const all: Part[][] = [];

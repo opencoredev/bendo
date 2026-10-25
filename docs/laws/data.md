@@ -98,8 +98,8 @@ A schema decodes a JSON value into a typed value or a list of errors. These
 laws compare the decoder with an independent statement of what each schema
 accepts (`src/data/schema-spec.bend`). Together they say a value is accepted
 exactly when it satisfies the schema, an accepted value keeps its exact input,
-and a rejection names every failing location and nothing else, up to 100
-errors. Text sources (route params, query strings, headers, forms) are first
+and a rejection lists every failing location exactly once, in a fixed order,
+up to 100 errors. Text sources (route params, query strings, headers, forms) are first
 coerced; the same laws hold of the coerced value. See
 [schemas](../data/schema.md).
 
@@ -108,8 +108,10 @@ coerced; the same laws hold of the coerced value. See
 - `schema_children_satisfy`: in an accepted compound value, every array item, every declared member, a non-null value under a nullable, and at least one union member satisfy their schemas.
 - `schema_errors_name_failing_paths`: a rejection lists between 1 and 100 errors, and every error path is a place where the specification finds a failing check. An invalid schema is one error at the root.
 - `schema_errors_complete`: every place the specification finds a failing check is reported with exactly that path, unless the list already holds 100 errors. Nothing below a failed kind or length check, and nothing inside a union, counts as a place.
+- `schema_errors_exact`: the paths a decoder lists are exactly the first 100 entries of an independent enumeration of every failure, in the documented order: array items in order; in an object, undeclared keys under Strict in input order (a repeated undeclared key once per member), then declared fields in schema order; one entry for a failed kind or length check and nothing below it; one entry for a union no member matches. An accepted value lists nothing, which happens exactly when the enumeration is empty. Duplicates, omissions and reordering are all ruled out, not only up to the cap.
+- `schema_invalid_reports_root`: an invalid schema rejects every value with exactly one error, an invalid-schema error at the root.
 - `schema_coerce_matches_spec`: text coercion equals the specification: number tokens under number and integer schemas, `true` and `false` under booleans, items under arrays, the inner schema under nullables, and the repeated members of an array field gathered, in order, into one array. JSON bodies are not coerced.
-- `schema_coerced_acceptance_iff`, `schema_coerced_preserves_typed_value`, `schema_coerced_errors_name_failing_paths`, `schema_coerced_errors_complete`: the four laws above, for text sources, read against the coerced value.
+- `schema_coerced_acceptance_iff`, `schema_coerced_preserves_typed_value`, `schema_coerced_errors_name_failing_paths`, `schema_coerced_errors_complete`, `schema_coerced_errors_exact`, `schema_coerced_invalid_reports_root`: the laws above, for text sources, read against the coerced value.
 
 ## Route validation
 

@@ -62,6 +62,7 @@ import ./proof/middleware-selection.bend as MiddlewareSelection
 import ./proof/schema-compound.bend as SchemaProof
 import ./proof/schema-errors.bend as SchemaErrors
 import ./proof/schema-coerce.bend as SchemaCoerce
+import ./proof/schema-errors-exact.bend as SchemaErrorsExact
 
 import ./proof/json.bend as JsonProof
 import ./proof/json-escape.bend as JsonEscapeProof
@@ -604,6 +605,20 @@ def Laws.schema_coerced_errors_name_failing_paths(schema, value):
 
 def Laws.schema_coerced_errors_complete(schema, value, path, fault):
   SchemaCoerce.text_complete(schema, value, path, fault)
+
+# BND-89
+
+def Laws.schema_errors_exact(schema, value):
+  SchemaErrorsExact.errors_exact(schema, value)
+
+def Laws.schema_invalid_reports_root(schema, value, invalid):
+  SchemaErrorsExact.invalid_root(schema, value, invalid)
+
+def Laws.schema_coerced_errors_exact(schema, value):
+  SchemaErrorsExact.coerced_exact(schema, value)
+
+def Laws.schema_coerced_invalid_reports_root(schema, value, invalid):
+  SchemaErrorsExact.coerced_invalid_root(schema, value, invalid)
 
 # BND-24
 
