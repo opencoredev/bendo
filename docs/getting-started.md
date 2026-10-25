@@ -230,7 +230,7 @@ changes.
 | Clone the repo and alias `bendo` (step 2), then `bendo new my-app` | `bun create bendo my-app --template api`, from the `create-bendo` package |
 | Run `bendo dev` through the alias | `bun run dev`, because the app's `package.json` scripts call the `bendo` package |
 
-The app will also be able to import Bendo from BendHub (`import bendo@0.1/main.bend as B`)
+The app will also be able to import Bendo from BendHub (`import bendo@0.1.0.0/main.bend as B`; see [Versioning](./versioning.md))
 instead of keeping its own `bendo/` copy.
 
 ## Next steps

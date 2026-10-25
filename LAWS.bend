@@ -31,6 +31,9 @@ import ./proof/csrf-v1-laws.bend as CsrfV1Laws
 # BND-68
 import ./proof/hot-path-laws.bend as HotPathLaws
 
+# BND-82
+import ./proof/scoped-index-laws.bend as ScopedIndexLaws
+
 # BND-84
 import ./proof/review-tail-laws.bend as ReviewTailLaws
 import ./proof/tail-laws.bend as TailLaws
