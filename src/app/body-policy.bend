@@ -17,9 +17,9 @@ def limits(~Tag: Data, ~select: Tag -> Maybe<&2, U32>, ids: List<&2, Tag>, fallb
     case Nil{}: fallback
     case id <> tail: limits(~Tag, ~select, tail, lower(fallback, select(id)))
 
-def for_request(~Tag: Data, ~select: Tag -> Maybe<&2, U32>, +req: Request.Req, table: Table.Table<Tag>, kind: Router.RouterKind, fallback: U32) -> U32:
+def for_request(~Tag: Data, ~select: Tag -> Maybe<&2, U32>, +req: Request.Req, table: Table.Table<Tag>, hooks: Table.HookIndex<Tag>, kind: Router.RouterKind, fallback: U32) -> U32:
   Request.Req{method, +path, q, version, hs} = req
-  Table.Table{entries, compiled, +layers, count} = table
+  Table.Table{entries, compiled, layers, count} = table
   +route = Slot.identity(Tag, count, Methods.resolve_with(Tag, kind, compiled, path, method, Methods.defaults()))
-  +plan = Table.scoped_lifecycle(Tag, layers, path, route)
+  +plan = Table.scoped_lifecycle(Tag, Table.relevant(Tag, hooks, route), path, route)
   limits(~Tag, ~select, List.append(&2, Tag, Table.lifecycle_request(Tag, plan), Table.lifecycle_pre(Tag, plan)), fallback)

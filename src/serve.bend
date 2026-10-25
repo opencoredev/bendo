@@ -299,11 +299,11 @@ def encoded(res: Response.Res) -> List<&2, U32>:
   Bytes.append(Bytes.encode(Write.status_text(status) ++ Write.headers_text(headers) ++ "\r\n\r\n"), body)
 
 type State<-Tag: Data, -Env: Data> is Data:
-  State{table: Table.Table<Tag>, env: Env, router: Router.RouterKind, body_limit: U32, mode: Config.Mode, validates: Bool}
+  State{table: Table.Table<Tag>, hooks: Table.HookIndex<Tag>, env: Env, router: Router.RouterKind, body_limit: U32, mode: Config.Mode, validates: Bool}
 
 def selected_limit(~Tag: Data, ~Env: Data, ~select: Tag -> Maybe<&2, U32>, req: R.Req, state: State<Tag, Env>) -> U32:
-  State{table, env, router, limit, mode, validates} = state
-  BodyPolicy.for_request(~Tag, ~select, req, table, router, limit)
+  State{table, hooks, env, router, limit, mode, validates} = state
+  BodyPolicy.for_request(~Tag, ~select, req, table, hooks, router, limit)
 
 # Handle returns a normalized response, including HEAD's representation length.
 # Do not re-run the writer on its already stripped HEAD payload.
@@ -331,17 +331,17 @@ def prepare_transport(result: Response.Res & (StreamTypes.Transport & IO(Unit)),
   prepare_stream(res, close, stream, after)
 
 def respond_with(~validator: Validate.Job -> Validate.Answer, ~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), req: R.Req, body: List<&2, U32>, state: State<Tag, Env>, close: Bool, peer: Maybe<&2, Conn.ConnInfo>) -> IO(Reply):
-  State{table, env, router, limit, mode, validates} = state
+  State{table, hooks, env, router, limit, mode, validates} = state
   do IO<Reply>:
-    result : Response.Res & (StreamTypes.Transport & IO(Unit)) <- Handle.transport_routed(~validator, ~Vars, ~Tag, ~Env, ~dispatch, ~middleware, router, mode, table, env, req, body, peer, validates)
+    result : Response.Res & (StreamTypes.Transport & IO(Unit)) <- Handle.transport_routed(~validator, ~Vars, ~Tag, ~Env, ~dispatch, ~middleware, router, mode, table, hooks, env, req, body, peer, validates)
     return prepare_transport(result, close)
 
 # BND-96: the plain entrypoints serve only tables without route schemas, so
 # they route every request through Handle.transport_plain.
 def respond_plain(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), req: R.Req, body: List<&2, U32>, state: State<Tag, Env>, close: Bool, peer: Maybe<&2, Conn.ConnInfo>) -> IO(Reply):
-  State{table, env, router, limit, mode, validates} = state
+  State{table, hooks, env, router, limit, mode, validates} = state
   do IO<Reply>:
-    result : Response.Res & (StreamTypes.Transport & IO(Unit)) <- Handle.transport_plain(~Validate.skip, ~Vars, ~Tag, ~Env, ~dispatch, ~middleware, router, table, env, req, body, peer)
+    result : Response.Res & (StreamTypes.Transport & IO(Unit)) <- Handle.transport_plain(~Validate.skip, ~Vars, ~Tag, ~Env, ~dispatch, ~middleware, router, table, hooks, env, req, body, peer)
     return prepare_transport(result, close)
 
 # A validator that decodes nothing must not serve a table with schemas.
@@ -373,8 +373,11 @@ def startup_serving(~validator: Validate.Job -> Validate.Answer, ~Tag: Data, ~se
         IO.exit(0)
     case Config.Config{+host, +fallback, +limit, header_limit, idle, head, body, max_requests, keep_alive, router, mode, workers} False{}:
       do IO<Unit>:
+        +layers : List<&2, Table.Middleware<Tag>> = Table.layers(Tag, table)
         # Computed once: requests to a table without schemas skip every lookup (BND-96).
-        +validates : Bool = Table.declares_schemas(Tag, Table.layers(Tag, table))
+        +validates : Bool = Table.declares_schemas(Tag, layers)
+        # Scoped hooks indexed by route, so no request walks other routes' layers (BND-82).
+        hooks : Table.HookIndex<Tag> = Table.index(Tag, layers)
         admitted_table(validator(Validate.Probe{}), validates)
         port_env : Result<&1, &1, U32 & String, String> <- IO.get_env("PORT")
         +port : U32 = Config.port_env(port_env, fallback)
@@ -385,7 +388,7 @@ def startup_serving(~validator: Validate.Job -> Validate.Answer, ~Tag: Data, ~se
         listener : Listener <- IO.try(Listener, listen(host, port, U32.is_eq(count, 1)))
         index : U32 <- IO.try(U32, Workers.start_workers(count))
         IO.print("bendo listening on http://" ++ host ++ ":" ++ U32.show(port))
-        loop(~State<Tag, Env>, ~(req => state => selected_limit(~Tag, ~Env, ~select, req, state)), ~respond, listener, State{table, env, router, limit, Config.mode_env(mode_env, mode), validates}, config)
+        loop(~State<Tag, Env>, ~(req => state => selected_limit(~Tag, ~Env, ~select, req, state)), ~respond, listener, State{table, hooks, env, router, limit, Config.mode_env(mode_env, mode), validates}, config)
 
 def startup_limits_with(~validator: Validate.Job -> Validate.Answer, ~Vars: Data, ~Tag: Data, ~select: Tag -> Maybe<&2, U32>, ~Env: Data, ~dispatch: Tag -> Context.Ctx<Vars> -> Env -> IO(Response.Res), ~middleware: Tag -> Context.Ctx<Vars> -> Env -> (Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res), table: Table.Table<Tag>, env: Env, config: Config.Config, manifest: Bool) -> IO(Unit):
   startup_serving(~validator, ~Tag, ~select, ~Env, ~(req => body => state => close => peer => respond_with(~validator, ~Vars, ~Tag, ~Env, ~dispatch, ~middleware, req, body, state, close, peer)), table, env, config, manifest)

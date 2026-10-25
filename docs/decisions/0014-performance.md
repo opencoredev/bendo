@@ -151,3 +151,30 @@ Requests per second, median (min–max) of seven samples, measured with `bench/s
 All 105 samples had zero errors. Boat hosts were shared with other large sandboxes that afternoon, which shows in the ranges and in the lower absolute numbers than the tables above; compare rows within this table only. An earlier three-sample run of the same binaries, on a host whose steal rose during the run, measured hello at 0.827 of the pre-BND-36 figure and main at 0.744. Both runs are in [`bench/results/2026-10-24-bnd96-steps.json`](../../bench/results/2026-10-24-bnd96-steps.json). The instruction counts above are the steadier evidence: BND-96 removes 39,000 of the 51,000 instructions BND-36 added to hello, and the remaining 12,000 (1.7%) include the response-policy marker reservation that BND-36 needs for correctness.
 
 On GitHub's `perf` job, `08a5212` measured a median ratio of 1.114 against the previous pin `853687e` (pairs 1.118, 1.114 and 1.112). When BND-36 merged, that pin itself measured 0.907 against the pre-BND-36 code, so in that job BND-96 sits about 1% above where hello was before BND-36. The baseline is now pinned to `08a5212`.
+
+## BND-82: scoped hooks indexed by route
+
+BND-24 stores one `Scoped` layer per route inside a group or guard, or with route-local hooks. Selection walked every layer for each lifecycle stage and for the route's schemas, so 2,000 grouped routes made each request in that app about 50 times slower, even with trie routing and one hook per route. The BND-24 scaling benchmark had measured only routes without scopes.
+
+### What changed
+
+- At startup, `Table.index` splits a table's layers in two: the global layers, in order, and a binary trie that files each `Scoped` layer under the low 16 bits of its route identity. Serving keeps the index in `Serve.State` beside the table, so it is built once.
+- Each request calls `Table.relevant(hooks, route)`, which returns the global layers followed by the route's bucket. The lifecycle plan, the before-routing request hooks, the body-size policy and the route's schemas are all selected from that short list with the same functions as before. Not-found hooks and the path middleware before routing read the global list alone. A route outside every scope has an empty bucket and gets the global list itself, uncopied.
+- Route identities below 65,536 each get their own bucket. Past that, identities share buckets 16 bits apart. Selection stays exact because it still compares identities inside the bucket.
+- `Handle.handle_prepared` is a network-free entrypoint that takes the schema flag and the index prepared once, as serving does. `bench/router/handle.bend` uses it.
+
+The selection code itself did not change, so the BND-23 and BND-24 laws keep their statements and proofs. New laws say the index changes no result. `scoped_index_stage_selection`, `scoped_index_lifecycle_selection` and `scoped_index_route_schemas` state that selection, the lifecycle plan and route schemas through `relevant(index(layers), route)` equal the same functions over `layers`, for every layer list, route and stage. `scoped_index_global_stages` and `scoped_index_global_selected` state the same for the global list. `scoped_index_spec_stage_selection` and `scoped_index_spec_lifecycle_selection` connect the index to the BND-24 specification for every built table. The trie lemma in `proof/scoped-index.bend` is stated over abstract keys and depths. The only fact about keys it uses is that equal identities give equal keys.
+
+### Measurements
+
+`bench/router/handle.py` times a static hit on the first registered route, through the whole network-free request path, with 10 and with 2,000 routes. It now runs three shapes: plain routes, every route inside one group with a before-handle hook, and every route inside one guard with the same hook. It fails when any shape's 2,000-route median exceeds 1.25 times its 10-route median. Medians of five 10,000-request samples, in microseconds per request, on a Boat large sandbox (AMD Ryzen 9 9950X):
+
+| Shape | Main, 10 routes | Main, 2,000 routes | Main ratio | BND-82, 10 routes | BND-82, 2,000 routes | BND-82 ratio |
+|---|---:|---:|---:|---:|---:|---:|
+| Plain | 22.0 | 22.1 | 1.00 | 21.8 | 22.3 | 1.02 |
+| Group | 32.7 | 1,693.9 | 51.8 | 24.8 | 25.1 | 1.01 |
+| Guard | 32.4 | 1,691.1 | 52.2 | 25.0 | 24.5 | 0.98 |
+
+A second BND-82 run measured ratios of 1.02, 1.02 and 0.95. The main column ran main `92c36c6` with the same benchmark, prepared the same way except for the index. The raw samples are in [`bench/results/2026-10-24-bnd82-scoped-scaling.json`](../../bench/results/2026-10-24-bnd82-scoped-scaling.json).
+
+The router lookup benchmark (`bench/router/run.py`) was no slower than main in any of its 36 cells (ratios 0.80 to 1.00; the fastest cells are 200 to 500 nanoseconds measured at millisecond resolution), as expected for unchanged router code. Hello costs about 4,800 more instructions per request (641,200 against 636,400 on main, 0.75%), and the middleware scenario about 3,700 more (5,989,300 against 5,985,700). That comes from carrying the index through the request pipeline, not from the lookup: a build that skips the trie for tables without scoped hooks measured the same 641,100. Throughput was within sample noise in both. The CI budget measured a median ratio of 0.984 against the `08a5212` pin, so the pin is unchanged.
