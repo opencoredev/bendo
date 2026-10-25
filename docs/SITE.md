@@ -63,5 +63,6 @@ cd docs && bunx wrangler@4 deploy
 That publishes the site at `bendo-docs.<account>.workers.dev`. A custom domain
 needs a DNS change and is Leo's call.
 
-Planned additions: the API reference (BND-71) and task and migration guides
-(BND-72). Add their pages to `sidebar.ts` where its comment says.
+Planned addition: the API reference (BND-71). Add its pages to `sidebar.ts`
+where its comment says. The task and migration guides live in `docs/guides`,
+and `tests/guides.test.ts` checks every code block in them.
