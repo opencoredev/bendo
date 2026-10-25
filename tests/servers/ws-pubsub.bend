@@ -18,6 +18,7 @@ type Route is Data:
   KeepRoute{}
   LateRoute{}
   GhostRoute{}
+  ShutRoute{}
   ConnectionsRoute{}
   DelayedRoute{}
   JammedRoute{}
@@ -145,16 +146,35 @@ def late(kept: Store.Store<Maybe<&2, P.Peer>>, topic: String) -> IO(Bool):
     late_peer(got, topic)
 
 # A subscriber whose connection has closed but is still registered, as when
-# its close-path removal failed: a closed mailbox and liveness channel, and a
-# `max_message` of 20 bytes.
+# its close-path removal failed: a closed mailbox, liveness channel and close
+# slot, and a `max_message` of 20 bytes.
 def ghost(+hub: P.Hub, +topic: String) -> IO(Bool):
   do IO<Bool>:
     +outbound : Chan(S.Command) <- Chan.new(S.Command, 1)
     +alive : Chan(Unit) <- Chan.new(Unit, 0)
+    +slot : Chan(S.Command) <- Chan.new(S.Command, 1)
+    +claim : Chan(Unit) <- Chan.new(Unit, 1)
     Chan.close(S.Command, outbound)
     Chan.close(Unit, alive)
+    Chan.close(S.Command, slot)
     id : Nat <- P.join(hub, "ghost:" ++ topic)
-    P.subscribe(P.Peer{W.Handle{outbound, 20, alive}, id, hub}, topic)
+    P.subscribe(P.Peer{W.Handle{outbound, 20, alive, slot, claim}, id, hub}, topic)
+
+# A subscriber whose close found its one-command mailbox full, so the close
+# claimed the reserved slot and shut the mailbox. Nothing drains it, as when the
+# connection is still inside `open`. `max_message` is 20 bytes.
+def shut(+hub: P.Hub, +topic: String) -> IO(String):
+  do IO<String>:
+    +outbound : Chan(S.Command) <- Chan.new(S.Command, 1)
+    +alive : Chan(Unit) <- Chan.new(Unit, 0)
+    +slot : Chan(S.Command) <- Chan.new(S.Command, 1)
+    +claim : Chan(Unit) <- Chan.new(Unit, 1)
+    +handle : W.Handle = W.Handle{outbound, 20, alive, slot, claim}
+    queued : Bool <- W.text(handle, "queued")
+    closing : Bool <- W.close(handle, 1000, "bye")
+    id : Nat <- P.join(hub, "shut:" ++ topic)
+    joined : Bool <- P.subscribe(P.Peer{handle, id, hub}, topic)
+    return flag(queued) ++ ":" ++ flag(closing) ++ ":" ++ flag(joined)
 
 def Request() -> Type:
   Store.Message<T.Ledger<W.Handle>>
@@ -339,6 +359,10 @@ def handler(route: Route, +c: B.Context(Unit), +hub: P.Hub, slow: P.Hub, +jam: P
       do IO<B.Res>:
         ok : Bool <- ghost(hub, topic_of(B.param(c, "topic")))
         return B.text(c, flag(ok))
+    case ShutRoute{}:
+      do IO<B.Res>:
+        answer : String <- shut(hub, topic_of(B.param(c, "topic")))
+        return B.text(c, answer)
     case ConnectionsRoute{}:
       do IO<B.Res>:
         got : Result<&2, &2, Store.Error, Nat> <- P.connections(hub)
@@ -383,4 +407,4 @@ def main() -> IO(Unit):
     +held : Store.Store<Bool> <- B.store(Bool, False{})
     jam : P.Hub <- jammed(hub, held)
     kept : Store.Store<Maybe<&2, P.Peer>> <- B.store(Maybe<&2, P.Peer>, None{})
-    ready(Shared{hub, slow, jam, held, kept}, B.routes(Route, [B.get(Route, "/", HealthRoute{}), B.get(Route, "/ws/:topic", SocketRoute{}), B.post(Route, "/publish/:topic", PublishRoute{}), B.get(Route, "/size", SizeRoute{}), B.get(Route, "/members/:topic", MembersRoute{}), B.get(Route, "/keep", KeepRoute{}), B.post(Route, "/late/:topic", LateRoute{}), B.post(Route, "/ghost/:topic", GhostRoute{}), B.get(Route, "/connections", ConnectionsRoute{}), B.get(Route, "/delayed", DelayedRoute{}), B.get(Route, "/jammed", JammedRoute{}), B.post(Route, "/jam/hold", HoldRoute{}), B.post(Route, "/jam/fill", FillRoute{}), B.post(Route, "/jam/free", FreeRoute{}), B.get(Route, "/claims", ClaimsRoute{})]))
+    ready(Shared{hub, slow, jam, held, kept}, B.routes(Route, [B.get(Route, "/", HealthRoute{}), B.get(Route, "/ws/:topic", SocketRoute{}), B.post(Route, "/publish/:topic", PublishRoute{}), B.get(Route, "/size", SizeRoute{}), B.get(Route, "/members/:topic", MembersRoute{}), B.get(Route, "/keep", KeepRoute{}), B.post(Route, "/late/:topic", LateRoute{}), B.post(Route, "/ghost/:topic", GhostRoute{}), B.post(Route, "/shut/:topic", ShutRoute{}), B.get(Route, "/connections", ConnectionsRoute{}), B.get(Route, "/delayed", DelayedRoute{}), B.get(Route, "/jammed", JammedRoute{}), B.post(Route, "/jam/hold", HoldRoute{}), B.post(Route, "/jam/fill", FillRoute{}), B.post(Route, "/jam/free", FreeRoute{}), B.get(Route, "/claims", ClaimsRoute{})]))
