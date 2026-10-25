@@ -8,8 +8,8 @@ and checks each form with the same Bend validator the server uses.
 
 ## Run it
 
-You need Bun and Bend (see the repository's `CLAUDE.md` for the pinned
-versions). From the repository root:
+You need Bun and Bend at the pinned version (see the
+[quick start](../../README.md#quick-start)). From the repository root:
 
 ```sh
 bun install
