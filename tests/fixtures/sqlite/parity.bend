@@ -1,7 +1,8 @@
 # Runs the same SQLite operations in the native and JS builds and prints one
 # line per result, so tests/sqlite.test.ts can compare the two (BND-38).
-# The first argument is a scratch directory for file databases, or --open to
-# only open an in-memory database and print the result.
+# The first argument is a scratch directory for file databases, --open to
+# only open an in-memory database and print the result, or --deadline to run
+# only the statement-deadline section.
 import Base
 import ../../../src/sqlite.bend as Sql
 import ../../../src/data/sqlite.bend as D
@@ -416,14 +417,92 @@ def row_order(+db: Sql.Db) -> IO(Unit):
     b : Result<&2, &2, Sql.Error, Sql.Rows> <- Sql.all(db, "SELECT 'a' AS n UNION ALL SELECT 2 UNION ALL SELECT 1e999", Sql.none())
     say("decode row index", decoded(Result.bind(&2, &2, Sql.Error, Sql.Rows, List<&2, S.Value>, b, rs => Sql.decode_rows(schema(), rs))))
 
+# Fixes from review round 2 (BND-38).
+
+def bom_commit() -> String:
+  SCon{Chr{65279}, "COMMIT"}
+
+# SQLite skips empty statements, comments and a UTF-8 BOM before a
+# statement's first token, so a COMMIT behind them must still be refused
+# before it runs, leaving the insert to the rollback.
+def sneak(+db: Sql.Db, +label: String, sql: String) -> IO(Unit):
+  do IO<Unit>:
+    a : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.begin(db)
+    +tx : Sql.Db <- db_or_die(a)
+    b : Result<&2, &2, Sql.Error, Sql.Changes> <- Sql.run(tx, "INSERT INTO s VALUES (1)", Sql.none())
+    c : Result<&2, &2, Sql.Error, Unit> <- Sql.exec(tx, sql)
+    say(label, unit(c))
+    d : Result<&2, &2, Sql.Error, Unit> <- Sql.rollback(tx)
+    say(label ++ " rollback", unit(d))
+    e : Result<&2, &2, Sql.Error, Sql.Rows> <- Sql.all(db, "SELECT count(*) FROM s", Sql.none())
+    say(label ++ " rows", rows(e))
+
+def sneaks(+db: Sql.Db) -> IO(Unit):
+  do IO<Unit>:
+    a : Result<&2, &2, Sql.Error, Unit> <- Sql.exec(db, "CREATE TABLE s (x)")
+    say("sneak schema", unit(a))
+    sneak(db, "semicolon commit", ";COMMIT")
+    sneak(db, "bom commit", bom_commit())
+    sneak(db, "comment commit", ";;  -- c\n COMMIT")
+    sneak(db, "comment end", "/*x*/;END")
+    b : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.begin(db)
+    +tx : Sql.Db <- db_or_die(b)
+    c : Result<&2, &2, Sql.Error, Sql.Changes> <- Sql.run(tx, "INSERT INTO s VALUES (1)", Sql.none())
+    d : Result<&2, &2, Sql.Error, Sql.Changes> <- Sql.run(tx, ";COMMIT", Sql.none())
+    say("run semicolon commit", changes(d))
+    e : Result<&2, &2, Sql.Error, Unit> <- Sql.rollback(tx)
+    say("run semicolon commit rollback", unit(e))
+    f : Result<&2, &2, Sql.Error, Sql.Rows> <- Sql.all(db, "SELECT count(*) FROM s", Sql.none())
+    say("run semicolon commit rows", rows(f))
+    g : Result<&2, &2, Sql.Error, Sql.Stmt> <- Sql.prepare(db, ";SAVEPOINT s")
+    say("prepare semicolon savepoint", stmt_text(g))
+    h : Result<&2, &2, Sql.Error, Unit> <- Sql.exec(db, "VACUUM")
+    say("vacuum", unit(h))
+
+def runaway_sql() -> String:
+  "WITH RECURSIVE c(x) AS (VALUES(1) UNION ALL SELECT x + 1 FROM c) SELECT count(*) FROM c"
+
+def runaway(tx: Sql.Db) -> IO(String):
+  do IO<String>:
+    r : Result<&2, &2, Sql.Error, Sql.Rows> <- Sql.all(tx, runaway_sql(), Sql.none())
+    return rows(r)
+
+# A statement that never returns a row is interrupted at max_ms, so a commit
+# waiting for it finishes.
+def deadline(+capped: Sql.Options) -> IO(Unit):
+  do IO<Unit>:
+    a : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.open_with(":memory:", capped)
+    +db : Sql.Db <- db_or_die(a)
+    b : Result<&2, &2, Sql.Error, Sql.Rows> <- Sql.all(db, runaway_sql(), Sql.none())
+    say("runaway all", rows(b))
+    c : Result<&2, &2, Sql.Error, Unit> <- Sql.exec(db, runaway_sql())
+    say("runaway exec", unit(c))
+    d : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.begin(db)
+    +tx : Sql.Db <- db_or_die(d)
+    ch : Chan(String) <- IO.fork(String, runaway(tx))
+    IO.sleep(10)
+    e : Result<&2, &2, Sql.Error, Unit> <- Sql.commit(tx)
+    say("commit behind a runaway", unit(e))
+    s : String <- IO.join(String, ch)
+    say("runaway in a transaction", s)
+    f : Result<&2, &2, Sql.Error, Sql.Rows> <- Sql.all(db, "SELECT 1", Sql.none())
+    say("after runaway", rows(f))
+    g : Result<&2, &2, Sql.Error, Unit> <- Sql.close(db)
+    say("deadline close", unit(g))
+
+def capped() -> Sql.Options:
+  Sql.Options{Sql.ReadWriteCreate{}, 50, 10, 1000, 1000, 200}
+
 def hardening(+db: Sql.Db) -> IO(Unit):
   do IO<Unit>:
     control(db)
     reprepare(db)
     row_order(db)
-    reopen(Sql.Options{Sql.ReadWriteCreate{}, 300, 10, 1000, 1000})
-    inflight(Sql.Options{Sql.ReadWriteCreate{}, 50, 10, 1000, 1000})
-    budgets(Sql.Options{Sql.ReadWriteCreate{}, 100, 10, 12, 6})
+    reopen(Sql.Options{Sql.ReadWriteCreate{}, 300, 10, 1000, 1000, 30000})
+    inflight(Sql.Options{Sql.ReadWriteCreate{}, 50, 10, 1000, 1000, 30000})
+    budgets(Sql.Options{Sql.ReadWriteCreate{}, 100, 10, 12, 6, 30000})
+    sneaks(db)
+    deadline(capped())
 
 def opened(r: Result<&2, &2, Sql.Error, Sql.Db>) -> String:
   match r:
@@ -432,7 +511,7 @@ def opened(r: Result<&2, &2, Sql.Error, Sql.Db>) -> String:
 
 def limits(+dir: String) -> IO(Unit):
   do IO<Unit>:
-    a : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.open_with(":memory:", Sql.Options{Sql.ReadWriteCreate{}, 100, 2, 1000, 1000})
+    a : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.open_with(":memory:", Sql.Options{Sql.ReadWriteCreate{}, 100, 2, 1000, 1000, 30000})
     +db : Sql.Db <- db_or_die(a)
     b : Result<&2, &2, Sql.Error, Sql.Rows> <- Sql.all(db, "SELECT 1 UNION ALL SELECT 2", Sql.none())
     say("two rows", rows(b))
@@ -444,13 +523,13 @@ def limits(+dir: String) -> IO(Unit):
     say("closed use", rows(e))
     f : Result<&2, &2, Sql.Error, Unit> <- Sql.close(db)
     say("close twice", unit(f))
-    g : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.open_with(dir ++ "/missing.db", Sql.Options{Sql.ReadOnly{}, 100, 10, 1000, 1000})
+    g : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.open_with(dir ++ "/missing.db", Sql.Options{Sql.ReadOnly{}, 100, 10, 1000, 1000, 30000})
     say("open missing", opened(g))
     h : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.open(dir ++ "/file.db")
     +fdb : Sql.Db <- db_or_die(h)
     i : Result<&2, &2, Sql.Error, Unit> <- Sql.exec(fdb, "CREATE TABLE IF NOT EXISTS f (a)")
     say("file schema", unit(i))
-    j : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.open_with(dir ++ "/file.db", Sql.Options{Sql.ReadOnly{}, 100, 10, 1000, 1000})
+    j : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.open_with(dir ++ "/file.db", Sql.Options{Sql.ReadOnly{}, 100, 10, 1000, 1000, 30000})
     +ro : Sql.Db <- db_or_die(j)
     k : Result<&2, &2, Sql.Error, Sql.Changes> <- Sql.run(ro, "INSERT INTO f VALUES (1)", Sql.none())
     say("read-only write", changes(k))
@@ -475,15 +554,20 @@ def only_open() -> IO(Unit):
     a : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.open(":memory:")
     say("open", opened(a))
 
+def pick_deadline(+dir: String, only: Bool) -> IO(Unit):
+  match only:
+    case True{}: deadline(capped())
+    case False{}: everything(dir)
+
 def pick(+dir: String, open: Bool) -> IO(Unit):
   match open:
     case True{}: only_open()
-    case False{}: everything(dir)
+    case False{}: pick_deadline(dir, String.eq(dir, "--deadline"))
 
 def run(args: List<String>) -> IO(Unit):
   match args:
     case program <> +dir <> rest: pick(dir, String.eq(dir, "--open"))
-    case _: IO.die(Unit, 2, "usage: parity DIR | parity --open")
+    case _: IO.die(Unit, 2, "usage: parity DIR | parity --open | parity --deadline")
 
 def main() -> IO(Unit):
   do IO<Unit>:

@@ -369,6 +369,51 @@ describe("the JS twin", () => {
     for (const line of expected) expect(lines).toContain(line);
   });
 
+  // Review round 2 (BND-38). Both builds failed each of these before the fix.
+  test("refuses transaction control behind empty statements, comments or a BOM", () => {
+    // Both builds committed the insert, then refused the statement, so each
+    // count grew by one; prepare accepted ";SAVEPOINT s".
+    const refused = `error 21 ${CONTROL}`;
+    for (const lines of [parityLines(false), parityLines(true)]) {
+      for (const label of [
+        "semicolon commit",
+        "bom commit",
+        "comment commit",
+        "comment end",
+        "run semicolon commit",
+      ]) {
+        expect(lines).toContain(`${label}: ${refused}`);
+        expect(lines).toContain(`${label} rollback: ok`);
+        expect(lines).toContain(`${label} rows: rows count(*) [i:0] changes 0`);
+      }
+      expect(lines).toContain(`prepare semicolon savepoint: ${refused}`);
+      // VACUUM compiles a BEGIN of its own while it runs; that one is allowed.
+      expect(lines).toContain("vacuum: ok");
+    }
+  });
+
+  test("a runaway statement is interrupted at max_ms and a commit behind it finishes", () => {
+    // Both builds ran the recursive query forever, and native's commit
+    // waited on it forever. The fixture runs three runaway statements, one
+    // after another, each with a 200 ms deadline.
+    const expected = [
+      "runaway all: error 9 bendo sqlite: the statement ran longer than 200 ms",
+      "runaway exec: error 9 bendo sqlite: the statement ran longer than 200 ms",
+      "commit behind a runaway: ok",
+      "runaway in a transaction: error 9 bendo sqlite: the statement ran longer than 200 ms",
+      "after runaway: rows 1 [i:1] changes 0",
+      "deadline close: ok",
+    ];
+    for (const js of [false, true]) {
+      const began = performance.now();
+      const out = runParity(js ? parityJs : parityNative, js, {}, "--deadline");
+      const took = performance.now() - began;
+      expect(out.trim().split("\n")).toEqual(expected);
+      expect(took).toBeGreaterThan(3 * 200);
+      expect(took).toBeLessThan(3 * 200 + 5_000);
+    }
+  });
+
   test("both builds name the missing library when libsqlite3 is not installed", () => {
     if (process.platform !== "linux") return;
     const shim = join(mkdtempSync(join(scratch, "shim-")), "no_sqlite.so");

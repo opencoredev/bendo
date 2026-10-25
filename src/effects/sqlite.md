@@ -30,8 +30,10 @@ On Ubuntu and Debian the library is the `libsqlite3-0` package. No `-dev`
 package is needed. When the library is missing, the first open fails with code
 14 and the message `bendo sqlite: libsqlite3 was not found (tried
 libsqlite3.so.0, libsqlite3.so); install it, for example with apt-get install
-libsqlite3-0`. A library built without thread support, or one older than
-SQLite 3.7.14 (no `sqlite3_close_v2`), is refused with its own message.
+libsqlite3-0`. A library built without thread support, one older than
+SQLite 3.7.14 (no `sqlite3_close_v2`), or one built without the authorizer
+(`SQLITE_OMIT_AUTHORIZATION`, which removes `sqlite3_set_authorizer`), is
+refused with its own message.
 
 The vendored amalgamation was considered and rejected: Bend splices an
 effect's C file into every program that imports it, so 9 MB of SQLite source
@@ -44,7 +46,8 @@ query does not stop the event loop. Each connection has a mutex, held for the
 whole operation, so one connection runs one statement at a time.
 
 - `open` calls `sqlite3_open_v2` with `SQLITE_OPEN_FULLMUTEX`, turns on
-  extended result codes and sets SQLite's busy timeout. The path is used as
+  extended result codes, sets SQLite's busy timeout, and installs the
+  connection's authorizer (see Transactions below) and progress handler. The path is used as
   SQLite reads it: `:memory:` is a private in-memory database and `""` a
   temporary file. A path containing a NUL character is refused.
 - `prepare` compiles exactly one statement. An empty statement, or anything
@@ -57,6 +60,16 @@ whole operation, so one connection runs one statement at a time.
   one fails. It refuses a transaction-control statement before stepping it,
   and stops after any statement that left the transaction state different
   from where the script began.
+- Every statement's steps run under a deadline of `max_ms` (`Sql.Options`,
+  30 s by default) from its first step. A progress handler, called every
+  1000 virtual machine instructions, interrupts a statement past it, which
+  fails with code 9 (`SQLITE_INTERRUPT`) and the message `bendo sqlite: the
+  statement ran longer than N ms`. This is what bounds a statement that
+  never returns a row, such as an unbounded recursive query, which the row
+  and byte caps cannot reach. `busy_ms` bounds only waiting for locks.
+  Compiling, begin, commit, rollback and close run without the deadline.
+  `max_ms` 0 turns it off. Both builds use the same handler; the JS build
+  registers it through a `bun:ffi` `JSCallback`.
 - `run`, `all` and `get` reset the statement and clear its bindings, bind
   every parameter, step, and reset and clear it again on every path, including
   errors. A one-shot statement is finalized on every path. `get` stops
@@ -148,20 +161,35 @@ effect gates the connection (the table is `Sqlite.gate`, stated in the laws):
   token that is not the open one's, such as a copy kept after a commit, fails
   with code 21.
 - `commit` and `rollback`, given the open transaction's `Db`, always end
-  it, whatever they return. Each waits, without a limit, for the
+  it, whatever they return. Each waits, with no limit of its own, for the
   transaction's statements already in flight, as `close` waits for every
   operation: those statements were admitted and always finish, while an end
   that timed out would leave the transaction open and the connection gated
-  for good. A `COMMIT` that fails is rolled back. Given any other `Db`, they
+  for good. Each statement waited for stops at `max_ms`, so with `max_ms`
+  above 0 an end waits at most about `max_ms` per statement in flight, and
+  always finishes. A `COMMIT` that fails is rolled back. A write interrupted
+  at `max_ms` inside a transaction makes SQLite roll the whole transaction
+  back; its next statement or commit then fails with code 516. Given any other `Db`, they
   fail with code 21 and change nothing.
-- A statement may not begin, end or nest a transaction itself. A statement
-  whose first keyword, after whitespace and comments, is `BEGIN`, `COMMIT`,
-  `END`, `ROLLBACK`, `SAVEPOINT` or `RELEASE` fails with code 21 before it
-  runs, through `run`, `all`, `get`, `prepare` or anywhere in an `exec`
-  script, inside a transaction or not. These six keywords start every SQLite
-  statement that changes the transaction state. As a second line of
-  defense, a statement or script that still leaves the autocommit flag
-  changed is rolled back (outside a transaction) or fails with code 21. If
+- A statement may not begin, end or nest a transaction itself. A `BEGIN`,
+  `COMMIT`, `END`, `ROLLBACK`, `SAVEPOINT`, `RELEASE` or `ROLLBACK TO`
+  statement fails with code 21 before it runs, through `run`, `all`, `get`,
+  `prepare` or anywhere in an `exec` script, inside a transaction or not.
+  The decision is SQLite's own, not a scan of the text: each connection has
+  an authorizer (`sqlite3_set_authorizer`), and while the effect compiles a
+  caller's SQL it denies the two actions SQLite reports for these statements,
+  `SQLITE_TRANSACTION` and `SQLITE_SAVEPOINT`, so the statement never
+  compiles. SQLite reports them for the statement it actually parsed, after
+  skipping whatever its tokenizer skips (whitespace, `--` and `/* */`
+  comments, empty `;` statements, a UTF-8 byte order mark), so no prefix
+  hides one. An earlier keyword scanner skipped only whitespace and
+  comments, and `;COMMIT` committed. Outside a caller's compile the
+  authorizer allows everything: begin, commit and rollback compile their own
+  statements, and `VACUUM` compiles a `BEGIN` while it runs. Both builds
+  install the same authorizer; the JS build's is a `bun:ffi` `JSCallback`.
+  As a second line of defense, a statement or script that still leaves the
+  autocommit flag changed is rolled back (outside a transaction) or fails
+  with code 21. If
   SQLite rolls a transaction back by itself after an error, the
   transaction's next statement or commit fails with code 516
   (`SQLITE_ABORT_ROLLBACK`).
@@ -196,6 +224,7 @@ unless noted:
 | Code | When |
 | --- | --- |
 | 5 `SQLITE_BUSY` | A statement waited past the busy timeout for another transaction on the connection |
+| 9 `SQLITE_INTERRUPT` | A statement ran past `max_ms` |
 | 14 `SQLITE_CANTOPEN` | libsqlite3 could not be loaded, or is unusable |
 | 18 `SQLITE_TOOBIG` | `all` passed the row cap, or `all` or `get` passed `max_bytes` or `max_cell` |
 | 20 `SQLITE_MISMATCH` | A parameter value is malformed (messages start `parameter N:`) |

@@ -34,7 +34,9 @@ type Reply is Data:
   Ran{columns: List<&2, String>, rows: List<&2, List<&2, Cell>>, changes: Nat, rowid: String}
 
 # op 0 open: text1 path, mode 0 read-write-create / 1 read-write / 2
-#   read-only, limit busy timeout in ms. Handle{slot, gen}.
+#   read-only, limit busy timeout in ms, max_bytes the most milliseconds one
+#   statement may run (0 for no bound; past it the statement fails with code
+#   9, SQLITE_INTERRUPT). Handle{slot, gen}.
 # op 1 close: slot, gen. Finished.
 # op 2 prepare: slot, gen, text1 SQL. Handle{index, sgen}.
 # op 3 finalize: slot, gen, index, sgen. Finished.
@@ -44,8 +46,8 @@ type Reply is Data:
 #   blob cell) for all and get, text2 params. Ran.
 # op 5 exec: slot, gen, token, text1 script with no parameters. Finished.
 #   Every operation but op 6 and op 7 refuses a transaction-control
-#   statement (BEGIN, COMMIT, END, ROLLBACK, SAVEPOINT, RELEASE) before it
-#   runs.
+#   statement (BEGIN, COMMIT, END, ROLLBACK, SAVEPOINT, RELEASE) when SQLite
+#   compiles it, before it runs.
 # op 6 begin: slot, gen, mode 0 deferred / 1 immediate / 2 exclusive.
 #   Handle{token, 0}.
 # op 7 end: slot, gen, token, mode 1 commit / 0 rollback. Finished.

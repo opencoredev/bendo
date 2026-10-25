@@ -41,8 +41,8 @@ def opened(r: Result<&2, &2, Sql.Error, Sql.Db>) -> IO(Unit):
 ```
 
 `Sql.open(path)` opens or creates a file; `":memory:"` is a private in-memory
-database. `Sql.open_with(path, options)` sets the mode, the busy timeout and
-the row cap:
+database. `Sql.open_with(path, options)` sets the mode, the busy timeout,
+the result caps and the statement deadline:
 
 | `Sql.Options` field | `Sql.options()` | Meaning |
 | --- | --- | --- |
@@ -51,10 +51,14 @@ the row cap:
 | `max_rows` | 100000 | The most rows `Sql.all` returns; one more fails with code 18 instead of truncating. |
 | `max_bytes` | 67108864 (64 MiB) | The most bytes of cell data one result of `Sql.all` or `Sql.get` holds: text and blob bytes and the digits of numbers. More fails with code 18. |
 | `max_cell` | 16777216 (16 MiB) | The most bytes of one text or blob value in such a result. More fails with code 18. |
+| `max_ms` | 30000 | The most milliseconds one statement may run. A statement still running then is interrupted and fails with code 9. 0 turns the bound off. |
 
 The caps bound what one call copies out of SQLite. Bend holds a string as a
 list of characters, so a result takes many times its byte size in memory;
 lower the caps for an app whose rows are large or whose memory is small.
+`max_ms` bounds what the caps cannot: a statement that runs a long time
+before returning a row, or that returns none, such as an unbounded recursive
+query.
 
 `Sql.exec(db, script)` runs several statements with no parameters, such as a
 schema, one after another. Everything else runs one statement per call. `Sql.close(db)` rolls
@@ -157,13 +161,19 @@ until the transaction ends, so they never run inside it by accident. They
 fail with code 5 if it stays open past the busy timeout. `Sql.begin`,
 `Sql.commit` and `Sql.rollback` are the manual form. `Sql.commit` and
 `Sql.rollback` always end the transaction, whatever they return: each waits
-for the transaction's statements still running, however long they take, and
-a commit that fails rolls back. Transactions begin with `BEGIN IMMEDIATE`;
+for the transaction's statements still running, and a commit that fails
+rolls back. Each of those statements stops at `max_ms`, so the wait is
+bounded too; with `max_ms` set to 0 it is not. A write interrupted at
+`max_ms` inside a transaction makes SQLite roll the transaction back; the
+next statement or commit then fails with code 516 and `Sql.rollback`
+finishes it. Transactions begin with `BEGIN IMMEDIATE`;
 `Sql.begin_with(db, Sql.Deferred{})` takes another `Sql.Begin` kind.
 
 Only those calls change the transaction state. A statement that begins or
 ends a transaction or savepoint (`BEGIN`, `COMMIT`, `END`, `ROLLBACK`,
-`SAVEPOINT`, `RELEASE`) fails with code 21 before it runs, through `Sql.run`,
+`SAVEPOINT`, `RELEASE`, with or without whitespace, comments, empty
+statements or a byte order mark before it) fails with code 21 before it runs,
+through `Sql.run`,
 `Sql.all`, `Sql.get`, `Sql.prepare` or anywhere in an `Sql.exec` script, in
 or out of a transaction. To run a script atomically, run it inside
 `Sql.transaction`. Savepoints are not supported.

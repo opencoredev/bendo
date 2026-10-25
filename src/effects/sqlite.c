@@ -20,15 +20,19 @@
 // statements wait, up to the connection's busy timeout, and fail with
 // SQLITE_BUSY. Only begin and its end change the transaction state: a
 // statement or script statement that would (BEGIN, COMMIT, END, ROLLBACK,
-// SAVEPOINT, RELEASE) is refused before it runs. sqlite.js mirrors this file.
+// SAVEPOINT, RELEASE) is refused when SQLite compiles it, by the connection's
+// authorizer, before it runs. A progress handler interrupts a statement that
+// runs past the connection's max_ms. sqlite.js mirrors this file.
 #include <dlfcn.h>
 #include <limits.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define BSQ_OK 0
 #define BSQ_BUSY 5
+#define BSQ_INTERRUPT 9
 #define BSQ_NOMEM 7
 #define BSQ_CANTOPEN 14
 #define BSQ_TOOBIG 18
@@ -46,6 +50,16 @@
 #define BSQ_NULL 5
 
 #define BSQ_POLL_MS 1
+
+// sqlite3_set_authorizer's action codes for BEGIN, COMMIT, END and ROLLBACK
+// (SQLITE_TRANSACTION) and for SAVEPOINT, RELEASE and ROLLBACK TO
+// (SQLITE_SAVEPOINT), and its SQLITE_DENY.
+#define BSQ_AUTH_TRANSACTION 22
+#define BSQ_AUTH_SAVEPOINT 32
+#define BSQ_DENY 1
+
+// The progress handler runs every this many virtual machine instructions.
+#define BSQ_PROGRESS_OPS 1000
 
 typedef long long bsq_i64;
 
@@ -86,9 +100,15 @@ typedef struct BsqLib {
   int (*exec)(void*, const char*, void*, void*, char**);
   void (*free)(void*);
   int (*threadsafe)(void);
+  int (*set_authorizer)(void*, int (*)(void*, int, const char*, const char*, const char*, const char*), void*);
+  void (*progress_handler)(void*, int, int (*)(void*), void*);
 } BsqLib;
 
 static BsqLib bsq;
+
+// Every SQLite since 3.0 has the authorizer unless built without it.
+static const char* BSQ_NO_AUTH_MSG =
+  "bendo sqlite: libsqlite3 was built without the authorizer (SQLITE_OMIT_AUTHORIZATION)";
 static int bsq_loaded;
 static char bsq_load_error[512];
 
@@ -157,10 +177,15 @@ static int bsq_load(void) {
   BSQ_SYM(exec, "sqlite3_exec");
   BSQ_SYM(free, "sqlite3_free");
   BSQ_SYM(threadsafe, "sqlite3_threadsafe");
+  BSQ_SYM(set_authorizer, "sqlite3_set_authorizer");
+  BSQ_SYM(progress_handler, "sqlite3_progress_handler");
 #undef BSQ_SYM
   // Optional: SQLite 3.37 and later. Older ones count changes in an int.
   *(void**)&bsq.total_changes64 = dlsym(h, "sqlite3_total_changes64");
-  if (missing != NULL) {
+  if (missing != NULL && strcmp(missing, "sqlite3_set_authorizer") == 0) {
+    snprintf(bsq_load_error, sizeof bsq_load_error, "%s", BSQ_NO_AUTH_MSG);
+    bsq_loaded = 2;
+  } else if (missing != NULL) {
     snprintf(bsq_load_error, sizeof bsq_load_error,
       "bendo sqlite: libsqlite3 lacks %s; it is too old", missing);
     bsq_loaded = 2;
@@ -192,11 +217,18 @@ typedef struct BsqConn {
   u32 inflight;
   u32 pending;
   u32 busy_ms;
-  // Under lock, helper threads only.
+  // Under lock, helper threads only. guard is set while a caller's SQL
+  // compiles, and the authorizer sets refused when it denies a statement;
+  // stop is the running statement's deadline in CLOCK_MONOTONIC
+  // nanoseconds (0 for none), and the progress handler sets expired when it
+  // interrupts the statement.
   pthread_mutex_t lock;
   void* db;
   BsqStmt* stmts;
   u32 nstmts;
+  u32 max_ms;
+  int guard, refused, expired;
+  u64 stop;
 } BsqConn;
 
 static BsqConn** bsq_conns;
@@ -639,64 +671,85 @@ static const char* BSQ_CONTROL_MSG =
   "bendo sqlite: a statement may not begin or end a transaction or savepoint; "
   "use Sql.begin, Sql.commit and Sql.rollback";
 
-static int bsq_space(char c) {
-  return c == ' ' || c == '\t' || c == '\n' || c == '\f' || c == '\r';
+static u64 bsq_clock(void) {
+  struct timespec t;
+  clock_gettime(CLOCK_MONOTONIC, &t);
+  return (u64)t.tv_sec * 1000000000u + (u64)t.tv_nsec;
 }
 
-static int bsq_ident(unsigned char c) {
-  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
-    || c == '_' || c == '$' || c >= 0x80;
+// The connection's authorizer. While a caller's SQL compiles, it denies
+// every statement SQLite marks as transaction control, so the statement
+// never exists; SQLite decides this from the statement it parsed, after
+// skipping whatever its tokenizer skips (whitespace, comments, empty
+// statements, a byte order mark). Outside a caller's compile it allows
+// everything: begin, commit and rollback compile their own statements, and
+// VACUUM compiles a BEGIN while it runs.
+static int bsq_authorize(void* arg, int action, const char* a, const char* b, const char* d, const char* v) {
+  (void)a;
+  (void)b;
+  (void)d;
+  (void)v;
+  BsqConn* c = (BsqConn*)arg;
+  if (c->guard && (action == BSQ_AUTH_TRANSACTION || action == BSQ_AUTH_SAVEPOINT)) {
+    c->refused = 1;
+    return BSQ_DENY;
+  }
+  return BSQ_OK;
 }
 
-// Whether the statement text s[0..n), one statement as prepare_v2 cut it,
-// begins with BEGIN, COMMIT, END, ROLLBACK, SAVEPOINT or RELEASE after
-// whitespace and comments. These are the only statements that start, end or
-// nest a transaction, and each starts with its keyword.
-static int bsq_control(const char* s, size_t n) {
-  size_t i = 0;
-  for (;;) {
-    while (i < n && bsq_space(s[i])) {
-      i += 1;
-    }
-    if (i + 1 < n && s[i] == '-' && s[i + 1] == '-') {
-      while (i < n && s[i] != '\n') {
-        i += 1;
-      }
-    } else if (i + 1 < n && s[i] == '/' && s[i + 1] == '*') {
-      i += 2;
-      while (i + 1 < n && !(s[i] == '*' && s[i + 1] == '/')) {
-        i += 1;
-      }
-      i = i + 1 < n ? i + 2 : n;
-    } else {
-      break;
-    }
-  }
-  size_t k = i;
-  while (k < n && bsq_ident((unsigned char)s[k])) {
-    k += 1;
-  }
-  static const char* words[] = { "BEGIN", "COMMIT", "END", "ROLLBACK", "SAVEPOINT", "RELEASE" };
-  for (size_t w = 0; w < sizeof words / sizeof *words; w += 1) {
-    size_t len = strlen(words[w]);
-    if (k - i != len) {
-      continue;
-    }
-    size_t m = 0;
-    while (m < len && (s[i + m] & ~0x20) == words[w][m]) {
-      m += 1;
-    }
-    if (m == len) {
-      return 1;
-    }
+// The connection's progress handler: interrupts the running statement past
+// its deadline.
+static int bsq_progress(void* arg) {
+  BsqConn* c = (BsqConn*)arg;
+  if (c->stop != 0 && bsq_clock() >= c->stop) {
+    c->expired = 1;
+    return 1;
   }
   return 0;
+}
+
+// Starts and stops the deadline of a statement's steps.
+static void bsq_clock_start(BsqConn* c) {
+  c->expired = 0;
+  c->stop = c->max_ms == 0 ? 0 : bsq_clock() + (u64)c->max_ms * 1000000u;
+}
+
+static void bsq_clock_stop(BsqConn* c) {
+  c->stop = 0;
+}
+
+// A failed step: past the deadline, code 9 with the effect's message.
+static void bsq_fail_step(BsqJob* j, BsqConn* c) {
+  if (c->expired && bsq.extended_errcode(c->db) == BSQ_INTERRUPT) {
+    char msg[96];
+    snprintf(msg, sizeof msg, "bendo sqlite: the statement ran longer than %u ms", c->max_ms);
+    bsq_fail(j, BSQ_INTERRUPT, msg);
+  } else {
+    bsq_fail_db(j, c->db);
+  }
+}
+
+// Compiles the caller's SQL with the authorizer's guard up; a statement it
+// refused fails with code 21.
+static int bsq_compile(BsqJob* j, BsqConn* c, const char* sql, int n, void** st, const char** tail) {
+  c->guard = 1;
+  c->refused = 0;
+  int rc = bsq.prepare_v2(c->db, sql, n, st, tail);
+  c->guard = 0;
+  if (rc != BSQ_OK && j != NULL) {
+    if (c->refused) {
+      bsq_fail(j, BSQ_MISUSE, BSQ_CONTROL_MSG);
+    } else {
+      bsq_fail_db(j, c->db);
+    }
+  }
+  return rc;
 }
 
 // Prepares exactly one statement from sql. Fails when there is none, when
 // anything but whitespace and comments follows it, or when it is a
 // transaction-control statement.
-static void* bsq_prepare_one(BsqJob* j, void* db, const char* sql, size_t n) {
+static void* bsq_prepare_one(BsqJob* j, BsqConn* c, const char* sql, size_t n) {
   if (strlen(sql) != n) {
     bsq_fail(j, BSQ_MISUSE, "bendo sqlite: SQL contains a NUL character");
     return NULL;
@@ -707,8 +760,7 @@ static void* bsq_prepare_one(BsqJob* j, void* db, const char* sql, size_t n) {
   }
   void* st = NULL;
   const char* tail = NULL;
-  if (bsq.prepare_v2(db, sql, (int)n, &st, &tail) != BSQ_OK) {
-    bsq_fail_db(j, db);
+  if (bsq_compile(j, c, sql, (int)n, &st, &tail) != BSQ_OK) {
     return NULL;
   }
   if (st == NULL) {
@@ -717,7 +769,7 @@ static void* bsq_prepare_one(BsqJob* j, void* db, const char* sql, size_t n) {
   }
   void* more = NULL;
   const char* rest = NULL;
-  int rc = bsq.prepare_v2(db, tail, (int)(n - (size_t)(tail - sql)), &more, &rest);
+  int rc = bsq_compile(NULL, c, tail, (int)(n - (size_t)(tail - sql)), &more, &rest);
   if (rc != BSQ_OK || more != NULL) {
     if (more != NULL) {
       bsq.finalize(more);
@@ -725,11 +777,6 @@ static void* bsq_prepare_one(BsqJob* j, void* db, const char* sql, size_t n) {
     bsq.finalize(st);
     bsq_fail(j, BSQ_MISUSE,
       "bendo sqlite: one statement per call; run scripts with Sql.exec");
-    return NULL;
-  }
-  if (bsq_control(sql, (size_t)(tail - sql))) {
-    bsq.finalize(st);
-    bsq_fail(j, BSQ_MISUSE, BSQ_CONTROL_MSG);
     return NULL;
   }
   return st;
@@ -863,7 +910,7 @@ static void bsq_query(BsqJob* j, BsqConn* c) {
     return;
   }
   if (own) {
-    st = bsq_prepare_one(j, db, j->text1, (size_t)j->n1);
+    st = bsq_prepare_one(j, c, j->text1, (size_t)j->n1);
     if (st == NULL) {
       return;
     }
@@ -879,6 +926,7 @@ static void bsq_query(BsqJob* j, BsqConn* c) {
   }
   if (bsq_bind(j, st)) {
     bsq_i64 before = bsq_total(db);
+    bsq_clock_start(c);
     for (int first = 1;; first = 0) {
       int rc = bsq.step(st);
       if (first && j->mode != 0 && (rc == BSQ_ROW || rc == BSQ_DONE)) {
@@ -903,10 +951,11 @@ static void bsq_query(BsqJob* j, BsqConn* c) {
       } else if (rc == BSQ_DONE) {
         break;
       } else {
-        bsq_fail_db(j, db);
+        bsq_fail_step(j, c);
         break;
       }
     }
+    bsq_clock_stop(c);
     j->changes = bsq_total(db) - before;
     j->rowid = bsq.last_insert_rowid(db);
   }
@@ -920,8 +969,9 @@ static void bsq_query(BsqJob* j, BsqConn* c) {
 }
 
 // Runs a script one statement at a time, as sqlite3_exec does, but refuses
-// a transaction-control statement before it runs and stops at the first
-// statement after which the transaction state differs.
+// a transaction-control statement before it runs, bounds each statement by
+// max_ms, and stops at the first statement after which the transaction
+// state differs.
 static void bsq_exec(BsqJob* j, BsqConn* c) {
   void* db = c->db;
   const char* sql = j->text1;
@@ -942,8 +992,7 @@ static void bsq_exec(BsqJob* j, BsqConn* c) {
   while (j->code == 0 && at < sql + n) {
     void* st = NULL;
     const char* tail = NULL;
-    if (bsq.prepare_v2(db, at, (int)(sql + n - at), &st, &tail) != BSQ_OK) {
-      bsq_fail_db(j, db);
+    if (bsq_compile(j, c, at, (int)(sql + n - at), &st, &tail) != BSQ_OK) {
       break;
     }
     if (st == NULL) {
@@ -954,17 +1003,14 @@ static void bsq_exec(BsqJob* j, BsqConn* c) {
       at = tail;
       continue;
     }
-    if (bsq_control(at, (size_t)(tail - at))) {
-      bsq.finalize(st);
-      bsq_fail(j, BSQ_MISUSE, BSQ_CONTROL_MSG);
-      break;
-    }
+    bsq_clock_start(c);
     int rc = bsq.step(st);
     while (rc == BSQ_ROW) {
       rc = bsq.step(st);
     }
+    bsq_clock_stop(c);
     if (rc != BSQ_DONE) {
-      bsq_fail_db(j, db);
+      bsq_fail_step(j, c);
     }
     bsq.finalize(st);
     if (bsq.get_autocommit(db) != autocommit) {
@@ -995,6 +1041,11 @@ static void bsq_call(IoWork* w) {
       }
       bsq.extended_result_codes(db, 1);
       bsq.busy_timeout(db, j->limit > INT_MAX ? INT_MAX : (int)j->limit);
+      c->max_ms = j->max_bytes;
+      c->guard = 0;
+      c->stop = 0;
+      bsq.set_authorizer(db, bsq_authorize, c);
+      bsq.progress_handler(db, BSQ_PROGRESS_OPS, bsq_progress, c);
       c->db = db;
       break;
     }
@@ -1017,7 +1068,7 @@ static void bsq_call(IoWork* w) {
       break;
     }
     case 2: {
-      void* st = bsq_prepare_one(j, c->db, j->text1, (size_t)j->n1);
+      void* st = bsq_prepare_one(j, c, j->text1, (size_t)j->n1);
       if (st == NULL) {
         break;
       }
@@ -1309,8 +1360,9 @@ static Term bendo_sqlite_call_run(Env e, Term* f, IoWork* w) {
     j->conn->state = BSQ_CLOSING;
   }
   // Work already admitted always finishes, so close, commit and rollback wait
-  // for it without a limit: an end that timed out would leave its
-  // transaction open and the connection gated.
+  // for it without a limit of their own: an end that timed out would leave
+  // its transaction open and the connection gated. Each statement they wait
+  // for is bounded by max_ms (unless that is 0), so the wait is too.
   j->deadline = j->op == 1 || j->op == 7 ? UINT64_MAX : io_until(j->conn->busy_ms);
   return bsq_try(e, w);
 }

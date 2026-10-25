@@ -228,12 +228,16 @@ them, including that both builds give the same answers.
 the rest.
 
 The wire-format laws hold for strings the encoders write. They say nothing
-about strings the encoders cannot write: a payload with no closing `;` or
-ending in a lone `\`, an unknown tag, a value whose text is not a valid
-integer or JSON number, a blob byte above 255, a wrong parameter count, or
-a parameter name the statement lacks. The effect refuses each of those with
-an error code; that is trusted code covered by tests, and the effect's notes
-list the codes.
+about malformed framing, which the encoders never write: a payload with no
+closing `;` or ending in a lone `\`, an unknown tag, or a string that does
+not start with `P` or `N`. The encoders do not validate what they are given,
+though. They serialize integer and real text that is not a valid number,
+blob bytes above 255, and any number of parameters with any names, and the
+laws prove those read back unchanged. Checking them is semantic validation
+in the effect: the number and byte checks (code 20) and the parameter count
+and name checks against the statement (code 25). The effect refuses
+malformed framing with code 21. All of that is trusted code covered by
+tests, and the effect's notes list the codes.
 
 - `sqlite_payload_roundtrip`: a payload (a text, a number's decimal text or a parameter name) reads back as exactly its characters, and reading stops where the payload ends, whatever follows. A `;` or `\` inside a value cannot end it early.
 - `sqlite_value_roundtrip`: every value, of every type (NULL, integer, real, text, blob), reads back as itself with its type, so a parameter cannot change type or run into the next one.

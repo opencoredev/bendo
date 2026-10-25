@@ -39,8 +39,10 @@ type Begin is Data:
   Immediate{}
   Exclusive{}
 
+# max_ms bounds how long one statement runs; past it the statement fails
+# with code 9 (SQLITE_INTERRUPT). 0 turns the bound off.
 type Options is Data:
-  Options{mode: Mode, busy_ms: U32, max_rows: U32, max_bytes: U32, max_cell: U32}
+  Options{mode: Mode, busy_ms: U32, max_rows: U32, max_bytes: U32, max_cell: U32, max_ms: U32}
 
 # SqlError carries SQLite's extended result code and message, or one of the
 # effect's own (src/effects/sqlite.md lists them). RowError and NotJson come
@@ -78,9 +80,10 @@ def named(bindings: List<&2, D.Binding>) -> Params: Named{bindings}
 def bind(name: String, v: D.Value) -> D.Binding: D.Binding{name, v}
 
 # Read-write, created if missing; a 5 s busy timeout; at most 100000 rows,
-# 64 MiB of cell data and 16 MiB in one text or blob cell per result.
+# 64 MiB of cell data and 16 MiB in one text or blob cell per result; 30 s
+# per statement.
 def options() -> Options:
-  Options{ReadWriteCreate{}, 5000, 100000, 67108864, 16777216}
+  Options{ReadWriteCreate{}, 5000, 100000, 67108864, 16777216, 30000}
 
 def abort(message: String) -> Error: Abort{message}
 
@@ -203,9 +206,9 @@ def kind_code(k: Begin) -> U32:
 # timeout and result caps.
 def open_with(path: String, o: Options) -> IO(Result<&2, &2, Error, Db>):
   match o:
-    case Options{mode, busy_ms, +max_rows, +max_bytes, +max_cell}:
+    case Options{mode, busy_ms, +max_rows, +max_bytes, +max_cell, max_ms}:
       do IO<Result<&2, &2, Error, Db>>:
-        r : Raw() <- E.sqlite_call(0, 0, 0, 0, 0, 0, mode_code(mode), busy_ms, 0, 0, path, "")
+        r : Raw() <- E.sqlite_call(0, 0, 0, 0, 0, 0, mode_code(mode), busy_ms, max_ms, 0, path, "")
         return opened(max_rows, max_bytes, max_cell, r)
 
 def open(path: String) -> IO(Result<&2, &2, Error, Db>):

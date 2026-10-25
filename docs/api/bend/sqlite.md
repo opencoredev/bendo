@@ -114,7 +114,7 @@ def ex_params() -> Sql.Params:
 
 ```bend signature
 type Options is Data:
-  Options{mode: Mode, busy_ms: U32, max_rows: U32, max_bytes: U32, max_cell: U32}
+  Options{mode: Mode, busy_ms: U32, max_rows: U32, max_bytes: U32, max_cell: U32, max_ms: U32}
 
 type Mode is Data:
   ReadWriteCreate{}
@@ -128,11 +128,13 @@ failing with code 5. `max_rows` is the most rows `Sql.all` returns.
 `max_bytes` is the most bytes of cell data one result of `Sql.all` or
 `Sql.get` holds, counting text and blob bytes and the digits of numbers, and
 `max_cell` the most bytes of one text or blob value in it. A result past any
-cap fails with code 18 instead of being cut short.
+cap fails with code 18 instead of being cut short. `max_ms` is the most
+milliseconds one statement may run before it is interrupted and fails with
+code 9; 0 turns that bound off.
 
 ```bend
 def ex_read_only() -> Sql.Options:
-  Sql.Options{Sql.ReadOnly{}, 1000, 500, 1048576, 65536}
+  Sql.Options{Sql.ReadOnly{}, 1000, 500, 1048576, 65536, 5000}
 
 def ex_mode() -> Sql.Mode:
   Sql.ReadWrite{}
@@ -243,11 +245,12 @@ def ex_open() -> IO(Result<&2, &2, Sql.Error, Sql.Db>):
 def open_with(path: String, o: Options) -> IO(Result<&2, &2, Error, Db>)
 ```
 
-Opens a database with a mode, busy timeout and result caps.
+Opens a database with a mode, busy timeout, result caps and statement
+deadline.
 
 ```bend
 def ex_open_with() -> IO(Result<&2, &2, Sql.Error, Sql.Db>):
-  Sql.open_with("app.db", Sql.Options{Sql.ReadWrite{}, 2000, 1000, 8388608, 1048576})
+  Sql.open_with("app.db", Sql.Options{Sql.ReadWrite{}, 2000, 1000, 8388608, 1048576, 10000})
 ```
 
 ### `Sql.options`
@@ -258,7 +261,7 @@ def options() -> Options
 
 The defaults: read, write and create, a 5000 ms busy timeout, and at most
 100000 rows, 64 MiB of cell data and 16 MiB in one text or blob value per
-result.
+result, and 30000 ms per statement.
 
 ```bend
 def ex_options() -> Sql.Options:
