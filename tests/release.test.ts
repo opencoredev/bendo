@@ -1,23 +1,36 @@
-// `bun run release`: the argument and publish gates, and the shape of a real
-// dry run. The dry run packs the three npm packages and runs `bend --publish`
-// against the script's local stub hub, so it never writes to npm or BendHub.
+// `bun run release`: the argument and publish gates, resuming a partial
+// release, and the shape of a real dry run. The dry run packs the three npm
+// packages and runs `bend --publish` against the script's local stub hub, so it
+// never writes to npm or BendHub. The registry lookups read a recorded fixture,
+// so these tests make no network requests and keep passing after a release.
+// BENDO_RELEASE_LIVE=1 adds one dry run against the real npm and BendHub.
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
   NPM_PACKAGES,
+  REAL_HUB,
+  REGISTRY_FIXTURE_ENV,
+  bendEnv,
   decide,
+  envOverrides,
   formatReport,
   hubEntrySource,
   hubHash,
+  hubShellCommand,
   hubVersion,
   parseArgs,
+  parseHubName,
+  parseNpmView,
   parseVersion,
+  publishState,
   readTar,
   type GateInput,
   type HubPackage,
+  type NpmPackage,
+  type RegistryFixture,
   type Report,
 } from "../scripts/release-lib.ts";
 
@@ -26,10 +39,26 @@ const SCRIPT = join(ROOT, "scripts/release.ts");
 /** Staging, three packs (one runs create-bendo's prepack), npm checks and two `bend` runs. */
 const DRY_RUN_TIMEOUT_MS = 240_000;
 
-function release(args: string[], stage: string) {
+/**
+ * Runs the script with `fixture` as every registry answer, or against the real
+ * registries when it is "live". `env` adds or overrides inherited variables.
+ */
+function release(
+  args: string[],
+  stage: string,
+  fixture: RegistryFixture | "live" = { npm: {}, hub: {} },
+  env: Record<string, string> = {},
+) {
+  const inherited: Record<string, string | undefined> = { ...process.env };
+  delete inherited[REGISTRY_FIXTURE_ENV];
+  if (fixture !== "live") {
+    const path = join(resolve(stage, ".."), "registry.json");
+    writeFileSync(path, JSON.stringify(fixture));
+    inherited[REGISTRY_FIXTURE_ENV] = path;
+  }
   const result = Bun.spawnSync([process.execPath, SCRIPT, ...args], {
     cwd: ROOT,
-    env: { ...process.env, BENDO_RELEASE_DIR: stage },
+    env: { ...inherited, BENDO_RELEASE_DIR: stage, ...env },
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
@@ -42,10 +71,25 @@ function release(args: string[], stage: string) {
   };
 }
 
+function withStage<T>(body: (stage: string) => T): T {
+  const stage = join(mkdtempSync(join(tmpdir(), "bendo-release-")), "stage");
+  try {
+    return body(stage);
+  } finally {
+    rmSync(resolve(stage, ".."), { recursive: true, force: true });
+  }
+}
+
+/** Parses the script's `--json` output. It is the script's own Report, so the test reads it as one. */
+function readReport(result: { code: number | null; stdout: string; stderr: string }): Report {
+  if (result.code !== 0) throw new Error(`dry run failed (${result.code}):\n${result.stderr}`);
+  return JSON.parse(result.stdout);
+}
+
 const stagedHub: HubPackage = {
   name: "bendo",
   version: "0.1.0.0",
-  url: "https://hub.bend-lang.com",
+  destination: REAL_HUB,
   entry: "bendhub.bend",
   directory: "/stage/bendhub/src",
   hash: "0x00000000000000000000000000000000",
@@ -54,7 +98,28 @@ const stagedHub: HubPackage = {
   files: [],
   importCheck: { kind: "passed", imports: ["bendo@0.1.0.0/main.bend"] },
   requests: [],
+  registry: { kind: "publish" },
   command: ["bend", "bendhub.bend", "--publish", "bendo@0.1.0.0"],
+};
+
+const stagedNpm: NpmPackage = {
+  name: "bendo",
+  version: "0.1.0",
+  tarball: "/stage/tarballs/bendo-0.1.0.tgz",
+  packedBytes: 0,
+  unpackedBytes: 0,
+  shasum: "0",
+  integrity: "sha512-staged",
+  access: "public",
+  files: [],
+  bin: {},
+  exports: {},
+  dependencies: {},
+  peerDependencies: {},
+  optionalPeers: [],
+  registry: { kind: "publish" },
+  npmCheck: { kind: "agrees", id: "bendo@0.1.0", files: 0 },
+  command: ["npm", "publish", "/stage/tarballs/bendo-0.1.0.tgz"],
 };
 
 const cleanMain: GateInput = {
@@ -66,6 +131,7 @@ const cleanMain: GateInput = {
   npm: [],
   hub: stagedHub,
   logins: { npm: true, bend: true },
+  overrides: [],
 };
 
 describe("release arguments", () => {
@@ -92,17 +158,132 @@ describe("release arguments", () => {
   });
 
   test("the script refuses before staging anything", () => {
-    const stage = join(mkdtempSync(join(tmpdir(), "bendo-release-")), "stage");
-    try {
+    withStage((stage) => {
       const result = release([], stage);
       expect(result.code).toBe(2);
       expect(result.stderr).toContain("Refusing to run");
       expect(result.stderr).toContain("bun run release --dry-run");
       expect(result.stdout).toBe("");
       expect(existsSync(stage)).toBe(false);
-    } finally {
-      rmSync(resolve(stage, ".."), { recursive: true, force: true });
-    }
+    });
+  });
+
+  test("a confirmed run refuses recorded registry answers before staging anything", () => {
+    withStage((stage) => {
+      const result = release(["--confirm=0.1.0"], stage);
+      expect(result.code).toBe(2);
+      expect(result.stderr).toContain(`${REGISTRY_FIXTURE_ENV} replaces the real registries`);
+      expect(existsSync(stage)).toBe(false);
+    });
+  });
+});
+
+describe("release destination", () => {
+  test("bend gets the destination it is given, whatever the shell had", () => {
+    const env = bendEnv({
+      inherited: {
+        PATH: "/bin",
+        BEND_HUB: "http://127.0.0.1:9",
+        BEND_ORIGIN: "http://127.0.0.1:9",
+        BEND_LIB: "/elsewhere",
+        NODE_TLS_REJECT_UNAUTHORIZED: "0",
+      },
+      destination: REAL_HUB,
+      lib: "/stage/bend-lib",
+    });
+    expect(env).toEqual({
+      PATH: "/bin",
+      BEND_HUB: "https://hub.bend-lang.com",
+      BEND_ORIGIN: "https://bend-lang.com",
+      BEND_LIB: "/stage/bend-lib",
+      BEND_NO_TELEMETRY: "1",
+    });
+  });
+
+  test("inherited destination and TLS overrides block a publish", () => {
+    expect(envOverrides({ PATH: "/bin", BEND_LIB: "/x" })).toEqual([]);
+    expect(envOverrides({ BEND_HUB: "https://hub.bend-lang.com" })).toEqual([]);
+    const overrides = envOverrides({
+      BEND_HUB: "http://127.0.0.1:9",
+      BEND_ORIGIN: "http://127.0.0.1:9",
+      NODE_TLS_REJECT_UNAUTHORIZED: "0",
+    });
+    expect(overrides.map((override) => override.name)).toEqual([
+      "BEND_HUB",
+      "BEND_ORIGIN",
+      "NODE_TLS_REJECT_UNAUTHORIZED",
+    ]);
+    const gate = decide({ ...cleanMain, overrides });
+    if (gate.kind !== "stop") throw new Error(`expected stop, got ${gate.kind}`);
+    expect(gate.blockers[0]).toBe(
+      "BEND_HUB is set to http://127.0.0.1:9: unset it, the release pins its own destination",
+    );
+  });
+
+  test("the printed publish command names the destination it passes", () => {
+    expect(hubShellCommand(stagedHub)).toBe(
+      "BEND_HUB=https://hub.bend-lang.com BEND_ORIGIN=https://bend-lang.com bend bendhub.bend --publish bendo@0.1.0.0",
+    );
+  });
+});
+
+describe("resuming a partial release", () => {
+  test("a package published with the same contents is skipped, different contents stop", () => {
+    expect(publishState({ kind: "absent" }, "sha512-a")).toEqual({ kind: "publish" });
+    expect(publishState({ kind: "present", id: "sha512-a" }, "sha512-a")).toEqual({
+      kind: "already-published",
+    });
+    expect(publishState({ kind: "present", id: "sha512-b" }, "sha512-a")).toEqual({
+      kind: "conflict",
+      published: "sha512-b",
+    });
+    expect(publishState({ kind: "unknown", reason: "offline" }, "sha512-a")).toEqual({
+      kind: "unknown",
+      reason: "offline",
+    });
+  });
+
+  test("npm view answers", () => {
+    expect(parseNpmView({ code: 0, stdout: '"sha512-abc"\n', stderr: "" })).toEqual({
+      kind: "present",
+      id: "sha512-abc",
+    });
+    expect(parseNpmView({ code: 0, stdout: "", stderr: "" })).toEqual({ kind: "absent" });
+    expect(
+      parseNpmView({ code: 1, stdout: "", stderr: "npm error code E404\nnpm error 404 Not Found" }),
+    ).toEqual({ kind: "absent" });
+    expect(
+      parseNpmView({ code: 1, stdout: "", stderr: "npm error code ECONNREFUSED\nnpm error x" }),
+    ).toEqual({ kind: "unknown", reason: "npm view exited 1: npm error x" });
+  });
+
+  test("hub name answers", () => {
+    const hash = "0x0123456789abcdef0123456789abcdef";
+    expect(parseHubName({ status: 200, body: `${hash}\n` })).toEqual({ kind: "present", id: hash });
+    expect(parseHubName({ status: 404, body: "no version bendo@0.1.0.0" })).toEqual({
+      kind: "absent",
+    });
+    expect(parseHubName({ status: 410, body: "" }).kind).toBe("unknown");
+    expect(parseHubName({ status: 200, body: "<html>" }).kind).toBe("unknown");
+  });
+
+  test("the gate lets already-published packages through and stops on a mismatch", () => {
+    const done = {
+      ...cleanMain,
+      npm: [{ ...stagedNpm, registry: { kind: "already-published" } }],
+      hub: { ...stagedHub, registry: { kind: "already-published" } },
+    } satisfies GateInput;
+    expect(decide(done)).toEqual({ kind: "publish" });
+    const gate = decide({
+      ...cleanMain,
+      npm: [{ ...stagedNpm, registry: { kind: "conflict", published: "sha512-other" } }],
+      hub: { ...stagedHub, registry: { kind: "unknown", reason: "the hub answered 503: " } },
+    });
+    if (gate.kind !== "stop") throw new Error(`expected stop, got ${gate.kind}`);
+    expect(gate.blockers).toEqual([
+      "bendo@0.1.0 is already on npm with a different integrity (sha512-other): the staged package is not what was published, so stop and find out why",
+      "could not ask https://hub.bend-lang.com whether bendo@0.1.0.0 exists: the hub answered 503: ",
+    ]);
   });
 });
 
@@ -185,17 +366,18 @@ describe("BendHub package", () => {
 
 describe("bun run release --dry-run", () => {
   test(
-    "reports every npm tarball and the BendHub upload, and publishes nothing",
+    "reports every npm tarball and the BendHub upload, publishes nothing, and resumes",
     () => {
-      const stage = join(mkdtempSync(join(tmpdir(), "bendo-release-")), "stage");
-      try {
-        const result = release(["--dry-run", "--json"], stage);
-        if (result.code !== 0)
-          throw new Error(`dry run failed (${result.code}):\n${result.stderr}`);
-        // The JSON is the script's own Report, so the test reads it as one.
-        const report: Report = JSON.parse(result.stdout);
+      withStage((stage) => {
+        // A leftover local hub in the shell must not move the dry run's stub.
+        const report = readReport(
+          release(["--dry-run", "--json"], stage, undefined, { BEND_HUB: "http://127.0.0.1:9" }),
+        );
         expect(report.mode).toEqual({ kind: "dry-run" });
-        expect(report.gate.kind).toBe("dry-run");
+        if (report.gate.kind !== "dry-run") throw new Error(`gate is ${report.gate.kind}`);
+        expect(report.gate.blockers).toContain(
+          "BEND_HUB is set to http://127.0.0.1:9: unset it, the release pins its own destination",
+        );
         expect(parseVersion(report.version)).not.toBeNull();
 
         expect(report.npm.map((pkg) => pkg.name)).toEqual([...NPM_PACKAGES]);
@@ -203,7 +385,7 @@ describe("bun run release --dry-run", () => {
           expect(pkg.version).toBe(report.version);
           expect(pkg.access).toBe("public");
           expect(pkg.npmCheck.kind).toBe("agrees");
-          expect(pkg.registry).not.toBe("published");
+          expect(pkg.registry).toEqual({ kind: "publish" });
           expect(pkg.command.slice(0, 3)).toEqual(["npm", "publish", pkg.tarball]);
           expect(pkg.command).toContain("--access");
           const paths = pkg.files.map((file) => file.path);
@@ -220,14 +402,18 @@ describe("bun run release --dry-run", () => {
             Object.values(pkg.dependencies).some((range) => range.startsWith("workspace:")),
           ).toBe(false);
         }
-        const [, plugin, create] = report.npm;
-        expect(plugin?.dependencies.bendo).toBe(`^${report.version}`);
-        expect(create?.files.map((file) => file.path)).toContain("bend/src/main.bend");
+        const [bendo, plugin, create] = report.npm;
+        if (bendo === undefined || plugin === undefined || create === undefined)
+          throw new Error("missing npm packages");
+        expect(plugin.dependencies.bendo).toBe(`^${report.version}`);
+        expect(create.files.map((file) => file.path)).toContain("bend/src/main.bend");
 
         const hub = report.hub;
         if (hub === null) throw new Error("no BendHub package in the report");
         expect(hub.name).toBe("bendo");
         expect(hub.version).toBe(`${report.version}.0`);
+        expect(hub.destination).toEqual(REAL_HUB);
+        expect(hub.registry).toEqual({ kind: "publish" });
         expect(hub.hash).toMatch(/^0x[0-9a-f]{32}$/);
         expect(hub.license).toBe("MIT (LICENSE)");
         expect(hub.importCheck.kind).toBe("passed");
@@ -254,10 +440,51 @@ describe("bun run release --dry-run", () => {
         expect(text).toStartWith("Bendo release: DRY RUN. Nothing was published");
         for (const pkg of report.npm) expect(text).toContain(`  ${pkg.name}@${pkg.version}\n`);
         expect(text).toContain(`  bendo@${hub.version}\n    hash: ${hub.hash}`);
+        expect(text).toContain(
+          `&& BEND_HUB=https://hub.bend-lang.com BEND_ORIGIN=https://bend-lang.com bend bendhub.bend`,
+        );
         expect(text).toContain(`bun run release --confirm=${report.version}`);
-      } finally {
-        rmSync(resolve(stage, ".."), { recursive: true, force: true });
-      }
+
+        // After a partial release: bendo and the BendHub package landed, and
+        // vite-plugin-bendo is on npm with other contents. A second staging
+        // packs byte-identical tarballs, so the landed ones are skipped.
+        const resumed = readReport(
+          release(["--dry-run", "--json"], stage, {
+            npm: {
+              [`bendo@${report.version}`]: bendo.integrity,
+              [`vite-plugin-bendo@${report.version}`]: "sha512-other",
+            },
+            hub: { [`bendo@${hub.version}`]: hub.hash },
+          }),
+        );
+        expect(resumed.npm.map((pkg) => [pkg.name, pkg.integrity, pkg.registry])).toEqual([
+          ["bendo", bendo.integrity, { kind: "already-published" }],
+          ["vite-plugin-bendo", plugin.integrity, { kind: "conflict", published: "sha512-other" }],
+          ["create-bendo", create.integrity, { kind: "publish" }],
+        ]);
+        expect(resumed.hub?.hash).toBe(hub.hash);
+        expect(resumed.hub?.registry).toEqual({ kind: "already-published" });
+        // The git blockers depend on where the test runs; the registry ones do not.
+        if (resumed.gate.kind !== "dry-run") throw new Error(`gate is ${resumed.gate.kind}`);
+        expect(resumed.gate.blockers.filter((reason) => / on (npm|https:)/.test(reason))).toEqual([
+          `vite-plugin-bendo@${report.version} is already on npm with a different integrity (sha512-other): the staged package is not what was published, so stop and find out why`,
+        ]);
+        expect(formatReport(resumed)).toContain(
+          "registry: already on npm with the same integrity: a confirmed run skips it",
+        );
+      });
+    },
+    2 * DRY_RUN_TIMEOUT_MS,
+  );
+
+  test.skipIf(process.env.BENDO_RELEASE_LIVE !== "1")(
+    "BENDO_RELEASE_LIVE=1: the real npm and BendHub answer the lookups",
+    () => {
+      withStage((stage) => {
+        const report = readReport(release(["--dry-run", "--json"], stage, "live"));
+        for (const pkg of report.npm) expect(pkg.registry.kind).not.toBe("unknown");
+        expect(report.hub?.registry.kind).not.toBe("unknown");
+      });
     },
     DRY_RUN_TIMEOUT_MS,
   );

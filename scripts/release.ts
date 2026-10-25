@@ -5,9 +5,11 @@
 // origin/main. docs/releasing.md walks through it.
 //
 // A dry run never writes to npm or BendHub. It packs tarballs into the staging
-// directory, asks `npm publish --dry-run` and `npm view` about them, and runs
-// the real `bend --publish` against a stub hub on 127.0.0.1 that keeps the
-// upload in memory and serves it back for an import check.
+// directory, asks `npm publish --dry-run` and `npm view` about them, runs the
+// real `bend --publish` against a stub hub on 127.0.0.1 that keeps the upload
+// in memory and serves it back for an import check, and looks up whether the
+// hub already links the name. A confirmed run skips whatever is already
+// published with the same tarball or hash, so rerunning it resumes a release.
 import {
   cpSync,
   existsSync,
@@ -24,9 +26,14 @@ import {
   HUB_ENTRY,
   HUB_IMPORT_CHECK,
   HUB_PACKAGE,
-  HUB_URL,
   NPM_PACKAGES,
+  NPM_REGISTRY,
+  REAL_HUB,
+  REGISTRY_FIXTURE_ENV,
+  bendEnv,
   decide,
+  envOverrides,
+  fixtureLookup,
   formatReport,
   hubConsumerSource,
   hubEntrySource,
@@ -34,25 +41,32 @@ import {
   hubHash,
   hubManifest,
   hubPublishCommand,
+  hubShellCommand,
   hubVersion,
   npmPublishCommand,
   parseArgs,
+  parseHubName,
+  parseNpmView,
+  parseRegistryFixture,
   parseVersion,
+  publishState,
   readTar,
   shellCommand,
   type GitState,
   type HubCheck,
   type HubPackage,
+  type Lookup,
   type NpmCheck,
   type NpmPackage,
   type NpmPackageName,
   type Options,
-  type RegistryState,
   type Report,
 } from "./release-lib.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const STAGE = resolve(process.env.BENDO_RELEASE_DIR ?? join(ROOT, ".cache/release"));
+/** bend's download cache for every run here, so a stub's packages never reach ~/.bend/lib. */
+const BEND_LIB = join(STAGE, "bend-lib");
 /** Marks a directory this script made, so a rerun only ever wipes its own staging. */
 const MARKER = ".bendo-release-stage";
 const BEND_TIMEOUT_MS = 300_000;
@@ -69,7 +83,7 @@ function run(
 ): Ran {
   const result = Bun.spawnSync([...command], {
     cwd,
-    env: { ...process.env, BEND_NO_TELEMETRY: "1", ...env },
+    env: { ...process.env, BEND_NO_TELEMETRY: "1", npm_config_update_notifier: "false", ...env },
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
@@ -91,7 +105,10 @@ function must(command: readonly string[], cwd: string, timeout: number): string 
   return result.stdout;
 }
 
-/** Async spawn, so the in-process stub hub keeps answering while `bend` runs. */
+/**
+ * Async spawn, so the in-process stub hub keeps answering while `bend` runs.
+ * `env` is the whole environment, from `bendEnv`.
+ */
 async function runAsync(
   command: readonly string[],
   cwd: string,
@@ -100,7 +117,7 @@ async function runAsync(
 ): Promise<Ran> {
   const child = Bun.spawn([...command], {
     cwd,
-    env: { ...process.env, BEND_NO_TELEMETRY: "1", ...env },
+    env,
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
@@ -259,21 +276,66 @@ function stagedVersions(workspace: string): Record<NpmPackageName, string> {
   };
 }
 
-// ---------------------------------------------------------------- npm
+// ---------------------------------------------------------------- registries (read only)
 
-function registryState(name: string, version: string): RegistryState {
-  const result = run(
-    ["npm", "view", `${name}@${version}`, "version", "--json"],
-    ROOT,
-    NPM_TIMEOUT_MS,
-  );
-  if (result.code === 0) return result.stdout.trim() === "" ? "unpublished" : "published";
-  return /E404|404 Not Found/.test(`${result.stdout}${result.stderr}`) ? "unpublished" : "unknown";
+/** What npm and BendHub already hold. Tests swap in recorded answers so they stay off the network. */
+type Registries = {
+  npm: (name: string, version: string) => Lookup;
+  hub: (named: string) => Promise<Lookup>;
+};
+
+const liveRegistries: Registries = {
+  npm: (name, version) =>
+    parseNpmView(
+      run(
+        [
+          "npm",
+          "view",
+          `${name}@${version}`,
+          "dist.integrity",
+          "--json",
+          "--prefer-online",
+          "--registry",
+          NPM_REGISTRY,
+        ],
+        ROOT,
+        NPM_TIMEOUT_MS,
+      ),
+    ),
+  hub: async (named) => {
+    const response = await fetch(`${REAL_HUB.hub}/name/${named}`, {
+      signal: AbortSignal.timeout(30_000),
+    }).catch((error: unknown) => (error instanceof Error ? error : new Error(String(error))));
+    if (response instanceof Error)
+      return {
+        kind: "unknown",
+        reason: `${REAL_HUB.hub} could not be reached: ${response.message}`,
+      };
+    return parseHubName({ status: response.status, body: await response.text() });
+  },
+};
+
+function fixtureRegistries(path: string): Registries {
+  const fixture = parseRegistryFixture(readFileSync(path, "utf8"));
+  return {
+    npm: (name, version) => fixtureLookup(fixture.npm, `${name}@${version}`),
+    hub: (named) => Promise.resolve(fixtureLookup(fixture.hub, named)),
+  };
 }
 
-function npmCheck(tarball: string, name: string, version: string, files: number): NpmCheck {
+// ---------------------------------------------------------------- npm
+
+function npmCheck(input: {
+  tarball: string;
+  name: string;
+  version: string;
+  files: number;
+  integrity: string;
+}): NpmCheck {
+  const { tarball, name, version, files } = input;
+  // --offline: the check needs nothing from the registry, so it asks for nothing.
   const result = run(
-    ["npm", "publish", "--dry-run", "--json", ...npmPublishCommand(tarball).slice(2)],
+    ["npm", "publish", "--dry-run", "--offline", "--json", ...npmPublishCommand(tarball).slice(2)],
     STAGE,
     NPM_TIMEOUT_MS,
   );
@@ -284,7 +346,12 @@ function npmCheck(tarball: string, name: string, version: string, files: number)
     };
   const data: unknown = JSON.parse(result.stdout);
   const entry = isRecord(data) ? data[name] : undefined;
-  if (!isRecord(entry) || typeof entry.id !== "string" || typeof entry.entryCount !== "number")
+  if (
+    !isRecord(entry) ||
+    typeof entry.id !== "string" ||
+    typeof entry.entryCount !== "number" ||
+    typeof entry.integrity !== "string"
+  )
     return { kind: "failed", reason: "unexpected --json output" };
   if (entry.id !== `${name}@${version}`)
     return { kind: "disagrees", reason: `npm reads ${entry.id}` };
@@ -293,10 +360,13 @@ function npmCheck(tarball: string, name: string, version: string, files: number)
       kind: "disagrees",
       reason: `npm counts ${entry.entryCount} files, the tarball has ${files}`,
     };
+  // The registry lookup compares against this integrity, so npm must upload exactly it.
+  if (entry.integrity !== input.integrity)
+    return { kind: "disagrees", reason: `npm computes integrity ${entry.integrity}` };
   return { kind: "agrees", id: entry.id, files: entry.entryCount };
 }
 
-function packNpm(workspace: string, name: NpmPackageName): NpmPackage {
+function packNpm(workspace: string, name: NpmPackageName, registries: Registries): NpmPackage {
   const out = join(STAGE, "tarballs");
   mkdirSync(out, { recursive: true });
   // create-bendo's prepack prints its command before the tarball path.
@@ -317,6 +387,7 @@ function packNpm(workspace: string, name: NpmPackageName): NpmPackage {
   const files = entries
     .map((entry) => ({ path: entry.path.replace(/^package\//, ""), bytes: entry.bytes }))
     .sort((a, b) => a.path.localeCompare(b.path));
+  const integrity = `sha512-${new Bun.CryptoHasher("sha512").update(bytes).digest("base64")}`;
   return {
     name,
     version: manifest.version,
@@ -324,7 +395,7 @@ function packNpm(workspace: string, name: NpmPackageName): NpmPackage {
     packedBytes: bytes.length,
     unpackedBytes: files.reduce((sum, file) => sum + file.bytes, 0),
     shasum: new Bun.CryptoHasher("sha1").update(bytes).digest("hex"),
-    integrity: `sha512-${new Bun.CryptoHasher("sha512").update(bytes).digest("base64")}`,
+    integrity,
     access: manifest.access,
     files,
     bin: manifest.bin,
@@ -332,8 +403,14 @@ function packNpm(workspace: string, name: NpmPackageName): NpmPackage {
     dependencies: manifest.dependencies,
     peerDependencies: manifest.peerDependencies,
     optionalPeers: manifest.optionalPeers,
-    registry: registryState(manifest.name, manifest.version),
-    npmCheck: npmCheck(tarball, manifest.name, manifest.version, files.length),
+    registry: publishState(registries.npm(manifest.name, manifest.version), integrity),
+    npmCheck: npmCheck({
+      tarball,
+      name: manifest.name,
+      version: manifest.version,
+      files: files.length,
+      integrity,
+    }),
     command: npmPublishCommand(tarball),
   };
 }
@@ -396,7 +473,7 @@ function licenseOf(files: Readonly<Record<string, string>>): string {
   return spdx === undefined ? "see LICENSE" : `${spdx} (LICENSE)`;
 }
 
-async function stageHub(version: string): Promise<HubPackage> {
+async function stageHub(version: string, registries: Registries): Promise<HubPackage> {
   const parsed = parseVersion(version);
   if (parsed === null) throw new Error(`${version} is not a plain x.y.z version`);
   const directory = join(STAGE, "bendhub", "src");
@@ -406,7 +483,12 @@ async function stageHub(version: string): Promise<HubPackage> {
   writeFileSync(join(directory, HUB_ENTRY), hubEntrySource(listModules(directory)));
 
   const hub = stubHub();
-  const env = { BEND_HUB: hub.url, BEND_ORIGIN: hub.url, BEND_LIB: join(STAGE, "bend-lib") };
+  // Set here, never inherited: a leftover BEND_HUB must not move the dry run either.
+  const env = bendEnv({
+    inherited: process.env,
+    destination: { hub: hub.url, origin: hub.url },
+    lib: BEND_LIB,
+  });
   try {
     const publish = await runAsync(
       ["bend", HUB_ENTRY, "--publish"],
@@ -441,7 +523,7 @@ async function stageHub(version: string): Promise<HubPackage> {
     return {
       name: HUB_PACKAGE,
       version: hubVersion(parsed),
-      url: HUB_URL,
+      destination: REAL_HUB,
       entry: HUB_ENTRY,
       directory,
       hash,
@@ -454,6 +536,7 @@ async function stageHub(version: string): Promise<HubPackage> {
           hub.requests.map((line) => line.replace(/^(GET \/0x[0-9a-f]+\/).+$/, "$1<file>")),
         ),
       ],
+      registry: publishState(await registries.hub(named), hash),
       command: hubPublishCommand(parsed),
     };
   } finally {
@@ -474,7 +557,7 @@ function logins(): { npm: boolean; bend: boolean } {
 
 // ---------------------------------------------------------------- main
 
-async function release(options: Options): Promise<number> {
+async function release(options: Options, registries: Registries): Promise<number> {
   const confirmed = options.mode.kind === "confirm";
   const git = gitState(confirmed);
   const pending = pendingChangesets();
@@ -485,9 +568,9 @@ async function release(options: Options): Promise<number> {
   const parsed = parseVersion(version);
 
   const npm = options.targets.includes("npm")
-    ? NPM_PACKAGES.map((name) => packNpm(workspace, name))
+    ? NPM_PACKAGES.map((name) => packNpm(workspace, name, registries))
     : [];
-  const hub = options.targets.includes("bendhub") ? await stageHub(version) : null;
+  const hub = options.targets.includes("bendhub") ? await stageHub(version, registries) : null;
   const gate = decide({
     mode: options.mode,
     targets: options.targets,
@@ -497,6 +580,7 @@ async function release(options: Options): Promise<number> {
     npm,
     hub,
     logins: confirmed ? logins() : null,
+    overrides: envOverrides(process.env),
   });
   const report: Report = {
     mode: options.mode,
@@ -529,28 +613,58 @@ async function release(options: Options): Promise<number> {
   }
 
   // Leo's confirmed run on a clean, pushed main. npm first: an npm version can
-  // be deprecated or, within 72 hours, unpublished. A BendHub publish cannot be undone.
-  const steps: { cwd: string; command: string[] }[] = [
-    ...npm.map((pkg) => ({ cwd: STAGE, command: pkg.command })),
-    ...(hub === null ? [] : [{ cwd: hub.directory, command: hub.command }]),
+  // be deprecated or, within 72 hours, unpublished. A BendHub publish cannot be
+  // undone. Anything already published with the same tarball or hash was an
+  // earlier run's, so it is skipped and the rerun finishes the release.
+  // Every step gets the pinned destination, whatever the shell had.
+  const env = bendEnv({ inherited: process.env, destination: REAL_HUB, lib: BEND_LIB });
+  const steps: { id: string; skip: boolean; cwd: string; command: string[]; shown: string }[] = [
+    ...npm.map((pkg) => ({
+      id: `${pkg.name}@${pkg.version} on npm`,
+      skip: pkg.registry.kind === "already-published",
+      cwd: STAGE,
+      command: pkg.command,
+      shown: shellCommand(pkg.command),
+    })),
+    ...(hub === null
+      ? []
+      : [
+          {
+            id: `${hub.name}@${hub.version} on ${hub.destination.hub}`,
+            skip: hub.registry.kind === "already-published",
+            cwd: hub.directory,
+            command: hub.command,
+            shown: hubShellCommand({
+              destination: { hub: env.BEND_HUB, origin: env.BEND_ORIGIN },
+              command: hub.command,
+            }),
+          },
+        ]),
   ];
   for (const step of steps) {
-    process.stdout.write(`\n$ (cd ${step.cwd} && ${shellCommand(step.command)})\n`);
+    if (step.skip) {
+      process.stdout.write(`\nSkipping ${step.id}: already published with the same contents.\n`);
+      continue;
+    }
+    process.stdout.write(`\n$ (cd ${step.cwd} && ${step.shown})\n`);
     const child = Bun.spawn(step.command, {
       cwd: step.cwd,
-      env: { ...process.env, BEND_NO_TELEMETRY: "1" },
+      env,
       stdio: ["inherit", "inherit", "inherit"],
     });
     const code = await child.exited;
     if (code !== 0) {
       process.stderr.write(
-        `\nStopped: ${shellCommand(step.command)} exited ${code}. Earlier steps did publish.\n`,
+        `\nStopped: ${shellCommand(step.command)} exited ${code}. Earlier steps did publish.\n` +
+          `Rerun bun run release --confirm=${version} to finish: it skips what is already published.\n`,
       );
       return code;
     }
   }
   process.stdout.write(
-    `\nPublished ${version}. Tag and push the release: bunx changeset tag && git push --follow-tags\n`,
+    steps.every((step) => step.skip)
+      ? `\nNothing left to publish: ${version} is already everywhere. Tag and push the release if that is not done: bunx changeset tag && git push --follow-tags\n`
+      : `\nPublished ${version}. Tag and push the release: bunx changeset tag && git push --follow-tags\n`,
   );
   return 0;
 }
@@ -565,9 +679,22 @@ switch (parsed.kind) {
     process.stderr.write(`${parsed.message}\n`);
     process.exit(2);
     break;
-  case "run":
-    process.exit(await release(parsed.options));
+  case "run": {
+    const fixture = process.env[REGISTRY_FIXTURE_ENV];
+    if (fixture !== undefined && parsed.options.mode.kind === "confirm") {
+      process.stderr.write(
+        `Refusing to run: ${REGISTRY_FIXTURE_ENV} replaces the real registries and is for tests.\n`,
+      );
+      process.exit(2);
+    }
+    process.exit(
+      await release(
+        parsed.options,
+        fixture === undefined ? liveRegistries : fixtureRegistries(fixture),
+      ),
+    );
     break;
+  }
   default: {
     const exhaustive: never = parsed;
     throw new Error(`unhandled ${String(exhaustive)}`);
