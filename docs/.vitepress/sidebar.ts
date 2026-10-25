@@ -32,6 +32,13 @@ export const sidebar: DefaultTheme.SidebarItem[] = [
     items: [
       { text: "Develop with the CLI", link: "/cli" },
       { text: "Write a plugin", link: "/guides/plugins" },
+      { text: "Protect routes with auth", link: "/guides/auth" },
+      { text: "Call your API from another origin", link: "/guides/cors" },
+      { text: "Accept file uploads", link: "/guides/uploads" },
+      { text: "Add WebSockets", link: "/guides/websockets" },
+      { text: "Deploy behind Caddy or Cloudflare", link: "/guides/deploy" },
+      { text: "Migrate from Hono", link: "/guides/migrate-from-hono" },
+      { text: "Migrate from Elysia", link: "/guides/migrate-from-elysia" },
     ],
   },
   {
