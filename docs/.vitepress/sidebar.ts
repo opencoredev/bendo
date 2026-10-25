@@ -105,6 +105,7 @@ export const sidebar: DefaultTheme.SidebarItem[] = [
     items: [
       { text: "Shared state", link: "/store" },
       { text: "Workers", link: "/workers" },
+      { text: "SQLite", link: "/sqlite" },
     ],
   },
   {
@@ -136,6 +137,7 @@ export const sidebar: DefaultTheme.SidebarItem[] = [
           { text: "Streaming and real time", link: "/api/bend/streaming" },
           { text: "Stores and the clock", link: "/api/bend/state" },
           { text: "Data and protocol modules", link: "/api/bend/modules" },
+          { text: "SQLite", link: "/api/bend/sqlite" },
         ],
       },
       {

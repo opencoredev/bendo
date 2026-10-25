@@ -47,6 +47,7 @@
     "tests/guides.test.ts": 120000,
     "tests/api-coverage.test.ts": 2000,
     "tests/ws-pubsub-limits.test.ts": 59078,
-    "packages/vite-plugin-bendo/src/fs-allow.test.ts": 3000
+    "packages/vite-plugin-bendo/src/fs-allow.test.ts": 3000,
+    "tests/sqlite.test.ts": 50340
   }
 }
