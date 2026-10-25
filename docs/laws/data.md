@@ -216,3 +216,45 @@ and [OpenAPI](../openapi.md).
 - `manifest_schema_positions`: schemas are positional: entry `i` belongs to registration `i` and appears on every row that registration prints, so duplicate registrations keep their own schemas.
 - `manifest_schema_accepted`: attachment succeeds exactly when there is one entry per registration and every set slot holds a valid schema.
 - `manifest_schema_documents`: each attached bundle serializes exactly its present slots as standalone 2020-12 documents, or reports the first slot that cannot be written.
+
+## SQLite
+
+The [SQLite effect](../sqlite.md) sends bound parameters to SQLite as one
+string in a small wire format, and reads rows back as values. These laws
+cover the pure parts. The C and JS effects that read the wire format and
+enforce the transaction gate are not proven; `tests/sqlite.test.ts` checks
+them, including that both builds give the same answers.
+[What the effect does outside the proofs](../../src/effects/sqlite.md) has
+the rest.
+
+The wire-format laws hold for strings the encoders write. They say nothing
+about malformed framing, which the encoders never write: a payload with no
+closing `;` or ending in a lone `\`, an unknown tag, or a string that does
+not start with `P` or `N`. The encoders do not validate what they are given,
+though. They serialize integer and real text that is not a valid number,
+blob bytes above 255, and any number of parameters with any names, and the
+laws prove those read back unchanged. Checking them is semantic validation
+in the effect: the number and byte checks (code 20) and the parameter count
+and name checks against the statement (code 25). The effect refuses
+malformed framing with code 21. All of that is trusted code covered by
+tests, and the effect's notes list the codes.
+
+- `sqlite_payload_roundtrip`: a payload (a text, a number's decimal text or a parameter name) reads back as exactly its characters, and reading stops where the payload ends, whatever follows. A `;` or `\` inside a value cannot end it early.
+- `sqlite_value_roundtrip`: every value, of every type (NULL, integer, real, text, blob), reads back as itself with its type, so a parameter cannot change type or run into the next one.
+- `sqlite_binding_roundtrip`: a named parameter reads back as its name and its value.
+- `sqlite_positional_wire`, `sqlite_named_wire`: the encoders that run, which build the string in reverse so a large blob cannot overflow the JS stack, write exactly the values and bindings the laws above read back.
+- `sqlite_integer_json`, `sqlite_real_json`: an integer or real column becomes a JSON number with the same decimal text, so a 64-bit integer keeps all its digits in a row's JSON.
+- `sqlite_real_not_json`: a real with no JSON form, such as an infinity, makes the row fail instead of being changed.
+- `sqlite_null_json`, `sqlite_text_json`, `sqlite_blob_json`: NULL becomes `null`, text a string, and a blob the string of its standard, padded base64, which `base64_roundtrip` decodes back to the same bytes.
+- `sqlite_row_keys`: when a row converts to a JSON object, its keys are the statement's columns, in order.
+- `sqlite_row_converts`: a row with one admissible value per column (every integer and real is a JSON number) converts to the object of exactly those values' JSON forms, keyed by the columns, in order.
+- `sqlite_row_fails`: a row fails to convert exactly when it is not admissible: its value count differs from its column count, or one of its numbers is not a JSON number.
+- `sqlite_row_invalid_real`: a real with no JSON form anywhere in a row makes the whole row fail, so a row is never returned with that value changed or left out.
+- `sqlite_rows_json`: `Sql.rows_json` converts a result's rows one by one, in order, and fails with the first row that does not convert, giving its number (from 0) and column. The specification is the plain recursion over rows; it reuses the per-row conversion that the row laws above pin down.
+- `sqlite_decode_rows`: `Sql.decode_rows` converts each row to JSON and decodes it through the schema, one by one, in order. The first row that fails decides the error: no JSON form, with its number and column, or a schema mismatch, with its number and the schema decoder's errors. Like `sqlite_rows_json`, the specification reuses the per-row conversion and the schema decoder itself.
+- `sqlite_gate_isolation`: while a transaction is open on a connection, no statement carrying another token runs, including a statement outside any transaction from another request.
+- `sqlite_gate_member`: the open transaction's own statements run.
+- `sqlite_gate_stale`: a statement carrying the token of a transaction that has ended is refused rather than run outside it.
+- `sqlite_gate_autocommit`, `sqlite_gate_autocommit_waits`: a statement outside any transaction runs exactly when no transaction is open and none is waiting to begin, and otherwise waits; it is never refused.
+- `sqlite_gate_begin`, `sqlite_gate_begin_waits`: a transaction begins only when none is open and nothing is in flight on the connection, and otherwise waits.
+- `sqlite_gate_end`, `sqlite_gate_end_refused`: only the open transaction's token commits or rolls it back, once its in-flight statements finish; any other token is refused.

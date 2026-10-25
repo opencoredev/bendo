@@ -6,14 +6,15 @@ decision needs a written record in [`docs/decisions/`](docs/decisions/).
 
 ## Set up the toolchain
 
-You need Bun, Bend at the pinned version, clang, and Lean for the proofs. Bend
-is pinned in [`.bend-version`](.bend-version) and Lean in
+You need Bun, Bend at the pinned version, clang, libsqlite3 for the SQLite
+effect's tests, and Lean for the proofs. Bend is pinned in
+[`.bend-version`](.bend-version) and Lean in
 [`lean-toolchain`](lean-toolchain), at the version Bend's proof kernel needs.
 CI uses Bun 1.4.4. On Ubuntu 24.04 x64, from the repository root:
 
 ```sh
 sudo apt-get update
-sudo apt-get install -y ca-certificates curl git unzip build-essential clang
+sudo apt-get install -y ca-certificates curl git unzip build-essential clang libsqlite3-0
 
 curl -fsSL https://bun.sh/install | bash -s bun-v1.4.4
 export PATH="$HOME/.bun/bin:$PATH"

@@ -4,7 +4,7 @@ Bendo is a Hono-style web framework written in Bend, plus a TypeScript toolkit. 
 
 ## Toolchain
 
-`CONTRIBUTING.md` has the full setup for a clean Ubuntu 24.04 machine. In short: Bun 1.4.4, Bend at `.bend-version` (2.0.38), clang, and Lean at `lean-toolchain` through elan. Put `~/.bun/bin`, `~/.bend/bin` and `~/.elan/bin` on PATH and set `BEND_NO_TELEMETRY=1`.
+`CONTRIBUTING.md` has the full setup for a clean Ubuntu 24.04 machine. In short: Bun 1.4.4, Bend at `.bend-version` (2.0.38), clang, libsqlite3 (`libsqlite3-0`, for the SQLite effect and its tests), and Lean at `lean-toolchain` through elan. Put `~/.bun/bin`, `~/.bend/bin` and `~/.elan/bin` on PATH and set `BEND_NO_TELEMETRY=1`.
 
 The bend-lang.com installer installs the newest release (2.0.39 now) and takes no version argument, so it does not give you the pin. Install the pinned GitHub release archive into `~/.bend` as CONTRIBUTING.md and CI do, or copy a known-good `~/.bend` (its `bin`, `bend2` and `guide` directories) from a machine that has it. `bun run check:bend` stops on any mismatch, including in CI. Never change the pin just to get past a mismatch.
 

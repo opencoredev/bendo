@@ -49,6 +49,9 @@ import ./proof/rate-limit.bend as RateLimitProof
 # BND-100
 import ./proof/utf8-scalar.bend as Utf8ScalarProof
 
+# BND-38
+import ./proof/sqlite.bend as SqliteProof
+
 # BND-104
 import ./proof/jwt-key.bend as JwtKeyProof
 
