@@ -564,10 +564,10 @@ def ex_typed_search(+c: B.Context(Vars)) -> B.Res:
 def request_id(-Vars: Data, c: B.Context(Vars)) -> Maybe<&2, String>
 ```
 
-The request ID that [`B.request_id`](middleware.md#b-request-id) assigned, or
-`None{}` before that middleware runs or without it. The ID is kept apart from
-the `Vars` record, so `C.set` and `C.variables` leave it in place. Treat an
-incoming ID as a label, never as an identity.
+The ID that the `B.request_id` [middleware](middleware.md) assigned to the
+request, or `None{}` before that middleware runs or without it. The ID is kept
+apart from the `Vars` record, so `C.set` and `C.variables` leave it in place.
+Treat an incoming ID as a label, never as an identity.
 
 ```bend
 def ex_trace(+c: B.Context(Vars)) -> B.Res:
