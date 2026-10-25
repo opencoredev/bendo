@@ -133,15 +133,37 @@ full assembled source path, methods normalized as registration normalizes them
 (order and duplicates kept, one `ALL` row, no implicit HEAD) and capture names
 taken from compiling that route's own source. Hooks and middleware add no rows.
 
-The end-to-end source-string mounting bridge is not proved. That theorem would
-say a request under a mount prefix routes as the sub-app routes the remaining
-suffix. It must account for the optional-root case above, captures introduced
-by prefixes, matching options, and compilation and splitting at the join. The
-segment law above is not that bridge. BND-86 tracks it.
+The BND-86 laws prove the source-string bridge end to end, against the
+independent specification in
+[`proof/mount-spec.bend`](../proof/mount-spec.bend). They cover every prefix
+the pattern syntax allows, including optional captures, interior wildcards,
+spans and repeated slashes inside the prefix, as long as the assembled
+pattern compiles and the prefix does not end in repeated slashes. For such a
+mount, compiling the source that `B.route` builds and matching it under any
+slash and case options gives exactly this: the prefix walks the request's
+segments first, each segment by its own rule, then the member matches the
+rest, prefix captures first. Under a nonroot prefix the member has no root
+rule of its own; the assembled pattern keeps one, so `/:tenant?` with `/:id?`
+still answers `/`. Under an empty or `/` prefix the member answers alone,
+root rule included, so `/:id?` under `/` answers `/`. Method resolution over
+a mounted registration list, through either router, is first-match over
+those answers, with HEAD fallback, 405 and 404.
+
+Under a literal prefix with strict trailing slashes, `prefix + /r` routes as
+the member alone routes `/r`, except that an optional-capture member such as
+`/:id?` answers `/api` and rejects `/api/` (the root convention above). This
+suffix cancellation needs strict mode: in lenient mode `//:id?` alone answers
+`/`, but mounted under `/api` it rejects `/api/`. Under every option setting a
+literal mount answers nothing outside its prefix path: case-sensitive
+matching needs the prefix's exact segments, and case-insensitive matching the
+same segments after ASCII folding, followed by nothing or by `/`. The
+[routing laws](laws/routing.md#source-string-mounting) list each statement.
 
 Arbitrary group flattening is not an equality of entries: hook provenance records
 the original inner prefixes. Even path joining is not associative for every raw
 string: nesting `/a//`, an empty prefix and `/x` gives `/a//x`, while flattening
-the first two prefixes and joining `/x` gives `/a/x`. A route-observable
+the first two prefixes and joining `/x` gives `/a/x`. The mounting laws exclude
+prefixes that end in repeated slashes, since `/a//` ends with an empty prefix
+segment. A route-observable
 associativity theorem for normalized prefixes, preserving nested hook order,
 remains unproved. Existing BND-24 laws and slash behavior are unchanged.

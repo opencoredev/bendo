@@ -23,6 +23,9 @@ import ./proof/compose-laws.bend as ComposeLaws
 import ./proof/validate-laws.bend as ValidateLaws
 import ./proof/plugin-laws.bend as PluginLaws
 
+# BND-86
+import ./proof/mount-laws.bend as MountLaws
+
 # BND-85
 import ./proof/trim-laws.bend as TrimLaws
 import ./proof/media-laws.bend as MediaLaws
