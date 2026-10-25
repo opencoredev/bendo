@@ -10,11 +10,27 @@ import ../http/websocket.bend as WebSocket
 import ../http/request.bend as Request
 import ../http/response.bend as Response
 import ../http/stream_marker.bend as Marker
+import ../http/date_response.bend as DateResponse
+import ../effects/clock.bend as Clock
 
 def streamed(selected: Response.Res & Maybe<&1, T.Plan>) -> Response.Res & T.Transport:
   match selected:
     case (res, None{}): (res, T.Buffered{})
     case (res, Some{plan}): (res, T.Streamed{plan})
+
+def dated_missing(res: Response.Res, needed: Bool) -> IO(Response.Res):
+  match needed:
+    case False{}: IO.pure(Response.Res, res)
+    case True{}:
+      do IO<Response.Res>:
+        sample : Result<&1, &1, U32 & String, Nat> <- Clock.wall_seconds()
+        return Opening.sampled(res, sample)
+
+# A refusal keeps an explicit Date and otherwise is dated here, before the
+# access log records it, so a clock failure's 500 is the status logged.
+def dated(+res: Response.Res) -> IO(Response.Res):
+  Response.Res{status, hs, body, rep} = res
+  dated_missing(res, Bool.not(DateResponse.has_date(hs)))
 
 def decided(+req: Request.Req, res: Response.Res, session: T.Session, decision: WebSocket.Decision) -> IO(Response.Res & T.Transport):
   match decision:
@@ -22,7 +38,8 @@ def decided(+req: Request.Req, res: Response.Res, session: T.Session, decision: 
     case WebSocket.Refuse{status}:
       do IO<Response.Res & T.Transport>:
         Stream.abort(session)
-        return (Opening.wire_refusal(req, res, status), T.Buffered{})
+        refused : Response.Res <- dated(Opening.wire_refusal(req, res, status))
+        return (refused, T.Buffered{})
 
 # Upgrade only when the response still carries this registration's marker and
 # is still a 101 (Marker.eligible); then re-decide against the request as it

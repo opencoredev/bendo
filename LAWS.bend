@@ -2415,6 +2415,16 @@ law websocket_response_refuse_400:
 law websocket_response_refuse_403:
   {WebSocket.response(WebSocket.Refuse{403}) == Response.Res{403, [], [], None{}} : Response.Res}
 
+# BND-94: a refused handshake is dated by transport, before the access log
+# records it. When the clock fails, the refusal becomes an empty 500 that keeps
+# every field the refusal carried (the retained policies, request ID and
+# timing), except framing, the media type, the handshake's fields and the
+# marker, in any name case. The logged 500 is the one sent.
+law websocket_refusal_clock_failure:
+  for +res: Response.Res
+  for error: U32 & String
+  {WebSocketTransport.sampled(res, Fail{error}) == WebSocketSpec.unavailable(res) : Response.Res}
+
 # BND-28: every scalar-string, lexical-number JSON tree with at most 512
 # nested containers serializes successfully and survives strict byte parsing.
 # Pretty printing and ASCII Unicode escaping are independently quantified.
