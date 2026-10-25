@@ -9,6 +9,7 @@ import ./context.bend as Context
 import ./errors.bend as Errors
 import ./observability.bend as Obs
 import ../http/bytes.bend as Bytes
+import ../http/date.bend as Date
 
 def opening_context(-Vars: Data, c: Context.Ctx<Vars>, opening: Response.Res) -> Context.Ctx<Vars>:
   Context.Ctx{req, ps, body, pairs, code, hs, vars, obs} = c
@@ -27,19 +28,43 @@ def normalized(+method: Request.Method, +res: Response.Res) -> Response.Res:
   Response.Res{status, hs, body, rep} = res
   Response.Res{status, Write.response_headers(method, res), Write.payload(method, res), rep}
 
+# Fields that describe the discarded body: its coding, range, digests,
+# validators, language and location. They would be wrong on the refusal's own body or an empty 500.
+def stale(+n: String) -> Bool:
+  (String.eq(n, "content-encoding") || String.eq(n, "content-range") || String.eq(n, "content-md5") || String.eq(n, "digest") || String.eq(n, "content-digest") || String.eq(n, "repr-digest") || String.eq(n, "etag") || String.eq(n, "last-modified") || String.eq(n, "content-language") || String.eq(n, "content-location"))
+
 def final_field(h: Request.Header) -> Bool:
   Request.Header{name, value} = h
   +folded = Bytes.fold(name)
-  Bool.not(WebSocket.owned(folded) || String.eq(folded, Stream.marker()) || String.eq(folded, "content-type"))
+  Bool.not(WebSocket.owned(folded) || String.eq(folded, Stream.marker()) || String.eq(folded, "content-type") || stale(folded))
 
 # The wire request disagrees with the handler's (a rewrite changed its
 # method). Refuse it here, after finalization, keeping the fields middleware
 # and finalizers added (security, CORS, request ID, timing, Date) and dropping
-# only the handshake's own fields and the old body's framing and type.
+# the handshake's own fields and the old body's framing, type, coding, range,
+# digests and validators.
 def wire_refusal(+req: Request.Req, res: Response.Res, status: U32) -> Response.Res:
   Request.Req{+method, path, query, version, hs} = req
   Response.Res{code, fields, body, rep} = res
   normalized(method, refusal(Unit, Context.Ctx{req, [], [], [], 200, List.filter(~Request.Header, ~final_field, fields), None{}, Obs.empty()}, status))
+
+# BND-94: the refusal is built after finalization from a 101, which got no
+# Date, so transport dates it before the access log sees it. When the clock
+# fails it becomes an empty, framed 500, as any undatable final response does
+# (decision 0007), but it keeps the fields the refusal kept: the retained
+# policies, request ID and timing (law websocket_refusal_clock_failure).
+def unavailable(res: Response.Res) -> Response.Res:
+  Response.Res{code, fields, body, rep} = res
+  Response.Res{500, Request.Header{"content-length", [48]} <> List.filter(~Request.Header, ~final_field, fields), [], None{}}
+
+def with_date(res: Response.Res, second: Nat) -> Response.Res:
+  Response.Res{status, hs, body, rep} = res
+  Response.Res{status, Request.Header{"date", Bytes.encode(Date.format_imf(second))} <> hs, body, rep}
+
+def sampled(res: Response.Res, sample: Result<&1, &1, U32 & String, Nat>) -> Response.Res:
+  match sample:
+    case Done{s}: with_date(res, s)
+    case Fail{error}: unavailable(res)
 
 # Keep every middleware and finalizer field except those the handshake owns,
 # then put the computed handshake first. A 101 has no body or framing.

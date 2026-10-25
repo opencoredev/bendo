@@ -84,5 +84,5 @@ plus the examples. `docs/api/index.md` states which names count as public.
   page whose examples import `P` makes `P.size` public. A newly
   imported companion module also needs an alias in `scripts/api-coverage.ts`.
 
-Planned additions: task and migration guides (BND-72). Add their pages to
-`sidebar.ts` where its comment says.
+The task and migration guides live in `docs/guides`, and
+`tests/guides.test.ts` checks every code block in them.

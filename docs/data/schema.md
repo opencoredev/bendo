@@ -441,7 +441,13 @@ field. A location below a failed check is not examined: an array of the wrong
 length or a value of the wrong kind reports one error and nothing inside it,
 and a union that matches no member reports one error for the whole value,
 whatever its members said. In each object, undeclared keys under `Strict{}`
-come first in input order, then the declared fields in schema order.
+come first in input order, one error per member, so a key repeated three times
+is listed three times. The declared fields follow in schema order, each with
+one error at its key when it is missing or repeated, or the errors inside its
+one member. The list is exactly this sequence, cut after 100 entries: no
+location is listed twice unless it fails twice, and none is skipped before the
+cap. An invalid schema rejects every value with one `InvalidSchema` error at
+the root and nothing else.
 
 | Location | Path | Code | Message |
 | --- | --- | --- | --- |
@@ -523,12 +529,21 @@ schemas and constructed data:
 - `schema_errors_complete` (BND-35): for every path `error_at` accepts, the
   decoder rejects and lists an error with exactly that path, unless it already
   lists 100.
+- `schema_errors_exact` (BND-89): the paths a decoder lists, in order, equal
+  the first 100 entries of `SchemaSpec.failures`, which enumerates every
+  failure occurrence in the order above and keeps repeats. An accepted value
+  lists nothing. This rules out the duplicates and omissions the first two
+  laws allow once a list reaches 100 entries.
+- `schema_invalid_reports_root` (BND-89): when `SchemaSpec.schema_ok` rejects
+  the schema, `decode` returns exactly one `InvalidSchema` error with an empty
+  path, whatever the value.
 - `schema_coerce_matches_spec` (BND-35): `coerce` equals
   `SchemaSpec.coerce_text`, which restates the coercion rules by plain
   recursion with the specification's own number grammar.
   `schema_coerced_acceptance_iff`, `schema_coerced_preserves_typed_value`,
-  `schema_coerced_errors_name_failing_paths` and
-  `schema_coerced_errors_complete` restate the four laws above for
+  `schema_coerced_errors_name_failing_paths`,
+  `schema_coerced_errors_complete`, `schema_coerced_errors_exact` and
+  `schema_coerced_invalid_reports_root` restate the laws above for
   `decode_from(TextSource{}, ...)`, read against the coerced value.
 
 Defaults are part of the first two laws: `SchemaSpec.schema_ok` requires every
@@ -543,14 +558,19 @@ presence forbids or a key `Strict{}` does not declare, and `[k, ...rest]` leads
 into the one member named by a declared key. A nullable reads a non-null value
 against its inner schema.
 
+`SchemaSpec.failures(s, v, Node{})` turns the same rules into a list, one
+entry per failure occurrence in report order, and `SchemaSpec.error_paths`
+cuts it to 100 entries (or gives the root alone for an invalid schema).
+
 The scalar proofs go through one equivalence lemma per check
 (`proof/schema-*.bend`); the compound proofs (`proof/schema-compound.bend`)
 follow the decoder's states by induction on the schema and on each list.
 `proof/schema-errors.bend` follows the error collector's states the same way
 (the errors a state starts with, the budget, an empty result, soundness and
-completeness), and `proof/schema-coerce.bend` follows the coercion's states.
-Both files are generated from per-state cases by the scripts in
-`scripts/schema-proofs/`.
+completeness), `proof/schema-errors-exact.bend` shows that each state lists
+a prefix of what it still has to visit, and `proof/schema-coerce.bend`
+follows the coercion's states. All three are generated from per-state cases
+by the scripts in `scripts/schema-proofs/` (`exact.py` writes the second).
 
 Run `bun run prove` for the strict Lean-backed kernel and
 `bun test --timeout 30000 tests/schema.test.ts tests/schema-compound.test.ts tests/schema-errors.test.ts`

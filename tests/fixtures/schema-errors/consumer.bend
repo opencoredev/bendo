@@ -109,5 +109,14 @@ def satisfies(s: S.Schema, v: J.Json) -> Bool: Spec.satisfies(s, v)
 def located(s: S.Schema, v: J.Json, r: Result<&2, &2, S.Errors(), S.Value>) -> Bool: Spec.located_errors(s, v, r)
 def error_at(s: S.Schema, v: J.Json, p: List<&2, S.PathPart>) -> Bool: Spec.error_at(s, v, p)
 def reported(r: Result<&2, &2, S.Errors(), S.Value>, p: List<&2, S.PathPart>) -> Bool: Spec.reported(r, p)
+
+def same_paths(a: List<&2, List<&2, S.PathPart>>, b: List<&2, List<&2, S.PathPart>>) -> Bool:
+  match a b:
+    case Nil{} Nil{}: True{}
+    case p <> t q <> u: Spec.same_path(p, q) && same_paths(t, u)
+    case _ _: False{}
+
+# BND-89: the listed paths are exactly the specification's.
+def exact(s: S.Schema, v: J.Json, r: Result<&2, &2, S.Errors(), S.Value>) -> Bool: same_paths(Spec.listed_paths(r), Spec.error_paths(s, v))
 def json(v: J.Json) -> String: stringify(v)
 def errors_json(r: Result<&2, &2, S.Errors(), S.Value>) -> String: report(r)
