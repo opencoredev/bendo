@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate src/router/compile-spec-chars.bend (BND-83).
+"""Generate src/router/compile-char-proofs.bend (BND-83).
 
 Pattern.compile matches literal characters (`{` and `?` in split_name, the
 string "*" in compile, located and invalid_tail). A literal match compiles to a
@@ -13,7 +13,7 @@ Run: python3 scripts/route-compile-proofs.py
 
 from pathlib import Path
 
-OUT = Path(__file__).resolve().parent.parent / "src/router/compile-spec-chars.bend"
+OUT = Path(__file__).resolve().parent.parent / "src/router/compile-char-proofs.bend"
 
 
 def off_path(literals: list[int]) -> list[list[int]]:

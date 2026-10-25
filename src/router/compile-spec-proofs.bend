@@ -9,7 +9,7 @@ import ./codec-bits.bend as Bits
 import ./equality-proofs.bend as Eq
 import ../http/text.bend as T
 import ../http/text-proofs.bend as TP
-import ./compile-spec-chars.bend as CS
+import ./compile-char-proofs.bend as CS
 import ../../proof/router-compile-spec.bend as S
 
 def name_tail_eq(s: String) -> {P.name_tail(s) == S.name_rest(s) : Bool}:
