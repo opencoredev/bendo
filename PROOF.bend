@@ -39,6 +39,9 @@ import ./proof/rate-limit.bend as RateLimitProof
 # BND-100
 import ./proof/utf8-scalar.bend as Utf8ScalarProof
 
+# BND-92
+import ./proof/parser-spec.bend as ParserSpecProof
+
 # BND-87
 import ./proof/signed-cookie-decoders.bend as SignedCookieDecoderProof
 
@@ -124,6 +127,7 @@ import ./src/router/compile-proofs.bend as CompileProof
 import ./src/router/equality-proofs.bend as EqualityProof
 import ./src/router/match-proofs.bend as MatchProof
 import ./src/router/match-spec-proofs.bend as MatchSpecProof
+import ./src/router/compile-spec-proofs.bend as CompileSpecProof
 
 import ./src/router/spec.bend as Spec
 import ./src/router/spec-proofs.bend as SpecProof
@@ -288,6 +292,17 @@ def Laws.spec_optional_chain():
 
 def Laws.spec_greedy_span():
   ({==}, {==})
+
+# BND-83: route compilation is the independent source grammar.
+
+def Laws.pattern_compile_spec(source):
+  CompileSpecProof.compile_spec(source)
+
+def Laws.compile_spec_forms():
+  ({==}, ({==}, ({==}, ({==}, {==}))))
+
+def Laws.compile_spec_rejects():
+  ({==}, ({==}, ({==}, ({==}, {==}))))
 
 # BND-29: URL-encoded data and ordered repeated-key lookup.
 

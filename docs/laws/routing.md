@@ -17,6 +17,9 @@ documented syntax form. See [route patterns](../router-patterns.md).
 - `compile_bare_star`, `compile_prefix_wildcard`, `compile_interior_wildcards`, `compile_optional_chain`, `compile_static_colon`, `compile_anchored_span`: one example each: `*`, `/assets*`, `/a/*/b/*`, `/v1/:version?/:platform?`, `/v1/name:activate` and `/:prefix{.+}/contents/:id?` compile to the segments the specification reads.
 - `compile_unanchored_span`: a span with no static segment after it, as in `/:a{.+}/:b`, is a compile error.
 - `spec_prefix_wildcard`, `spec_interior_wildcards`, `spec_optional_chain`, `spec_greedy_span`: one example each of what the specification returns for those forms: `/assets*` matches `/assets-v2` and `/assets/app.js`; `/a/*/b/*` puts `c/d` in the final wildcard for `/a/x/y/b/c/d`; `/v1/x` fills only `version`; a span takes as much as it can while the rest still matches.
+- `pattern_compile_spec`: for every string, compiling succeeds with a pattern exactly when the independent source grammar in `proof/router-compile-spec.bend` maps the string to that pattern, and fails exactly when the grammar rejects it. The grammar covers static text with literal `:`, captures with constraints, the trailing optional chain, bare `*`, named, prefix and interior wildcards, and anchored spans with their `InvalidSpan` rules. It calls no `Pattern` helper. It shares the constraint grammar for the text inside `{...}`, and error kinds are not compared.
+- `compile_spec_forms`: the grammar accepts `/images*`, `/x/*/y/*`, `/:a?/:b?/:c?`, `/jobs/run:now` and `/:rest{.+}/end`, each with the expected segments.
+- `compile_spec_rejects`: the grammar rejects `/*path/x` (named wildcard not last), `/:a?/b` (a present segment after an optional), `/:id/:id` (repeated name), `/:a{.+}?/x` (optional span) and `/:a{.+}/*` (span with a wildcard).
 
 ## The reference router
 

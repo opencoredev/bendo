@@ -52,9 +52,11 @@ that every byte reached the socket. Other limits worth knowing:
 - The request-parser laws describe canonical input. Rejection of malformed
   and non-canonical requests is covered by the conformance suite and the
   fuzzer, not by laws. See [HTTP conformance](../http-conformance.md).
-- The route-validation laws trust the JSON parser, `Bytes.fold` and the raw
-  query parser, which the implementation and its specification share. BND-92
-  tracks independent specifications for those.
+- The route-validation laws trust the JSON parser, which the implementation
+  and its specification share. `Bytes.fold` and the raw query parser, the
+  other two shared parsers, have their own laws against independent
+  specifications. The JSON parser is checked by seeded differential tests
+  against an independent parser instead; see [Data](data.md#json).
 - The CSRF and WebSocket handshake specifications reuse the shared origin
   parser, which has its own laws against an independent origin specification.
 - SHA-1, SHA-256 and HMAC are checked against published test vectors, not
