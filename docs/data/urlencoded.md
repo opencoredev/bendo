@@ -19,10 +19,14 @@ letters, digits, `*`, `-`, `.`, and `_` pass through. Spaces become `+`, and
 literal plus becomes `%2B`. `decode_form(s: String)` treats raw plus as space.
 Both decoders return `Result<&2, &2, Error, String>`.
 
-Strings passed to encoders contain Unicode scalar values: U+0000 through
-U+10FFFF, excluding U+D800 through U+DFFF. Bend's `Chr{U32}` can represent values
-outside that range; `src/data/utf8.bend` exposes `valid(s)` to check constructed
-Strings. Percent escapes use uppercase hexadecimal and encode UTF-8 octets.
+Unicode scalar values are U+0000 through U+10FFFF, excluding U+D800 through
+U+DFFF. Bend's `Chr{U32}` can represent values outside that range;
+`src/data/utf8.bend` exposes `valid(s)` to check constructed Strings. The
+encoders write a non-scalar character as U+FFFD (`%EF%BF%BD`), as WHATWG
+`TextEncoder` does, so only scalar strings roundtrip. `decode`, `decode_form`
+and `parse_pairs` refuse a string holding a non-scalar character with
+`Fail{InvalidUtf8{}}`; a percent error elsewhere in the text is reported first.
+Percent escapes use uppercase hexadecimal and encode UTF-8 octets.
 
 ## Pairs and bodies
 

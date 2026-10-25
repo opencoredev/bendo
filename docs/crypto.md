@@ -2,8 +2,10 @@
 
 Import the modules directly. Byte values use `List<&2, U32>` and must lie
 between 0 and 255. `src/crypto/octets.bend` exposes `valid` to check that
-precondition. Convert a Unicode scalar string to bytes with
-`src/data/utf8.bend`'s `encode`; hashes operate on those UTF-8 octets.
+precondition. Convert a string to bytes with `src/data/utf8.bend`'s `encode`;
+hashes operate on those UTF-8 octets. `encode` writes a surrogate or a value
+above U+10FFFF as U+FFFD, so two strings that differ only in such characters
+give the same bytes. Check secrets with `Utf8.valid` if that matters.
 
 ```python
 import Base

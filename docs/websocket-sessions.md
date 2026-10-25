@@ -48,7 +48,9 @@ when complete, including a code point split across fragments.
 
 The following helpers return `IO(Bool)`:
 
-- `B.websocket_send_text(handle, text)` sends a UTF-8 text message.
+- `B.websocket_send_text(handle, text)` sends a UTF-8 text message. A
+  surrogate or a value above U+10FFFF in `text` is sent as U+FFFD, so the
+  frame is always valid UTF-8.
 - `B.websocket_send_binary(handle, bytes)` sends octets unchanged.
 - `B.websocket_ping(handle, bytes)` sends at most 125 payload bytes.
 - `B.websocket_close(handle, code, reason)` begins a close handshake. Codes must
