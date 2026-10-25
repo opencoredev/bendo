@@ -49,9 +49,15 @@ the row cap:
 | `mode` | `Sql.ReadWriteCreate{}` | Or `Sql.ReadWrite{}` (the file must exist) or `Sql.ReadOnly{}`. |
 | `busy_ms` | 5000 | How long a statement waits for a lock held by another transaction or process before failing with code 5. |
 | `max_rows` | 100000 | The most rows `Sql.all` returns; one more fails with code 18 instead of truncating. |
+| `max_bytes` | 67108864 (64 MiB) | The most bytes of cell data one result of `Sql.all` or `Sql.get` holds: text and blob bytes and the digits of numbers. More fails with code 18. |
+| `max_cell` | 16777216 (16 MiB) | The most bytes of one text or blob value in such a result. More fails with code 18. |
+
+The caps bound what one call copies out of SQLite. Bend holds a string as a
+list of characters, so a result takes many times its byte size in memory;
+lower the caps for an app whose rows are large or whose memory is small.
 
 `Sql.exec(db, script)` runs several statements with no parameters, such as a
-schema. Everything else runs one statement per call. `Sql.close(db)` rolls
+schema, one after another. Everything else runs one statement per call. `Sql.close(db)` rolls
 back an open transaction, finalizes the connection's prepared statements and
 closes it; every copy of the `Db` fails afterwards.
 
@@ -149,10 +155,18 @@ def debit_credit(+from: String, +to: String, +amount: String, +tx: Sql.Db) -> IO
 Statements through other copies of the connection, from other requests, wait
 until the transaction ends, so they never run inside it by accident. They
 fail with code 5 if it stays open past the busy timeout. `Sql.begin`,
-`Sql.commit` and `Sql.rollback` are the manual form; a statement that runs
-`BEGIN` or `COMMIT` itself is refused. Transactions begin with `BEGIN
-IMMEDIATE`; `Sql.begin_with(db, Sql.Deferred{})` takes another `Sql.Begin`
-kind.
+`Sql.commit` and `Sql.rollback` are the manual form. `Sql.commit` and
+`Sql.rollback` always end the transaction, whatever they return: each waits
+for the transaction's statements still running, however long they take, and
+a commit that fails rolls back. Transactions begin with `BEGIN IMMEDIATE`;
+`Sql.begin_with(db, Sql.Deferred{})` takes another `Sql.Begin` kind.
+
+Only those calls change the transaction state. A statement that begins or
+ends a transaction or savepoint (`BEGIN`, `COMMIT`, `END`, `ROLLBACK`,
+`SAVEPOINT`, `RELEASE`) fails with code 21 before it runs, through `Sql.run`,
+`Sql.all`, `Sql.get`, `Sql.prepare` or anywhere in an `Sql.exec` script, in
+or out of a transaction. To run a script atomically, run it inside
+`Sql.transaction`. Savepoints are not supported.
 
 ## Errors
 
@@ -184,7 +198,9 @@ to each worker.
 
 The laws in [Data](laws/data.md#sqlite) prove that every bound value reaches
 the effect as itself, with its type, that columns map to JSON without losing
-digits, and that the transaction gate keeps other statements out of an open
-transaction. The effect's C and JavaScript code is trusted and covered by
+digits, that a row converts to exactly its values or fails, that
+`Sql.rows_json` and `Sql.decode_rows` read rows in order and fail with the
+first bad row, and that the transaction gate keeps other statements out of
+an open transaction. The effect's C and JavaScript code is trusted and covered by
 `tests/sqlite.test.ts`, which also checks that both builds give the same
 answers.

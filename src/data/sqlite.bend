@@ -1,10 +1,12 @@
 # The pure parts of the SQLite effect (BND-38): the wire format that carries
 # bound parameters to the effect, the mapping from column values to JSON,
-# and the transaction gate the C and JS twins implement. LAWS.bend states
+# reading a result's rows as JSON or through a schema, and the transaction
+# gate the C and JS twins implement. LAWS.bend states
 # what each must do; src/effects/sqlite.md says what the effect does.
 import Base
 import ./json.bend as J
 import ./base64.bend as Base64
+import ./schema.bend as S
 
 # ------------------------------------------------------------------ Wire
 
@@ -174,6 +176,89 @@ def field_keys(fs: List<&2, J.Field>) -> List<&2, String>:
   match fs:
     case Nil{}: []
     case J.Field{k, v} <> t: k <> field_keys(t)
+
+# Why a result's rows could not be read: row (counting from 0) has a column
+# with no JSON form, or does not match the schema. src/sqlite.bend turns these
+# into Sql.NotJson and Sql.RowError.
+type RowFault is Data:
+  FaultJson{row: Nat, column: String}
+  FaultSchema{row: Nat, errors: List<&2, S.Error>}
+
+def json_at(n: Nat, r: Result<&2, &2, String, J.Json>) -> Result<&2, &2, RowFault, J.Json>:
+  match r:
+    case Fail{c}: Fail{FaultJson{n, c}}
+    case Done{j}: Done{j}
+
+def schema_at(n: Nat, r: Result<&2, &2, List<&2, S.Error>, S.Value>) -> Result<&2, &2, RowFault, S.Value>:
+  match r:
+    case Fail{es}: Fail{FaultSchema{n, es}}
+    case Done{v}: Done{v}
+
+def decode_json_at(+schema: S.Schema, n: Nat, r: Result<&2, &2, RowFault, J.Json>) -> Result<&2, &2, RowFault, S.Value>:
+  match r:
+    case Fail{e}: Fail{e}
+    case Done{j}: schema_at(n, S.decode(schema, j))
+
+# Row n as JSON, and decoded through schema.
+def row_json_at(+n: Nat, cols: List<&2, String>, vs: List<&2, Value>) -> Result<&2, &2, RowFault, J.Json>:
+  json_at(n, row_json(cols, vs))
+
+def row_decode_at(+schema: S.Schema, +n: Nat, cols: List<&2, String>, vs: List<&2, Value>) -> Result<&2, &2, RowFault, S.Value>:
+  decode_json_at(schema, n, json_at(n, row_json(cols, vs)))
+
+# The traversals over a result's rows. Results hold up to max_rows rows, so
+# each is a loop over a reversed accumulator; once a row fails, the rest are
+# skipped without being converted. LAWS.bend equates each with the plain
+# row-by-row definition in proof/sqlite-spec.bend.
+def push_json_row(rev: List<&2, J.Json>, r: Result<&2, &2, RowFault, J.Json>) -> Result<&2, &2, RowFault, List<&2, J.Json>>:
+  match r:
+    case Fail{e}: Fail{e}
+    case Done{j}: Done{j <> rev}
+
+def push_json(acc: Result<&2, &2, RowFault, List<&2, J.Json>>, +n: Nat, +cols: List<&2, String>, vs: List<&2, Value>) -> Result<&2, &2, RowFault, List<&2, J.Json>>:
+  match acc:
+    case Fail{e}: Fail{e}
+    case Done{rev}: push_json_row(rev, row_json_at(n, cols, vs))
+
+def flip_json(r: Result<&2, &2, RowFault, List<&2, J.Json>>) -> Result<&2, &2, RowFault, List<&2, J.Json>>:
+  match r:
+    case Fail{e}: Fail{e}
+    case Done{rev}: Done{List.reverse(&2, J.Json, rev)}
+
+def rows_json_go(rs: List<&2, List<&2, Value>>, +cols: List<&2, String>, +n: Nat, acc: Result<&2, &2, RowFault, List<&2, J.Json>>) -> Result<&2, &2, RowFault, List<&2, J.Json>>:
+  match rs:
+    case Nil{}: flip_json(acc)
+    case vs <> t: rows_json_go(t, cols, 1n+n, push_json(acc, n, cols, vs))
+
+# Every row as a JSON object keyed by cols, in order; fails with the first
+# row that has a value with no JSON form.
+def rows_json(+cols: List<&2, String>, rs: List<&2, List<&2, Value>>) -> Result<&2, &2, RowFault, List<&2, J.Json>>:
+  rows_json_go(rs, cols, 0n, Done{[]})
+
+def push_value(rev: List<&2, S.Value>, r: Result<&2, &2, RowFault, S.Value>) -> Result<&2, &2, RowFault, List<&2, S.Value>>:
+  match r:
+    case Fail{e}: Fail{e}
+    case Done{v}: Done{v <> rev}
+
+def push_decoded(acc: Result<&2, &2, RowFault, List<&2, S.Value>>, +schema: S.Schema, +n: Nat, +cols: List<&2, String>, vs: List<&2, Value>) -> Result<&2, &2, RowFault, List<&2, S.Value>>:
+  match acc:
+    case Fail{e}: Fail{e}
+    case Done{rev}: push_value(rev, row_decode_at(schema, n, cols, vs))
+
+def flip_values(r: Result<&2, &2, RowFault, List<&2, S.Value>>) -> Result<&2, &2, RowFault, List<&2, S.Value>>:
+  match r:
+    case Fail{e}: Fail{e}
+    case Done{rev}: Done{List.reverse(&2, S.Value, rev)}
+
+def decode_go(rs: List<&2, List<&2, Value>>, +schema: S.Schema, +cols: List<&2, String>, +n: Nat, acc: Result<&2, &2, RowFault, List<&2, S.Value>>) -> Result<&2, &2, RowFault, List<&2, S.Value>>:
+  match rs:
+    case Nil{}: flip_values(acc)
+    case vs <> t: decode_go(t, schema, cols, 1n+n, push_decoded(acc, schema, n, cols, vs))
+
+# Every row decoded through schema, in order; fails with the first row that
+# has no JSON form or does not match.
+def decode_rows(+schema: S.Schema, +cols: List<&2, String>, rs: List<&2, List<&2, Value>>) -> Result<&2, &2, RowFault, List<&2, S.Value>>:
+  decode_go(rs, schema, cols, 0n, Done{[]})
 
 # ------------------------------------------------------------------ Gate
 

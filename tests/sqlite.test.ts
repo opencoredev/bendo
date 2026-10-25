@@ -13,6 +13,9 @@ const parityJs = compile("tests/fixtures/sqlite/parity.bend", "js");
 
 const scratch = mkdtempSync(join(tmpdir(), "bendo-sqlite-"));
 
+const CONTROL =
+  "bendo sqlite: a statement may not begin or end a transaction or savepoint; use Sql.begin, Sql.commit and Sql.rollback";
+
 let server: RunningServer;
 beforeAll(async () => {
   server = await start(binary, "127.0.0.1", { BENDO_SQLITE_DB: join(scratch, "app.db") });
@@ -254,6 +257,18 @@ describe("the JS twin", () => {
     return result.stdout.toString();
   }
 
+  // One full run per build, shared by the tests that read its lines.
+  const runs = new Map<boolean, string[]>();
+  function parityLines(js: boolean): string[] {
+    const known = runs.get(js);
+    if (known !== undefined) return known;
+    const lines = runParity(js ? parityJs : parityNative, js)
+      .trim()
+      .split("\n");
+    runs.set(js, lines);
+    return lines;
+  }
+
   test("gives the native build's output for every operation", () => {
     const native = runParity(parityNative, false);
     const js = runParity(parityJs, true);
@@ -269,7 +284,7 @@ describe("the JS twin", () => {
       "unique second: error 2067 UNIQUE constraint failed: u.name",
       "named missing: error 25 parameter :b is not bound",
       "two statements: error 21 bendo sqlite: one statement per call; run scripts with Sql.exec",
-      "sql begin: error 21 bendo sqlite: a statement may not begin a transaction; use Sql.begin",
+      `sql begin: error 21 ${CONTROL}`,
       "tx abort: abort stop",
       "after tx: rows name [t:kept] [t:x] changes 0",
       "stale tx: error 21 bendo sqlite: no open transaction for this handle",
@@ -277,6 +292,79 @@ describe("the JS twin", () => {
       "three rows: error 18 bendo sqlite: the query returned more than 2 rows",
       "closed use: error 21 bendo sqlite: the connection is closed",
       "read-only write: error 8 attempt to write a readonly database",
+    ];
+    for (const line of expected) expect(lines).toContain(line);
+  });
+
+  // Review round 1 (BND-38). Each line here was wrong before its fix, in the
+  // build named in the comment.
+  test("refuses transaction control before it runs, in statements and scripts", () => {
+    const lines = parityLines(false);
+    const refused = `error 21 ${CONTROL}`;
+    const expected = [
+      // Both builds committed the insert, then refused the COMMIT.
+      `tx sql commit: ${refused}`,
+      "rollback after refused commit: ok",
+      "rows after refused commit: rows count(*) [i:0] changes 0",
+      // Both builds let a script COMMIT and BEGIN again.
+      `tx script commit: ${refused}`,
+      "rows after script: rows count(*) [i:0] changes 0",
+      `script with its own transaction: ${refused}`,
+      "rows after own transaction: rows count(*) [i:0] changes 0",
+      `savepoint: ${refused}`,
+      `prepare end: ${refused}`,
+      `sql commit: ${refused}`,
+      "keyword in a value: rows begin_text [t:BEGIN] changes 0",
+    ];
+    for (const line of expected) expect(lines).toContain(line);
+  });
+
+  test("a begin waiting on a closed connection leaves the reused slot alone", () => {
+    // Both builds: the stale begin's refusal decremented the new
+    // connection's waiting count, gating every statement on it.
+    for (const lines of [parityLines(false), parityLines(true)]) {
+      expect(lines).toContain("waiting begin: error 21 bendo sqlite: the connection is closed");
+      expect(lines).toContain("reopened slot: rows 1 [i:1] changes 0");
+    }
+  });
+
+  test("commit and rollback wait past the busy timeout for statements in flight", () => {
+    // Native: the end timed out with code 5 and left the transaction open.
+    const lines = parityLines(false);
+    expect(lines).toContain("commit with a statement in flight: ok");
+    expect(lines).toContain("after commit: rows 1 [i:1] changes 0");
+    expect(lines).toContain("rollback with a statement in flight: ok");
+    expect(lines).toContain("after rollback: rows 1 [i:1] changes 0");
+    expect(
+      lines.filter((line) => line === "statement in flight: rows count(*) [i:3000000] changes 0"),
+    ).toHaveLength(2);
+  });
+
+  test("a recompiled statement reports its new columns", () => {
+    // Both builds read the columns before the step that recompiled it.
+    const lines = parityLines(false);
+    expect(lines).toContain("after alter: rows a,b [i:1|i:2] changes 0");
+    expect(lines).toContain("no rows after alter: rows a,b,c changes 0");
+  });
+
+  test("reading rows fails with the first bad row, numbered from 0", () => {
+    const lines = parityLines(false);
+    expect(lines).toContain("json row index: not json 2 n");
+    expect(lines).toContain(
+      'decode row index: row error 1 [{"path":["n"],"code":"type_mismatch","message":"expected schema scalar kind"}]',
+    );
+  });
+
+  test("results past their byte budgets fail with code 18", () => {
+    const lines = parityLines(false);
+    const expected = [
+      "at both caps: rows 'abcde',1234567 [t:abcde|i:1234567] changes 0",
+      "text past the cell cap: error 18 bendo sqlite: a column value is larger than 6 bytes",
+      "blob past the cell cap: error 18 bendo sqlite: a column value is larger than 6 bytes",
+      "get past the cell cap: error 18 bendo sqlite: a column value is larger than 6 bytes",
+      "rows past the result cap: error 18 bendo sqlite: the result is larger than 12 bytes",
+      "rows at the result cap: rows 'abcd','efgh','ijkl' [t:abcd|t:efgh|t:ijkl] changes 0",
+      "run drops rows: changes 0 rowid 0",
     ];
     for (const line of expected) expect(lines).toContain(line);
   });

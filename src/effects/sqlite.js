@@ -9,7 +9,8 @@
 // The JS lane runs each operation to completion on the loop, so nothing is
 // ever in flight between effects; the transaction gate still makes a
 // statement wait while another computation's transaction is open, polling
-// every BSQ_POLL_MS up to the connection's busy timeout.
+// every BSQ_POLL_MS up to the connection's busy timeout. As in sqlite.c, a
+// transaction-control statement is refused before it runs.
 const BSQ_BUSY = 5;
 const BSQ_CANTOPEN = 14;
 const BSQ_TOOBIG = 18;
@@ -343,6 +344,60 @@ function bsq_bind(lib, st, wire) {
   }
 }
 
+const BSQ_CONTROL_MSG =
+  "bendo sqlite: a statement may not begin or end a transaction or savepoint; " +
+  "use Sql.begin, Sql.commit and Sql.rollback";
+
+const BSQ_CONTROL_WORDS = ["BEGIN", "COMMIT", "END", "ROLLBACK", "SAVEPOINT", "RELEASE"];
+
+function bsq_space(c) {
+  return c === 0x20 || c === 0x09 || c === 0x0a || c === 0x0c || c === 0x0d;
+}
+
+function bsq_ident(c) {
+  return (
+    (c >= 0x61 && c <= 0x7a) ||
+    (c >= 0x41 && c <= 0x5a) ||
+    (c >= 0x30 && c <= 0x39) ||
+    c === 0x5f ||
+    c === 0x24 ||
+    c >= 0x80
+  );
+}
+
+// Whether the UTF-8 statement text b[from..to) begins with a
+// transaction-control keyword, as sqlite.c's bsq_control.
+function bsq_control(b, from, to) {
+  let i = from;
+  for (;;) {
+    while (i < to && bsq_space(b[i])) {
+      i += 1;
+    }
+    if (i + 1 < to && b[i] === 0x2d && b[i + 1] === 0x2d) {
+      while (i < to && b[i] !== 0x0a) {
+        i += 1;
+      }
+    } else if (i + 1 < to && b[i] === 0x2f && b[i + 1] === 0x2a) {
+      i += 2;
+      while (i + 1 < to && !(b[i] === 0x2a && b[i + 1] === 0x2f)) {
+        i += 1;
+      }
+      i = i + 1 < to ? i + 2 : to;
+    } else {
+      break;
+    }
+  }
+  let k = i;
+  while (k < to && bsq_ident(b[k])) {
+    k += 1;
+  }
+  return BSQ_CONTROL_WORDS.some(
+    (word) =>
+      word.length === k - i &&
+      Array.from(word).every((ch, m) => (b[i + m] & ~0x20) === ch.charCodeAt(0)),
+  );
+}
+
 // Exactly one statement, as sqlite.c's bsq_prepare_one.
 function bsq_prepare_one(lib, db, sql) {
   const s = lib.s;
@@ -377,6 +432,10 @@ function bsq_prepare_one(lib, db, sql) {
       "bendo sqlite: one statement per call; run scripts with Sql.exec",
     );
   }
+  if (bsq_control(buf, 0, used)) {
+    s.sqlite3_finalize(st);
+    throw new BsqError(BSQ_MISUSE, BSQ_CONTROL_MSG);
+  }
   return st;
 }
 
@@ -386,24 +445,45 @@ function bsq_total(lib, db) {
     : BigInt(lib.s.sqlite3_total_changes(db));
 }
 
-function bsq_cell(lib, st, c) {
+// Counts n more bytes of the result against its budgets, as sqlite.c's
+// bsq_budget; a text or blob cell also counts against the per-cell one.
+function bsq_budget(j, n, cell) {
+  if (cell && n > j.max_cell) {
+    throw new BsqError(
+      BSQ_TOOBIG,
+      `bendo sqlite: a column value is larger than ${j.max_cell} bytes`,
+    );
+  }
+  if (n > j.max_bytes - j.bytes) {
+    throw new BsqError(BSQ_TOOBIG, `bendo sqlite: the result is larger than ${j.max_bytes} bytes`);
+  }
+  j.bytes += n;
+}
+
+function bsq_cell(lib, st, c, j) {
   const s = lib.s;
   switch (s.sqlite3_column_type(st, c)) {
-    case 1:
-      return { $: CID(CellInteger), text: BigInt(s.sqlite3_column_int64(st, c)).toString() };
-    case 2:
-      return { $: CID(CellReal), text: bsq_real(s.sqlite3_column_double(st, c)) };
+    case 1: {
+      const text = BigInt(s.sqlite3_column_int64(st, c)).toString();
+      bsq_budget(j, text.length, false);
+      return { $: CID(CellInteger), text };
+    }
+    case 2: {
+      const text = bsq_real(s.sqlite3_column_double(st, c));
+      bsq_budget(j, text.length, false);
+      return { $: CID(CellReal), text };
+    }
     case 3: {
       const p = s.sqlite3_column_text(st, c);
-      const bytes = bsq_bytes(lib, p, s.sqlite3_column_bytes(st, c));
-      return { $: CID(CellText), value: lib.decoder.decode(bytes) };
+      const n = s.sqlite3_column_bytes(st, c);
+      bsq_budget(j, p === null || p === 0 ? 0 : n, true);
+      return { $: CID(CellText), value: lib.decoder.decode(bsq_bytes(lib, p, n)) };
     }
     case 4: {
       const p = s.sqlite3_column_blob(st, c);
-      return {
-        $: CID(CellBlob),
-        bytes: bsq_list(Array.from(bsq_bytes(lib, p, s.sqlite3_column_bytes(st, c)))),
-      };
+      const n = s.sqlite3_column_bytes(st, c);
+      bsq_budget(j, p === null || p === 0 ? 0 : n, true);
+      return { $: CID(CellBlob), bytes: bsq_list(Array.from(bsq_bytes(lib, p, n))) };
     }
     default:
       return { $: CID(CellNull) };
@@ -469,13 +549,18 @@ function bsq_query(lib, conn, j) {
   let rowid = 0n;
   try {
     bsq_bind(lib, st, j.text2);
-    const ncols = j.mode === 0 ? 0 : s.sqlite3_column_count(st);
-    for (let k = 0; k < ncols; k += 1) {
-      columns.push(bsq_text(lib, s.sqlite3_column_name(st, k)) ?? "");
-    }
+    let ncols = 0;
     const before = bsq_total(lib, db);
-    for (;;) {
+    for (let first = true; ; first = false) {
       const rc = s.sqlite3_step(st);
+      // After the first step: a step can recompile the statement after a
+      // schema change, and change its columns.
+      if (first && j.mode !== 0 && (rc === BSQ_ROW || rc === BSQ_DONE)) {
+        ncols = s.sqlite3_column_count(st);
+        for (let k = 0; k < ncols; k += 1) {
+          columns.push(bsq_text(lib, s.sqlite3_column_name(st, k)) ?? "");
+        }
+      }
       if (rc === BSQ_ROW) {
         if (j.mode === 0) {
           continue;
@@ -489,7 +574,7 @@ function bsq_query(lib, conn, j) {
         }
         const row = [];
         for (let k = 0; k < ncols; k += 1) {
-          row.push(bsq_cell(lib, st, k));
+          row.push(bsq_cell(lib, st, k, j));
         }
         rows.push(bsq_list(row));
         if (j.mode === 2) {
@@ -530,24 +615,59 @@ function bsq_query(lib, conn, j) {
   };
 }
 
+// A script, one statement at a time, as sqlite.c's bsq_exec.
 function bsq_exec(lib, conn, j) {
   const s = lib.s;
   const db = conn.db;
   if (j.text1.includes("\0")) {
     throw new BsqError(BSQ_MISUSE, "bendo sqlite: SQL contains a NUL character");
   }
-  bsq_before(lib, db, j.token);
-  const err = new BigUint64Array(1);
-  let failure;
-  if (s.sqlite3_exec(db, bsq_cbuf(j.text1), null, null, err) !== 0) {
-    const p = Number(err[0]);
-    failure = new BsqError(
-      s.sqlite3_extended_errcode(db),
-      p !== 0 ? bsq_text(lib, p) : String(s.sqlite3_errmsg(db)),
-    );
+  const buf = bsq_cbuf(j.text1);
+  const n = buf.length - 1;
+  if (n > BSQ_INT_MAX) {
+    throw new BsqError(BSQ_TOOBIG, "string or blob too big");
   }
-  if (err[0] !== 0n) {
-    s.sqlite3_free(Number(err[0]));
+  bsq_before(lib, db, j.token);
+  const autocommit = s.sqlite3_get_autocommit(db);
+  const base = lib.ffi.ptr(buf);
+  const out = new BigUint64Array(1);
+  const tail = new BigUint64Array(1);
+  let failure;
+  let at = 0;
+  while (failure === undefined && at < n) {
+    out[0] = 0n;
+    tail[0] = 0n;
+    if (s.sqlite3_prepare_v2(db, base + at, n - at, out, tail) !== 0) {
+      failure = bsq_db_error(lib, db);
+      break;
+    }
+    const st = Number(out[0]);
+    const next = tail[0] === 0n ? at : Number(tail[0]) - base;
+    if (st === 0) {
+      // Whitespace, a comment or a lone ';'.
+      if (next <= at) {
+        break;
+      }
+      at = next;
+      continue;
+    }
+    if (bsq_control(buf, at, next)) {
+      s.sqlite3_finalize(st);
+      failure = new BsqError(BSQ_MISUSE, BSQ_CONTROL_MSG);
+      break;
+    }
+    let rc = s.sqlite3_step(st);
+    while (rc === BSQ_ROW) {
+      rc = s.sqlite3_step(st);
+    }
+    if (rc !== BSQ_DONE) {
+      failure = bsq_db_error(lib, db);
+    }
+    s.sqlite3_finalize(st);
+    if (s.sqlite3_get_autocommit(db) !== autocommit) {
+      break;
+    }
+    at = next;
   }
   failure = bsq_after(lib, db, j.token, failure);
   if (failure !== undefined) {
@@ -704,7 +824,9 @@ function bsq_finish(state, conn, j) {
 }
 
 function bsq_refuse(conn, j, code, message) {
-  if (j.counted) {
+  // A begin counted on a connection that has since closed counts nowhere:
+  // open zeroes the count of the connection that reuses the slot.
+  if (j.counted && conn.gen === j.gen) {
     conn.pending -= 1;
     j.counted = false;
   }
@@ -756,7 +878,21 @@ function bsq_try(state, j, k) {
   return bsq_finish(state, conn, j);
 }
 
-function bendo_sqlite_call(op, slot, gen, token, index, sgen, mode, limit, text1, text2, k) {
+function bendo_sqlite_call(
+  op,
+  slot,
+  gen,
+  token,
+  index,
+  sgen,
+  mode,
+  limit,
+  max_bytes,
+  max_cell,
+  text1,
+  text2,
+  k,
+) {
   const state = bsq_state();
   const j = {
     op,
@@ -767,6 +903,9 @@ function bendo_sqlite_call(op, slot, gen, token, index, sgen, mode, limit, text1
     sgen,
     mode,
     limit,
+    max_bytes,
+    max_cell,
+    bytes: 0,
     text1,
     text2,
     counted: false,
@@ -808,7 +947,8 @@ function bendo_sqlite_call(op, slot, gen, token, index, sgen, mode, limit, text1
   if (conn === undefined || conn.gen !== gen || conn.state !== "open") {
     return bsq_failure(BSQ_MISUSE, "bendo sqlite: the connection is closed");
   }
-  j.deadline = op === 1 ? Infinity : performance.now() + conn.busy_ms;
+  // Close, commit and rollback never time out, as in sqlite.c.
+  j.deadline = op === 1 || op === 7 ? Infinity : performance.now() + conn.busy_ms;
   return bsq_try(state, j, k);
 }
 

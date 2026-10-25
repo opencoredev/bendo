@@ -15,9 +15,11 @@ def Binding() -> Data: D.Binding
 # A connection. Copy it freely: every copy names the same connection, and
 # closing it makes every copy fail. Inside a transaction, the Db that begin
 # returns carries the transaction's token, and statements run through it run
-# in the transaction. max_rows caps what Sqlite.all returns.
+# in the transaction. max_rows caps the rows Sqlite.all returns; max_bytes
+# caps the cell bytes a result of Sqlite.all or Sqlite.get holds, and
+# max_cell the bytes of one text or blob cell in it.
 type Db is Data:
-  Db{slot: U32, gen: U32, token: U32, max_rows: U32}
+  Db{slot: U32, gen: U32, token: U32, max_rows: U32, max_bytes: U32, max_cell: U32}
 
 # A prepared statement on one connection, reusable until finalized.
 type Stmt is Data:
@@ -38,7 +40,7 @@ type Begin is Data:
   Exclusive{}
 
 type Options is Data:
-  Options{mode: Mode, busy_ms: U32, max_rows: U32}
+  Options{mode: Mode, busy_ms: U32, max_rows: U32, max_bytes: U32, max_cell: U32}
 
 # SqlError carries SQLite's extended result code and message, or one of the
 # effect's own (src/effects/sqlite.md lists them). RowError and NotJson come
@@ -75,8 +77,10 @@ def positional(values: List<&2, D.Value>) -> Params: Positional{values}
 def named(bindings: List<&2, D.Binding>) -> Params: Named{bindings}
 def bind(name: String, v: D.Value) -> D.Binding: D.Binding{name, v}
 
+# Read-write, created if missing; a 5 s busy timeout; at most 100000 rows,
+# 64 MiB of cell data and 16 MiB in one text or blob cell per result.
 def options() -> Options:
-  Options{ReadWriteCreate{}, 5000, 100000}
+  Options{ReadWriteCreate{}, 5000, 100000, 67108864, 16777216}
 
 def abort(message: String) -> Error: Abort{message}
 
@@ -131,10 +135,10 @@ def rows_go(rs: List<&2, List<&2, E.Cell>>, rev: List<&2, List<&2, D.Value>>) ->
     case Nil{}: List.reverse(&2, List<&2, D.Value>, rev)
     case r <> t: rows_go(t, cells(r) <> rev)
 
-def opened(max_rows: U32, r: Raw()) -> Result<&2, &2, Error, Db>:
+def opened(max_rows: U32, max_bytes: U32, max_cell: U32, r: Raw()) -> Result<&2, &2, Error, Db>:
   match r:
     case Fail{(c, m)}: Fail{SqlError{c, m}}
-    case Done{E.Handle{slot, gen}}: Done{Db{slot, gen, 0, max_rows}}
+    case Done{E.Handle{slot, gen}}: Done{Db{slot, gen, 0, max_rows, max_bytes, max_cell}}
     case Done{_}: unexpected(Db)
 
 def finished(r: Raw()) -> Result<&2, &2, Error, Unit>:
@@ -149,10 +153,10 @@ def prepared(slot: U32, gen: U32, r: Raw()) -> Result<&2, &2, Error, Stmt>:
     case Done{E.Handle{index, sgen}}: Done{Stmt{slot, gen, index, sgen}}
     case Done{_}: unexpected(Stmt)
 
-def began(slot: U32, gen: U32, max_rows: U32, r: Raw()) -> Result<&2, &2, Error, Db>:
+def began(slot: U32, gen: U32, max_rows: U32, max_bytes: U32, max_cell: U32, r: Raw()) -> Result<&2, &2, Error, Db>:
   match r:
     case Fail{(c, m)}: Fail{SqlError{c, m}}
-    case Done{E.Handle{token, zero}}: Done{Db{slot, gen, token, max_rows}}
+    case Done{E.Handle{token, zero}}: Done{Db{slot, gen, token, max_rows, max_bytes, max_cell}}
     case Done{_}: unexpected(Db)
 
 def ran(r: Raw()) -> Result<&2, &2, Error, Rows>:
@@ -196,13 +200,13 @@ def kind_code(k: Begin) -> U32:
 # ------------------------------------------------------------------ Connections
 
 # Opens path (":memory:" for a private in-memory database) with a busy
-# timeout and a row cap.
+# timeout and result caps.
 def open_with(path: String, o: Options) -> IO(Result<&2, &2, Error, Db>):
   match o:
-    case Options{mode, busy_ms, +max_rows}:
+    case Options{mode, busy_ms, +max_rows, +max_bytes, +max_cell}:
       do IO<Result<&2, &2, Error, Db>>:
-        r : Raw() <- E.sqlite_call(0, 0, 0, 0, 0, 0, mode_code(mode), busy_ms, path, "")
-        return opened(max_rows, r)
+        r : Raw() <- E.sqlite_call(0, 0, 0, 0, 0, 0, mode_code(mode), busy_ms, 0, 0, path, "")
+        return opened(max_rows, max_bytes, max_cell, r)
 
 def open(path: String) -> IO(Result<&2, &2, Error, Db>):
   open_with(path, options())
@@ -211,24 +215,24 @@ def open(path: String) -> IO(Result<&2, &2, Error, Db>):
 # closes the connection, once operations already started have finished.
 def close(db: Db) -> IO(Result<&2, &2, Error, Unit>):
   match db:
-    case Db{slot, gen, token, max_rows}:
+    case Db{slot, gen, token, max_rows, max_bytes, max_cell}:
       do IO<Result<&2, &2, Error, Unit>>:
-        r : Raw() <- E.sqlite_call(1, slot, gen, 0, 0, 0, 0, 0, "", "")
+        r : Raw() <- E.sqlite_call(1, slot, gen, 0, 0, 0, 0, 0, 0, 0, "", "")
         return finished(r)
 
 # Runs a script of statements with no parameters, such as a schema.
 def exec(db: Db, script: String) -> IO(Result<&2, &2, Error, Unit>):
   match db:
-    case Db{slot, gen, token, max_rows}:
+    case Db{slot, gen, token, max_rows, max_bytes, max_cell}:
       do IO<Result<&2, &2, Error, Unit>>:
-        r : Raw() <- E.sqlite_call(5, slot, gen, token, 0, 0, 0, 0, script, "")
+        r : Raw() <- E.sqlite_call(5, slot, gen, token, 0, 0, 0, 0, 0, 0, script, "")
         return finished(r)
 
 def query(db: Db, index: U32, sgen: U32, mode: U32, sql: String, params: Params) -> IO(Result<&2, &2, Error, Rows>):
   match db:
-    case Db{slot, gen, token, max_rows}:
+    case Db{slot, gen, token, max_rows, max_bytes, max_cell}:
       do IO<Result<&2, &2, Error, Rows>>:
-        r : Raw() <- E.sqlite_call(4, slot, gen, token, index, sgen, mode, max_rows, sql, wire(params))
+        r : Raw() <- E.sqlite_call(4, slot, gen, token, index, sgen, mode, max_rows, max_bytes, max_cell, sql, wire(params))
         return ran(r)
 
 # One statement with bound parameters; the result rows are dropped.
@@ -251,22 +255,22 @@ def get(db: Db, sql: String, params: Params) -> IO(Result<&2, &2, Error, Maybe<&
 
 def prepare(db: Db, sql: String) -> IO(Result<&2, &2, Error, Stmt>):
   match db:
-    case Db{+slot, +gen, token, max_rows}:
+    case Db{+slot, +gen, token, max_rows, max_bytes, max_cell}:
       do IO<Result<&2, &2, Error, Stmt>>:
-        r : Raw() <- E.sqlite_call(2, slot, gen, 0, 0, 0, 0, 0, sql, "")
+        r : Raw() <- E.sqlite_call(2, slot, gen, 0, 0, 0, 0, 0, 0, 0, sql, "")
         return prepared(slot, gen, r)
 
 def finalize(stmt: Stmt) -> IO(Result<&2, &2, Error, Unit>):
   match stmt:
     case Stmt{slot, gen, index, sgen}:
       do IO<Result<&2, &2, Error, Unit>>:
-        r : Raw() <- E.sqlite_call(3, slot, gen, 0, index, sgen, 0, 0, "", "")
+        r : Raw() <- E.sqlite_call(3, slot, gen, 0, index, sgen, 0, 0, 0, 0, "", "")
         return finished(r)
 
 # Whether db is the connection stmt was prepared on.
 def owns(db: Db, +slot: U32, +gen: U32) -> Bool:
   match db:
-    case Db{a, g, t, m}: U32.is_eq(a, slot) && U32.is_eq(g, gen)
+    case Db{a, g, t, m, b, c}: U32.is_eq(a, slot) && U32.is_eq(g, gen)
 
 def stmt_query(db: Db, ok: Bool, index: U32, sgen: U32, mode: U32, params: Params) -> IO(Result<&2, &2, Error, Rows>):
   match ok:
@@ -299,10 +303,10 @@ def get_stmt(db: Db, stmt: Stmt, params: Params) -> IO(Result<&2, &2, Error, May
 # to the busy timeout.
 def begin_with(db: Db, kind: Begin) -> IO(Result<&2, &2, Error, Db>):
   match db:
-    case Db{+slot, +gen, token, +max_rows}:
+    case Db{+slot, +gen, token, +max_rows, +max_bytes, +max_cell}:
       do IO<Result<&2, &2, Error, Db>>:
-        r : Raw() <- E.sqlite_call(6, slot, gen, 0, 0, 0, kind_code(kind), 0, "", "")
-        return began(slot, gen, max_rows, r)
+        r : Raw() <- E.sqlite_call(6, slot, gen, 0, 0, 0, kind_code(kind), 0, 0, 0, "", "")
+        return began(slot, gen, max_rows, max_bytes, max_cell, r)
 
 # BEGIN IMMEDIATE: takes the write lock at once, so a second process cannot
 # make the commit fail with SQLITE_BUSY halfway.
@@ -311,22 +315,30 @@ def begin(db: Db) -> IO(Result<&2, &2, Error, Db>):
 
 def finish(tx: Db, mode: U32) -> IO(Result<&2, &2, Error, Unit>):
   match tx:
-    case Db{slot, gen, token, max_rows}:
+    case Db{slot, gen, token, max_rows, max_bytes, max_cell}:
       do IO<Result<&2, &2, Error, Unit>>:
-        r : Raw() <- E.sqlite_call(7, slot, gen, token, 0, 0, mode, 0, "", "")
+        r : Raw() <- E.sqlite_call(7, slot, gen, token, 0, 0, mode, 0, 0, 0, "", "")
         return finished(r)
 
-# A commit that fails rolls the transaction back; either way it is over.
+# Both end the transaction tx carries, whatever they return: each waits,
+# without a limit, for the transaction's statements already running, and a
+# COMMIT that fails is rolled back. Called with any other Db, they fail with
+# code 21 and change nothing.
 def commit(tx: Db) -> IO(Result<&2, &2, Error, Unit>):
   finish(tx, 1)
 
 def rollback(tx: Db) -> IO(Result<&2, &2, Error, Unit>):
   finish(tx, 0)
 
-def committed(-A: Data, c: Result<&2, &2, Error, Unit>, x: A) -> Result<&2, &2, Error, A>:
+# A failed commit has already ended the transaction; the rollback after it
+# is refused, and is there so that no failure can leave the connection gated.
+def committed(-A: Data, tx: Db, c: Result<&2, &2, Error, Unit>, x: A) -> IO(Result<&2, &2, Error, A>):
   match c:
-    case Fail{e}: Fail{e}
-    case Done{u}: Done{x}
+    case Fail{e}:
+      do IO<Result<&2, &2, Error, A>>:
+        r : Result<&2, &2, Error, Unit> <- rollback(tx)
+        return Fail{e}
+    case Done{u}: IO.pure(Result<&2, &2, Error, A>, Done{x})
 
 def settle(-A: Data, +tx: Db, out: Result<&2, &2, Error, A>) -> IO(Result<&2, &2, Error, A>):
   match out:
@@ -337,7 +349,7 @@ def settle(-A: Data, +tx: Db, out: Result<&2, &2, Error, A>) -> IO(Result<&2, &2
     case Done{x}:
       do IO<Result<&2, &2, Error, A>>:
         c : Result<&2, &2, Error, Unit> <- commit(tx)
-        return committed(A, c, x)
+        committed(A, tx, c, x)
 
 def started(-A: Data, body: Db -> IO(Result<&2, &2, Error, A>), r: Result<&2, &2, Error, Db>) -> IO(Result<&2, &2, Error, A>):
   match r:
@@ -356,78 +368,37 @@ def transaction(-A: Data, db: Db, body: Db -> IO(Result<&2, &2, Error, A>)) -> I
 
 # ------------------------------------------------------------------ Reading rows
 
-def json_or_fail(n: Nat, r: Result<&2, &2, String, J.Json>) -> Result<&2, &2, Error, J.Json>:
+# The traversals are in src/data/sqlite.bend, where the laws reach them.
+def fault(f: D.RowFault) -> Error:
+  match f:
+    case D.FaultJson{n, c}: NotJson{n, c}
+    case D.FaultSchema{n, es}: RowError{n, es}
+
+def faulted(-A: Data, r: Result<&2, &2, D.RowFault, A>) -> Result<&2, &2, Error, A>:
   match r:
-    case Fail{c}: Fail{NotJson{n, c}}
-    case Done{j}: Done{j}
+    case Fail{f}: Fail{fault(f)}
+    case Done{x}: Done{x}
 
 # A row as a JSON object keyed by column name (Sqlite.Value docs give the
 # mapping). Fails when a real has no JSON form.
 def row_json(row: Row) -> Result<&2, &2, Error, J.Json>:
   match row:
-    case Row{cols, vs}: json_or_fail(0n, D.row_json(cols, vs))
+    case Row{cols, vs}: faulted(J.Json, D.row_json_at(0n, cols, vs))
 
-def push_json_row(rev: List<&2, J.Json>, r: Result<&2, &2, Error, J.Json>) -> Result<&2, &2, Error, List<&2, J.Json>>:
-  match r:
-    case Fail{e}: Fail{e}
-    case Done{j}: Done{j <> rev}
-
-def push_json(acc: Result<&2, &2, Error, List<&2, J.Json>>, +n: Nat, +cols: List<&2, String>, vs: List<&2, D.Value>) -> Result<&2, &2, Error, List<&2, J.Json>>:
-  match acc:
-    case Fail{e}: Fail{e}
-    case Done{rev}: push_json_row(rev, json_or_fail(n, D.row_json(cols, vs)))
-
-def flip_json(r: Result<&2, &2, Error, List<&2, J.Json>>) -> Result<&2, &2, Error, List<&2, J.Json>>:
-  match r:
-    case Fail{e}: Fail{e}
-    case Done{rev}: Done{List.reverse(&2, J.Json, rev)}
-
-def rows_json_go(rs: List<&2, List<&2, D.Value>>, +cols: List<&2, String>, +n: Nat, acc: Result<&2, &2, Error, List<&2, J.Json>>) -> Result<&2, &2, Error, List<&2, J.Json>>:
-  match rs:
-    case Nil{}: flip_json(acc)
-    case vs <> t: rows_json_go(t, cols, 1n+n, push_json(acc, n, cols, vs))
-
+# Every row as a JSON object, in order; fails with the first row that has a
+# real with no JSON form (NotJson).
 def rows_json(rows: Rows) -> Result<&2, &2, Error, List<&2, J.Json>>:
   match rows:
-    case Rows{cols, rs, ch}: rows_json_go(rs, cols, 0n, Done{[]})
-
-def decoded(n: Nat, r: Result<&2, &2, List<&2, S.Error>, S.Value>) -> Result<&2, &2, Error, S.Value>:
-  match r:
-    case Fail{es}: Fail{RowError{n, es}}
-    case Done{v}: Done{v}
-
-def decode_json(+schema: S.Schema, n: Nat, r: Result<&2, &2, Error, J.Json>) -> Result<&2, &2, Error, S.Value>:
-  match r:
-    case Fail{e}: Fail{e}
-    case Done{j}: decoded(n, S.decode(schema, j))
+    case Rows{cols, rs, ch}: faulted(List<&2, J.Json>, D.rows_json(cols, rs))
 
 # A row decoded through an object schema, as route validation decodes a
 # JSON body.
 def decode_row(+schema: S.Schema, row: Row) -> Result<&2, &2, Error, S.Value>:
-  decode_json(schema, 0n, row_json(row))
+  match row:
+    case Row{cols, vs}: faulted(S.Value, D.row_decode_at(schema, 0n, cols, vs))
 
-def push_value(rev: List<&2, S.Value>, r: Result<&2, &2, Error, S.Value>) -> Result<&2, &2, Error, List<&2, S.Value>>:
-  match r:
-    case Fail{e}: Fail{e}
-    case Done{v}: Done{v <> rev}
-
-def push_decoded(acc: Result<&2, &2, Error, List<&2, S.Value>>, +schema: S.Schema, +n: Nat, +cols: List<&2, String>, vs: List<&2, D.Value>) -> Result<&2, &2, Error, List<&2, S.Value>>:
-  match acc:
-    case Fail{e}: Fail{e}
-    case Done{rev}: push_value(rev, decode_json(schema, n, json_or_fail(n, D.row_json(cols, vs))))
-
-def flip_values(r: Result<&2, &2, Error, List<&2, S.Value>>) -> Result<&2, &2, Error, List<&2, S.Value>>:
-  match r:
-    case Fail{e}: Fail{e}
-    case Done{rev}: Done{List.reverse(&2, S.Value, rev)}
-
-def decode_go(rs: List<&2, List<&2, D.Value>>, +schema: S.Schema, +cols: List<&2, String>, +n: Nat, acc: Result<&2, &2, Error, List<&2, S.Value>>) -> Result<&2, &2, Error, List<&2, S.Value>>:
-  match rs:
-    case Nil{}: flip_values(acc)
-    case vs <> t: decode_go(t, schema, cols, 1n+n, push_decoded(acc, schema, n, cols, vs))
-
-# Every row decoded through schema; fails with the first row that does not
-# match (RowError) or has no JSON form (NotJson).
+# Every row decoded through schema, in order; fails with the first row that
+# does not match (RowError) or has no JSON form (NotJson).
 def decode_rows(+schema: S.Schema, rows: Rows) -> Result<&2, &2, Error, List<&2, S.Value>>:
   match rows:
-    case Rows{cols, rs, ch}: decode_go(rs, schema, cols, 0n, Done{[]})
+    case Rows{cols, rs, ch}: faulted(List<&2, S.Value>, D.decode_rows(schema, cols, rs))

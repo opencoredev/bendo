@@ -9,6 +9,7 @@ import Base
 import ../src/data/sqlite.bend as Q
 import ../src/data/json.bend as J
 import ../src/data/base64.bend as Base64
+import ../src/data/schema.bend as S
 import ./sqlite-spec.bend as W
 
 # ---------------------------------------------------------------- Wire
@@ -81,6 +82,46 @@ law sqlite_row_keys:
   for +cols: List<&2, String>
   for +cells: List<&2, Q.Value>
   {W.keys_or(Q.fields(cols, cells), cols) == cols : List<&2, String>}
+
+# A row with one admissible value per column converts to the object of
+# exactly those values' JSON forms, keyed by the columns in order.
+law sqlite_row_converts:
+  for +cols: List<&2, String>
+  for +cells: List<&2, Q.Value>
+  for ok: {W.row_ok(cols, cells) == True{} : Bool}
+  {Q.row_json(cols, cells) == Done{J.JObject{W.row_fields(cols, cells)}} : Result<&2, &2, String, J.Json>}
+
+# A row fails exactly when it is not admissible: a count mismatch, or a
+# number that is not a JSON number.
+law sqlite_row_fails:
+  for +cols: List<&2, String>
+  for +cells: List<&2, Q.Value>
+  {W.is_fail(String, J.Json, Q.row_json(cols, cells)) == Bool.not(W.row_ok(cols, cells)) : Bool}
+
+# A real with no JSON form anywhere in a row makes the whole row fail.
+law sqlite_row_invalid_real:
+  for +cols: List<&2, String>
+  for +before: List<&2, Q.Value>
+  for +t: String
+  for +after: List<&2, Q.Value>
+  for invalid: {J.number_valid(t) == False{} : Bool}
+  {W.is_fail(String, J.Json, Q.row_json(cols, List.append(&2, Q.Value, before, Q.SqlReal{t} <> after))) == True{} : Bool}
+
+# A result's rows convert one by one, in order; the first row that fails
+# fails the result, with its number (from 0) and column.
+law sqlite_rows_json:
+  for +cols: List<&2, String>
+  for +rs: List<&2, List<&2, Q.Value>>
+  {Q.rows_json(cols, rs) == W.rows_json(cols, rs, 0n) : Result<&2, &2, Q.RowFault, List<&2, J.Json>>}
+
+# Decoding a result through a schema converts each row to JSON and decodes
+# it, one by one, in order; the first row with no JSON form or that does not
+# match fails the result, with its number and the schema's errors.
+law sqlite_decode_rows:
+  for +schema: S.Schema
+  for +cols: List<&2, String>
+  for +rs: List<&2, List<&2, Q.Value>>
+  {Q.decode_rows(schema, cols, rs) == W.decode_rows(schema, cols, rs, 0n) : Result<&2, &2, Q.RowFault, List<&2, S.Value>>}
 
 # ---------------------------------------------------------------- Gate
 

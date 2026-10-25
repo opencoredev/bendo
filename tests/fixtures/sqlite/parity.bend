@@ -262,6 +262,169 @@ def statements(+db: Sql.Db) -> IO(Unit):
     l : Result<&2, &2, Sql.Error, Sql.Stmt> <- Sql.prepare(db, "SELECT 1; SELECT 2")
     say("prepare two", stmt_text(l))
 
+# Fixes from review round 1 (BND-38). Each section prints what a bug changed.
+
+# A transaction-control statement is refused before it runs, in a statement
+# and anywhere in a script, so nothing it would commit is committed.
+def control(+db: Sql.Db) -> IO(Unit):
+  do IO<Unit>:
+    a : Result<&2, &2, Sql.Error, Unit> <- Sql.exec(db, "CREATE TABLE c (x)")
+    say("control schema", unit(a))
+    b : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.begin(db)
+    +tx : Sql.Db <- db_or_die(b)
+    c : Result<&2, &2, Sql.Error, Sql.Changes> <- Sql.run(tx, "INSERT INTO c VALUES ('in tx')", Sql.none())
+    say("control insert", changes(c))
+    d : Result<&2, &2, Sql.Error, Sql.Changes> <- Sql.run(tx, "COMMIT", Sql.none())
+    say("tx sql commit", changes(d))
+    e : Result<&2, &2, Sql.Error, Unit> <- Sql.rollback(tx)
+    say("rollback after refused commit", unit(e))
+    f : Result<&2, &2, Sql.Error, Sql.Rows> <- Sql.all(db, "SELECT count(*) FROM c", Sql.none())
+    say("rows after refused commit", rows(f))
+    g : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.begin(db)
+    +tx2 : Sql.Db <- db_or_die(g)
+    h : Result<&2, &2, Sql.Error, Unit> <- Sql.exec(tx2, "INSERT INTO c VALUES ('script'); COMMIT; BEGIN")
+    say("tx script commit", unit(h))
+    i : Result<&2, &2, Sql.Error, Unit> <- Sql.rollback(tx2)
+    say("rollback after script", unit(i))
+    j : Result<&2, &2, Sql.Error, Sql.Rows> <- Sql.all(db, "SELECT count(*) FROM c", Sql.none())
+    say("rows after script", rows(j))
+    k : Result<&2, &2, Sql.Error, Unit> <- Sql.exec(db, "BEGIN; INSERT INTO c VALUES ('own transaction'); COMMIT")
+    say("script with its own transaction", unit(k))
+    l : Result<&2, &2, Sql.Error, Sql.Rows> <- Sql.all(db, "SELECT count(*) FROM c", Sql.none())
+    say("rows after own transaction", rows(l))
+    m : Result<&2, &2, Sql.Error, Sql.Changes> <- Sql.run(db, "  /* note */ -- line\n  savepoint s", Sql.none())
+    say("savepoint", changes(m))
+    n : Result<&2, &2, Sql.Error, Sql.Stmt> <- Sql.prepare(db, "end")
+    say("prepare end", stmt_text(n))
+    o : Result<&2, &2, Sql.Error, Sql.Rows> <- Sql.all(db, "SELECT 'BEGIN' AS begin_text", Sql.none())
+    say("keyword in a value", rows(o))
+
+def began_text(r: Result<&2, &2, Sql.Error, Sql.Db>) -> String:
+  match r:
+    case Fail{e}: error_text(e)
+    case Done{d}: "began"
+
+def waiting_begin(db: Sql.Db) -> IO(String):
+  do IO<String>:
+    r : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.begin(db)
+    return began_text(r)
+
+# A begin still waiting when its connection closes must not touch the
+# connection that reuses the slot.
+def reopen(+busy: Sql.Options) -> IO(Unit):
+  do IO<Unit>:
+    a : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.open_with(":memory:", busy)
+    +db : Sql.Db <- db_or_die(a)
+    b : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.begin(db)
+    say("first begin", began_text(b))
+    ch : Chan(String) <- IO.fork(String, waiting_begin(db))
+    IO.sleep(30)
+    c : Result<&2, &2, Sql.Error, Unit> <- Sql.close(db)
+    say("close with a begin waiting", unit(c))
+    d : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.open_with(":memory:", busy)
+    +db2 : Sql.Db <- db_or_die(d)
+    w : String <- IO.join(String, ch)
+    say("waiting begin", w)
+    e : Result<&2, &2, Sql.Error, Sql.Rows> <- Sql.all(db2, "SELECT 1", Sql.none())
+    say("reopened slot", rows(e))
+    f : Result<&2, &2, Sql.Error, Unit> <- Sql.close(db2)
+    say("reopened close", unit(f))
+
+def slow(tx: Sql.Db) -> IO(String):
+  do IO<String>:
+    r : Result<&2, &2, Sql.Error, Sql.Rows> <- Sql.all(tx, "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 3000000) SELECT count(*) FROM c", Sql.none())
+    return rows(r)
+
+# Commit waits for the transaction's statement in flight, past the busy
+# timeout, and the connection is free afterwards.
+def inflight(+busy: Sql.Options) -> IO(Unit):
+  do IO<Unit>:
+    a : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.open_with(":memory:", busy)
+    +db : Sql.Db <- db_or_die(a)
+    b : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.begin(db)
+    +tx : Sql.Db <- db_or_die(b)
+    ch : Chan(String) <- IO.fork(String, slow(tx))
+    IO.sleep(10)
+    c : Result<&2, &2, Sql.Error, Unit> <- Sql.commit(tx)
+    say("commit with a statement in flight", unit(c))
+    s : String <- IO.join(String, ch)
+    say("statement in flight", s)
+    d : Result<&2, &2, Sql.Error, Sql.Rows> <- Sql.all(db, "SELECT 1", Sql.none())
+    say("after commit", rows(d))
+    e : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.begin(db)
+    +tx2 : Sql.Db <- db_or_die(e)
+    ch2 : Chan(String) <- IO.fork(String, slow(tx2))
+    IO.sleep(10)
+    f : Result<&2, &2, Sql.Error, Unit> <- Sql.rollback(tx2)
+    say("rollback with a statement in flight", unit(f))
+    s2 : String <- IO.join(String, ch2)
+    say("statement in flight", s2)
+    g : Result<&2, &2, Sql.Error, Sql.Rows> <- Sql.all(db, "SELECT 1", Sql.none())
+    say("after rollback", rows(g))
+    h : Result<&2, &2, Sql.Error, Unit> <- Sql.close(db)
+    say("inflight close", unit(h))
+
+# A prepared statement that SQLite recompiles after a schema change reports
+# its new columns.
+def reprepare(+db: Sql.Db) -> IO(Unit):
+  do IO<Unit>:
+    a : Result<&2, &2, Sql.Error, Unit> <- Sql.exec(db, "CREATE TABLE m (a); INSERT INTO m VALUES (1)")
+    say("reprepare schema", unit(a))
+    b : Result<&2, &2, Sql.Error, Sql.Stmt> <- Sql.prepare(db, "SELECT * FROM m")
+    +st : Sql.Stmt <- stmt_or_die(b)
+    c : Result<&2, &2, Sql.Error, Sql.Rows> <- Sql.all_stmt(db, st, p([]))
+    say("before alter", rows(c))
+    d : Result<&2, &2, Sql.Error, Unit> <- Sql.exec(db, "ALTER TABLE m ADD COLUMN b DEFAULT 2")
+    say("alter", unit(d))
+    e : Result<&2, &2, Sql.Error, Sql.Rows> <- Sql.all_stmt(db, st, p([]))
+    say("after alter", rows(e))
+    f : Result<&2, &2, Sql.Error, Sql.Stmt> <- Sql.prepare(db, "SELECT * FROM m WHERE a = 0")
+    +empty : Sql.Stmt <- stmt_or_die(f)
+    g : Result<&2, &2, Sql.Error, Unit> <- Sql.exec(db, "ALTER TABLE m ADD COLUMN c DEFAULT 3")
+    say("alter again", unit(g))
+    h : Result<&2, &2, Sql.Error, Sql.Rows> <- Sql.all_stmt(db, empty, p([]))
+    say("no rows after alter", rows(h))
+
+# A result past its byte budget, or a text or blob cell past the per-cell
+# one, fails with code 18 instead of being copied.
+def budgets(+caps: Sql.Options) -> IO(Unit):
+  do IO<Unit>:
+    a : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.open_with(":memory:", caps)
+    +db : Sql.Db <- db_or_die(a)
+    b : Result<&2, &2, Sql.Error, Sql.Rows> <- Sql.all(db, "SELECT 'abcde', 1234567", Sql.none())
+    say("at both caps", rows(b))
+    c : Result<&2, &2, Sql.Error, Sql.Rows> <- Sql.all(db, "SELECT 'abcdefg'", Sql.none())
+    say("text past the cell cap", rows(c))
+    d : Result<&2, &2, Sql.Error, Sql.Rows> <- Sql.all(db, "SELECT zeroblob(7)", Sql.none())
+    say("blob past the cell cap", rows(d))
+    e : Result<&2, &2, Sql.Error, Maybe<&2, Sql.Row>> <- Sql.get(db, "SELECT 'abcdefg'", Sql.none())
+    say("get past the cell cap", got(e))
+    f : Result<&2, &2, Sql.Error, Sql.Rows> <- Sql.all(db, "SELECT 'abcd' UNION ALL SELECT 'efgh' UNION ALL SELECT 'ijkl' UNION ALL SELECT 'm'", Sql.none())
+    say("rows past the result cap", rows(f))
+    g : Result<&2, &2, Sql.Error, Sql.Rows> <- Sql.all(db, "SELECT 'abcd', 'efgh', 'ijkl'", Sql.none())
+    say("rows at the result cap", rows(g))
+    h : Result<&2, &2, Sql.Error, Sql.Changes> <- Sql.run(db, "SELECT 'abcdefghijklmnop'", Sql.none())
+    say("run drops rows", changes(h))
+    i : Result<&2, &2, Sql.Error, Unit> <- Sql.close(db)
+    say("budgets close", unit(i))
+
+# Reading rows fails with the first bad row, numbered from 0.
+def row_order(+db: Sql.Db) -> IO(Unit):
+  do IO<Unit>:
+    a : Result<&2, &2, Sql.Error, Sql.Rows> <- Sql.all(db, "SELECT 'a' AS n UNION ALL SELECT 2 UNION ALL SELECT 1e999", Sql.none())
+    say("json row index", as_json(a))
+    b : Result<&2, &2, Sql.Error, Sql.Rows> <- Sql.all(db, "SELECT 'a' AS n UNION ALL SELECT 2 UNION ALL SELECT 1e999", Sql.none())
+    say("decode row index", decoded(Result.bind(&2, &2, Sql.Error, Sql.Rows, List<&2, S.Value>, b, rs => Sql.decode_rows(schema(), rs))))
+
+def hardening(+db: Sql.Db) -> IO(Unit):
+  do IO<Unit>:
+    control(db)
+    reprepare(db)
+    row_order(db)
+    reopen(Sql.Options{Sql.ReadWriteCreate{}, 300, 10, 1000, 1000})
+    inflight(Sql.Options{Sql.ReadWriteCreate{}, 50, 10, 1000, 1000})
+    budgets(Sql.Options{Sql.ReadWriteCreate{}, 100, 10, 12, 6})
+
 def opened(r: Result<&2, &2, Sql.Error, Sql.Db>) -> String:
   match r:
     case Fail{e}: error_text(e)
@@ -269,7 +432,7 @@ def opened(r: Result<&2, &2, Sql.Error, Sql.Db>) -> String:
 
 def limits(+dir: String) -> IO(Unit):
   do IO<Unit>:
-    a : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.open_with(":memory:", Sql.Options{Sql.ReadWriteCreate{}, 100, 2})
+    a : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.open_with(":memory:", Sql.Options{Sql.ReadWriteCreate{}, 100, 2, 1000, 1000})
     +db : Sql.Db <- db_or_die(a)
     b : Result<&2, &2, Sql.Error, Sql.Rows> <- Sql.all(db, "SELECT 1 UNION ALL SELECT 2", Sql.none())
     say("two rows", rows(b))
@@ -281,13 +444,13 @@ def limits(+dir: String) -> IO(Unit):
     say("closed use", rows(e))
     f : Result<&2, &2, Sql.Error, Unit> <- Sql.close(db)
     say("close twice", unit(f))
-    g : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.open_with(dir ++ "/missing.db", Sql.Options{Sql.ReadOnly{}, 100, 10})
+    g : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.open_with(dir ++ "/missing.db", Sql.Options{Sql.ReadOnly{}, 100, 10, 1000, 1000})
     say("open missing", opened(g))
     h : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.open(dir ++ "/file.db")
     +fdb : Sql.Db <- db_or_die(h)
     i : Result<&2, &2, Sql.Error, Unit> <- Sql.exec(fdb, "CREATE TABLE IF NOT EXISTS f (a)")
     say("file schema", unit(i))
-    j : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.open_with(dir ++ "/file.db", Sql.Options{Sql.ReadOnly{}, 100, 10})
+    j : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.open_with(dir ++ "/file.db", Sql.Options{Sql.ReadOnly{}, 100, 10, 1000, 1000})
     +ro : Sql.Db <- db_or_die(j)
     k : Result<&2, &2, Sql.Error, Sql.Changes> <- Sql.run(ro, "INSERT INTO f VALUES (1)", Sql.none())
     say("read-only write", changes(k))
@@ -305,6 +468,7 @@ def everything(+dir: String) -> IO(Unit):
     transactions(db)
     statements(db)
     limits(dir)
+    hardening(db)
 
 def only_open() -> IO(Unit):
   do IO<Unit>:

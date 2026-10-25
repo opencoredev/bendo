@@ -2,6 +2,7 @@
 import Base
 import ../src/data/sqlite.bend as Q
 import ../src/data/json.bend as J
+import ../src/data/schema.bend as S
 import ./sqlite-spec.bend as W
 import ./sqlite-laws.bend as Laws
 
@@ -161,6 +162,191 @@ def row_keys(cols: List<&2, String>, cells: List<&2, Q.Value>) -> {W.keys_or(Q.f
     case +c <> +ct v <> +vt: keys_step(c, Q.cell_json(v), Q.fields(ct, vt), ct, row_keys(ct, vt))
 
 def Laws.sqlite_row_keys(cols, cells): row_keys(cols, cells)
+
+def absurd(-A: Type, e: Empty) -> A:
+  match e:
+
+def false_true(e: {False{} == True{} : Bool}) -> Empty:
+  %e : Bool.pick(Type, _, Empty, Unit)
+  Unit{}
+
+def and_left(+a: Bool, -b: Bool, e: {(a && b) == True{} : Bool}) -> {a == True{} : Bool}:
+  match a:
+    case True{}: {==}
+    case False{}: e
+
+def and_right(+a: Bool, -b: Bool, e: {(a && b) == True{} : Bool}) -> {b == True{} : Bool}:
+  match a:
+    case True{}: e
+    case False{}: absurd({b == True{} : Bool}, false_true(e))
+
+def and_false(+a: Bool) -> {(a && False{}) == False{} : Bool}:
+  match a:
+    case True{}: {==}
+    case False{}: {==}
+
+def Fields() -> Type:
+  Result<&2, &2, String, List<&2, J.Field>>
+
+def value_ok(v: Q.Value, e: {W.admissible(v) == True{} : Bool}) -> {Q.cell_json(v) == Some{W.cell_value(v)} : Maybe<&2, J.Json>}:
+  match v:
+    case Q.SqlNull{}: {==}
+    case Q.SqlInteger{+t}:
+      %Equal.sym(Bool, J.number_valid(t), True{}, e) : {Q.number_json(_, t) == Some{J.JNumber{t}} : Maybe<&2, J.Json>}
+      {==}
+    case Q.SqlReal{+t}:
+      %Equal.sym(Bool, J.number_valid(t), True{}, e) : {Q.number_json(_, t) == Some{J.JNumber{t}} : Maybe<&2, J.Json>}
+      {==}
+    case Q.SqlText{s}: {==}
+    case Q.SqlBlob{xs}: {==}
+
+def converts(cols: List<&2, String>, cells: List<&2, Q.Value>, +ok: {W.row_ok(cols, cells) == True{} : Bool}) -> {Q.fields(cols, cells) == Done{W.row_fields(cols, cells)} : Fields()}:
+  match cols cells:
+    case Nil{} Nil{}: {==}
+    case Nil{} +v <> +vt: absurd({Q.fields([], v <> vt) == Done{W.row_fields([], v <> vt)} : Fields()}, false_true(ok))
+    case +c <> +ct Nil{}: absurd({Q.fields(c <> ct, []) == Done{W.row_fields(c <> ct, [])} : Fields()}, false_true(ok))
+    case +c <> +ct +v <> +vt:
+      %Equal.sym(Maybe<&2, J.Json>, Q.cell_json(v), Some{W.cell_value(v)}, value_ok(v, and_left(W.admissible(v), W.row_ok(ct, vt), ok))) : {Q.cons_field(c, _, Q.fields(ct, vt)) == Done{J.Field{c, W.cell_value(v)} <> W.row_fields(ct, vt)} : Fields()}
+      %Equal.sym(Fields(), Q.fields(ct, vt), Done{W.row_fields(ct, vt)}, converts(ct, vt, and_right(W.admissible(v), W.row_ok(ct, vt), ok))) : {Q.cons_field(c, Some{W.cell_value(v)}, _) == Done{J.Field{c, W.cell_value(v)} <> W.row_fields(ct, vt)} : Fields()}
+      {==}
+
+def Laws.sqlite_row_converts(cols, cells, ok):
+  Equal.cong(Fields(), Result<&2, &2, String, J.Json>, r => Q.object(r), Q.fields(cols, cells), Done{W.row_fields(cols, cells)}, converts(cols, cells, ok))
+
+def some_number(+b: Bool, +t: String) -> {W.is_some(Q.number_json(b, t)) == b : Bool}:
+  match b:
+    case True{}: {==}
+    case False{}: {==}
+
+def value_some(v: Q.Value) -> {W.is_some(Q.cell_json(v)) == W.admissible(v) : Bool}:
+  match v:
+    case Q.SqlNull{}: {==}
+    case Q.SqlInteger{+t}: some_number(J.number_valid(t), t)
+    case Q.SqlReal{+t}: some_number(J.number_valid(t), t)
+    case Q.SqlText{s}: {==}
+    case Q.SqlBlob{xs}: {==}
+
+def fails_step(+c: String, m: Maybe<&2, J.Json>, r: Fields(), a: Bool, b: Bool, em: {W.is_some(m) == a : Bool}, er: {W.is_fail(String, List<&2, J.Field>, r) == Bool.not(b) : Bool}) -> {W.is_fail(String, List<&2, J.Field>, Q.cons_field(c, m, r)) == Bool.not(a && b) : Bool}:
+  match m r:
+    case None{} x:
+      %em : {True{} == Bool.not(_ && b) : Bool}
+      {==}
+    case Some{j} Fail{bad}:
+      %em : {True{} == Bool.not(_ && b) : Bool}
+      er
+    case Some{j} Done{fs}:
+      %em : {False{} == Bool.not(_ && b) : Bool}
+      er
+
+def fails_go(cols: List<&2, String>, cells: List<&2, Q.Value>) -> {W.is_fail(String, List<&2, J.Field>, Q.fields(cols, cells)) == Bool.not(W.row_ok(cols, cells)) : Bool}:
+  match cols cells:
+    case Nil{} Nil{}: {==}
+    case Nil{} v <> vt: {==}
+    case c <> ct Nil{}: {==}
+    case +c <> +ct +v <> +vt: fails_step(c, Q.cell_json(v), Q.fields(ct, vt), W.admissible(v), W.row_ok(ct, vt), value_some(v), fails_go(ct, vt))
+
+def object_fail(r: Fields()) -> {W.is_fail(String, J.Json, Q.object(r)) == W.is_fail(String, List<&2, J.Field>, r) : Bool}:
+  match r:
+    case Fail{c}: {==}
+    case Done{fs}: {==}
+
+def row_fails(+cols: List<&2, String>, +cells: List<&2, Q.Value>) -> {W.is_fail(String, J.Json, Q.row_json(cols, cells)) == Bool.not(W.row_ok(cols, cells)) : Bool}:
+  Equal.trans(Bool, W.is_fail(String, J.Json, Q.object(Q.fields(cols, cells))), W.is_fail(String, List<&2, J.Field>, Q.fields(cols, cells)), Bool.not(W.row_ok(cols, cells)), object_fail(Q.fields(cols, cells)), fails_go(cols, cells))
+
+def Laws.sqlite_row_fails(cols, cells): row_fails(cols, cells)
+
+def not_ok(cols: List<&2, String>, before: List<&2, Q.Value>, +t: String, +after: List<&2, Q.Value>, +invalid: {J.number_valid(t) == False{} : Bool}) -> {W.row_ok(cols, List.append(&2, Q.Value, before, Q.SqlReal{t} <> after)) == False{} : Bool}:
+  match cols before:
+    case Nil{} Nil{}: {==}
+    case Nil{} p <> pt: {==}
+    case +c <> +ct Nil{}:
+      %Equal.sym(Bool, J.number_valid(t), False{}, invalid) : {(_ && W.row_ok(ct, after)) == False{} : Bool}
+      {==}
+    case +c <> +ct +p <> +pt:
+      %Equal.sym(Bool, W.row_ok(ct, List.append(&2, Q.Value, pt, Q.SqlReal{t} <> after)), False{}, not_ok(ct, pt, t, after, invalid)) : {(W.admissible(p) && _) == False{} : Bool}
+      and_false(W.admissible(p))
+
+def Laws.sqlite_row_invalid_real(cols, before, t, after, invalid):
+  Equal.trans(Bool, W.is_fail(String, J.Json, Q.row_json(cols, List.append(&2, Q.Value, before, Q.SqlReal{t} <> after))), Bool.not(W.row_ok(cols, List.append(&2, Q.Value, before, Q.SqlReal{t} <> after))), True{}, row_fails(cols, List.append(&2, Q.Value, before, Q.SqlReal{t} <> after)), Equal.cong(Bool, Bool, x => Bool.not(x), W.row_ok(cols, List.append(&2, Q.Value, before, Q.SqlReal{t} <> after)), False{}, not_ok(cols, before, t, after, invalid)))
+
+# ---------------------------------------------------------------- Results
+
+# The loops' reversed accumulator in front of the plain definition's result.
+def finish(-A: Data, rev: List<&2, A>, s: Result<&2, &2, Q.RowFault, List<&2, A>>) -> Result<&2, &2, Q.RowFault, List<&2, A>>:
+  match s:
+    case Fail{e}: Fail{e}
+    case Done{xs}: Done{List.reverse.go(&2, A, rev, xs)}
+
+def finish_nil(-A: Data, s: Result<&2, &2, Q.RowFault, List<&2, A>>) -> {finish(A, [], s) == s : Result<&2, &2, Q.RowFault, List<&2, A>>}:
+  match s:
+    case Fail{e}: {==}
+    case Done{xs}: {==}
+
+def finish_shift(-A: Data, v: A, rev: List<&2, A>, s: Result<&2, &2, Q.RowFault, List<&2, A>>) -> {finish(A, v <> rev, s) == finish(A, rev, W.cons_ok(A, Done{v}, s)) : Result<&2, &2, Q.RowFault, List<&2, A>>}:
+  match s:
+    case Fail{e}: {==}
+    case Done{xs}: {==}
+
+def JRows() -> Type:
+  Result<&2, &2, Q.RowFault, List<&2, J.Json>>
+
+def json_same(+n: Nat, r: Result<&2, &2, String, J.Json>) -> {Q.json_at(n, r) == W.json_row(n, r) : Result<&2, &2, Q.RowFault, J.Json>}:
+  match r:
+    case Fail{c}: {==}
+    case Done{j}: {==}
+
+def json_go_fail(rs: List<&2, List<&2, Q.Value>>, +cols: List<&2, String>, +n: Nat, +e: Q.RowFault) -> {Q.rows_json_go(rs, cols, n, Fail{e}) == Fail{e} : JRows()}:
+  match rs:
+    case Nil{}: {==}
+    case vs <> t: json_go_fail(t, cols, 1n+n, e)
+
+def json_step(d: Result<&2, &2, Q.RowFault, J.Json>, t: List<&2, List<&2, Q.Value>>, +cols: List<&2, String>, +n: Nat, +rev: List<&2, J.Json>, ih: @r: List<&2, J.Json> -> {Q.rows_json_go(t, cols, 1n+n, Done{r}) == finish(J.Json, r, W.rows_json(cols, t, 1n+n)) : JRows()}) -> {Q.rows_json_go(t, cols, 1n+n, Q.push_json_row(rev, d)) == finish(J.Json, rev, W.cons_ok(J.Json, d, W.rows_json(cols, t, 1n+n))) : JRows()}:
+  match d:
+    case Fail{e}: json_go_fail(t, cols, 1n+n, e)
+    case Done{+j}: Equal.trans(JRows(), Q.rows_json_go(t, cols, 1n+n, Done{j <> rev}), finish(J.Json, j <> rev, W.rows_json(cols, t, 1n+n)), finish(J.Json, rev, W.cons_ok(J.Json, Done{j}, W.rows_json(cols, t, 1n+n))), ih(j <> rev), finish_shift(J.Json, j, rev, W.rows_json(cols, t, 1n+n)))
+
+def json_go(rs: List<&2, List<&2, Q.Value>>, +cols: List<&2, String>, +n: Nat, +rev: List<&2, J.Json>) -> {Q.rows_json_go(rs, cols, n, Done{rev}) == finish(J.Json, rev, W.rows_json(cols, rs, n)) : JRows()}:
+  match rs:
+    case Nil{}: {==}
+    case +vs <> +t:
+      %json_same(n, Q.row_json(cols, vs)) : {Q.rows_json_go(t, cols, 1n+n, Q.push_json_row(rev, Q.json_at(n, Q.row_json(cols, vs)))) == finish(J.Json, rev, W.cons_ok(J.Json, _, W.rows_json(cols, t, 1n+n))) : JRows()}
+      json_step(Q.json_at(n, Q.row_json(cols, vs)), t, cols, n, rev, r => json_go(t, cols, 1n+n, r))
+
+def Laws.sqlite_rows_json(cols, rs):
+  Equal.trans(JRows(), Q.rows_json_go(rs, cols, 0n, Done{[]}), finish(J.Json, [], W.rows_json(cols, rs, 0n)), W.rows_json(cols, rs, 0n), json_go(rs, cols, 0n, []), finish_nil(J.Json, W.rows_json(cols, rs, 0n)))
+
+def SRows() -> Type:
+  Result<&2, &2, Q.RowFault, List<&2, S.Value>>
+
+def schema_same(+n: Nat, d: Result<&2, &2, List<&2, S.Error>, S.Value>) -> {Q.schema_at(n, d) == W.schema_row(n, d) : Result<&2, &2, Q.RowFault, S.Value>}:
+  match d:
+    case Fail{es}: {==}
+    case Done{v}: {==}
+
+def decode_same(+schema: S.Schema, +n: Nat, r: Result<&2, &2, String, J.Json>) -> {Q.decode_json_at(schema, n, Q.json_at(n, r)) == W.decode_row(schema, n, r) : Result<&2, &2, Q.RowFault, S.Value>}:
+  match r:
+    case Fail{c}: {==}
+    case Done{j}: schema_same(n, S.decode(schema, j))
+
+def decode_go_fail(rs: List<&2, List<&2, Q.Value>>, +schema: S.Schema, +cols: List<&2, String>, +n: Nat, +e: Q.RowFault) -> {Q.decode_go(rs, schema, cols, n, Fail{e}) == Fail{e} : SRows()}:
+  match rs:
+    case Nil{}: {==}
+    case vs <> t: decode_go_fail(t, schema, cols, 1n+n, e)
+
+def decode_step(d: Result<&2, &2, Q.RowFault, S.Value>, t: List<&2, List<&2, Q.Value>>, +schema: S.Schema, +cols: List<&2, String>, +n: Nat, +rev: List<&2, S.Value>, ih: @r: List<&2, S.Value> -> {Q.decode_go(t, schema, cols, 1n+n, Done{r}) == finish(S.Value, r, W.decode_rows(schema, cols, t, 1n+n)) : SRows()}) -> {Q.decode_go(t, schema, cols, 1n+n, Q.push_value(rev, d)) == finish(S.Value, rev, W.cons_ok(S.Value, d, W.decode_rows(schema, cols, t, 1n+n))) : SRows()}:
+  match d:
+    case Fail{e}: decode_go_fail(t, schema, cols, 1n+n, e)
+    case Done{+v}: Equal.trans(SRows(), Q.decode_go(t, schema, cols, 1n+n, Done{v <> rev}), finish(S.Value, v <> rev, W.decode_rows(schema, cols, t, 1n+n)), finish(S.Value, rev, W.cons_ok(S.Value, Done{v}, W.decode_rows(schema, cols, t, 1n+n))), ih(v <> rev), finish_shift(S.Value, v, rev, W.decode_rows(schema, cols, t, 1n+n)))
+
+def decode_go(rs: List<&2, List<&2, Q.Value>>, +schema: S.Schema, +cols: List<&2, String>, +n: Nat, +rev: List<&2, S.Value>) -> {Q.decode_go(rs, schema, cols, n, Done{rev}) == finish(S.Value, rev, W.decode_rows(schema, cols, rs, n)) : SRows()}:
+  match rs:
+    case Nil{}: {==}
+    case +vs <> +t:
+      %decode_same(schema, n, Q.row_json(cols, vs)) : {Q.decode_go(t, schema, cols, 1n+n, Q.push_value(rev, Q.decode_json_at(schema, n, Q.json_at(n, Q.row_json(cols, vs))))) == finish(S.Value, rev, W.cons_ok(S.Value, _, W.decode_rows(schema, cols, t, 1n+n))) : SRows()}
+      decode_step(Q.decode_json_at(schema, n, Q.json_at(n, Q.row_json(cols, vs))), t, schema, cols, n, rev, r => decode_go(t, schema, cols, 1n+n, r))
+
+def Laws.sqlite_decode_rows(schema, cols, rs):
+  Equal.trans(SRows(), Q.decode_go(rs, schema, cols, 0n, Done{[]}), finish(S.Value, [], W.decode_rows(schema, cols, rs, 0n)), W.decode_rows(schema, cols, rs, 0n), decode_go(rs, schema, cols, 0n, []), finish_nil(S.Value, W.decode_rows(schema, cols, rs, 0n)))
 
 # ---------------------------------------------------------------- Gate
 

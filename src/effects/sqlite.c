@@ -18,7 +18,9 @@
 // The gate is the table src/data/sqlite.bend states as Sqlite.gate: while a
 // transaction is open, only statements carrying its token run; other
 // statements wait, up to the connection's busy timeout, and fail with
-// SQLITE_BUSY. sqlite.js mirrors this file.
+// SQLITE_BUSY. Only begin and its end change the transaction state: a
+// statement or script statement that would (BEGIN, COMMIT, END, ROLLBACK,
+// SAVEPOINT, RELEASE) is refused before it runs. sqlite.js mirrors this file.
 #include <dlfcn.h>
 #include <limits.h>
 #include <math.h>
@@ -207,7 +209,7 @@ typedef struct BsqCell {
 } BsqCell;
 
 typedef struct BsqJob {
-  u32 op, slot, gen, token, index, sgen, mode, limit;
+  u32 op, slot, gen, token, index, sgen, mode, limit, max_bytes, max_cell;
   char* text1;
   u64 n1;
   char* text2;
@@ -221,7 +223,7 @@ typedef struct BsqJob {
   char** cols;
   u32 ncols;
   BsqCell* cells;
-  size_t ncells, cap;
+  size_t ncells, cap, bytes;
   u32 nrows;
   bsq_i64 changes;
   bsq_i64 rowid;
@@ -633,8 +635,67 @@ static int bsq_bind(BsqJob* j, void* st) {
 
 // ------------------------------------------------------------- Calls
 
-// Prepares exactly one statement from sql. Fails when there is none, or when
-// anything but whitespace and comments follows it.
+static const char* BSQ_CONTROL_MSG =
+  "bendo sqlite: a statement may not begin or end a transaction or savepoint; "
+  "use Sql.begin, Sql.commit and Sql.rollback";
+
+static int bsq_space(char c) {
+  return c == ' ' || c == '\t' || c == '\n' || c == '\f' || c == '\r';
+}
+
+static int bsq_ident(unsigned char c) {
+  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+    || c == '_' || c == '$' || c >= 0x80;
+}
+
+// Whether the statement text s[0..n), one statement as prepare_v2 cut it,
+// begins with BEGIN, COMMIT, END, ROLLBACK, SAVEPOINT or RELEASE after
+// whitespace and comments. These are the only statements that start, end or
+// nest a transaction, and each starts with its keyword.
+static int bsq_control(const char* s, size_t n) {
+  size_t i = 0;
+  for (;;) {
+    while (i < n && bsq_space(s[i])) {
+      i += 1;
+    }
+    if (i + 1 < n && s[i] == '-' && s[i + 1] == '-') {
+      while (i < n && s[i] != '\n') {
+        i += 1;
+      }
+    } else if (i + 1 < n && s[i] == '/' && s[i + 1] == '*') {
+      i += 2;
+      while (i + 1 < n && !(s[i] == '*' && s[i + 1] == '/')) {
+        i += 1;
+      }
+      i = i + 1 < n ? i + 2 : n;
+    } else {
+      break;
+    }
+  }
+  size_t k = i;
+  while (k < n && bsq_ident((unsigned char)s[k])) {
+    k += 1;
+  }
+  static const char* words[] = { "BEGIN", "COMMIT", "END", "ROLLBACK", "SAVEPOINT", "RELEASE" };
+  for (size_t w = 0; w < sizeof words / sizeof *words; w += 1) {
+    size_t len = strlen(words[w]);
+    if (k - i != len) {
+      continue;
+    }
+    size_t m = 0;
+    while (m < len && (s[i + m] & ~0x20) == words[w][m]) {
+      m += 1;
+    }
+    if (m == len) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+// Prepares exactly one statement from sql. Fails when there is none, when
+// anything but whitespace and comments follows it, or when it is a
+// transaction-control statement.
 static void* bsq_prepare_one(BsqJob* j, void* db, const char* sql, size_t n) {
   if (strlen(sql) != n) {
     bsq_fail(j, BSQ_MISUSE, "bendo sqlite: SQL contains a NUL character");
@@ -666,6 +727,11 @@ static void* bsq_prepare_one(BsqJob* j, void* db, const char* sql, size_t n) {
       "bendo sqlite: one statement per call; run scripts with Sql.exec");
     return NULL;
   }
+  if (bsq_control(sql, (size_t)(tail - sql))) {
+    bsq.finalize(st);
+    bsq_fail(j, BSQ_MISUSE, BSQ_CONTROL_MSG);
+    return NULL;
+  }
   return st;
 }
 
@@ -681,31 +747,64 @@ static void bsq_push_cell(BsqJob* j, int type, char* p, size_t n) {
   j->cells[j->ncells++] = (BsqCell){ type, p, n };
 }
 
-static void bsq_take_row(BsqJob* j, void* st) {
+// Counts n more bytes of the result against its budgets; a text or blob
+// cell also counts against the per-cell one.
+static int bsq_budget(BsqJob* j, size_t n, int cell) {
+  char msg[96];
+  if (cell && n > j->max_cell) {
+    snprintf(msg, sizeof msg, "bendo sqlite: a column value is larger than %u bytes", j->max_cell);
+    bsq_fail(j, BSQ_TOOBIG, msg);
+    return 0;
+  }
+  if (n > j->max_bytes - j->bytes) {
+    snprintf(msg, sizeof msg, "bendo sqlite: the result is larger than %u bytes", j->max_bytes);
+    bsq_fail(j, BSQ_TOOBIG, msg);
+    return 0;
+  }
+  j->bytes += n;
+  return 1;
+}
+
+// Copies the current row; fails, copying nothing more, past a budget.
+static int bsq_take_row(BsqJob* j, void* st) {
   for (u32 c = 0; c < j->ncols; c += 1) {
     int type = bsq.column_type(st, (int)c);
     switch (type) {
       case BSQ_INTEGER: {
         char* p = io_mem(malloc(24));
         snprintf(p, 24, "%lld", bsq.column_int64(st, (int)c));
+        if (!bsq_budget(j, strlen(p), 0)) {
+          free(p);
+          return 0;
+        }
         bsq_push_cell(j, type, p, strlen(p));
         break;
       }
       case BSQ_FLOAT: {
         char* p = io_mem(malloc(48));
         bsq_real(bsq.column_double(st, (int)c), p);
+        if (!bsq_budget(j, strlen(p), 0)) {
+          free(p);
+          return 0;
+        }
         bsq_push_cell(j, type, p, strlen(p));
         break;
       }
       case BSQ_TEXT: {
         const unsigned char* t = bsq.column_text(st, (int)c);
         size_t n = (size_t)bsq.column_bytes(st, (int)c);
+        if (!bsq_budget(j, t != NULL ? n : 0, 1)) {
+          return 0;
+        }
         bsq_push_cell(j, type, bsq_dup(t != NULL ? (const char*)t : "", t != NULL ? n : 0), n);
         break;
       }
       case BSQ_BLOB: {
         const void* b = bsq.column_blob(st, (int)c);
         size_t n = (size_t)bsq.column_bytes(st, (int)c);
+        if (!bsq_budget(j, b != NULL ? n : 0, 1)) {
+          return 0;
+        }
         bsq_push_cell(j, type, bsq_dup(b != NULL ? b : "", b != NULL ? n : 0), b != NULL ? n : 0);
         break;
       }
@@ -714,6 +813,18 @@ static void bsq_take_row(BsqJob* j, void* st) {
     }
   }
   j->nrows += 1;
+  return 1;
+}
+
+// The result's column names. Read after the first step, because a step can
+// recompile the statement after a schema change and change them.
+static void bsq_columns(BsqJob* j, void* st) {
+  j->ncols = (u32)bsq.column_count(st);
+  j->cols = j->ncols == 0 ? NULL : io_mem(calloc(j->ncols, sizeof *j->cols));
+  for (u32 k = 0; k < j->ncols; k += 1) {
+    const char* name = bsq.column_name(st, (int)k);
+    j->cols[k] = bsq_dup(name != NULL ? name : "", name != NULL ? strlen(name) : 0);
+  }
 }
 
 // Before a statement: an autocommit statement needs no transaction open, a
@@ -767,15 +878,12 @@ static void bsq_query(BsqJob* j, BsqConn* c) {
     bsq.clear_bindings(st);
   }
   if (bsq_bind(j, st)) {
-    j->ncols = j->mode == 0 ? 0 : (u32)bsq.column_count(st);
-    j->cols = j->ncols == 0 ? NULL : io_mem(calloc(j->ncols, sizeof *j->cols));
-    for (u32 k = 0; k < j->ncols; k += 1) {
-      const char* name = bsq.column_name(st, (int)k);
-      j->cols[k] = bsq_dup(name != NULL ? name : "", name != NULL ? strlen(name) : 0);
-    }
     bsq_i64 before = bsq_total(db);
-    for (;;) {
+    for (int first = 1;; first = 0) {
       int rc = bsq.step(st);
+      if (first && j->mode != 0 && (rc == BSQ_ROW || rc == BSQ_DONE)) {
+        bsq_columns(j, st);
+      }
       if (rc == BSQ_ROW) {
         if (j->mode == 0) {
           continue;
@@ -786,7 +894,9 @@ static void bsq_query(BsqJob* j, BsqConn* c) {
           bsq_fail(j, BSQ_TOOBIG, msg);
           break;
         }
-        bsq_take_row(j, st);
+        if (!bsq_take_row(j, st)) {
+          break;
+        }
         if (j->mode == 2) {
           break;
         }
@@ -809,20 +919,59 @@ static void bsq_query(BsqJob* j, BsqConn* c) {
   bsq_after(j, db);
 }
 
+// Runs a script one statement at a time, as sqlite3_exec does, but refuses
+// a transaction-control statement before it runs and stops at the first
+// statement after which the transaction state differs.
 static void bsq_exec(BsqJob* j, BsqConn* c) {
   void* db = c->db;
-  if (strlen(j->text1) != j->n1) {
+  const char* sql = j->text1;
+  size_t n = (size_t)j->n1;
+  if (strlen(sql) != n) {
     bsq_fail(j, BSQ_MISUSE, "bendo sqlite: SQL contains a NUL character");
+    return;
+  }
+  if (n > INT_MAX) {
+    bsq_fail(j, BSQ_TOOBIG, "string or blob too big");
     return;
   }
   if (!bsq_before(j, db)) {
     return;
   }
-  char* err = NULL;
-  if (bsq.exec(db, j->text1, NULL, NULL, &err) != BSQ_OK) {
-    bsq_fail(j, bsq.extended_errcode(db), err != NULL ? err : bsq.errmsg(db));
+  int autocommit = bsq.get_autocommit(db);
+  const char* at = sql;
+  while (j->code == 0 && at < sql + n) {
+    void* st = NULL;
+    const char* tail = NULL;
+    if (bsq.prepare_v2(db, at, (int)(sql + n - at), &st, &tail) != BSQ_OK) {
+      bsq_fail_db(j, db);
+      break;
+    }
+    if (st == NULL) {
+      // Whitespace, a comment or a lone ';'.
+      if (tail == NULL || tail <= at) {
+        break;
+      }
+      at = tail;
+      continue;
+    }
+    if (bsq_control(at, (size_t)(tail - at))) {
+      bsq.finalize(st);
+      bsq_fail(j, BSQ_MISUSE, BSQ_CONTROL_MSG);
+      break;
+    }
+    int rc = bsq.step(st);
+    while (rc == BSQ_ROW) {
+      rc = bsq.step(st);
+    }
+    if (rc != BSQ_DONE) {
+      bsq_fail_db(j, db);
+    }
+    bsq.finalize(st);
+    if (bsq.get_autocommit(db) != autocommit) {
+      break;
+    }
+    at = tail;
   }
-  bsq.free(err);
   bsq_after(j, db);
 }
 
@@ -1030,7 +1179,9 @@ static Term bsq_pack(Env e, IoWork* w) {
 
 static Term bsq_refuse(Env e, BsqJob* j, int code, const char* msg) {
   Term r = io_fail(e, (u32)code, msg);
-  if (j->counted && j->conn != NULL) {
+  // A begin counted as waiting on a connection that has since closed counts
+  // nowhere: open zeroes the count of the connection that reuses the slot.
+  if (j->counted && j->conn != NULL && j->conn->gen == j->gen) {
     j->conn->pending -= 1;
   }
   bsq_job_free(j);
@@ -1109,8 +1260,10 @@ static Term bendo_sqlite_call_run(Env e, Term* f, IoWork* w) {
   j->sgen = (u32)f[5];
   j->mode = (u32)f[6];
   j->limit = (u32)f[7];
-  j->text1 = io_cstr(e, f[8], &j->n1);
-  j->text2 = io_cstr(e, f[9], &j->n2);
+  j->max_bytes = (u32)f[8];
+  j->max_cell = (u32)f[9];
+  j->text1 = io_cstr(e, f[10], &j->n1);
+  j->text2 = io_cstr(e, f[11], &j->n2);
   w->data = (char*)j;
   if (j->op > 7) {
     return bsq_refuse(e, j, BSQ_MISUSE, "bendo sqlite: unknown operation");
@@ -1155,8 +1308,10 @@ static Term bendo_sqlite_call_run(Env e, Term* f, IoWork* w) {
     // No new work may start; work already admitted finishes first.
     j->conn->state = BSQ_CLOSING;
   }
-  // Work already admitted always finishes, so close waits without a limit.
-  j->deadline = j->op == 1 ? UINT64_MAX : io_until(j->conn->busy_ms);
+  // Work already admitted always finishes, so close, commit and rollback wait
+  // for it without a limit: an end that timed out would leave its
+  // transaction open and the connection gated.
+  j->deadline = j->op == 1 || j->op == 7 ? UINT64_MAX : io_until(j->conn->busy_ms);
   return bsq_try(e, w);
 }
 

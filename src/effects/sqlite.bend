@@ -39,11 +39,16 @@ type Reply is Data:
 # op 2 prepare: slot, gen, text1 SQL. Handle{index, sgen}.
 # op 3 finalize: slot, gen, index, sgen. Finished.
 # op 4 query: slot, gen, token, index and sgen (index 0 runs text1 once),
-#   mode 0 run / 1 all / 2 get, limit (most rows for all), text2 params. Ran.
+#   mode 0 run / 1 all / 2 get, limit (most rows for all), max_bytes (most
+#   bytes of cell data in the result) and max_cell (most bytes in one text or
+#   blob cell) for all and get, text2 params. Ran.
 # op 5 exec: slot, gen, token, text1 script with no parameters. Finished.
+#   Every operation but op 6 and op 7 refuses a transaction-control
+#   statement (BEGIN, COMMIT, END, ROLLBACK, SAVEPOINT, RELEASE) before it
+#   runs.
 # op 6 begin: slot, gen, mode 0 deferred / 1 immediate / 2 exclusive.
 #   Handle{token, 0}.
 # op 7 end: slot, gen, token, mode 1 commit / 0 rollback. Finished.
-def sqlite_call(op: U32, slot: U32, gen: U32, token: U32, index: U32, sgen: U32, mode: U32, limit: U32, text1: String, text2: String) -> IO(Result<&1, &1, U32 & String, Reply>):
+def sqlite_call(op: U32, slot: U32, gen: U32, token: U32, index: U32, sgen: U32, mode: U32, limit: U32, max_bytes: U32, max_cell: U32, text1: String, text2: String) -> IO(Result<&1, &1, U32 & String, Reply>):
   import "./sqlite.c"
   import "./sqlite.js"

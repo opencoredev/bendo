@@ -3,8 +3,8 @@
 `sqlite.bend`, `sqlite.c` and `sqlite.js` are the trusted shell under
 [`src/sqlite.bend`](../sqlite.bend), the module apps import. The laws in
 [`proof/sqlite-laws.bend`](../../proof/sqlite-laws.bend) cover the pure parts:
-the parameter wire format, the mapping from columns to JSON, and the
-transaction gate as a table. Everything on this page is trusted code that the
+the parameter wire format, the mapping from columns and rows to JSON, reading
+a result through a schema, and the transaction gate as a table. Everything on this page is trusted code that the
 laws do not reach. [`tests/sqlite.test.ts`](../../tests/sqlite.test.ts) checks
 it against a compiled server and compares the native and JS builds line by
 line.
@@ -49,13 +49,28 @@ whole operation, so one connection runs one statement at a time.
   temporary file. A path containing a NUL character is refused.
 - `prepare` compiles exactly one statement. An empty statement, or anything
   but whitespace and comments after the first statement, is refused, so a
-  second statement is never silently dropped. `exec` is the only call that
-  runs several statements, and it takes no parameters.
+  second statement is never silently dropped. So is a transaction-control
+  statement (see below). `exec` is the only call that runs several
+  statements, and it takes no parameters.
+- `exec` prepares, steps and finalizes the script's statements one at a
+  time, as `sqlite3_exec` does, so earlier statements have run when a later
+  one fails. It refuses a transaction-control statement before stepping it,
+  and stops after any statement that left the transaction state different
+  from where the script began.
 - `run`, `all` and `get` reset the statement and clear its bindings, bind
   every parameter, step, and reset and clear it again on every path, including
   errors. A one-shot statement is finalized on every path. `get` stops
   stepping after the first row. `all` fails with code 18 (`SQLITE_TOOBIG`)
   past the connection's row cap instead of returning a truncated result.
+- `all` and `get` also fail with code 18, before copying the value, when a
+  text or blob value is longer than `max_cell` bytes, or when the result's
+  cell data would pass `max_bytes`. The data counted is each text and blob
+  value's bytes and each number's decimal digits. `run` copies no rows and
+  has no byte cap.
+- The column names and count are read after the first step. A step can
+  recompile a prepared statement after a schema change (`ALTER TABLE ... ADD
+  COLUMN` under a `SELECT *`), and the names read before it would be the old
+  ones.
 - A statement's change count is the difference in
   `sqlite3_total_changes64` across it, so it counts rows changed by triggers
   and foreign-key actions and is 0 for a statement that changed nothing; it is
@@ -88,6 +103,18 @@ cannot change the statement. The checks, identical in both builds:
   binds as an infinity, as `strtod` reads it. A blob byte must be below 256.
   Text is bound as UTF-8; lone surrogates become U+FFFD on both builds.
 
+What the laws do not cover: they prove that every string the encoders write
+reads back as its values, and say nothing about strings the encoders cannot
+write. `src/sqlite.bend` only ever passes the encoders' output, so a
+malformed string reaches the reader only from code that calls the effect
+directly. The reader's answers to one are trusted code, the same in both
+builds, and not proven: a payload with no closing `;` or ending in a lone
+`\`, an unknown tag, or a parameter string that does not start with `P` or
+`N` fails with code 21 (`malformed parameters`). The checks that do apply to
+encoder output are tested, not proven, too: the integer, real and blob byte
+checks above (code 20, in the parity fixture) and the parameter count and
+name checks against the statement (code 25).
+
 ## Values read back
 
 | SQLite | `Sqlite.Value` | JSON row |
@@ -110,23 +137,39 @@ on a shared connection would swallow the other requests' statements, so the
 effect gates the connection (the table is `Sqlite.gate`, stated in the laws):
 
 - `begin` waits until no transaction is open and no operation is in flight,
-  then opens one and returns a `Db` carrying its token.
+  then opens one and returns a `Db` carrying its token. While a begin waits,
+  statements outside any transaction wait behind it. The count of waiting
+  begins belongs to one generation of the connection: a begin still waiting
+  when the connection closes fails with code 21 and never touches the count
+  of a connection that later reuses the slot.
 - While it is open, statements through other copies of the connection wait,
   polling every millisecond, up to the connection's busy timeout (5 s by
   default), then fail with code 5 (`SQLITE_BUSY`). A statement carrying a
   token that is not the open one's, such as a copy kept after a commit, fails
   with code 21.
-- `commit` and `rollback` wait for the transaction's in-flight statements and
-  end it. A commit that fails rolls back, so a transaction is always over
-  after either call.
-- A statement may not begin or end a transaction itself (`BEGIN`, `COMMIT`,
-  `ROLLBACK` or a top-level `SAVEPOINT` through `run` or `exec`): the effect
-  rolls back what it began and fails with code 21. If SQLite rolls a
-  transaction back by itself after an error, the transaction's next statement
-  or commit fails with code 516 (`SQLITE_ABORT_ROLLBACK`).
+- `commit` and `rollback`, given the open transaction's `Db`, always end
+  it, whatever they return. Each waits, without a limit, for the
+  transaction's statements already in flight, as `close` waits for every
+  operation: those statements were admitted and always finish, while an end
+  that timed out would leave the transaction open and the connection gated
+  for good. A `COMMIT` that fails is rolled back. Given any other `Db`, they
+  fail with code 21 and change nothing.
+- A statement may not begin, end or nest a transaction itself. A statement
+  whose first keyword, after whitespace and comments, is `BEGIN`, `COMMIT`,
+  `END`, `ROLLBACK`, `SAVEPOINT` or `RELEASE` fails with code 21 before it
+  runs, through `run`, `all`, `get`, `prepare` or anywhere in an `exec`
+  script, inside a transaction or not. These six keywords start every SQLite
+  statement that changes the transaction state. As a second line of
+  defense, a statement or script that still leaves the autocommit flag
+  changed is rolled back (outside a transaction) or fails with code 21. If
+  SQLite rolls a transaction back by itself after an error, the
+  transaction's next statement or commit fails with code 516
+  (`SQLITE_ABORT_ROLLBACK`).
 - `Sqlite.transaction` commits when its body returns `Done` and rolls back
-  when it returns `Fail`. A Bend handler cannot throw, so those are the only
-  ways out. A handler timed out by `IO.within` keeps running (decision 9) and
+  when it returns `Fail`. When the commit fails, it also calls rollback,
+  which is refused because the commit already ended the transaction, so no
+  failure leaves the connection gated. A Bend handler cannot throw, so those
+  are the only ways out. A handler timed out by `IO.within` keeps running (decision 9) and
   still reaches its commit or rollback. A raw `begin` without a matching end
   leaves the connection gated until it closes; prefer the helper.
 
@@ -140,7 +183,8 @@ in WAL mode once with `Sqlite.exec(db, "PRAGMA journal_mode=WAL")`. An
 in-memory database is private to each worker.
 
 The JS build runs each operation to completion on the loop, so nothing is in
-flight between effects there; the gate's waiting and refusals are the same.
+flight between effects there, and commit and rollback never wait; the gate's
+waiting and refusals are the same.
 
 ## Error codes
 
@@ -153,9 +197,9 @@ unless noted:
 | --- | --- |
 | 5 `SQLITE_BUSY` | A statement waited past the busy timeout for another transaction on the connection |
 | 14 `SQLITE_CANTOPEN` | libsqlite3 could not be loaded, or is unusable |
-| 18 `SQLITE_TOOBIG` | `all` passed the row cap |
+| 18 `SQLITE_TOOBIG` | `all` passed the row cap, or `all` or `get` passed `max_bytes` or `max_cell` |
 | 20 `SQLITE_MISMATCH` | A parameter value is malformed (messages start `parameter N:`) |
-| 21 `SQLITE_MISUSE` | Closed connection, finalized statement, ended transaction, SQL with a NUL, no statement, more than one statement, or a statement that begins or ends a transaction |
+| 21 `SQLITE_MISUSE` | Closed connection, finalized statement, ended transaction, SQL with a NUL, no statement, more than one statement, or a statement that begins or ends a transaction or savepoint |
 | 25 `SQLITE_RANGE` | Parameters do not match the statement (messages name the count or the parameter) |
 | 516 `SQLITE_ABORT_ROLLBACK` | SQLite rolled the transaction back by itself |
 

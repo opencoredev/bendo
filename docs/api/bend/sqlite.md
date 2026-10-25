@@ -29,13 +29,14 @@ def user_schema() -> S.Schema:
 
 ```bend signature
 type Db is Data:
-  Db{slot: U32, gen: U32, token: U32, max_rows: U32}
+  Db{slot: U32, gen: U32, token: U32, max_rows: U32, max_bytes: U32, max_cell: U32}
 ```
 
 A connection. It is copyable `Data`: keep it in your app's `env`, and every
 copy names the same connection. The `Db` that `Sql.begin` returns also
 carries its transaction's token, so statements run through it run in the
-transaction. The fields are internal.
+transaction. It also carries the result caps from `Sql.Options`. The fields
+are internal.
 
 ```bend
 type Env is Data:
@@ -113,7 +114,7 @@ def ex_params() -> Sql.Params:
 
 ```bend signature
 type Options is Data:
-  Options{mode: Mode, busy_ms: U32, max_rows: U32}
+  Options{mode: Mode, busy_ms: U32, max_rows: U32, max_bytes: U32, max_cell: U32}
 
 type Mode is Data:
   ReadWriteCreate{}
@@ -124,10 +125,14 @@ type Mode is Data:
 How `Sql.open_with` opens a database. `busy_ms` is how long a statement waits
 for another transaction on the connection, or another process's lock, before
 failing with code 5. `max_rows` is the most rows `Sql.all` returns.
+`max_bytes` is the most bytes of cell data one result of `Sql.all` or
+`Sql.get` holds, counting text and blob bytes and the digits of numbers, and
+`max_cell` the most bytes of one text or blob value in it. A result past any
+cap fails with code 18 instead of being cut short.
 
 ```bend
 def ex_read_only() -> Sql.Options:
-  Sql.Options{Sql.ReadOnly{}, 1000, 500}
+  Sql.Options{Sql.ReadOnly{}, 1000, 500, 1048576, 65536}
 
 def ex_mode() -> Sql.Mode:
   Sql.ReadWrite{}
@@ -238,11 +243,11 @@ def ex_open() -> IO(Result<&2, &2, Sql.Error, Sql.Db>):
 def open_with(path: String, o: Options) -> IO(Result<&2, &2, Error, Db>)
 ```
 
-Opens a database with a mode, busy timeout and row cap.
+Opens a database with a mode, busy timeout and result caps.
 
 ```bend
 def ex_open_with() -> IO(Result<&2, &2, Sql.Error, Sql.Db>):
-  Sql.open_with("app.db", Sql.Options{Sql.ReadWrite{}, 2000, 1000})
+  Sql.open_with("app.db", Sql.Options{Sql.ReadWrite{}, 2000, 1000, 8388608, 1048576})
 ```
 
 ### `Sql.options`
@@ -251,8 +256,9 @@ def ex_open_with() -> IO(Result<&2, &2, Sql.Error, Sql.Db>):
 def options() -> Options
 ```
 
-The defaults: read, write and create, a 5000 ms busy timeout and at most
-100000 rows from `Sql.all`.
+The defaults: read, write and create, a 5000 ms busy timeout, and at most
+100000 rows, 64 MiB of cell data and 16 MiB in one text or blob value per
+result.
 
 ```bend
 def ex_options() -> Sql.Options:
@@ -281,7 +287,9 @@ def exec(db: Db, script: String) -> IO(Result<&2, &2, Error, Unit>)
 ```
 
 Runs a script of statements with no parameters, such as a schema or a
-pragma.
+pragma, one statement at a time. A statement that begins or ends a
+transaction or savepoint fails with code 21 before it runs; the statements
+before it have run. Run a script atomically inside `Sql.transaction`.
 
 ```bend
 def ex_schema(db: Sql.Db) -> IO(Result<&2, &2, Sql.Error, Unit>):
@@ -297,7 +305,9 @@ def run(db: Db, sql: String, params: Params) -> IO(Result<&2, &2, Error, Changes
 ```
 
 Runs one statement with bound parameters and drops any rows. A second
-statement in `sql` fails with code 21; use `Sql.exec` for scripts.
+statement in `sql`, or one that begins or ends a transaction or savepoint,
+fails with code 21; use `Sql.exec` for scripts and `Sql.begin` for
+transactions.
 
 ```bend
 def ex_insert(db: Sql.Db, name: String) -> IO(Result<&2, &2, Sql.Error, Sql.Changes>):
@@ -311,7 +321,8 @@ def all(db: Db, sql: String, params: Params) -> IO(Result<&2, &2, Error, Rows>)
 ```
 
 Runs one statement and returns every row. More rows than the connection's
-`max_rows` fail with code 18 instead of being cut short.
+`max_rows`, or more data than its `max_bytes` or `max_cell`, fail with code
+18 instead of being cut short.
 
 ```bend
 def ex_all(db: Sql.Db) -> IO(Result<&2, &2, Sql.Error, Sql.Rows>):
@@ -476,8 +487,10 @@ def commit(tx: Db) -> IO(Result<&2, &2, Error, Unit>)
 def rollback(tx: Db) -> IO(Result<&2, &2, Error, Unit>)
 ```
 
-End the transaction `tx` belongs to. A commit that fails rolls back, so the
-transaction is over after either call; using `tx` again fails with code 21.
+End the transaction `tx` belongs to. Each waits, without a limit, for the
+transaction's statements already running, and a commit that fails rolls
+back, so the transaction is over after either call whatever it returns;
+using `tx` again fails with code 21.
 
 ```bend
 def ex_commit(tx: Sql.Db) -> IO(Result<&2, &2, Sql.Error, Unit>):
@@ -495,7 +508,8 @@ def transaction(-A: Data, db: Db, body: Db -> IO(Result<&2, &2, Error, A>)) -> I
 
 Begins a transaction and runs `body` with its `Db`. Commits and returns the
 result when `body` returns `Done`; rolls back and returns the error when it
-returns `Fail`.
+returns `Fail`. When the commit fails, it returns that error and the
+transaction has been rolled back.
 
 ```bend
 def ex_body(+tx: Sql.Db) -> IO(Result<&2, &2, Sql.Error, Sql.Changes>):
@@ -528,10 +542,10 @@ def rows_json(rows: Rows) -> Result<&2, &2, Error, List<&2, J.Json>>
 def row_json(row: Row) -> Result<&2, &2, Error, J.Json>
 ```
 
-Rows as JSON objects keyed by column name. NULL is `null`, integers and
-reals are numbers with the same digits, text is a string and a blob the
-string of its standard base64. A real with no JSON form fails with
-`Sql.NotJson`.
+Rows as JSON objects keyed by column name, in order. NULL is `null`,
+integers and reals are numbers with the same digits, text is a string and a
+blob the string of its standard base64. The first row with a real that has
+no JSON form fails with `Sql.NotJson{row, column}`, `row` counting from 0.
 
 ```bend
 def ex_rows_json(rows: Sql.Rows) -> Result<&2, &2, Sql.Error, J.Json>:
@@ -548,8 +562,10 @@ def decode_rows(schema: S.Schema, rows: Rows) -> Result<&2, &2, Error, List<&2, 
 def decode_row(schema: S.Schema, row: Row) -> Result<&2, &2, Error, S.Value>
 ```
 
-Rows decoded through a schema, as route validation decodes a JSON body. The
-first row that does not match fails with `Sql.RowError{row, errors}`.
+Rows converted as `Sql.rows_json` converts them, then decoded through a
+schema, as route validation decodes a JSON body, one by one in order. The
+first row that fails decides the error: `Sql.NotJson` when it has no JSON
+form, or `Sql.RowError{row, errors}` when it does not match.
 
 ```bend
 def ex_decode_rows(rows: Sql.Rows) -> Result<&2, &2, Sql.Error, List<&2, S.Value>>:
