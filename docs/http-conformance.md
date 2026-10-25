@@ -153,9 +153,15 @@ and saves the case, its writes in base64, and the bytes received to
 | Date | Where | Command | Cases | Result |
 | --- | --- | --- | --- | --- |
 | 2026-10-23 | Boat `default` sandbox (4 vCPU, 8 GB), Bend 2.0.38, Bun 1.4.4 | `bun scripts/fuzz-http.ts --minutes 10 --seed 1013` | 142,818 in 601 s | PASS |
+| 2026-10-25 | Boat `default` sandbox (4 vCPU, 8 GB), Bend 2.0.38, Bun 1.4.4, main `bc0d268` (BND-75) | `bun scripts/fuzz-http.ts --minutes 30 --seed 7526102501` | 2,384,805 in 1,801 s | PASS |
+| 2026-10-25 | same sandbox | `bun scripts/fuzz-http.ts --minutes 10 --seed 7526102502` | 771,804 in 601 s | PASS |
 
 That run sent 43,264 generated, 21,172 pipelined, 71,209 mutated and 7,173
 random cases. Every connection reached EOF with well-framed output, none reset,
 all 1,429 health checks passed, and server RSS peaked at 6.2 MiB. Responses
 seen: 100 (100), 200 (32,588), 400 (90,637), 404 (6,938), 405 (5,250),
 408 (213), 413 (2,749), 417 (9,989), 431 (6,692). It found no bugs.
+
+The BND-75 launch runs on 2026-10-25 also passed: 3,156,609 cases in total,
+every connection reached EOF, none reset, all 31,568 health checks passed, and
+server RSS peaked at 5.8 MiB.
