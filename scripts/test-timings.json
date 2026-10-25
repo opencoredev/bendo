@@ -42,6 +42,7 @@
     "tests/create-bendo-fullstack.test.ts": 130000,
     "tests/create-bendo-api.test.ts": 100000,
     "packages/create-bendo/src/cli.test.ts": 1000,
+    "tests/release.test.ts": 40000,
     "tests/guides.test.ts": 120000
   }
 }

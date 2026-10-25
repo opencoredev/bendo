@@ -23,9 +23,13 @@
     "docs:preview": "bun run --cwd docs preview",
     "lint": "oxlint --threads=4 --deny-warnings .",
     "format": "oxfmt --threads=4 .",
-    "format:check": "oxfmt --threads=4 --check ."
+    "format:check": "oxfmt --threads=4 --check .",
+    "changeset": "changeset",
+    "version-packages": "changeset version && bun install",
+    "release": "bun scripts/release.ts"
   },
   "devDependencies": {
+    "@changesets/cli": "3.0.3",
     "@seriousme/openapi-schema-validator": "2.11.0",
     "@types/bun": "latest",
     "ajv": "^8.17.1",

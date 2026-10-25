@@ -50,7 +50,7 @@ These hold for every ticket. Changing one needs a written reason in `docs/decisi
 
 ```
 bendo/
-  src/            Bend library (published to BendHub as bendo@x.y/main.bend)
+  src/            Bend library (published to BendHub as bendo@x.y.z.0/main.bend)
     main.bend       public entry, re-exports the API
     http/           request, response, parser, writer, connection loop
     router/         patterns, spec router, trie router
@@ -77,7 +77,7 @@ This follows decision [0001](decisions/0001-route-table.md): a data route table 
 
 ```python
 import Base
-import bendo@0.1/main.bend as B
+import bendo@0.1.0.0/main.bend as B
 
 type Route is Data:
   ListTodos{}
