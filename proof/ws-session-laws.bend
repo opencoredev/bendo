@@ -234,8 +234,8 @@ law ws_session_resume_rejects:
   {Spec.decoder_code(code) == True{} : Bool}
 
 # A decoder rejection carries its own code (1002, or 1009 for a frame over the
-# limit) and ends the session the same way. That the connection's chunked
-# decoding (F.start, F.resume) agrees with whole-buffer F.decode is BND-95.
+# limit) and ends the session the same way. The connection's chunked decoding
+# (F.start, F.resume) agrees with whole-buffer F.decode by ws_decode_incremental.
 law ws_session_rejected:
   for +max: U32
   for +phase: S.Phase
