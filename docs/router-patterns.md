@@ -168,6 +168,15 @@ laws pin example results: `/assets*` matches `/assets-v2`, interior wildcards
 consume whole segments, optional captures fill from the left, and spans are
 greedy.
 
+`pattern_compile_spec` states that `compile` succeeds, with the same pattern,
+exactly when the source grammar in
+[`proof/router-compile-spec.bend`](../proof/router-compile-spec.bend) accepts
+the source, for every string. That grammar is written from the syntax and
+rules on this page and calls no `Pattern` helper; the text inside `{...}`
+goes to the constraint grammar. So every documented form compiles, and every
+source the rules forbid fails. The law does not fix which error kind a
+rejected source reports.
+
 The full roundtrip proof passes the strict Lean-backed kernel. Its helper
 lemmas cover Unicode and percent-codec inversion, compilation cleanliness,
 split/join preservation, and matching for captures, optional params and wildcards.
