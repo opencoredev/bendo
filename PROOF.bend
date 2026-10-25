@@ -1,4 +1,5 @@
 import ./proof/ws-topics.bend as WsTopicsProof
+import ./proof/ws-limits.bend as WsLimitsProof
 import ./proof/ws-session.bend as WsSessionProof
 import ./proof/ws-session-trace.bend as WsSessionTraceProof
 import ./proof/ws-session-message.bend as WsSessionMessageProof
@@ -39,6 +40,9 @@ import ./proof/rate-limit.bend as RateLimitProof
 
 # BND-100
 import ./proof/utf8-scalar.bend as Utf8ScalarProof
+
+# BND-104
+import ./proof/jwt-key.bend as JwtKeyProof
 
 # BND-92
 import ./proof/parser-spec.bend as ParserSpecProof
