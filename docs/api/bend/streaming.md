@@ -565,10 +565,16 @@ def websocket_close(handle: B.WebSocketHandle, code: U32, reason: String) -> IO(
 ```
 
 Begins the close handshake. `code` must be a sendable RFC 6455 or IANA code
-and `reason` must fit in 123 UTF-8 bytes, or the call returns `False`.
-Commands queued behind the close are discarded. `on_close` later reports the
-peer's code and reason, or 1006 when the peer does not answer within
-`close_ms`. `W.close` is the same function.
+and `reason` must fit in 123 UTF-8 bytes. A valid close is never refused for
+a full mailbox: the call shuts the mailbox, so later sends return `False`,
+and puts the close in a reserved slot behind the commands already queued.
+Only the first admitted close is written. A close queued behind another
+returns `True` and is ignored, and when two closes find the mailbox full at
+once, one of them returns `False`. `False` otherwise means the code or reason
+is invalid, or the connection is already closing or closed. Commands queued
+behind the close are discarded. `on_close` later reports the peer's code and
+reason, or 1006 when the peer does not answer within `close_ms`. `W.close` is
+the same function.
 
 ```bend
 def ex_goodbye(handle: B.WebSocketHandle) -> IO(Bool):
@@ -842,8 +848,11 @@ def handlers(~Vars: Data, ~User: Data, ~on_open: User -> P.Peer -> IO(User), ~on
 
 `B.websocket_handlers` with topics: the connection joins `hub` when it opens,
 and `on_open` and `on_message` receive a `P.Peer`. On every close path,
-including a dropped TCP connection, it leaves every topic and its ID is
-revoked before `on_close` runs.
+including a dropped TCP connection, it queues a release on the hub before
+`on_close` runs. The release leaves every topic and revokes the ID, and the
+hub applies it even when its queue is full. The connection waits up to the
+hub's timeout for the hub to confirm, so with a stalled hub `on_close` can run
+before the release has taken effect.
 
 ```bend
 def ex_left(state: Unit, code: U32, reason: String) -> IO(Unit):
