@@ -5,6 +5,8 @@
 import Base
 import ./ws-limits-laws.bend as L
 import ./ws-topics.bend as WT
+import ./ws-topics-spec.bend as Spec
+import ./ws-limits-spec.bend as LS
 import ../src/ws/topics.bend as T
 
 # ---- Nat facts ----
@@ -265,3 +267,114 @@ def L.ws_limits_reported(A, l, r, c, t, x):
     case T.Limits{p, h, b}:
       match r:
         case T.Registry{n, live, s}: reported(A, p, h, b, n, live, s, c, t, x, T.decide(A, T.Limits{p, h, b}, T.Registry{n, live, s}, c, t), {==})
+
+# ---- The decision against the independent table ----
+
+# The impl's checks read the same facts as the spec's.
+def holds_has(+ids: List<&2, Nat>, +c: Nat) -> {T.holds(ids, c) == Spec.has(ids, c) : Bool}:
+  match ids:
+    case Nil{}: {==}
+    case +h <> t: Equal.cong(Bool, Bool, y => Nat.is_eq(h, c) || y, T.holds(t, c), Spec.has(t, c), holds_has(t, c))
+
+def sub_paired(-A: Data, +xs: List<&2, T.Sub<A>>, +c: Nat, +t: String) -> {T.has_sub(A, xs, c, t) == Spec.paired(A, xs, c, t) : Bool}:
+  match xs:
+    case Nil{}: {==}
+    case T.Sub{+topic, +id, x} <> rest: Equal.cong(Bool, Bool, y => (String.eq(topic, t) && Nat.is_eq(id, c)) || y, T.has_sub(A, rest, c, t), Spec.paired(A, rest, c, t), sub_paired(A, rest, c, t))
+
+def bump_tick(k: Bool, +a: Nat, +z: Nat, e: {a == z : Nat}) -> {T.bump(k, a) == Spec.tick(k, z) : Nat}:
+  match k:
+    case True{}: Equal.cong(Nat, Nat, y => 1n+y, a, z, e)
+    case False{}: e
+
+def owned_ids(-A: Data, +xs: List<&2, T.Sub<A>>, +c: Nat) -> {T.owned_count(A, xs, c) == Spec.count(Spec.ids(A, xs), c) : Nat}:
+  match xs:
+    case Nil{}: {==}
+    case T.Sub{topic, id, x} <> rest: bump_tick(Nat.is_eq(id, c), T.owned_count(A, rest, c), Spec.count(Spec.ids(A, rest), c), owned_ids(A, rest, c))
+
+def room_count(-A: Data, +s: List<&2, T.Sub<A>>, +c: Nat, +p: Nat) -> {Nat.is_lt(T.owned_count(A, s, c), p) == Nat.is_lt(Spec.count(Spec.ids(A, s), c), p) : Bool}:
+  Equal.cong(Nat, Bool, z => Nat.is_lt(z, p), T.owned_count(A, s, c), Spec.count(Spec.ids(A, s), c), owned_ids(A, s, c))
+
+# T.verdict is the table read top to bottom.
+def table(va: Bool, vs: Bool, vm: Bool, vp: Bool, vh: Bool) -> {T.verdict(va, vs, vm, vp, vh) == LS.on_fail(va, T.NotActive{}, LS.on_fail(vs, T.TopicTooLong{}, LS.on_fail(Bool.not(vm), T.AlreadyMember{}, LS.on_fail(vp, T.PeerFull{}, LS.on_fail(vh, T.HubFull{}, T.Admitted{}))))) : T.Admission}:
+  match va:
+    case False{}: {==}
+    case True{}:
+      match vs:
+        case False{}: {==}
+        case True{}:
+          match vm:
+            case True{}: {==}
+            case False{}:
+              match vp:
+                case False{}: {==}
+                case True{}:
+                  match vh:
+                    case False{}: {==}
+                    case True{}: {==}
+
+def table_open(va: Bool, vs: Bool, vm: Bool, vp: Bool, vh: Bool) -> {T.admitted(T.verdict(va, vs, vm, vp, vh)) == (va && (vs && (Bool.not(vm) && (vp && (vh && True{}))))) : Bool}:
+  match va:
+    case False{}: {==}
+    case True{}:
+      match vs:
+        case False{}: {==}
+        case True{}:
+          match vm:
+            case True{}: {==}
+            case False{}:
+              match vp:
+                case False{}: {==}
+                case True{}:
+                  match vh:
+                    case False{}: {==}
+                    case True{}: {==}
+
+# The same with the spec's three facts in place of the impl's.
+def bridged(va: Bool, wa: Bool, ea: {va == wa : Bool}, vs: Bool, vm: Bool, wm: Bool, em: {vm == wm : Bool}, vp: Bool, wp: Bool, ep: {vp == wp : Bool}, vh: Bool) -> {T.verdict(va, vs, vm, vp, vh) == LS.on_fail(wa, T.NotActive{}, LS.on_fail(vs, T.TopicTooLong{}, LS.on_fail(Bool.not(wm), T.AlreadyMember{}, LS.on_fail(wp, T.PeerFull{}, LS.on_fail(vh, T.HubFull{}, T.Admitted{}))))) : T.Admission}:
+  %ea : {T.verdict(va, vs, vm, vp, vh) == LS.on_fail(_, T.NotActive{}, LS.on_fail(vs, T.TopicTooLong{}, LS.on_fail(Bool.not(wm), T.AlreadyMember{}, LS.on_fail(wp, T.PeerFull{}, LS.on_fail(vh, T.HubFull{}, T.Admitted{}))))) : T.Admission}
+  %em : {T.verdict(va, vs, vm, vp, vh) == LS.on_fail(va, T.NotActive{}, LS.on_fail(vs, T.TopicTooLong{}, LS.on_fail(Bool.not(_), T.AlreadyMember{}, LS.on_fail(wp, T.PeerFull{}, LS.on_fail(vh, T.HubFull{}, T.Admitted{}))))) : T.Admission}
+  %ep : {T.verdict(va, vs, vm, vp, vh) == LS.on_fail(va, T.NotActive{}, LS.on_fail(vs, T.TopicTooLong{}, LS.on_fail(Bool.not(vm), T.AlreadyMember{}, LS.on_fail(_, T.PeerFull{}, LS.on_fail(vh, T.HubFull{}, T.Admitted{}))))) : T.Admission}
+  table(va, vs, vm, vp, vh)
+
+def bridged_open(va: Bool, wa: Bool, ea: {va == wa : Bool}, vs: Bool, vm: Bool, wm: Bool, em: {vm == wm : Bool}, vp: Bool, wp: Bool, ep: {vp == wp : Bool}, vh: Bool) -> {T.admitted(T.verdict(va, vs, vm, vp, vh)) == (wa && (vs && (Bool.not(wm) && (wp && (vh && True{}))))) : Bool}:
+  %ea : {T.admitted(T.verdict(va, vs, vm, vp, vh)) == (_ && (vs && (Bool.not(wm) && (wp && (vh && True{}))))) : Bool}
+  %em : {T.admitted(T.verdict(va, vs, vm, vp, vh)) == (va && (vs && (Bool.not(_) && (wp && (vh && True{}))))) : Bool}
+  %ep : {T.admitted(T.verdict(va, vs, vm, vp, vh)) == (va && (vs && (Bool.not(vm) && (_ && (vh && True{}))))) : Bool}
+  table_open(va, vs, vm, vp, vh)
+
+def L.ws_limits_decide_exact(A, l, r, c, t):
+  match l:
+    case T.Limits{p, h, b}:
+      match r:
+        case T.Registry{n, live, s}: bridged(T.holds(live, c), Spec.has(live, c), holds_has(live, c), Nat.is_le(T.bytes_of(t), b), T.has_sub(A, s, c, t), Spec.paired(A, s, c, t), sub_paired(A, s, c, t), Nat.is_lt(T.owned_count(A, s, c), p), Nat.is_lt(Spec.count(Spec.ids(A, s), c), p), room_count(A, s, c, p), Nat.is_lt(List.length(&2, T.Sub<A>, s), h))
+
+def L.ws_limits_admitted_iff(A, l, r, c, t):
+  match l:
+    case T.Limits{p, h, b}:
+      match r:
+        case T.Registry{n, live, s}: bridged_open(T.holds(live, c), Spec.has(live, c), holds_has(live, c), Nat.is_le(T.bytes_of(t), b), T.has_sub(A, s, c, t), Spec.paired(A, s, c, t), sub_paired(A, s, c, t), Nat.is_lt(T.owned_count(A, s, c), p), Nat.is_lt(Spec.count(Spec.ids(A, s), c), p), room_count(A, s, c, p), Nat.is_lt(List.length(&2, T.Sub<A>, s), h))
+
+# ---- Admission when every check passes ----
+
+def admits_leaf(-A: Data, +R: T.Registry<A>, +c: Nat, +t: String, +x: A, va: Bool, vs: Bool, vm: Bool, vp: Bool, vh: Bool, ea: {va == True{} : Bool}, es: {vs == True{} : Bool}, em: {vm == False{} : Bool}, ep: {vp == True{} : Bool}, eh: {vh == True{} : Bool}) -> {T.granted(A, R, c, t, x, T.verdict(va, vs, vm, vp, vh)) == T.subscribe(A, R, c, t, x) : T.Registry<A>}:
+  match va:
+    case False{}: WT.absurd({R == T.subscribe(A, R, c, t, x) : T.Registry<A>}, WT.false_true(ea))
+    case True{}:
+      match vs:
+        case False{}: WT.absurd({R == T.subscribe(A, R, c, t, x) : T.Registry<A>}, WT.false_true(es))
+        case True{}:
+          match vm:
+            case True{}: WT.absurd({R == T.subscribe(A, R, c, t, x) : T.Registry<A>}, WT.false_true(Equal.sym(Bool, True{}, False{}, em)))
+            case False{}:
+              match vp:
+                case False{}: WT.absurd({R == T.subscribe(A, R, c, t, x) : T.Registry<A>}, WT.false_true(ep))
+                case True{}:
+                  match vh:
+                    case False{}: WT.absurd({R == T.subscribe(A, R, c, t, x) : T.Registry<A>}, WT.false_true(eh))
+                    case True{}: {==}
+
+def L.ws_limits_admits(A, l, r, c, t, x, active, short, fresh, peer_room, hub_room):
+  match l:
+    case T.Limits{p, h, b}:
+      match r:
+        case T.Registry{n, live, s}: admits_leaf(A, T.Registry{n, live, s}, c, t, x, T.holds(live, c), Nat.is_le(T.bytes_of(t), b), T.has_sub(A, s, c, t), Nat.is_lt(T.owned_count(A, s, c), p), Nat.is_lt(List.length(&2, T.Sub<A>, s), h), Equal.trans(Bool, T.holds(live, c), Spec.has(live, c), True{}, holds_has(live, c), active), short, Equal.trans(Bool, T.has_sub(A, s, c, t), Spec.paired(A, s, c, t), False{}, sub_paired(A, s, c, t), fresh), Equal.trans(Bool, Nat.is_lt(T.owned_count(A, s, c), p), Nat.is_lt(Spec.count(Spec.ids(A, s), c), p), True{}, room_count(A, s, c, p), peer_room), hub_room)

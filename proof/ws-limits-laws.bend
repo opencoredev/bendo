@@ -3,7 +3,10 @@
 # of at most topic_bytes UTF-8 bytes. The ws_topics laws about T.admit are
 # unchanged; ws_limits_admitted_is_admit carries them over.
 import Base
+import ../src/data/utf8.bend as Utf8
 import ../src/ws/topics.bend as T
+import ./ws-topics-spec.bend as Spec
+import ./ws-limits-spec.bend as LS
 
 # A refused subscribe, whatever the reason, leaves the registry unchanged.
 law ws_limits_refusal_unchanged:
@@ -99,3 +102,41 @@ law ws_limits_reported:
   for +t: String
   for +x: A
   {T.decide(A, l, T.admit_within(A, l, r, c, t, x), c, t) == T.settled(T.decide(A, l, r, c, t)) : T.Admission}
+
+# The decision is exactly the table in ./ws-limits-spec.bend: the first
+# failing check names the refusal (closed, then topic too long, then already
+# a member, then no connection slot, then no hub slot), and a request that
+# passes every check is admitted.
+law ws_limits_decide_exact:
+  for -A: Data
+  for +l: T.Limits
+  for +r: T.Registry<A>
+  for +c: Nat
+  for +t: String
+  {T.decide(A, l, r, c, t) == LS.decision(A, l, r, c, t) : T.Admission}
+
+# A subscribe is admitted if and only if every check passes.
+law ws_limits_admitted_iff:
+  for -A: Data
+  for +l: T.Limits
+  for +r: T.Registry<A>
+  for +c: Nat
+  for +t: String
+  {T.admitted(T.decide(A, l, r, c, t)) == LS.open(A, l, r, c, t) : Bool}
+
+# The limits refuse nothing else: an active connection subscribing to a
+# topic it does not hold, within the byte limit, with a connection slot and a
+# hub slot free, is subscribed by the path the shell takes.
+law ws_limits_admits:
+  for -A: Data
+  for +l: T.Limits
+  for +r: T.Registry<A>
+  for +c: Nat
+  for +t: String
+  for +x: A
+  for active: {Spec.has(T.live(A, r), c) == True{} : Bool}
+  for short: {Nat.is_le(List.length(&2, U32, Utf8.encode(t)), T.topic_bytes(l)) == True{} : Bool}
+  for fresh: {Spec.paired(A, T.subs(A, r), c, t) == False{} : Bool}
+  for peer_room: {Nat.is_lt(Spec.count(Spec.ids(A, T.subs(A, r)), c), T.per_peer(l)) == True{} : Bool}
+  for hub_room: {Nat.is_lt(List.length(&2, T.Sub<A>, T.subs(A, r)), T.per_hub(l)) == True{} : Bool}
+  {T.admit_within(A, l, r, c, t, x) == T.subscribe(A, r, c, t, x) : T.Registry<A>}

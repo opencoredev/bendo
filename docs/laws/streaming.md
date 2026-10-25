@@ -222,6 +222,9 @@ laws are in `proof/ws-limits-laws.bend`.
 - `ws_limits_repeat_unchanged`: subscribing again to a topic the connection already holds changes nothing, so it uses no slot.
 - `ws_limits_remove_frees`, `ws_limits_remove_returns_slots`: closing a connection leaves it no subscriptions, and the registry shrinks by exactly the number it held.
 - `ws_limits_reported`: deciding again on the updated registry gives the verdict the subscribe got, with an admission read as membership. That is how `P.subscribe_checked` reports the result.
+- `ws_limits_decide_exact`: the decision equals an independent table in `proof/ws-limits-spec.bend`, whose checks are stated over the membership model instead of the registry's own helpers. The checks run in order: the connection is active, the topic fits the byte limit, the connection does not hold the topic yet, the connection has a slot free, and the hub has a slot free. The first one that fails names the refusal, so a closed connection asking for a long topic is reported as closed. A request that passes every check is admitted.
+- `ws_limits_admitted_iff`: a subscribe is admitted if and only if every check in that table passes.
+- `ws_limits_admits`: an active connection asking for a topic it does not hold, within the byte limit and with a connection slot and a hub slot free, is subscribed by `T.admit_within`. Without this law, a decision that refused everything would satisfy all the bounds above.
 
 ## Static files
 

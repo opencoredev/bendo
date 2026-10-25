@@ -35,10 +35,11 @@ all. We considered having the close path wait again for the join's reply,
 but that wait can time out too.
 
 A `P.Peer` is ordinary data, so an application can keep one after its
-connection closes. `P.subscribe` goes through `T.admit`, which records the
-subscription only for an active ID. A subscribe that the actor serializes
-after the close cleanup leaves the registry unchanged and returns `False`, so
-it cannot re-register a dead connection.
+connection closes. `P.subscribe` goes through `T.admit_within`, which records
+the subscription only for an active ID and within the hub's limits (below).
+For an active ID within the limits it is exactly `T.admit`. A subscribe that
+the actor serializes after the close cleanup leaves the registry unchanged and
+returns `False`, so it cannot re-register a dead connection.
 
 The release must reach the actor, or the ID stays active and its claim stays
 in the ledger forever (BND-98). A store update with the hub's timeout gives up
@@ -65,11 +66,46 @@ counts an open subscriber as `dropped` and a closed one as `gone`.
 
 The list representation keeps the laws simple and costs O(subscriptions) per
 operation. A publication reads a snapshot of the whole registry with
-`Store.get`. That is fine for the chat-sized registries BND-65 needs. A large
-deployment would want a map keyed by topic, with the same laws.
+`Store.get`. That is fine for the chat-sized registries BND-65 needs, and the
+per-hub limit caps the length. A large deployment would want a map keyed by
+topic, with the same laws.
 
 The module is opt-in: `src/main.bend` doesn't import it, so apps without
 topics don't pay its compile cost.
+
+## Subscription limits
+
+BND-105 caps the registry, because the launch review had one peer register
+256 topics and nothing stopped it from registering more. Every subscribe and
+publication walks the list, so an unbounded registry is unbounded work and
+memory for the hub. Each hub carries a `T.Limits`, and `T.admit_within`
+checks it inside the same store update that records the subscription, so
+concurrent subscribes cannot overshoot. `T.decide` runs the checks in order
+and the first one that fails names the refusal: the connection is not active
+(`NotActive`), the topic is longer than `topic_bytes` in UTF-8 (`TopicTooLong`),
+the connection already holds the topic (`AlreadyMember`, which uses no slot),
+the connection holds `per_peer` topics (`PeerFull`), or the hub holds
+`per_hub` subscriptions (`HubFull`). Only `Admitted` changes the registry.
+
+The defaults are 128 topics per connection and 255-byte topic names,
+Centrifugo's `channel_limit` and `channel.max_length`. Bun and uWebSockets.js
+set no limits, which is how the launch review's peer got its 256 topics.
+Neither has a hub-wide cap either. We add one, 65,536 subscriptions, because
+the per-connection cap alone does not bound the list: it grows with the number
+of connections. 65,536 is 512 connections at the per-connection limit.
+`P.hub_with(P.limits(per_peer, per_hub, topic_bytes), timeout_ms)` changes
+them.
+
+`Store.update` returns the new state but no result, so the shell cannot learn
+the verdict from the update itself. `P.subscribe_checked` instead decides
+again on the registry it gets back. A refusal left the registry unchanged, so
+the same check fails the same way, and an admission now finds the connection
+in the topic and reads as `AlreadyMember`. Both map to `P.Subscribed{}`. We
+considered a store update that returns a value, but `B.Store` has none, and
+the second decision is a pure function of the reply.
+
+Unsubscribing frees a slot at once, and closing a connection frees all of
+them, so a closed connection cannot hold slots against the hub.
 
 ## Slow subscribers: drop that copy
 
@@ -161,3 +197,16 @@ of the token leaves the claimed ID inactive and in no topic
 proof carries one invariant through each step: the ID is below `next`, and
 either still claimed under the token or inactive and unsubscribed.
 `proof/ws-topics.bend` proves all of them.
+
+BND-105 added the limit laws in `proof/ws-limits-laws.bend`. A refused
+subscribe leaves the registry unchanged, and an admitted one is exactly
+`T.admit`, so the laws above cover it. No subscribe takes a connection past
+`per_peer` or the registry past `per_hub`, a topic longer than `topic_bytes`
+is never recorded, and a repeat changes nothing. Closing a connection leaves
+it no slots and returns every one of them to the hub. Deciding again on the
+updated registry gives the verdict the subscribe got, which is how the shell
+reports it. These bounds would hold for a hub that refused everything, so
+review round 1 added the converse: the decision equals an independent table
+in `proof/ws-limits-spec.bend`, stated over the membership model, with the
+refusal order above, and `T.admit_within` subscribes whenever every check
+passes. `proof/ws-limits.bend` proves them.
