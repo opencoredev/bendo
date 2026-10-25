@@ -30,8 +30,10 @@ import {
   HUB_PACKAGE,
   NPM_PACKAGES,
   NPM_REGISTRY,
+  PUBLISH_VISIBLE_DELAYS_MS,
   REAL_HUB,
   REGISTRY_FIXTURE_ENV,
+  awaitPublished,
   bendEnv,
   isNpmConfig,
   npmRealPublishCommand,
@@ -701,11 +703,15 @@ async function release(options: Options, registries: Registries): Promise<number
       );
       return code;
     }
-    const state = step.verify?.();
-    if (state !== undefined && state.kind !== "already-published") {
+    if (step.verify === undefined) continue;
+    const state = await awaitPublished(step.verify, PUBLISH_VISIBLE_DELAYS_MS, (ms) =>
+      Bun.sleep(ms),
+    );
+    if (state.kind !== "already-published") {
       process.stderr.write(
-        `\nStopped: ${step.id} exited 0, but the registry does not hold this tarball (${state.kind}).\n` +
-          "Nothing after it ran. Check for a dry-run setting in your npm config, then rerun.\n",
+        `\nStopped: ${step.id} exited 0, but after a minute the registry still does not hold this tarball (${state.kind}).\n` +
+          "Nothing after it ran. If npm printed a dry-run notice, check your npm config. Otherwise the registry may be slow:\n" +
+          `rerun bun run release --confirm=${version} later; it skips what is already published.\n`,
       );
       return 1;
     }

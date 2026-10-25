@@ -13,6 +13,7 @@ import {
   NPM_PACKAGES,
   REAL_HUB,
   REGISTRY_FIXTURE_ENV,
+  awaitPublished,
   bendEnv,
   decide,
   envOverrides,
@@ -33,6 +34,7 @@ import {
   type GateInput,
   type HubPackage,
   type NpmPackage,
+  type PublishState,
   type RegistryFixture,
   type Report,
 } from "../scripts/release-lib.ts";
@@ -251,6 +253,44 @@ describe("release destination", () => {
     expect(hubShellCommand(stagedHub)).toBe(
       "BEND_HUB=https://hub.bend-lang.com BEND_ORIGIN=https://bend-lang.com bend bendhub.bend --publish bendo@0.1.0.0",
     );
+  });
+});
+
+describe("checking an upload landed", () => {
+  function answers(states: PublishState[]) {
+    const queue = [...states];
+    const slept: number[] = [];
+    return {
+      slept,
+      check: (): PublishState => queue.shift() ?? { kind: "publish" },
+      sleep: async (ms: number) => {
+        slept.push(ms);
+      },
+    };
+  }
+
+  test("an E404 just after an upload is retried until the tarball shows up", async () => {
+    const r = answers([
+      { kind: "publish" },
+      { kind: "unknown", reason: "ETIMEDOUT" },
+      { kind: "already-published" },
+    ]);
+    expect(await awaitPublished(r.check, [1, 2, 3], r.sleep)).toEqual({
+      kind: "already-published",
+    });
+    expect(r.slept).toEqual([1, 2]);
+  });
+
+  test("a conflict stops at once, and the wait is bounded", async () => {
+    const conflict = answers([{ kind: "conflict", published: "sha512-b" }]);
+    expect(await awaitPublished(conflict.check, [1, 2], conflict.sleep)).toEqual({
+      kind: "conflict",
+      published: "sha512-b",
+    });
+    expect(conflict.slept).toEqual([]);
+    const never = answers([]);
+    expect(await awaitPublished(never.check, [1, 2], never.sleep)).toEqual({ kind: "publish" });
+    expect(never.slept).toEqual([1, 2]);
   });
 });
 

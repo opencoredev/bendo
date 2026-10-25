@@ -232,6 +232,28 @@ export function publishState(lookup: Lookup, staged: string): PublishState {
   }
 }
 
+/** Waits between registry checks after an upload: about a minute in total. */
+export const PUBLISH_VISIBLE_DELAYS_MS = [2_000, 4_000, 8_000, 16_000, 30_000];
+
+/**
+ * After an upload exits 0, the registry can still answer E404 or fail for a
+ * few seconds. Rechecks an absent or unknown result after each delay. A
+ * conflict or the published tarball ends the wait at once.
+ */
+export async function awaitPublished(
+  check: () => PublishState,
+  delays: readonly number[],
+  sleep: (ms: number) => Promise<void>,
+): Promise<PublishState> {
+  const state = check();
+  const [delay, ...rest] = delays;
+  if (delay === undefined || state.kind === "already-published" || state.kind === "conflict") {
+    return state;
+  }
+  await sleep(delay);
+  return awaitPublished(check, rest, sleep);
+}
+
 /** `npm view <name>@<version> dist.integrity --json`: a JSON string, nothing, or an E404 means absent. */
 export function parseNpmView(result: { code: number; stdout: string; stderr: string }): Lookup {
   const out = result.stdout.trim();
