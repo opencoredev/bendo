@@ -336,6 +336,22 @@ test("an oversized publication still prunes a closed subscriber and its claim", 
   expect(await small.text()).toBe("ok:1");
 }, 30000);
 
+test("a subscriber whose close shut its full mailbox is gone for any size", async () => {
+  await eventually("/claims", "0");
+  using small = await subscriber("/ws/s?mode=small");
+  // The shut subscriber queued one command, then its close found the
+  // mailbox full and shut it.
+  expect(await post("/shut/s")).toBe("yes:yes:yes");
+  expect(await get("/members/s")).toBe("2");
+  expect(await get("/claims")).toBe("2");
+  // Too big for both: the open one drops it, the shut one is gone and pruned.
+  expect(await publish("s", "x".repeat(24))).toBe("0 1 1");
+  expect(await get("/members/s")).toBe("1");
+  expect(await get("/claims")).toBe("1");
+  expect(await publish("s", "ok")).toBe("1 0 0");
+  expect(await small.text()).toBe("ok:1");
+}, 30000);
+
 test("a join that times out after it is queued is still revoked on close", async () => {
   await eventually("/connections", "0");
   // /delayed's hub forwards each request 400 ms late and gives up after 100.

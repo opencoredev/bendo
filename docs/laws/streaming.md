@@ -59,6 +59,7 @@ See [accept a WebSocket upgrade](../websocket.md).
 - `websocket_response_refuse_400`, `websocket_response_refuse_403`: 400 and 403 refusals are empty; the context layer adds error bodies.
 - `websocket_rebuilt_framing`: whatever response middleware produced, the rebuilt 101 has no body and neither `Content-Length` nor `Transfer-Encoding`, in any case.
 - `websocket_rebuilt_response`: every middleware header survives unchanged, in order with duplicates, except handshake fields, framing fields and the internal marker; the computed handshake fields come first.
+- `websocket_refusal_clock_failure`: when the clock cannot date a refused handshake, the answer is an empty 500 with `Content-Length: 0` that keeps every field the refusal carried, in order with duplicates, such as CORS, security headers and the request ID. Only framing, `Content-Type`, fields describing the discarded body (`Content-Encoding`, `Content-Range`, `Content-MD5`, `Digest`, `Content-Digest`, `Repr-Digest`, `ETag`, `Last-Modified`, `Content-Language`, `Content-Location`), handshake fields and the internal marker are dropped, in any case. Transport dates the refusal before the access log records it, so the log shows this 500.
 
 ## WebSocket frames
 
@@ -106,6 +107,7 @@ Whole-history laws:
 - `ws_session_fragments`: a fragmented message interleaved with pings and pongs concatenates its pieces in order, answers each ping, and delivers the whole message on its final fragment as the only message notice. A message over the size limit fails with 1009, a control frame over 125 bytes with 1002, invalid UTF-8 text with 1007, and every frame after a failure is ignored.
 - `ws_session_fragments_end`: after such a message the session is open and ready for the next one, or done if the message failed.
 - `ws_session_single_message`, `ws_session_single_message_end`: the same two facts for a message in one frame.
+- `ws_session_close_after_queue`, `ws_session_close_after_queue_end`: from an open session at any point in a message's assembly, texts, binaries and pings queued ahead of a close are each written in order, then the close is written, and the session ends closing with its assembly untouched. This is what a close reserved while the mailbox was full relies on. That such a close comes after everything else that was admitted is a property of the runtime's channels, covered by integration tests, not by these laws ([decision 0015](../decisions/0015-websocket-mailbox.md#close-ordering)).
 - `ws_session_message_ready`: a single data frame that fits, and is UTF-8 if text, delivers its message and leaves the session ready.
 - `ws_session_incomplete`: a message without its final fragment is never delivered.
 

@@ -7,6 +7,7 @@ import ./proof/ws-session-admit.bend as WsSessionAdmitProof
 import ./proof/ws-session-strict.bend as WsSessionStrictProof
 import ./proof/ws-session-ready.bend as WsSessionReadyProof
 import ./proof/ws-session-decode.bend as WsSessionDecodeProof
+import ./proof/ws-session-reserve.bend as WsSessionReserveProof
 # Proofs of LAWS.bend. Run: bend PROOF.bend --verdict
 import Base
 import ./proof/manifest-schema-documents.bend as ManifestSchemaDocuments
@@ -61,6 +62,7 @@ import ./proof/middleware-selection.bend as MiddlewareSelection
 import ./proof/schema-compound.bend as SchemaProof
 import ./proof/schema-errors.bend as SchemaErrors
 import ./proof/schema-coerce.bend as SchemaCoerce
+import ./proof/schema-errors-exact.bend as SchemaErrorsExact
 
 import ./proof/json.bend as JsonProof
 import ./proof/json-escape.bend as JsonEscapeProof
@@ -604,6 +606,20 @@ def Laws.schema_coerced_errors_name_failing_paths(schema, value):
 def Laws.schema_coerced_errors_complete(schema, value, path, fault):
   SchemaCoerce.text_complete(schema, value, path, fault)
 
+# BND-89
+
+def Laws.schema_errors_exact(schema, value):
+  SchemaErrorsExact.errors_exact(schema, value)
+
+def Laws.schema_invalid_reports_root(schema, value, invalid):
+  SchemaErrorsExact.invalid_root(schema, value, invalid)
+
+def Laws.schema_coerced_errors_exact(schema, value):
+  SchemaErrorsExact.coerced_exact(schema, value)
+
+def Laws.schema_coerced_invalid_reports_root(schema, value, invalid):
+  SchemaErrorsExact.coerced_invalid_root(schema, value, invalid)
+
 # BND-24
 
 def Laws.scoped_stage_selection(Tag, entries, routes, compiled, layers, count, route, stage, built):
@@ -933,6 +949,9 @@ def Laws.websocket_response_refuse_400():
 
 def Laws.websocket_response_refuse_403():
   {==}
+
+def Laws.websocket_refusal_clock_failure(res, error):
+  WebSocketProof.refusal_clock_failure(res, error)
 
 # BND-28: the writer is total within its actual scan budget, and its exact
 # rendered output decodes and parses back to the original tree.
