@@ -11,12 +11,14 @@
 // hub already links the name. A confirmed run skips whatever is already
 // published with the same tarball or hash, so rerunning it resumes a release.
 import {
+  chmodSync,
   cpSync,
   existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -31,6 +33,8 @@ import {
   REAL_HUB,
   REGISTRY_FIXTURE_ENV,
   bendEnv,
+  isNpmConfig,
+  npmRealPublishCommand,
   decide,
   envOverrides,
   fixtureLookup,
@@ -57,6 +61,7 @@ import {
   type HubPackage,
   type Lookup,
   type NpmCheck,
+  type PublishState,
   type NpmPackage,
   type NpmPackageName,
   type Options,
@@ -81,9 +86,12 @@ function run(
   timeout: number,
   env: Record<string, string> = {},
 ): Ran {
+  const inherited: Record<string, string> = {};
+  for (const [name, value] of Object.entries(process.env))
+    if (value !== undefined && !isNpmConfig(name)) inherited[name] = value;
   const result = Bun.spawnSync([...command], {
     cwd,
-    env: { ...process.env, BEND_NO_TELEMETRY: "1", npm_config_update_notifier: "false", ...env },
+    env: { ...inherited, BEND_NO_TELEMETRY: "1", npm_config_update_notifier: "false", ...env },
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
@@ -223,6 +231,22 @@ function freshStage(): void {
 }
 
 /**
+ * Sets every file in `dir` to 0644, or 0755 if any execute bit was set, and
+ * every directory to 0755. Tarballs record modes, so without this the same
+ * contents packed from checkouts with different umasks would get different
+ * integrities, and resuming a partial release would see a conflict.
+ */
+function normalizeModes(dir: string): void {
+  chmodSync(dir, 0o755);
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isSymbolicLink()) continue;
+    if (entry.isDirectory()) normalizeModes(path);
+    else chmodSync(path, (statSync(path).mode & 0o111) === 0 ? 0o644 : 0o755);
+  }
+}
+
+/**
  * A copy of the workspace with just the three packages, the Bend library and
  * the pins (create-bendo's prepack reads them), with pending changesets applied.
  * The repository itself is never modified.
@@ -262,6 +286,8 @@ function stageWorkspace(pending: readonly string[]): string {
   symlinkSync(join(ROOT, "node_modules"), join(workspace, "node_modules"));
   if (pending.length > 0)
     must([join(ROOT, "node_modules/.bin/changeset"), "version"], workspace, 120_000);
+  // create-bendo's prepack copies the staged src/ and pins into its tarball.
+  normalizeModes(workspace);
   return workspace;
 }
 
@@ -388,6 +414,7 @@ function packNpm(workspace: string, name: NpmPackageName, registries: Registries
     .map((entry) => ({ path: entry.path.replace(/^package\//, ""), bytes: entry.bytes }))
     .sort((a, b) => a.path.localeCompare(b.path));
   const integrity = `sha512-${new Bun.CryptoHasher("sha512").update(bytes).digest("base64")}`;
+  const registry = publishState(registries.npm(manifest.name, manifest.version), integrity);
   return {
     name,
     version: manifest.version,
@@ -403,14 +430,17 @@ function packNpm(workspace: string, name: NpmPackageName, registries: Registries
     dependencies: manifest.dependencies,
     peerDependencies: manifest.peerDependencies,
     optionalPeers: manifest.optionalPeers,
-    registry: publishState(registries.npm(manifest.name, manifest.version), integrity),
-    npmCheck: npmCheck({
-      tarball,
-      name: manifest.name,
-      version: manifest.version,
-      files: files.length,
-      integrity,
-    }),
+    registry,
+    npmCheck:
+      registry.kind === "already-published"
+        ? { kind: "skipped" }
+        : npmCheck({
+            tarball,
+            name: manifest.name,
+            version: manifest.version,
+            files: files.length,
+            integrity,
+          }),
     command: npmPublishCommand(tarball),
   };
 }
@@ -481,6 +511,7 @@ async function stageHub(version: string, registries: Registries): Promise<HubPac
   // `bend --publish` takes the LICENSE beside the entry file.
   cpSync(join(ROOT, "LICENSE"), join(directory, "LICENSE"));
   writeFileSync(join(directory, HUB_ENTRY), hubEntrySource(listModules(directory)));
+  normalizeModes(directory);
 
   const hub = stubHub();
   // Set here, never inherited: a leftover BEND_HUB must not move the dry run either.
@@ -618,13 +649,23 @@ async function release(options: Options, registries: Registries): Promise<number
   // earlier run's, so it is skipped and the rerun finishes the release.
   // Every step gets the pinned destination, whatever the shell had.
   const env = bendEnv({ inherited: process.env, destination: REAL_HUB, lib: BEND_LIB });
-  const steps: { id: string; skip: boolean; cwd: string; command: string[]; shown: string }[] = [
+  const steps: {
+    id: string;
+    skip: boolean;
+    cwd: string;
+    command: string[];
+    shown: string;
+    verify?: () => PublishState;
+  }[] = [
     ...npm.map((pkg) => ({
       id: `${pkg.name}@${pkg.version} on npm`,
       skip: pkg.registry.kind === "already-published",
       cwd: STAGE,
-      command: pkg.command,
-      shown: shellCommand(pkg.command),
+      command: npmRealPublishCommand(pkg.tarball),
+      shown: shellCommand(npmRealPublishCommand(pkg.tarball)),
+      // npm can exit 0 without uploading (a dry-run setting it still found):
+      // the registry must hold this exact tarball before anything else runs.
+      verify: () => publishState(registries.npm(pkg.name, pkg.version), pkg.integrity),
     })),
     ...(hub === null
       ? []
@@ -659,6 +700,14 @@ async function release(options: Options, registries: Registries): Promise<number
           `Rerun bun run release --confirm=${version} to finish: it skips what is already published.\n`,
       );
       return code;
+    }
+    const state = step.verify?.();
+    if (state !== undefined && state.kind !== "already-published") {
+      process.stderr.write(
+        `\nStopped: ${step.id} exited 0, but the registry does not hold this tarball (${state.kind}).\n` +
+          "Nothing after it ran. Check for a dry-run setting in your npm config, then rerun.\n",
+      );
+      return 1;
     }
   }
   process.stdout.write(

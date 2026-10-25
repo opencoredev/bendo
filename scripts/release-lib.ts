@@ -131,6 +131,23 @@ export function hubDestinationEnv(destination: HubDestination): {
  */
 export type EnvOverride = { name: string; value: string };
 
+/**
+ * npm reads any `npm_config_*` variable (in any case) as a setting, so an
+ * inherited `npm_config_dry_run=true` or `npm_config_registry` would change
+ * what a publish does. Release commands never inherit them.
+ */
+export function isNpmConfig(name: string): boolean {
+  return /^npm_config_/i.test(name);
+}
+
+/**
+ * The real npm publish: the shared command plus `--dry-run=false`, so neither
+ * an `.npmrc` nor the environment can turn it into a dry run.
+ */
+export function npmRealPublishCommand(tarball: string): string[] {
+  return [...npmPublishCommand(tarball), "--dry-run=false"];
+}
+
 export function envOverrides(env: Readonly<Record<string, string | undefined>>): EnvOverride[] {
   const pinned: Record<string, string> = hubDestinationEnv(REAL_HUB);
   const found: EnvOverride[] = [];
@@ -140,6 +157,13 @@ export function envOverrides(env: Readonly<Record<string, string | undefined>>):
   }
   const tls = env.NODE_TLS_REJECT_UNAUTHORIZED;
   if (tls === "0") found.push({ name: "NODE_TLS_REJECT_UNAUTHORIZED", value: tls });
+  for (const [name, value] of Object.entries(env))
+    if (
+      value !== undefined &&
+      isNpmConfig(name) &&
+      name.toLowerCase() !== "npm_config_update_notifier"
+    )
+      found.push({ name, value });
   return found;
 }
 
@@ -154,7 +178,7 @@ export function bendEnv(input: {
 }): Record<string, string> & ReturnType<typeof hubDestinationEnv> {
   const env: Record<string, string> = {};
   for (const [name, value] of Object.entries(input.inherited))
-    if (value !== undefined) env[name] = value;
+    if (value !== undefined && !isNpmConfig(name)) env[name] = value;
   delete env.NODE_TLS_REJECT_UNAUTHORIZED;
   return {
     ...env,
@@ -399,6 +423,8 @@ export type GitState = {
 /** What `npm publish --dry-run` said about the tarball. */
 export type NpmCheck =
   | { kind: "agrees"; id: string; files: number }
+  /** Not run: the registry already holds this exact tarball, which npm would refuse to republish. */
+  | { kind: "skipped" }
   | { kind: "disagrees"; reason: string }
   | { kind: "failed"; reason: string };
 
@@ -524,7 +550,7 @@ export function blockers(input: GateInput): string[] {
     for (const pkg of input.npm) {
       const reason = stateBlocker(pkg.registry, `${pkg.name}@${pkg.version}`, "npm", "integrity");
       if (reason !== null) reasons.push(reason);
-      if (pkg.npmCheck.kind !== "agrees")
+      if (pkg.npmCheck.kind === "disagrees" || pkg.npmCheck.kind === "failed")
         reasons.push(`npm publish --dry-run for ${pkg.name}: ${pkg.npmCheck.reason}`);
     }
   if (input.targets.includes("bendhub")) {
@@ -640,6 +666,8 @@ function npmCheckLine(check: NpmCheck): string {
   switch (check.kind) {
     case "agrees":
       return `agrees (${check.id}, ${check.files} files)`;
+    case "skipped":
+      return "not run: this exact tarball is already published";
     case "disagrees":
       return `DISAGREES: ${check.reason}`;
     case "failed":

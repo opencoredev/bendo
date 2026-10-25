@@ -21,6 +21,9 @@ import {
   hubHash,
   hubShellCommand,
   hubVersion,
+  isNpmConfig,
+  npmPublishCommand,
+  npmRealPublishCommand,
   parseArgs,
   parseHubName,
   parseNpmView,
@@ -218,6 +221,27 @@ describe("release destination", () => {
     expect(gate.blockers[0]).toBe(
       "BEND_HUB is set to http://127.0.0.1:9: unset it, the release pins its own destination",
     );
+  });
+
+  test("inherited npm settings never reach a release command, and block a publish", () => {
+    const env = bendEnv({
+      inherited: { PATH: "/bin", npm_config_dry_run: "true", NPM_CONFIG_REGISTRY: "http://x" },
+      destination: REAL_HUB,
+      lib: "/stage/bend-lib",
+    });
+    expect(Object.keys(env).filter(isNpmConfig)).toEqual([]);
+    const overrides = envOverrides({
+      npm_config_dry_run: "true",
+      npm_config_update_notifier: "false",
+    });
+    expect(overrides.map((override) => override.name)).toEqual(["npm_config_dry_run"]);
+    expect(decide({ ...cleanMain, overrides }).kind).toBe("stop");
+  });
+
+  test("the real npm publish forces --dry-run=false after the shared flags", () => {
+    const real = npmRealPublishCommand("/t/bendo-0.1.0.tgz");
+    expect(real.at(-1)).toBe("--dry-run=false");
+    expect(real.slice(0, -1)).toEqual(npmPublishCommand("/t/bendo-0.1.0.tgz"));
   });
 
   test("the printed publish command names the destination it passes", () => {
