@@ -47,6 +47,18 @@ Bendo's default median throughput was 5,083 req/s for hello, 4,102 for JSON, 4,5
 
 After BND-68's hot-path changes, the [rerun at `cacf12b`](results/2026-10-24-bnd68-full-suite.json) and its [chart](results/2026-10-24-bnd68-full-suite.svg) used the same method and the same CPU model: **60 measurements, zero errors**. Bendo's default median throughput rose to 21,883 req/s for hello, 18,905 for JSON, 12,461 for params, 2,848 for echo and 2,118 for middleware. Hono measured 93,758 to 232,684 req/s and Elysia 133,200 to 239,697. The gap is now about 10× for hello and 44–75× for echo and middleware. [Decision 0014](../docs/decisions/0014-performance.md) gives each change's own before-and-after numbers. The 2026-10-24 BND-67 files above are kept for history.
 
+The launch rerun for BND-75, at [`bc0d268`](results/2026-10-25T05-28-04.776Z.json) with its [chart](results/2026-10-25T05-28-04.776Z.svg), used the same method and CPU model: **60 measurements, zero errors**. Median requests per second, with the min–max across three repetitions:
+
+| Scenario | Bendo | Hono | Elysia |
+| --- | ---: | ---: | ---: |
+| hello | 22,055 (21,757–22,455) | 291,017 (263,749–292,804) | 290,514 (275,575–307,499) |
+| JSON | 19,830 (19,822–19,857) | 264,118 (260,519–265,032) | 288,940 (286,305–290,882) |
+| params | 12,249 (11,452–12,524) | 254,369 (198,035–255,971) | 269,773 (268,316–281,924) |
+| echo | 2,445 (2,357–2,727) | 116,264 (114,961–117,690) | 121,270 (118,636–128,932) |
+| middleware | 1,992 (1,979–2,035) | 103,863 (86,048–122,111) | 161,585 (141,731–190,147) |
+
+Bendo is within noise of the BND-68 rerun. Hono and Elysia measured higher than in either earlier run on the same CPU model, so the gap is now about 13× for hello and JSON, 21× for params and 48–81× for echo and middleware. Median p99 latency was 4.7 ms for Bendo hello against 0.4–0.5 ms for the Bun frameworks.
+
 A separate single-request probe after the benchmark confirmed BND-90: with `Connection: close`, the complete middleware response body arrived at **8.63 ms**, but socket EOF arrived at **1010.14 ms**. Its request and complete response are in `diagnostics.connectionClose`. This diagnostic is outside the oha samples. oha used keep-alive for every measurement; the observed closing delay should not be read as a one-second latency on every benchmark request. This suite does not isolate whether the delay affects throughput when Bendo reaches its 100-request connection cap.
 
 The JSON records CPU model, logical CPU count, RAM, architecture, kernel, CPU quota when exposed, sandbox size and ID. Source provenance includes the commit, dirty flag and SHA-256 of sorted uploaded input files; existing result files are excluded. A dirty run is identified by its input hash rather than just its base commit.
