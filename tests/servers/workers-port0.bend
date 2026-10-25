@@ -12,8 +12,8 @@ def dispatch(tag: Tag, c: B.Ctx, env: Unit) -> IO(B.Res):
   IO.pure(B.Res, B.text(c, "never"))
 
 def any_port(c: Config.Config) -> Config.Config:
-  Config.Config{host, port, limit, headers, idle, head, body, max, keep, router, mode, workers} = c
-  Config.Config{host, 0, limit, headers, idle, head, body, max, keep, router, mode, 2}
+  Config.Config{host, port, limit, headers, idle, head, body, write, max, keep, router, mode, workers} = c
+  Config.Config{host, 0, limit, headers, idle, head, body, write, max, keep, router, mode, 2}
 
 def ready(result: Result<&2, &2, Methods.BuildError, B.Routes(Tag)>) -> IO(Unit):
   match result:

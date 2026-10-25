@@ -45,6 +45,8 @@
     "packages/create-bendo/src/cli.test.ts": 1000,
     "tests/release.test.ts": 40000,
     "tests/guides.test.ts": 120000,
-    "tests/api-coverage.test.ts": 2000
+    "tests/api-coverage.test.ts": 2000,
+    "tests/ws-pubsub-limits.test.ts": 59078,
+    "packages/vite-plugin-bendo/src/fs-allow.test.ts": 3000
   }
 }

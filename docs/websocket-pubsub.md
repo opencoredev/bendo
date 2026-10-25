@@ -61,6 +61,39 @@ waits for room as long as that takes, ahead of anyone who arrives later. So a
 burst of traffic can delay a connection's cleanup, but cannot leave its ID
 active or its subscriptions behind.
 
+## Limits
+
+Every hub caps subscriptions, so one connection cannot grow the registry
+that each subscribe and publication scans. `P.hub()` and
+`P.hub_with_timeout(ms)` use `P.limits_default()`:
+
+| Limit | Default | Refusal |
+| --- | --- | --- |
+| Topics per connection | 128 | `P.PeerLimit{}` |
+| Subscriptions per hub, across all connections | 65,536 | `P.HubLimit{}` |
+| Topic name length, in UTF-8 bytes | 255 | `P.TopicTooLong{}` |
+
+The per-connection and topic-length defaults match Centrifugo's
+`channel_limit` (128) and `channel.max_length` (255). Bun and uWebSockets.js
+set no limits, which is what let one peer register 256 topics in the launch
+review. Neither has a hub-wide cap either. Bendo adds one because its registry
+is a list that every subscribe and publication walks, so the cap bounds that
+work and the hub's memory. 65,536 is 512 connections at the per-connection
+limit. Raise it if more connections each hold many topics.
+
+To change the limits, create the hub with
+`P.hub_with(P.limits(per_peer, per_hub, topic_bytes), timeout_ms)`. The hub
+checks them inside the same registry update that records the subscription,
+so concurrent subscribes cannot overshoot. A refused subscribe changes
+nothing. Subscribing again to a topic the connection already holds succeeds
+and uses no extra slot. Unsubscribing frees a slot at once, and closing a
+connection frees all of its slots.
+
+`P.subscribe` returns `False` for a refusal. `P.subscribe_checked(peer,
+topic)` returns a `P.Subscription` that says why: `P.Subscribed{}`,
+`P.Closed{}`, `P.TopicTooLong{}`, `P.PeerLimit{}`, `P.HubLimit{}`, or
+`P.HubError{error}` when the hub timed out or is unavailable.
+
 To send to one connection, use `P.handle(peer)` with the usual
 `B.websocket_send_text` helpers, or keep the handle to send from elsewhere.
 
@@ -71,7 +104,8 @@ topic per room, with arrivals, departures and room counts.
 
 | Call | Result | Behavior |
 | --- | --- | --- |
-| `P.subscribe(peer, topic)` | `IO(Bool)` | Adds the connection to `topic`. Subscribing twice keeps one membership. |
+| `P.subscribe(peer, topic)` | `IO(Bool)` | Adds the connection to `topic` within the hub's limits. Subscribing twice keeps one membership. |
+| `P.subscribe_checked(peer, topic)` | `IO(P.Subscription)` | The same, with the reason for a refusal. |
 | `P.unsubscribe(peer, topic)` | `IO(Bool)` | Removes it from `topic`. |
 | `P.publish(hub, topic, text)` | `IO(Result<Store.Error, P.Delivery>)` | Text to every member. Use it from an HTTP route or anywhere else. |
 | `P.publish_binary(hub, topic, bytes)` | same | Binary to every member. |
@@ -84,8 +118,8 @@ topic per room, with arrivals, departures and room counts.
 `subscribe` and `unsubscribe` return `True` once the registry has applied the
 change. A publication that starts after that sees it. `False` from
 `unsubscribe` means the hub timed out or is unavailable. `False` from
-`subscribe` can also mean the connection has already closed, in which case
-the registry is unchanged.
+`subscribe` can also mean the connection has already closed or a limit
+refused it, in which case the registry is unchanged.
 
 A publication returns `P.Delivery{sent, dropped, gone}`:
 
@@ -157,5 +191,8 @@ ordering, a kept `P.Peer` subscribing after its connection closed (once in
 order and 30 times racing the close), an oversized publication that still
 prunes a closed subscriber and its claim, a join that times out after the hub
 queued it, a close while the hub's queue is held full (its release waits and
-lands once the queue drains), and the latency figures above. The registry laws
-live in `proof/ws-topics-laws.bend`; `bun run prove` checks them.
+lands once the queue drains), and the latency figures above.
+`bun test tests/ws-pubsub-limits.test.ts --timeout 30000` drives real clients
+past each limit on a small hub and on the defaults, including one peer asking
+for 256 topics. The registry laws live in `proof/ws-topics-laws.bend` and the
+limit laws in `proof/ws-limits-laws.bend`; `bun run prove` checks them.

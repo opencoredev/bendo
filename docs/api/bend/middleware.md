@@ -262,9 +262,11 @@ def jwt_config(secret: String, leeway: Nat, realm: String) -> B.JwtConfig
 
 The settings for `B.jwt` and `B.jwt_with`. `leeway` is the allowed clock skew
 in seconds, applied to `exp`, `nbf` and `iat`. `realm` goes in the
-`WWW-Authenticate` challenge. A secret holding a non-scalar character (a lone
-surrogate) is refused rather than encoded, and then every token fails with
-`BadSignature`.
+`WWW-Authenticate` challenge. Use a secret of at least 32 random bytes, read
+from the environment. A secret holding a non-scalar character (a lone
+surrogate) is refused rather than encoded, and so is the empty secret; then
+every token fails with `BadSignature`. A `B.JwtConfig` built directly with an
+empty key refuses every token the same way.
 
 ```bend
 def ex_jwt_config() -> B.JwtConfig:
@@ -349,7 +351,7 @@ def jwt_sign(secret: String, claims: J.Json) -> Result<&2, &2, B.JwtError, Strin
 Signs `claims` with the header `{"alg":"HS256","typ":"JWT"}`. It fails with
 `BadClaims` when `claims` is not a JSON object, with `DuplicateMember` or
 `TooManyMembers` (over 256 members) when verifying the token would fail, and
-with `BadEncoding` when `secret` holds a non-scalar character.
+with `BadEncoding` when `secret` is empty or holds a non-scalar character.
 
 ```bend
 def ex_token() -> Result<&2, &2, B.JwtError, String>:
@@ -364,8 +366,9 @@ def jwt_verify(secret: String, token: String, now: Nat, leeway: Nat) -> Result<&
 
 Checks the signature, the header and the time claims of `token` and returns
 its claims. `now` is the current time in Unix seconds and `leeway` the allowed
-skew in seconds. It is pure, so tests can pass any time. A `secret` holding a
-non-scalar character fails every token with `BadSignature`.
+skew in seconds. It is pure, so tests can pass any time. An empty `secret`, or
+one holding a non-scalar character, fails every token with `BadSignature`,
+including tokens signed elsewhere under the empty key.
 
 ```bend
 def ex_check(token: String, now: Nat) -> Result<&2, &2, B.JwtError, J.Json>:
@@ -383,9 +386,11 @@ def jwt_signed(key: Maybe<&2, List<&2, U32>>, claims: J.Json) -> Result<&2, &2, 
 The steps behind the string-secret functions above. `B.jwt_secret` returns
 the secret's UTF-8 octets, or `None{}` when it holds a non-scalar character,
 since writing U+FFFD in its place would let a different secret sign the same
-tokens. `B.jwt_key` is its second half, given the validity check's result.
+tokens. It also returns `None{}` for the empty string: HMAC under an empty key
+proves nothing. `B.jwt_key` is its second half, given the validity check's
+result, and returns `None{}` for an empty secret whatever that result.
 `B.jwt_signed` is `B.jwt_sign` on such a key, failing with `BadEncoding` on
-`None{}`. Most apps need only `B.jwt_config`, `B.jwt_sign` and
+`None{}` or `Some{[]}`. Most apps need only `B.jwt_config`, `B.jwt_sign` and
 `B.jwt_verify`.
 
 ```bend
@@ -394,6 +399,9 @@ def ex_jwt_key() -> Maybe<&2, List<&2, U32>>:
 
 def ex_no_key() -> Maybe<&2, List<&2, U32>>:
   B.jwt_key(False{}, "ignored")
+
+def ex_empty_key() -> Maybe<&2, List<&2, U32>>:
+  B.jwt_secret("")
 
 def ex_signed() -> Result<&2, &2, B.JwtError, String>:
   B.jwt_signed(ex_jwt_key(), J.JObject{[J.Field{"sub", J.JString{"ada"}}]})

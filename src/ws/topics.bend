@@ -2,6 +2,7 @@
 # actor owns a Registry, so every change is serialized; ./pubsub.bend is the IO
 # shell. `A` is the delivery target, a connection handle at runtime.
 import Base
+import ../data/utf8.bend as Utf8
 
 # Connection `id` is subscribed to `topic`. A registry built only through these
 # operations holds each (topic, id) pair at most once.
@@ -164,6 +165,117 @@ def size(-A: Data, r: Registry<A>) -> Nat:
 def connections(-A: Data, r: Registry<A>) -> Nat:
   Registry{next, live, s} = r
   List.length(&2, Nat, live)
+
+# ---- Limits (BND-105) ----
+
+# How many subscriptions one connection (`per_peer`) and the whole registry
+# (`per_hub`) may hold, and the longest topic name in UTF-8 bytes.
+type Limits is Data:
+  Limits{per_peer: Nat, per_hub: Nat, topic_bytes: Nat}
+
+# 128 per connection and 255-byte names, as Centrifugo's defaults. 65,536 in
+# all bounds what each subscribe and publication scans.
+def limits_default() -> Limits:
+  Limits{128n, 65536n, 255n}
+
+def per_peer(l: Limits) -> Nat:
+  Limits{p, h, b} = l
+  p
+
+def per_hub(l: Limits) -> Nat:
+  Limits{p, h, b} = l
+  h
+
+def topic_bytes(l: Limits) -> Nat:
+  Limits{p, h, b} = l
+  b
+
+# What a subscribe request gets. Only Admitted changes the registry.
+type Admission is Data:
+  Admitted{}
+  AlreadyMember{}
+  NotActive{}
+  TopicTooLong{}
+  PeerFull{}
+  HubFull{}
+
+def admitted(a: Admission) -> Bool:
+  match a:
+    case Admitted{}: True{}
+    case AlreadyMember{}: False{}
+    case NotActive{}: False{}
+    case TopicTooLong{}: False{}
+    case PeerFull{}: False{}
+    case HubFull{}: False{}
+
+def bump(b: Bool, n: Nat) -> Nat:
+  match b:
+    case True{}: 1n+n
+    case False{}: n
+
+# Subscriptions held by connection `c`.
+def owned_count(-A: Data, xs: List<&2, Sub<A>>, +c: Nat) -> Nat:
+  match xs:
+    case Nil{}: 0n
+    case +s <> rest: bump(owned(A, s, c), owned_count(A, rest, c))
+
+# Whether connection `c` already holds topic `t`.
+def has_sub(-A: Data, xs: List<&2, Sub<A>>, +c: Nat, +t: String) -> Bool:
+  match xs:
+    case Nil{}: False{}
+    case +s <> rest: hit(A, s, c, t) || has_sub(A, rest, c, t)
+
+def bytes_of(t: String) -> Nat:
+  List.length(&2, U32, Utf8.encode(t))
+
+# The checks in order: the connection is active, the topic is short enough,
+# the connection is not already in it (a repeat uses no slot), it has a slot
+# left, and the registry has one left.
+def verdict(active: Bool, short: Bool, member: Bool, peer_room: Bool, hub_room: Bool) -> Admission:
+  match active:
+    case False{}: NotActive{}
+    case True{}:
+      match short:
+        case False{}: TopicTooLong{}
+        case True{}:
+          match member:
+            case True{}: AlreadyMember{}
+            case False{}:
+              match peer_room:
+                case False{}: PeerFull{}
+                case True{}:
+                  match hub_room:
+                    case False{}: HubFull{}
+                    case True{}: Admitted{}
+
+def decide(-A: Data, +l: Limits, +r: Registry<A>, +c: Nat, +t: String) -> Admission:
+  verdict(active(A, r, c), Nat.is_le(bytes_of(t), topic_bytes(l)), has_sub(A, subs(A, r), c, t), Nat.is_lt(owned_count(A, subs(A, r), c), per_peer(l)), Nat.is_lt(size(A, r), per_hub(l)))
+
+# The verdict as the registry records it: an admission makes the connection
+# a member, which a second decide reports as AlreadyMember.
+def settled(a: Admission) -> Admission:
+  match a:
+    case Admitted{}: AlreadyMember{}
+    case AlreadyMember{}: AlreadyMember{}
+    case NotActive{}: NotActive{}
+    case TopicTooLong{}: TopicTooLong{}
+    case PeerFull{}: PeerFull{}
+    case HubFull{}: HubFull{}
+
+def granted(-A: Data, r: Registry<A>, +c: Nat, +t: String, x: A, a: Admission) -> Registry<A>:
+  match a:
+    case Admitted{}: subscribe(A, r, c, t, x)
+    case AlreadyMember{}: r
+    case NotActive{}: r
+    case TopicTooLong{}: r
+    case PeerFull{}: r
+    case HubFull{}: r
+
+# admit under `l`: subscribes only when decide says Admitted, and otherwise
+# returns `r` unchanged. The shell reads the outcome back as
+# `decide(l, updated, c, t)`, which is AlreadyMember after an admission.
+def admit_within(-A: Data, +l: Limits, +r: Registry<A>, +c: Nat, +t: String, x: A) -> Registry<A>:
+  granted(A, r, c, t, x, decide(A, l, r, c, t))
 
 # ---- Claims ----
 
