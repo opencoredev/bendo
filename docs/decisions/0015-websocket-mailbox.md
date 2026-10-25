@@ -82,20 +82,24 @@ unchanged.
 
 The order of those steps is what keeps the first close first. The runtime
 runs one effect at a time but may switch to another computation between any
-two, so the shut and the slot write are not one atomic step. Shutting first
-makes that harmless: once the mailbox is closed, no send of any kind is
-admitted to it, so every command in it, closes included, was admitted before
-the shut and is written before the slot is read. A close that finds the
-mailbox closed returns `False`. Two closes that both found it full both shut
-it (closing a channel twice is harmless), and the one-command slot admits
-whichever writes first; the other returns `False`. The connection closes the
-slot as it takes the reserved close, so the slot is claimed only once: a
-close that arrives after the loop has drained it finds it closed and also
-returns `False`, instead of refilling it and being ignored. If the connection polls
-between the shut and the slot write, it finds the slot empty and checks again
-on its next cycle. Writing the slot before shutting, as the first version
-did, let the loop free a place in between, so a later close could be queued
-in the mailbox and written ahead of the reserved one.
+two, so no two of these steps are one atomic action. Three rules make that
+harmless:
+
+- A close that finds the mailbox full first fills `claim`, a one-place
+  channel nothing ever reads. Only one close can fill it, so only one reserved
+  close ever wins; any other finds `claim` full or closed and returns `False`.
+  Without the claim, the loop could take the winner's close from the slot and
+  leave it empty for a second close to refill, which then returned `True` and
+  was ignored.
+- The winner shuts the mailbox before it writes the slot. Once the mailbox is
+  closed no send of any kind is admitted, so every command in it, closes
+  included, was admitted before the shut and is written before the slot is
+  read. A close that finds the mailbox closed returns `False`. Writing the
+  slot before shutting, as the first version did, let the loop free a place
+  in between, so a later close could be queued and written ahead of the
+  reserved one.
+- If the connection polls between the shut and the slot write, it finds the
+  slot empty and checks again on its next cycle.
 
 Closing the liveness channel with the mailbox makes `W.live` false as soon
 as the close is reserved, so a publication too large for the connection

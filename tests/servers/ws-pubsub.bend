@@ -153,21 +153,23 @@ def ghost(+hub: P.Hub, +topic: String) -> IO(Bool):
     +outbound : Chan(S.Command) <- Chan.new(S.Command, 1)
     +alive : Chan(Unit) <- Chan.new(Unit, 0)
     +slot : Chan(S.Command) <- Chan.new(S.Command, 1)
+    +claim : Chan(Unit) <- Chan.new(Unit, 1)
     Chan.close(S.Command, outbound)
     Chan.close(Unit, alive)
     Chan.close(S.Command, slot)
     id : Nat <- P.join(hub, "ghost:" ++ topic)
-    P.subscribe(P.Peer{W.Handle{outbound, 20, alive, slot}, id, hub}, topic)
+    P.subscribe(P.Peer{W.Handle{outbound, 20, alive, slot, claim}, id, hub}, topic)
 
 # A subscriber whose close found its one-command mailbox full, so the close
-# took the reserved slot and shut the mailbox. Nothing drains it, as when the
+# claimed the reserved slot and shut the mailbox. Nothing drains it, as when the
 # connection is still inside `open`. `max_message` is 20 bytes.
 def shut(+hub: P.Hub, +topic: String) -> IO(String):
   do IO<String>:
     +outbound : Chan(S.Command) <- Chan.new(S.Command, 1)
     +alive : Chan(Unit) <- Chan.new(Unit, 0)
     +slot : Chan(S.Command) <- Chan.new(S.Command, 1)
-    +handle : W.Handle = W.Handle{outbound, 20, alive, slot}
+    +claim : Chan(Unit) <- Chan.new(Unit, 1)
+    +handle : W.Handle = W.Handle{outbound, 20, alive, slot, claim}
     queued : Bool <- W.text(handle, "queued")
     closing : Bool <- W.close(handle, 1000, "bye")
     id : Nat <- P.join(hub, "shut:" ++ topic)

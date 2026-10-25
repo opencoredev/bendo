@@ -18,20 +18,21 @@ def defaults() -> Config: Config{1048576, 16, 10, 100, 60000, 0, 1000, 30000}
 # `alive` has no room and no receiver, so a send to it never lands: it waits
 # while the connection runs and fails once `alive` is closed, which happens
 # whenever the mailbox is closed. `closer` is the one-command slot `close`
-# falls back to when the mailbox is full.
+# falls back to when the mailbox is full, and `claim` is a one-place channel
+# nothing ever reads: the first close to fill it owns the slot.
 type Handle is Data:
-  Handle{outbound: Chan(S.Command), max_message: U32, alive: Chan(Unit), closer: Chan(S.Command)}
+  Handle{outbound: Chan(S.Command), max_message: U32, alive: Chan(Unit), closer: Chan(S.Command), claim: Chan(Unit)}
 
 def outbound(handle: Handle) -> Chan(S.Command):
-  Handle{channel, max, alive, slot} = handle
+  Handle{channel, max, alive, slot, claim} = handle
   channel
 
 def max_message(handle: Handle) -> U32:
-  Handle{channel, max, alive, slot} = handle
+  Handle{channel, max, alive, slot, claim} = handle
   max
 
 def closer(handle: Handle) -> Chan(S.Command):
-  Handle{channel, max, alive, slot} = handle
+  Handle{channel, max, alive, slot, claim} = handle
   slot
 
 def running(result: Poll<&1, &1, Result<&1, &1, Unit, Unit>, Unit>) -> Bool:
@@ -42,7 +43,7 @@ def running(result: Poll<&1, &1, Result<&1, &1, Unit, Unit>, Unit>) -> Bool:
 # Whether the mailbox is still open, without touching it. A publisher uses
 # this when a command is too large to offer.
 def live(handle: Handle) -> IO(Bool):
-  Handle{channel, max, alive, slot} = handle
+  Handle{channel, max, alive, slot, claim} = handle
   do IO<Bool>:
     result : Poll<&1, &1, Result<&1, &1, Unit, Unit>, Unit> <- Chan.try_send(Unit, alive, Unit{}, 0)
     return running(result)
@@ -63,44 +64,58 @@ def enqueue_checked(ok: Bool, channel: Chan(S.Command), command: S.Command) -> I
 # Nonblocking admission: False means full, closed, or invalid. Never spawn a
 # waiting sender: a broadcast must be free to drop/disconnect a slow recipient.
 def enqueue(handle: Handle, +command: S.Command) -> IO(Bool):
-  Handle{channel, max, alive, slot} = handle
+  Handle{channel, max, alive, slot, claim} = handle
   enqueue_checked(S.admissible(max, command), channel, command)
 
 def text(handle: Handle, value: String) -> IO(Bool): enqueue(handle, S.SendText{value})
 def binary(handle: Handle, bytes: List<&2, U32>) -> IO(Bool): enqueue(handle, S.SendBinary{bytes})
 def ping(handle: Handle, bytes: List<&2, U32>) -> IO(Bool): enqueue(handle, S.SendPing{bytes})
 
-# A full mailbox shuts first: the mailbox and `alive` close, so from here on
-# no send is admitted and a publisher sees the connection as gone. Only then
-# does the close claim the reserved slot. Every close the mailbox admitted got
-# in before the shut, so it is written before the slot is read, and a close
-# that loses the slot to a concurrent one returns False, whether it finds the
-# slot still full or already taken and closed by the loop. The connection sends
-# the close once it has written what was already queued.
-def close_offered(result: Poll<&1, &1, Result<&1, &1, S.Command, Unit>, S.Command>, channel: Chan(S.Command), alive: Chan(Unit), slot: Chan(S.Command)) -> IO(Bool):
+# A close that finds the mailbox full first claims the reserved slot by
+# filling `claim`, a one-place channel nothing reads, so exactly one such
+# close ever wins: a later one finds `claim` full or closed and returns False.
+# The winner then shuts the mailbox and `alive`, so from here on no send is
+# admitted and a publisher sees the connection as gone, and only then writes
+# the slot. Every close the mailbox admitted got in before the shut, so it is
+# written before the slot is read. The connection sends the reserved close once
+# it has written what was already queued.
+def won(result: Poll<&1, &1, Result<&1, &1, Unit, Unit>, Unit>) -> Bool:
   match result:
-    case Ready{Done{u}}: IO.pure(Bool, True{})
-    case Ready{Fail{command}}: IO.pure(Bool, False{})
-    case Wait{command}:
+    case Ready{Done{u}}: True{}
+    case _: False{}
+
+def reserve(owner: Bool, channel: Chan(S.Command), alive: Chan(Unit), slot: Chan(S.Command), command: S.Command) -> IO(Bool):
+  match owner:
+    case False{}: IO.pure(Bool, False{})
+    case True{}:
       do IO<Bool>:
         Chan.close(S.Command, channel)
         Chan.close(Unit, alive)
         held : Poll<&1, &1, Result<&1, &1, S.Command, Unit>, S.Command> <- Chan.try_send(S.Command, slot, command, 0)
         return admitted(held)
 
-def close_checked(ok: Bool, +channel: Chan(S.Command), alive: Chan(Unit), slot: Chan(S.Command), command: S.Command) -> IO(Bool):
+def close_offered(result: Poll<&1, &1, Result<&1, &1, S.Command, Unit>, S.Command>, channel: Chan(S.Command), alive: Chan(Unit), slot: Chan(S.Command), claim: Chan(Unit)) -> IO(Bool):
+  match result:
+    case Ready{Done{u}}: IO.pure(Bool, True{})
+    case Ready{Fail{command}}: IO.pure(Bool, False{})
+    case Wait{command}:
+      do IO<Bool>:
+        taken : Poll<&1, &1, Result<&1, &1, Unit, Unit>, Unit> <- Chan.try_send(Unit, claim, Unit{}, 0)
+        reserve(won(taken), channel, alive, slot, command)
+
+def close_checked(ok: Bool, +channel: Chan(S.Command), alive: Chan(Unit), slot: Chan(S.Command), claim: Chan(Unit), command: S.Command) -> IO(Bool):
   match ok:
     case False{}: IO.pure(Bool, False{})
     case True{}:
       do IO<Bool>:
         result : Poll<&1, &1, Result<&1, &1, S.Command, Unit>, S.Command> <- Chan.try_send(S.Command, channel, command, 0)
-        close_offered(result, channel, alive, slot)
+        close_offered(result, channel, alive, slot, claim)
 
 # Unlike the other sends, a valid close is admitted even when the mailbox is
 # full. False means invalid, or the connection is already closing or closed.
 def close_command(handle: Handle, +command: S.Command) -> IO(Bool):
-  Handle{channel, max, alive, slot} = handle
-  close_checked(S.admissible(max, command), channel, alive, slot, command)
+  Handle{channel, max, alive, slot, claim} = handle
+  close_checked(S.admissible(max, command), channel, alive, slot, claim, command)
 
 def close(handle: Handle, code: U32, reason: String) -> IO(Bool): close_command(handle, S.SendClose{code, reason})
 
@@ -196,7 +211,7 @@ def discard(+channel: Chan(S.Command), fuel: Nat, got: Poll<&1, &1, Maybe<&1, S.
 
 def finished(~User: Data, ~on_close: User -> U32 -> String -> IO(Unit), s: Socket, state: State<User>, handle: Handle, room: U32, code: U32, reason: String) -> IO(Unit):
   State{user, phase, assembly, pending, body, received, ping, closing, wait} = state
-  Handle{+channel, max, alive, +slot} = handle
+  Handle{+channel, max, alive, +slot, claim} = handle
   do IO<Unit>:
     Chan.close(S.Command, channel)
     Chan.close(Unit, alive)
@@ -238,12 +253,8 @@ def drive(~User: Data, ~on_message: User -> Handle -> M.Message -> IO(User), ~on
         drive(~User, ~on_message, ~on_close, handle, cfg, Reserved{s, state, got})
     case Mail{s, state, _}:
       drive(~User, ~on_message, ~on_close, handle, cfg, Input{s, state})
-    # The slot closes as its close is taken, so it is claimed once: a close
-    # that finds it full or closed returns False and never refills it.
     case Reserved{s, +state, Ready{Some{command}}}:
-      do IO<Unit>:
-        Chan.close(S.Command, closer(handle))
-        drive(~User, ~on_message, ~on_close, handle, cfg, Stepped{s, with_wait(User, state, 0), S.step(max, session(User, state), S.Outbound{command}), ReadNext{}})
+      drive(~User, ~on_message, ~on_close, handle, cfg, Stepped{s, with_wait(User, state, 0), S.step(max, session(User, state), S.Outbound{command}), ReadNext{}})
     case Reserved{s, state, _}:
       drive(~User, ~on_message, ~on_close, handle, cfg, Input{s, state})
     case Stepped{s, State{user, phase, old, pending, body, received, ping, closing, wait}, S.Transition{assembly, action}, next}:
@@ -319,11 +330,12 @@ type Registration<-User: Data> is Data:
   Registration{user: User, handle: Handle, config: Config}
 
 def cleanup(~User: Data, registration: Registration<User>) -> IO(Unit):
-  Registration{user, Handle{channel, max, alive, slot}, cfg} = registration
+  Registration{user, Handle{channel, max, alive, slot, claim}, cfg} = registration
   do IO<Unit>:
     Chan.close(S.Command, channel)
     Chan.close(Unit, alive)
     Chan.close(S.Command, slot)
+    Chan.close(Unit, claim)
 
 @unsafe
 def start(~User: Data, ~on_open: User -> Handle -> IO(User), ~on_message: User -> Handle -> M.Message -> IO(User), ~on_close: User -> U32 -> String -> IO(Unit), registration: Registration<User>, s: Socket, rest: List<&2, U32>) -> IO(Unit):
@@ -341,4 +353,5 @@ def upgrade(~Vars: Data, ~User: Data, ~on_open: User -> Handle -> IO(User), ~on_
     channel : Chan(S.Command) <- Chan.new(S.Command, U32.max(room, 1))
     alive : Chan(Unit) <- Chan.new(Unit, 0)
     slot : Chan(S.Command) <- Chan.new(S.Command, 1)
-    Upgrade.respond(~Vars, ~(Registration<User>), ~(start(~User, ~on_open, ~on_message, ~on_close)), ~(cleanup(~User)), c, Registration{user, Handle{channel, max, alive, slot}, cfg}, handshake)
+    claim : Chan(Unit) <- Chan.new(Unit, 1)
+    Upgrade.respond(~Vars, ~(Registration<User>), ~(start(~User, ~on_open, ~on_message, ~on_close)), ~(cleanup(~User)), c, Registration{user, Handle{channel, max, alive, slot, claim}, cfg}, handshake)
