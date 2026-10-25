@@ -44,6 +44,9 @@ import ./proof/proxy-laws.bend as ProxyLaws
 import ./proof/ip-laws.bend as IpLaws
 import ./proof/rate-limit-laws.bend as RateLimitLaws
 
+# BND-100
+import ./proof/utf8-scalar-laws.bend as Utf8ScalarLaws
+
 # BND-87
 import ./proof/signed-cookie-decoder-laws.bend as SignedCookieDecoderLaws
 

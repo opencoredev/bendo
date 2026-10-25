@@ -103,27 +103,56 @@ def sound_r(+value: String, +r: Result<&2, &2, Url.Error, List<&2, U32>>, h: {Ur
     case Done{+xs}:
       sound_m(xs, value, Utf8.decode(xs), {==}, h)
 
+# BND-100: once the percent stage succeeds, a non-scalar wire is refused.
+def sound_v(+xs: List<&2, U32>, +value: String, v: Bool, h: {Url.scalar_result(xs, v) == Done{value} : Result<&2, &2, Url.Error, String>}) -> {Utf8.valid(value) == True{} : Bool} & {Done{xs} == Done{Utf8.encode(value)} : Result<&2, &2, Url.Error, List<&2, U32>>}:
+  match v:
+    case True{}:
+      sound_r(value, Done{xs}, h)
+    case False{}:
+      UP.absurd({Utf8.valid(value) == True{} : Bool} & {Done{xs} == Done{Utf8.encode(value)} : Result<&2, &2, Url.Error, List<&2, U32>>}, fail_done(Url.InvalidUtf8{}, value, h))
+
+def sound_c(+value: String, +r: Result<&2, &2, Url.Error, List<&2, U32>>, v: Bool, h: {Url.checked_result(r, v) == Done{value} : Result<&2, &2, Url.Error, String>}) -> {Utf8.valid(value) == True{} : Bool} & {r == Done{Utf8.encode(value)} : Result<&2, &2, Url.Error, List<&2, U32>>}:
+  match r:
+    case Fail{+e}:
+      UP.absurd({Utf8.valid(value) == True{} : Bool} & {Fail{e} == Done{Utf8.encode(value)} : Result<&2, &2, Url.Error, List<&2, U32>>}, fail_done(e, value, h))
+    case Done{+xs}:
+      sound_v(xs, value, v, h)
+
 def url_sound(+wire: String, +value: String, h: {Url.decode(wire) == Done{value} : Result<&2, &2, Url.Error, String>}) -> {Utf8.valid(value) == True{} : Bool} & {DSpec.unpercent(Utf8.encode(wire)) == Done{Utf8.encode(value)} : Result<&2, &2, Url.Error, List<&2, U32>>}:
   %Percent.percent(Utf8.encode(wire)) : {Utf8.valid(value) == True{} : Bool} & {_ == Done{Utf8.encode(value)} : Result<&2, &2, Url.Error, List<&2, U32>>}
-  sound_r(value, Url.percent_decode(Utf8.encode(wire), False{}), h)
+  sound_c(value, Url.percent_decode(Utf8.encode(wire), False{}), Utf8.valid(wire), h)
 
 def Laws.signed_cookie_url_decode_sound(wire, value, decoded):
   url_sound(wire, value, decoded)
 
-# Url.decode is the result stage applied to the independent percent decoding.
-def staged(+wire: String) -> {Url.decode(wire) == Url.decode_result(DSpec.unpercent(Utf8.encode(wire))) : Result<&2, &2, Url.Error, String>}:
-  Equal.cong(Result<&2, &2, Url.Error, List<&2, U32>>, Result<&2, &2, Url.Error, String>, r => Url.decode_result(r), Url.percent_decode(Utf8.encode(wire), False{}), DSpec.unpercent(Utf8.encode(wire)), Percent.percent(Utf8.encode(wire)))
+def checked_true(+r: Result<&2, &2, Url.Error, List<&2, U32>>) -> {Url.checked_result(r, True{}) == Url.decode_result(r) : Result<&2, &2, Url.Error, String>}:
+  match r:
+    case Fail{e}:
+      {==}
+    case Done{xs}:
+      {==}
 
-def url_complete(+wire: String, +value: String, valid: {Utf8.valid(value) == True{} : Bool}, escaped: {DSpec.unpercent(Utf8.encode(wire)) == Done{Utf8.encode(value)} : Result<&2, &2, Url.Error, List<&2, U32>>}) -> {Url.decode(wire) == Done{value} : Result<&2, &2, Url.Error, String>}:
+# On a scalar wire, Url.decode is the result stage applied to the
+# independent percent decoding.
+def staged(+wire: String, scalars: {Utf8.valid(wire) == True{} : Bool}) -> {Url.decode(wire) == Url.decode_result(DSpec.unpercent(Utf8.encode(wire))) : Result<&2, &2, Url.Error, String>}:
+  %Equal.sym(Bool, Utf8.valid(wire), True{}, scalars) : {Url.checked_result(Url.percent_decode(Utf8.encode(wire), False{}), _) == Url.decode_result(DSpec.unpercent(Utf8.encode(wire))) : Result<&2, &2, Url.Error, String>}
+  Equal.trans(Result<&2, &2, Url.Error, String>, Url.checked_result(Url.percent_decode(Utf8.encode(wire), False{}), True{}), Url.decode_result(Url.percent_decode(Utf8.encode(wire), False{})), Url.decode_result(DSpec.unpercent(Utf8.encode(wire))), checked_true(Url.percent_decode(Utf8.encode(wire), False{})), Equal.cong(Result<&2, &2, Url.Error, List<&2, U32>>, Result<&2, &2, Url.Error, String>, r => Url.decode_result(r), Url.percent_decode(Utf8.encode(wire), False{}), DSpec.unpercent(Utf8.encode(wire)), Percent.percent(Utf8.encode(wire))))
+
+# For every wire, Url.decode is the checked stage over the independent
+# percent decoding.
+def checked(+wire: String) -> {Url.decode(wire) == Url.checked_result(DSpec.unpercent(Utf8.encode(wire)), Utf8.valid(wire)) : Result<&2, &2, Url.Error, String>}:
+  Equal.cong(Result<&2, &2, Url.Error, List<&2, U32>>, Result<&2, &2, Url.Error, String>, r => Url.checked_result(r, Utf8.valid(wire)), Url.percent_decode(Utf8.encode(wire), False{}), DSpec.unpercent(Utf8.encode(wire)), Percent.percent(Utf8.encode(wire)))
+
+def url_complete(+wire: String, +value: String, scalars: {Utf8.valid(wire) == True{} : Bool}, valid: {Utf8.valid(value) == True{} : Bool}, escaped: {DSpec.unpercent(Utf8.encode(wire)) == Done{Utf8.encode(value)} : Result<&2, &2, Url.Error, List<&2, U32>>}) -> {Url.decode(wire) == Done{value} : Result<&2, &2, Url.Error, String>}:
   +step = Equal.cong(Result<&2, &2, Url.Error, List<&2, U32>>, Result<&2, &2, Url.Error, String>, r => Url.decode_result(r), DSpec.unpercent(Utf8.encode(wire)), Done{Utf8.encode(value)}, escaped)
   +back = Equal.cong(Maybe<&2, String>, Result<&2, &2, Url.Error, String>, m => Url.utf8_result(m), Utf8.decode(Utf8.encode(value)), Some{value}, UP.roundtrip(value, valid))
-  Equal.trans(Result<&2, &2, Url.Error, String>, Url.decode(wire), Url.decode_result(DSpec.unpercent(Utf8.encode(wire))), Done{value}, staged(wire), Equal.trans(Result<&2, &2, Url.Error, String>, Url.decode_result(DSpec.unpercent(Utf8.encode(wire))), Url.decode_result(Done{Utf8.encode(value)}), Done{value}, step, back))
+  Equal.trans(Result<&2, &2, Url.Error, String>, Url.decode(wire), Url.decode_result(DSpec.unpercent(Utf8.encode(wire))), Done{value}, staged(wire, scalars), Equal.trans(Result<&2, &2, Url.Error, String>, Url.decode_result(DSpec.unpercent(Utf8.encode(wire))), Url.decode_result(Done{Utf8.encode(value)}), Done{value}, step, back))
 
-def Laws.signed_cookie_url_decode_complete(wire, value, valid, escaped):
-  url_complete(wire, value, valid, escaped)
+def Laws.signed_cookie_url_decode_complete(wire, value, scalars, valid, escaped):
+  url_complete(wire, value, scalars, valid, escaped)
 
 def Laws.signed_cookie_url_decode_percent_error(wire, error, rejected):
-  Equal.trans(Result<&2, &2, Url.Error, String>, Url.decode(wire), Url.decode_result(DSpec.unpercent(Utf8.encode(wire))), Fail{error}, staged(wire), Equal.cong(Result<&2, &2, Url.Error, List<&2, U32>>, Result<&2, &2, Url.Error, String>, r => Url.decode_result(r), DSpec.unpercent(Utf8.encode(wire)), Fail{error}, rejected))
+  Equal.trans(Result<&2, &2, Url.Error, String>, Url.decode(wire), Url.checked_result(DSpec.unpercent(Utf8.encode(wire)), Utf8.valid(wire)), Fail{error}, checked(wire), Equal.cong(Result<&2, &2, Url.Error, List<&2, U32>>, Result<&2, &2, Url.Error, String>, r => Url.checked_result(r, Utf8.valid(wire)), DSpec.unpercent(Utf8.encode(wire)), Fail{error}, rejected))
 
 def utf8_error_m(+error: Url.Error, +m: Maybe<&2, String>, h: {Url.utf8_result(m) == Fail{error} : Result<&2, &2, Url.Error, String>}) -> {error == Url.InvalidUtf8{} : Url.Error}:
   match m:
@@ -132,9 +161,16 @@ def utf8_error_m(+error: Url.Error, +m: Maybe<&2, String>, h: {Url.utf8_result(m
     case Some{+v}:
       UP.absurd({error == Url.InvalidUtf8{} : Url.Error}, done_fail(v, error, h))
 
+def utf8_error_v(+error: Url.Error, +octets: List<&2, U32>, v: Bool, h: {Url.scalar_result(octets, v) == Fail{error} : Result<&2, &2, Url.Error, String>}) -> {error == Url.InvalidUtf8{} : Url.Error}:
+  match v:
+    case True{}:
+      utf8_error_m(error, Utf8.decode(octets), h)
+    case False{}:
+      Equal.sym(Url.Error, Url.InvalidUtf8{}, error, fail_inj(Url.InvalidUtf8{}, error, h))
+
 def Laws.signed_cookie_url_decode_utf8_error(wire, octets, error, escaped, failed):
-  +chain = Equal.trans(Result<&2, &2, Url.Error, String>, Url.decode(wire), Url.decode_result(DSpec.unpercent(Utf8.encode(wire))), Url.decode_result(Done{octets}), staged(wire), Equal.cong(Result<&2, &2, Url.Error, List<&2, U32>>, Result<&2, &2, Url.Error, String>, r => Url.decode_result(r), DSpec.unpercent(Utf8.encode(wire)), Done{octets}, escaped))
-  utf8_error_m(error, Utf8.decode(octets), Equal.trans(Result<&2, &2, Url.Error, String>, Url.decode_result(Done{octets}), Url.decode(wire), Fail{error}, Equal.sym(Result<&2, &2, Url.Error, String>, Url.decode(wire), Url.decode_result(Done{octets}), chain), failed))
+  +chain = Equal.trans(Result<&2, &2, Url.Error, String>, Url.decode(wire), Url.checked_result(DSpec.unpercent(Utf8.encode(wire)), Utf8.valid(wire)), Url.checked_result(Done{octets}, Utf8.valid(wire)), checked(wire), Equal.cong(Result<&2, &2, Url.Error, List<&2, U32>>, Result<&2, &2, Url.Error, String>, r => Url.checked_result(r, Utf8.valid(wire)), DSpec.unpercent(Utf8.encode(wire)), Done{octets}, escaped))
+  utf8_error_v(error, octets, Utf8.valid(wire), Equal.trans(Result<&2, &2, Url.Error, String>, Url.checked_result(Done{octets}, Utf8.valid(wire)), Url.decode(wire), Fail{error}, Equal.sym(Result<&2, &2, Url.Error, String>, Url.decode(wire), Url.checked_result(Done{octets}, Utf8.valid(wire)), chain), failed))
 
 # ---- Structural facts behind the verification spec ----
 
@@ -293,13 +329,13 @@ def decoded_digest(+keys: S.Keys, +value: String, +signature: List<&2, U32>, fra
   %Equal.sym(Maybe<&2, List<&2, U32>>, B.decode(B.encode(signature, False{}, True{}), False{}, True{}), Some{signature}, Base64Proof.roundtrip(signature, False{}, True{}, octets)) : {S.verify_base64(keys, value, _) == S.verify_digest(keys, value, signature) : Maybe<&2, String>}
   {==}
 
-def verify_complete(+first: String, +rest: List<&2, String>, +key: String, +wire: String, +value: String, member: Spec.contains(key, first <> rest), usable: {Spec.secrets(first <> rest) == True{} : Bool}, valid: {Utf8.valid(value) == True{} : Bool}, escaped: {DSpec.unpercent(Utf8.encode(wire)) == Done{Utf8.encode(value ++ "." ++ Spec.base64(Hmac.sha256(Utf8.encode(key), Utf8.encode(value))))} : Result<&2, &2, Url.Error, List<&2, U32>>}) -> {S.verify(S.Keys{first, rest}, wire) == Some{value} : Maybe<&2, String>}:
+def verify_complete(+first: String, +rest: List<&2, String>, +key: String, +wire: String, +value: String, member: Spec.contains(key, first <> rest), usable: {Spec.secrets(first <> rest) == True{} : Bool}, scalars: {Utf8.valid(wire) == True{} : Bool}, valid: {Utf8.valid(value) == True{} : Bool}, escaped: {DSpec.unpercent(Utf8.encode(wire)) == Done{Utf8.encode(value ++ "." ++ Spec.base64(Hmac.sha256(Utf8.encode(key), Utf8.encode(value))))} : Result<&2, &2, Url.Error, List<&2, U32>>}) -> {S.verify(S.Keys{first, rest}, wire) == Some{value} : Maybe<&2, String>}:
   +sig = S.digest(key, value)
   +payload = value ++ "." ++ B.encode(sig, False{}, True{})
   +escaped2 = Equal.trans(Result<&2, &2, Url.Error, List<&2, U32>>, DSpec.unpercent(Utf8.encode(wire)), Done{Utf8.encode(value ++ "." ++ Spec.base64(sig))}, Done{Utf8.encode(payload)}, escaped, Equal.cong(String, Result<&2, &2, Url.Error, List<&2, U32>>, x => Done{Utf8.encode(value ++ "." ++ x)}, Spec.base64(sig), B.encode(sig, False{}, True{}), Equal.sym(String, B.encode(sig, False{}, True{}), Spec.base64(sig), Format.encode_eq(sig))))
-  +dec = url_complete(wire, payload, Wire.payload_valid(value, sig, valid), escaped2)
+  +dec = url_complete(wire, payload, scalars, Wire.payload_valid(value, sig, valid), escaped2)
   %Equal.sym(Result<&2, &2, Url.Error, String>, Url.decode(wire), Done{payload}, dec) : {S.verify_decoded(S.Keys{first, rest}, _) == Some{value} : Maybe<&2, String>}
   Equal.trans(Maybe<&2, String>, S.verify_decoded(S.Keys{first, rest}, Done{payload}), S.verify_digest(S.Keys{first, rest}, value, sig), Some{value}, decoded_digest(S.Keys{first, rest}, value, sig, Wire.payload_split(value, sig), Wire.hmac_octets(Utf8.encode(key), Utf8.encode(value))), SCP.member(first, rest, key, value, member, usable))
 
-def Laws.signed_cookie_verify_complete(first, rest, key, wire, value, member, usable, valid, escaped):
-  verify_complete(first, rest, key, wire, value, member, usable, valid, escaped)
+def Laws.signed_cookie_verify_complete(first, rest, key, wire, value, member, usable, scalars, valid, escaped):
+  verify_complete(first, rest, key, wire, value, member, usable, scalars, valid, escaped)

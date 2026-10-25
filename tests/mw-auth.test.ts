@@ -512,6 +512,9 @@ describe("basic auth", () => {
       basic("Ada", "pa:ss:word"),
       basic("José", "passwords"),
       basic("", ""),
+      // The configured password holds a lone surrogate; the U+FFFD that
+      // UTF-8 encoding would put in its place must not match it.
+      basic("eve", "x\uFFFD"),
       "Basic",
       "Basic ",
       "Basic !!!!",
@@ -586,6 +589,16 @@ describe("JWT middleware", () => {
     expect(res.status).toBe(200);
     expect(JSON.parse(await res.text())).toEqual(claims);
     expect((await get("/jwt-plain/ok", { authorization: `Bearer ${token}` })).status).toBe(200);
+  });
+
+  test("a secret holding a non-scalar verifies nothing, not even its U+FFFD twin", async () => {
+    // The configured secret is "a" + U+D800 + "b". UTF-8 encoding would make it
+    // "a\uFFFDb", so a token signed with that must still be refused.
+    const twin = new TextEncoder().encode("a\uFFFDb");
+    const token = await new SignJWT({ sub: "eve", exp: now() + 600 })
+      .setProtectedHeader({ alg: "HS256" })
+      .sign(twin);
+    expect((await get("/jwt-lone/ok", { authorization: `Bearer ${token}` })).status).toBe(401);
   });
 
   test("server-signed tokens verify with jose", async () => {
