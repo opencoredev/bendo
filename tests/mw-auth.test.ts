@@ -512,6 +512,9 @@ describe("basic auth", () => {
       basic("Ada", "pa:ss:word"),
       basic("José", "passwords"),
       basic("", ""),
+      // The configured password holds a lone surrogate; the U+FFFD that
+      // UTF-8 encoding would put in its place must not match it.
+      basic("eve", "x\uFFFD"),
       "Basic",
       "Basic ",
       "Basic !!!!",

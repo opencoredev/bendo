@@ -60,6 +60,10 @@ def middleware(tag: Tag, c: B.Context(Vars), env: Unit, next: B.Context(Vars) ->
     case Skewed{}: claims(c, next, 60n)
     case _: next(c)
 
+# A lone surrogate (U+D800): no client credential can decode to it.
+def lone() -> String:
+  SCon{Chr{55296}, SNil{}}
+
 def ready(result: Result<&2, &2, Methods.BuildError, B.Routes(Tag)>) -> IO(Unit):
   match result:
     case Fail{error}: IO.die(Unit, 1, "invalid routes")
@@ -67,7 +71,7 @@ def ready(result: Result<&2, &2, Methods.BuildError, B.Routes(Tag)>) -> IO(Unit)
 
 def main() -> IO(Unit):
   ready(B.routes(Tag, [
-    B.use_path(Tag, "/basic/*", Builtin{B.basic_auth("Bendo \"test\" \\ realm", [B.credential("ada", "pa:ss:word"), B.credential("José", "pässwörd")])}),
+    B.use_path(Tag, "/basic/*", Builtin{B.basic_auth("Bendo \"test\" \\ realm", [B.credential("ada", "pa:ss:word"), B.credential("José", "pässwörd"), B.credential("eve", "x" ++ lone())])}),
     B.use_path(Tag, "/bearer/*", Builtin{B.bearer_auth("api", ["abc.DEF-123_~+/=", "second-token"])}),
     B.use_path(Tag, "/jwt/*", Claims{}),
     B.use_path(Tag, "/jwt-plain/*", Builtin{B.jwt(B.jwt_config(secret(), 0n, "plain"))}),

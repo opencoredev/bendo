@@ -30,6 +30,7 @@ decoded text is `user-id:password` in UTF-8. Build each user with
 - The user-id ends at the first colon, so a password may contain colons, as
   RFC 7617 requires. A user-id cannot contain a colon.
 - Bytes that are not valid UTF-8 are rejected.
+- A configured credential whose username or password holds a non-scalar character (a lone surrogate, or a code point above U+10FFFF) never matches, so no client can sign in with it.
 
 A request without valid credentials gets status 401, body `Unauthorized`, and
 this challenge, with `"` and `\` in the realm escaped:
