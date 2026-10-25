@@ -31,6 +31,9 @@ import ./proof/csrf-v1-laws.bend as CsrfV1Laws
 # BND-68
 import ./proof/hot-path-laws.bend as HotPathLaws
 
+# BND-82
+import ./proof/scoped-index-laws.bend as ScopedIndexLaws
+
 # BND-84
 import ./proof/review-tail-laws.bend as ReviewTailLaws
 import ./proof/tail-laws.bend as TailLaws
@@ -46,6 +49,9 @@ import ./proof/rate-limit-laws.bend as RateLimitLaws
 
 # BND-100
 import ./proof/utf8-scalar-laws.bend as Utf8ScalarLaws
+
+# BND-92
+import ./proof/parser-spec-laws.bend as ParserSpecLaws
 
 # BND-87
 import ./proof/signed-cookie-decoder-laws.bend as SignedCookieDecoderLaws

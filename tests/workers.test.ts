@@ -298,9 +298,11 @@ describe.skipIf(process.platform !== "linux")("multi-worker serving", () => {
         throw new Error("missing workers");
       process.kill(victim, "SIGKILL");
       expect(await until(() => !running(first) && !running(other), 3000)).toBe(true);
-      expect(server.stderr()).toContain(
-        `bendo: worker ${victim} stopped by signal 9; stopping the server`,
-      );
+      // The harness reads stderr asynchronously, so the last line can arrive
+      // just after the processes exit.
+      const notice = `bendo: worker ${victim} stopped by signal 9; stopping the server`;
+      await until(() => server.stderr().includes(notice), 3000);
+      expect(server.stderr()).toContain(notice);
       expect(await refused(server.url)).toBe(true);
     });
   });

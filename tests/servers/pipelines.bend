@@ -144,9 +144,9 @@ def middleware(tag: Tag, c: B.Context(Unit), env: Unit, next: B.Context(Unit) ->
 # The validating pipeline, forced: transport_routed with `validates` set, so
 # a table without schemas still runs parsed_checked.
 def respond_checked(req: Request.Req, body: List<&2, U32>, state: Serve.State<Tag, Unit>, close: Bool, peer: Maybe<&2, Conn.ConnInfo>) -> IO(Serve.Reply):
-  Serve.State{table, env, router, limit, mode, validates} = state
+  Serve.State{table, hooks, env, router, limit, mode, validates} = state
   do IO<Serve.Reply>:
-    result : Response.Res & (S.Transport & IO(Unit)) <- Handle.transport_routed(~Validate.run, ~Unit, ~Tag, ~Unit, ~handler, ~middleware, router, mode, table, env, req, body, peer, True{})
+    result : Response.Res & (S.Transport & IO(Unit)) <- Handle.transport_routed(~Validate.run, ~Unit, ~Tag, ~Unit, ~handler, ~middleware, router, mode, table, hooks, env, req, body, peer, True{})
     return Serve.prepare_transport(result, close)
 
 # The decoder, with a probe that says it decodes nothing, so every route that
@@ -157,9 +157,9 @@ def stepping(job: Validate.Job) -> Validate.Answer:
     case _: Validate.run(job)
 
 def respond_stepped(req: Request.Req, body: List<&2, U32>, state: Serve.State<Tag, Unit>, close: Bool, peer: Maybe<&2, Conn.ConnInfo>) -> IO(Serve.Reply):
-  Serve.State{table, env, router, limit, mode, validates} = state
+  Serve.State{table, hooks, env, router, limit, mode, validates} = state
   do IO<Serve.Reply>:
-    result : Response.Res & (S.Transport & IO(Unit)) <- Handle.transport_routed(~stepping, ~Unit, ~Tag, ~Unit, ~handler, ~middleware, router, mode, table, env, req, body, peer, True{})
+    result : Response.Res & (S.Transport & IO(Unit)) <- Handle.transport_routed(~stepping, ~Unit, ~Tag, ~Unit, ~handler, ~middleware, router, mode, table, hooks, env, req, body, peer, True{})
     return Serve.prepare_transport(result, close)
 
 def serving(table: Table.Table<Tag>, pipeline: String) -> IO(Unit):

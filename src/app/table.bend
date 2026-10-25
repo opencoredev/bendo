@@ -268,3 +268,111 @@ def declares_schemas(-Tag: Data, layers: List<&2, Middleware<Tag>>) -> Bool:
     case Nil{}: False{}
     case Scoped{index, hooks} <> tail: placed_declares(Tag, hooks) || declares_schemas(Tag, tail)
     case _ <> tail: declares_schemas(Tag, tail)
+
+# BND-82: scoped layers indexed by route identity, built once per served
+# table. Selection used to walk every layer for every stage, so each grouped or
+# guarded route added work to every request. The index keeps the global layers
+# in their own list and files each Scoped layer in a binary trie under the low
+# slot_depth() bits of its identity. A request reads its route's bucket and the
+# globals, never another route's layers (up to 65,536 routes, where identities
+# start sharing buckets; selection then filters by identity as before). Laws
+# scoped_index_* prove that selection over relevant() equals selection over
+# the full layer list, for every list.
+type HookTrie<-Tag: Data> is Data:
+  HookVacant{}
+  HookBucket{layers: List<&2, Middleware<Tag>>}
+  HookFork{zero: HookTrie<Tag>, one: HookTrie<Tag>}
+
+type HookIndex<-Tag: Data> is Data:
+  HookIndex{globals: List<&2, Middleware<Tag>>, scoped: HookTrie<Tag>}
+
+def slot_depth() -> Nat:
+  16n
+
+def slot_key(n: Nat) -> U32:
+  U32.from_nat(n)
+
+def slot_bit(k: U32) -> Bool:
+  U32.is_eq((k .&. 1 : U32), 1)
+
+def slot_rest(k: U32) -> U32:
+  (k >> 1n : U32)
+
+def trie_leaf(-Tag: Data, t: HookTrie<Tag>) -> List<&2, Middleware<Tag>>:
+  match t:
+    case HookBucket{xs}: xs
+    case _: []
+
+def trie_zero(-Tag: Data, t: HookTrie<Tag>) -> HookTrie<Tag>:
+  match t:
+    case HookFork{z, o}: z
+    case _: HookVacant{}
+
+def trie_one(-Tag: Data, t: HookTrie<Tag>) -> HookTrie<Tag>:
+  match t:
+    case HookFork{z, o}: o
+    case _: HookVacant{}
+
+def trie_pick(-Tag: Data, b: Bool, z: HookTrie<Tag>, o: HookTrie<Tag>) -> HookTrie<Tag>:
+  match b:
+    case True{}: o
+    case False{}: z
+
+def trie_graft(-Tag: Data, b: Bool, z: HookTrie<Tag>, o: HookTrie<Tag>, c: HookTrie<Tag>) -> HookTrie<Tag>:
+  match b:
+    case True{}: HookFork{z, c}
+    case False{}: HookFork{c, o}
+
+# Files a layer at the front of key k's bucket, so a bucket keeps layer order.
+def trie_put(-Tag: Data, d: Nat, +t: HookTrie<Tag>, +k: U32, layer: Middleware<Tag>) -> HookTrie<Tag>:
+  match d:
+    case 0n: HookBucket{layer <> trie_leaf(Tag, t)}
+    case 1n+p: trie_graft(Tag, slot_bit(k), trie_zero(Tag, t), trie_one(Tag, t), trie_put(Tag, p, trie_pick(Tag, slot_bit(k), trie_zero(Tag, t), trie_one(Tag, t)), slot_rest(k), layer))
+
+def trie_find(-Tag: Data, d: Nat, t: HookTrie<Tag>, +k: U32) -> List<&2, Middleware<Tag>>:
+  match d:
+    case 0n: trie_leaf(Tag, t)
+    case 1n+p:
+      match t:
+        case HookFork{z, o}: trie_find(Tag, p, trie_pick(Tag, slot_bit(k), z, o), slot_rest(k))
+        case _: []
+
+def scoped_trie(-Tag: Data, +d: Nat, layers: List<&2, Middleware<Tag>>) -> HookTrie<Tag>:
+  match layers:
+    case Nil{}: HookVacant{}
+    case Scoped{+index, hooks} <> tail: trie_put(Tag, d, scoped_trie(Tag, d, tail), slot_key(index), Scoped{index, hooks})
+    case Staged{stage, tag} <> tail: scoped_trie(Tag, d, tail)
+    case Middleware{pattern, tag} <> tail: scoped_trie(Tag, d, tail)
+
+def global_layers(-Tag: Data, layers: List<&2, Middleware<Tag>>) -> List<&2, Middleware<Tag>>:
+  match layers:
+    case Nil{}: []
+    case Scoped{index, hooks} <> tail: global_layers(Tag, tail)
+    case Staged{stage, tag} <> tail: Staged{stage, tag} <> global_layers(Tag, tail)
+    case Middleware{pattern, tag} <> tail: Middleware{pattern, tag} <> global_layers(Tag, tail)
+
+def index(-Tag: Data, +layers: List<&2, Middleware<Tag>>) -> HookIndex<Tag>:
+  HookIndex{global_layers(Tag, layers), scoped_trie(Tag, slot_depth(), layers)}
+
+def index_globals(-Tag: Data, index: HookIndex<Tag>) -> List<&2, Middleware<Tag>>:
+  HookIndex{globals, scoped} = index
+  globals
+
+# A route outside every group, guard and local hook has an empty bucket and
+# selects over the global list itself, without copying it.
+def with_bucket(-Tag: Data, bucket: List<&2, Middleware<Tag>>, globals: List<&2, Middleware<Tag>>) -> List<&2, Middleware<Tag>>:
+  match bucket:
+    case Nil{}: globals
+    case h <> t: List.append(&2, Middleware<Tag>, globals, h <> t)
+
+def relevant_at(-Tag: Data, route: Maybe<&2, Nat>, index: HookIndex<Tag>) -> List<&2, Middleware<Tag>>:
+  match route:
+    case None{}: index_globals(Tag, index)
+    case Some{n}:
+      HookIndex{globals, scoped} = index
+      with_bucket(Tag, trie_find(Tag, slot_depth(), scoped, slot_key(n)), globals)
+
+# The layers that can select a hook for this route: the globals, then the
+# route's bucket. Pass the result anywhere the full layer list was used.
+def relevant(-Tag: Data, index: HookIndex<Tag>, route: Maybe<&2, Nat>) -> List<&2, Middleware<Tag>>:
+  relevant_at(Tag, route, index)

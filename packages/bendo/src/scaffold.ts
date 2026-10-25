@@ -1,8 +1,26 @@
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-export function scaffold(directory: string): void {
+/**
+ * The Bendo checkout this CLI runs from. `new` copies the checkout's Bend
+ * library, so an installed `bendo` package (inside some app's node_modules)
+ * refuses rather than copy whatever sits three directories up.
+ */
+function checkoutRoot(): string {
   const root = resolve(import.meta.dir, "../../..");
+  const inCheckout =
+    existsSync(resolve(root, ".bend-version")) &&
+    existsSync(resolve(root, "src/main.bend")) &&
+    existsSync(resolve(root, "packages/bendo/package.json"));
+  if (!inCheckout)
+    throw new Error(
+      "bendo new copies the Bend library from a Bendo checkout. Outside one, create an app with: bun create bendo <dir>",
+    );
+  return root;
+}
+
+export function scaffold(directory: string): void {
+  const root = checkoutRoot();
   // mkdir without recursive deliberately refuses existing destinations, even empty ones.
   mkdirSync(directory);
   cpSync(resolve(root, "src"), resolve(directory, "bendo"), { recursive: true });

@@ -36,6 +36,9 @@ import ./proof/rate-limit.bend as RateLimitProof
 # BND-100
 import ./proof/utf8-scalar.bend as Utf8ScalarProof
 
+# BND-92
+import ./proof/parser-spec.bend as ParserSpecProof
+
 # BND-87
 import ./proof/signed-cookie-decoders.bend as SignedCookieDecoderProof
 
@@ -151,6 +154,7 @@ import ./proof/override.bend as OverrideProof
 import ./proof/trailing.bend as TrailingProof
 import ./proof/review-tail.bend as ReviewTailProof
 import ./proof/hot-path.bend as HotPathProof
+import ./proof/scoped-index.bend as ScopedIndexProof
 import ./proof/tail.bend as TailProof
 import ./proof/parse-tail.bend as ParseTail
 import ./proof/bytes-tail.bend as BytesTail

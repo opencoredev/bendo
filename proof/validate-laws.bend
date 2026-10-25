@@ -21,8 +21,10 @@ import ../src/app/finalize.bend as Final
 import ../src/app/observability.bend as Obs
 
 # These laws trust the parsers the implementation and the specification share:
-# J.parse, Bytes.fold and the raw query parser. Proving those independently
-# is BND-92.
+# J.parse, Bytes.fold and the raw query parser. proof/parser-spec-laws.bend
+# specifies Bytes.fold and the query parser independently (BND-92). J.parse
+# is checked against an independent parser by tests/parser-differential.test.ts;
+# docs/laws/data.md says why it has no universal law yet.
 
 # BND-36: a schema prepared once, its validity checked and every pattern's
 # automaton table built and checked up front, decodes exactly as the schema

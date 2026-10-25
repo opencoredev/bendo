@@ -24,6 +24,7 @@ the way RFC 9112 does; the conformance suite and the fuzzer cover that (see
 - `parsed_request_line_path`: for every well-formed request line, the parsed path is the raw target up to its first `?`.
 - `path_of_request_line`: one fixed example, kept from the first milestone: `Http.path_of` reads `/todos/42` from `GET /todos/42 HTTP/1.1`.
 - `header_lookup_case_insensitive`: two header names with the same ASCII lowercase spelling look up exactly the same values, in the same order, in any header list.
+- `fold_matches_letter_table`: `Bytes.fold`, which lowercases header names, equals an independent fold for every string: each of the 26 capital letters A to Z becomes its small letter and every other character, non-ASCII included, is kept. The specification is a written-out table of the 26 letter pairs in `proof/fold-spec.bend`, not Base's numeric `Char.to_lower` that `Bytes.fold` calls, so a wrong range or offset there would break the law.
 - `header_lookup_all_in_order`: a lookup returns every value of every header with that name, in arrival order, matching an independent filter-then-project definition.
 - `header_line_roundtrip`: a valid canonical header line `name: value` parses to that header, name and octets unchanged.
 - `text_body_after_blank`: `Http.text(body)` is a head with no blank line in it, then a blank line, then the body, so a client that cuts at the first blank line reads the body back.

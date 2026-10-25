@@ -150,3 +150,8 @@ law json_roundtrip:
 
 The JSONTestSuite and the tests in `tests/json.test.ts` also cover the parser
 on inputs the law does not reach, such as malformed documents.
+`tests/parser-differential.test.ts` compares the parser on about 9,000 seeded
+generated and mutated inputs with an independent recursive-descent parser that
+is itself checked against Bun's `JSON.parse`. No law yet states that the
+parser agrees with the grammar on every input; [the data laws](../laws/data.md#json)
+say why.
