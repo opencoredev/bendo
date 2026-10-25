@@ -42,6 +42,11 @@ ignored: `""` and `"&&"` produce no entries. `a` and `a=` both produce
 both strings empty. `serialize(pairs) -> String` emits form-encoded pairs in
 order, with an equals sign for every pair.
 
+The law `query_parse_matches_spec` proves `parse_pairs` equal, for every
+string, to an independent specification that follows the WHATWG parser step
+by step, with the strict errors below in place of its fallbacks. See
+[the data laws](../laws/data.md#forms-and-query-strings).
+
 `parse_body(content_type: String, body: List<&2, U32>)` returns the same result
 type. It accepts `application/x-www-form-urlencoded`, case-insensitively, with
 surrounding whitespace. Charset defaults to UTF-8. An explicit `charset=utf-8`

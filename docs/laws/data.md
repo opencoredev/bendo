@@ -6,6 +6,24 @@ route manifest. See the [laws index](README.md) for how to read an entry.
 
 ## JSON
 
+`J.parse` has no law against an independent grammar yet. `json_roundtrip`
+below covers the spellings the writer produces, not every spelling a client
+may send: other whitespace, escapes the writer does not use (`\/`, hex digits
+in either case, escaped surrogate pairs), any number text, and every
+malformed input. A universal law would need the parser's stack machine,
+about twenty-five modes with a frame stack, a depth count and fuel, related to
+a recursive grammar for every input, with fuel credit for every spelling and a
+32-bit case split for every literal character it matches. That is far larger
+than the writer-side proof and is left open. Instead,
+`tests/parser-differential.test.ts` compares `J.parse` on about 9,000 seeded
+generated and mutated inputs, deep nesting at the 512 limit included, with an
+independent recursive-descent RFC 8259 parser. That parser follows Bendo's
+policy (strict UTF-8, lexical numbers, ordered duplicate members, no lone
+surrogate escapes, at most 512 nested containers) and is itself checked
+against Bun's `JSON.parse` through a strictness shim. The two must agree on
+the verdict, the error kind and the exact value. The pinned JSONTestSuite
+corpus in `tests/json.test.ts` covers the standard's edge cases.
+
 - `json_roundtrip`: for every admissible JSON value and every writer setting (pretty or compact, ASCII-only or not), writing succeeds and parsing the UTF-8 output gives back the same value, member order and duplicate keys included. Admissible means valid JSON number text, strings and keys of Unicode scalar values, and at most 512 nested containers. See [JSON values and bodies](../data/json.md).
 
 ## UTF-8 text
@@ -22,8 +40,21 @@ octets refuse it.
 
 ## Forms and query strings
 
-These laws cover percent-encoding and the lookup of repeated keys. See
-[URL-encoded forms](../data/urlencoded.md).
+These laws cover the raw query parser, percent-encoding and the lookup of
+repeated keys. See [URL-encoded forms](../data/urlencoded.md).
+
+The query parser's specification, in `proof/query-spec.bend`, follows the
+WHATWG `application/x-www-form-urlencoded` parser step by step and refuses
+where the standard falls back: the standard keeps a malformed `%` literally
+and turns octets that are not UTF-8 into U+FFFD, Bendo fails with
+`InvalidPercent` and `InvalidUtf8`. It shares no code with `Url.parse_pairs`.
+It takes its hex digits from the RFC 3986 decoder behind
+`signed_cookie_percent_spec` and its UTF-8 decoding from `Utf8.decode`, which
+has its own laws. `tests/parser-differential.test.ts` checks it against Bun's
+`URLSearchParams` on generated query strings.
+
+- `query_parse_matches_spec`: for every string, `Url.parse_pairs` returns what the specification returns: split the UTF-8 octets on `&`, skip empty pieces, split each piece at its first `=` (no `=` means an empty value), read a literal `+` as a space and `%HH` in either case as one octet (so `%2B` stays `+`), then decode UTF-8. The first failure in input order wins, a name before its value; a percent error is `InvalidPercent` and octets that are not UTF-8 are `InvalidUtf8`. After that, a string holding a non-scalar character fails with `InvalidUtf8`. Route validation reads its query entries from this parser.
+- `query_spec_examples`: the specification on fixed cases: `a=1&a=2&b` gives `a` twice in order and `b` with an empty value; `x=%2B+%41&&=y&` gives `x` as `+ A` and an empty name for `y`; a short escape fails with `InvalidPercent` and `%FF` with `InvalidUtf8`.
 
 - `query_component_roundtrip`: every string of Unicode scalar values survives query-component encoding and decoding.
 - `form_component_roundtrip`: every such string survives WHATWG form encoding and decoding, including space as `+` and a literal `+` as `%2B`.
@@ -122,9 +153,11 @@ within one budget of 100; that the innermost scope's schema wins; and that
 buffered responses are checked after the response policies run. See
 [route validation](../validation.md).
 
-They trust three parsers the implementation and the specification share: the
-JSON parser, `Bytes.fold` and the raw query parser. Proving those against
-independent specifications is BND-92.
+The implementation and the specification share three parsers. Two of them
+have their own laws against independent specifications:
+`fold_matches_letter_table` for `Bytes.fold` and `query_parse_matches_spec`
+for the raw query parser. The JSON parser is checked by differential tests
+instead; the [JSON](#json) section says why.
 
 - `schema_prepared_decode`: a schema prepared once (validity checked and pattern tables built) decodes exactly as the plain schema, from either source, so every schema law above holds for route validation.
 - `route_validation_matches_spec`: for every schema set and request, validation returns the specification's verdict: the decoded values when every declared slot decodes, otherwise the status and the first 100 slot-prefixed errors in slot order. Params, query and headers are coerced text; a body needs a JSON media type and well-formed JSON, and is not coerced.

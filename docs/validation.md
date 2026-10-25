@@ -293,8 +293,11 @@ so the BND-33/34/35 schema laws describe what each slot accepts and reports.
   a hook stores there reach the handler.
 
 These laws rely on the JSON parser, `Bytes.fold` and the raw query parser
-that the implementation and the specification share; BND-92 tracks proving
-those independently.
+that the implementation and the specification share. `Bytes.fold` and the
+query parser have their own laws against independent specifications
+(`fold_matches_letter_table` and `query_parse_matches_spec`). The JSON parser
+is checked by seeded differential tests against an independent parser
+instead; [the JSON laws](laws/data.md#json) say why.
 
 The lifecycle wiring is IO and is covered by `tests/validate.test.ts` instead:
 it checks that the handler does not run on a rejection, that transform hooks run
