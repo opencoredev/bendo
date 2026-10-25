@@ -34,20 +34,23 @@ law signed_cookie_utf8_sound:
   for decoded: {Utf8.decode(xs) == Some{s} : Maybe<&2, String>}
   {Utf8.valid(s) == True{} : Bool} & {Utf8.encode(s) == xs : List<&2, U32>}
 
-# The next four laws determine Url.decode completely. A decoded value is a
-# scalar string whose UTF-8 octets are the independent percent decoding of
-# the wire's octets.
+# The next four laws, with url_decode_non_scalar (BND-100), determine
+# Url.decode completely. A decoded value is a scalar string whose UTF-8
+# octets are the independent percent decoding of the wire's octets.
 law signed_cookie_url_decode_sound:
   for +wire: String
   for +value: String
   for decoded: {Url.decode(wire) == Done{value} : Result<&2, &2, Url.Error, String>}
   {Utf8.valid(value) == True{} : Bool} & {DSpec.unpercent(Utf8.encode(wire)) == Done{Utf8.encode(value)} : Result<&2, &2, Url.Error, List<&2, U32>>}
 
-# Every scalar string whose UTF-8 octets are the percent decoding is
-# returned.
+# For a scalar wire, every scalar string whose UTF-8 octets are the percent
+# decoding is returned. BND-100 added the scalar-wire premise: a wire with a
+# non-scalar Char used to decode as if Utf8.encode had dropped or mangled it,
+# and is now refused (url_decode_non_scalar).
 law signed_cookie_url_decode_complete:
   for +wire: String
   for +value: String
+  for scalars: {Utf8.valid(wire) == True{} : Bool}
   for valid: {Utf8.valid(value) == True{} : Bool}
   for escaped: {DSpec.unpercent(Utf8.encode(wire)) == Done{Utf8.encode(value)} : Result<&2, &2, Url.Error, List<&2, U32>>}
   {Url.decode(wire) == Done{value} : Result<&2, &2, Url.Error, String>}
@@ -81,7 +84,8 @@ law signed_cookie_verify_sound:
   exs key: String
   Spec.contains(key, first <> rest) & ({Spec.secrets(first <> rest) == True{} : Bool} & ({Utf8.valid(value) == True{} : Bool} & {DSpec.unpercent(Utf8.encode(wire)) == Done{Utf8.encode(value ++ "." ++ Spec.base64(Hmac.sha256(Utf8.encode(key), Utf8.encode(value))))} : Result<&2, &2, Url.Error, List<&2, U32>>}))
 
-# Conversely, every such wire verifies, however its octets are escaped.
+# Conversely, every such scalar wire verifies, however its octets are
+# escaped. BND-100 added the scalar-wire premise, as for url_decode_complete.
 law signed_cookie_verify_complete:
   for +first: String
   for +rest: List<&2, String>
@@ -90,6 +94,7 @@ law signed_cookie_verify_complete:
   for +value: String
   for member: Spec.contains(key, first <> rest)
   for usable: {Spec.secrets(first <> rest) == True{} : Bool}
+  for scalars: {Utf8.valid(wire) == True{} : Bool}
   for valid: {Utf8.valid(value) == True{} : Bool}
   for escaped: {DSpec.unpercent(Utf8.encode(wire)) == Done{Utf8.encode(value ++ "." ++ Spec.base64(Hmac.sha256(Utf8.encode(key), Utf8.encode(value))))} : Result<&2, &2, Url.Error, List<&2, U32>>}
   {S.verify(S.Keys{first, rest}, wire) == Some{value} : Maybe<&2, String>}

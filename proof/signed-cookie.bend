@@ -167,7 +167,7 @@ def reject(+first: String, +rest: List<&2, String>, +value: String, +signature: 
   reject_when(first, rest, value, signature, ne, S.usable(S.Keys{first, rest}), {==})
 
 def percent_roundtrip(+value: String, valid: {Utf8.valid(value) == True{} : Bool}) -> {Url.decode(Url.encode(value)) == Done{value} : Result<&2, &2, Url.Error, String>}:
-  Percent.component_roundtrip(value, False{}, Utf8Proof.roundtrip(value, valid))
+  Percent.text_roundtrip(value, False{}, Utf8Proof.roundtrip(value, valid))
 
 
 def Laws.signed_cookie_compare_structural(xs, ys):

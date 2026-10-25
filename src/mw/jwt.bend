@@ -20,11 +20,17 @@ def verified(-Vars: Data, c: C.Ctx<Vars>, next: Json.Json -> C.Ctx<Vars> -> IO(R
     case Fail{e}: IO.pure(Response.Res, invalid(realm, e))
     case Done{claims}: next(claims, c)
 
+# A config whose secret could not be encoded refuses every token.
+def keyed(secret: Maybe<&2, List<&2, U32>>, token: String, seconds: Nat, leeway: Nat) -> Result<&2, &2, Jwt.Error, Json.Json>:
+  match secret:
+    case None{}: Fail{Jwt.BadSignature{}}
+    case Some{key}: Jwt.verify(key, token, seconds, leeway)
+
 def timed(-Vars: Data, c: C.Ctx<Vars>, next: Json.Json -> C.Ctx<Vars> -> IO(Response.Res), config: JC.Config, token: String, now: Result<&1, &1, U32 & String, Nat>) -> IO(Response.Res):
   JC.Config{secret, leeway, realm} = config
   match now:
     case Fail{error}: IO.pure(Response.Res, Response.body(500, [], []))
-    case Done{seconds}: verified(Vars, c, next, realm, Jwt.verify(secret, token, seconds, leeway))
+    case Done{seconds}: verified(Vars, c, next, realm, keyed(secret, token, seconds, leeway))
 
 def dispatch(-Vars: Data, c: C.Ctx<Vars>, next: Json.Json -> C.Ctx<Vars> -> IO(Response.Res), +config: JC.Config, supplied: A.Supplied) -> IO(Response.Res):
   JC.Config{s, l, +realm} = config

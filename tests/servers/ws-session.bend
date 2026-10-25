@@ -17,6 +17,7 @@ type Route is Data:
   EchoRoute{}
   PushRoute{}
   PendingRoute{}
+  RaceRoute{}
   ClosedRoute{}
   HealthRoute{}
 
@@ -25,8 +26,34 @@ def flag(ok: Bool) -> String:
     case True{}: "yes"
     case False{}: "no"
 
+def admitted(ok: Bool, n: U32) -> U32:
+  match ok:
+    case True{}: (n + 1 : U32)
+    case False{}: n
+
+# Sends "m" until the mailbox refuses one, as a busy publisher would, and
+# counts the sends it admitted.
+def crowd(fuel: Nat, ok: Bool, +handle: W.Handle, n: U32) -> IO(U32):
+  match fuel ok:
+    case 1n+k True{}:
+      do IO<U32>:
+        +next : Bool <- W.text(handle, "m")
+        crowd(k, next, handle, admitted(next, n))
+    case _ _: IO.pure(U32, n)
+
 def open_result(path: String, user: User, +handle: W.Handle, log: Store.Store<String>) -> IO(User):
   match path:
+    # Fills the mailbox, then closes: the close must still be admitted, and
+    # every send after it refused.
+    case "/crowded":
+      do IO<User>:
+        n : U32 <- crowd(64n, True{}, handle, 0)
+        told : Bool <- W.text(handle, "late")
+        closing : Bool <- W.close(handle, 1011, "crowded")
+        again : Bool <- W.close(handle, 1000, "again")
+        after : Bool <- W.text(handle, "after")
+        saved : Result<&2, &2, Store.Error, Unit> <- Store.set(String, log, U32.show(n) ++ ":" ++ flag(told) ++ ":" ++ flag(closing) ++ ":" ++ flag(again) ++ ":" ++ flag(after))
+        return user
     case "/burst":
       do IO<User>:
         first : Bool <- W.text(handle, "one")
@@ -97,6 +124,8 @@ def session_config(path: String) -> W.Config:
     case "/burst": W.Config{8, 1, 5, 5, 60000, 0, 100, 1000}
     case "/many": W.Config{1048576, 128, 250, 250, 60000, 0, 100, 1000}
     case "/fill": W.Config{1048576, 8, 5, 5, 60000, 0, 100, 1000}
+    case "/crowded": W.Config{1048576, 4, 5, 5, 60000, 0, 10000, 1000}
+    case "/race": W.Config{1048576, 4, 1, 1, 60000, 0, 10000, 1000}
     case "/backoff": W.Config{1048576, 16, 5, 200, 60000, 0, 100, 1000}
     case "/fast-ping": W.Config{1048576, 16, 5, 5, 5000, 1, 100, 1000}
     case "/small": W.Config{8, 2, 5, 5, 60000, 0, 100, 1000}
@@ -136,6 +165,43 @@ def pending(c: B.Context(Unit), got: Result<&2, &2, Store.Error, Maybe<&2, W.Han
         return B.text(c, U32.show(n))
     case _: IO.pure(B.Res, B.text(c, "unavailable"))
 
+# `fuel` effects that change nothing, to move where the scheduler switches
+# computations.
+def pad(fuel: Nat) -> IO(Unit):
+  match fuel:
+    case 0n: IO.pure(Unit, Unit{})
+    case 1n+k:
+      do IO<Unit>:
+        now : Nat <- IO.now()
+        pad(k)
+
+def offset(got: Result<&1, &1, U32 & String, U32>) -> Nat:
+  match got:
+    case Done{r}: U32.to_nat(U32.and(r, 63))
+    case Fail{e}: 0n
+
+# After a random 0 to 63 effects, fills the mailbox, then closes, so the close
+# usually finds it full.
+def racer(+handle: W.Handle, code: U32, reason: String) -> IO(Bool):
+  do IO<Bool>:
+    got : Result<&1, &1, U32 & String, U32> <- IO.random_u32()
+    pad(offset(got))
+    n : U32 <- crowd(64n, True{}, handle, 0)
+    W.close(handle, code, reason)
+
+# Two computations race to close the stored connection while it drains its
+# mailbox. Answers whether each close was admitted.
+def race(c: B.Context(Unit), got: Result<&2, &2, Store.Error, Maybe<&2, W.Handle>>) -> IO(B.Res):
+  match got:
+    case Done{Some{+handle}}:
+      do IO<B.Res>:
+        first : Chan(Bool) <- IO.fork(Bool, racer(handle, 4001, "first"))
+        second : Chan(Bool) <- IO.fork(Bool, racer(handle, 4002, "second"))
+        a : Bool <- IO.join(Bool, first)
+        b : Bool <- IO.join(Bool, second)
+        return B.text(c, flag(a) ++ ":" ++ flag(b))
+    case _: IO.pure(B.Res, B.text(c, "unavailable"))
+
 def log_result(c: B.Context(Unit), got: Result<&2, &2, Store.Error, String>) -> B.Res:
   match got:
     case Done{text}: B.text(c, text)
@@ -154,6 +220,10 @@ def handler(route: Route, +c: B.Context(Unit), +shared: Shared) -> IO(B.Res):
       do IO<B.Res>:
         got : Result<&2, &2, Store.Error, Maybe<&2, W.Handle>> <- Store.get(Maybe<&2, W.Handle>, registry)
         pending(c, got)
+    case RaceRoute{} Shared{registry, log}:
+      do IO<B.Res>:
+        got : Result<&2, &2, Store.Error, Maybe<&2, W.Handle>> <- Store.get(Maybe<&2, W.Handle>, registry)
+        race(c, got)
     case ClosedRoute{} Shared{registry, log}:
       do IO<B.Res>:
         got : Result<&2, &2, Store.Error, String> <- Store.get(String, log)
@@ -175,4 +245,4 @@ def main() -> IO(Unit):
   do IO<Unit>:
     registry : Store.Store<Maybe<&2, W.Handle>> <- B.store_with_timeout(Maybe<&2, W.Handle>, None{}, 1000)
     log : Store.Store<String> <- B.store_with_timeout(String, "", 1000)
-    ready(Shared{registry, log}, B.routes(Route, [B.get(Route, "/", HealthRoute{}), B.get(Route, "/push", PushRoute{}), B.get(Route, "/pending", PendingRoute{}), B.get(Route, "/closed", ClosedRoute{}), B.get(Route, "/ws", EchoRoute{}), B.get(Route, "/small", EchoRoute{}), B.get(Route, "/idle", EchoRoute{}), B.get(Route, "/ping", EchoRoute{}), B.get(Route, "/fast-ping", EchoRoute{}), B.get(Route, "/burst", EchoRoute{}), B.get(Route, "/autobahn", EchoRoute{}), B.get(Route, "/slow-poll", EchoRoute{}), B.get(Route, "/many", EchoRoute{}), B.get(Route, "/fill", EchoRoute{}), B.get(Route, "/backoff", EchoRoute{})]))
+    ready(Shared{registry, log}, B.routes(Route, [B.get(Route, "/", HealthRoute{}), B.get(Route, "/push", PushRoute{}), B.get(Route, "/pending", PendingRoute{}), B.get(Route, "/race-close", RaceRoute{}), B.get(Route, "/closed", ClosedRoute{}), B.get(Route, "/ws", EchoRoute{}), B.get(Route, "/small", EchoRoute{}), B.get(Route, "/idle", EchoRoute{}), B.get(Route, "/ping", EchoRoute{}), B.get(Route, "/fast-ping", EchoRoute{}), B.get(Route, "/burst", EchoRoute{}), B.get(Route, "/autobahn", EchoRoute{}), B.get(Route, "/slow-poll", EchoRoute{}), B.get(Route, "/many", EchoRoute{}), B.get(Route, "/fill", EchoRoute{}), B.get(Route, "/crowded", EchoRoute{}), B.get(Route, "/race", EchoRoute{}), B.get(Route, "/backoff", EchoRoute{})]))

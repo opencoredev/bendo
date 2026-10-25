@@ -91,10 +91,10 @@ holds the room's newest lines that fit, with no gaps. `truncated` is `true`
 when older lines were left out, and the app then shows "Earlier messages not
 shown" above them. If even an empty history would not fit, which takes well
 over a hundred people in one room, the server sends an `error` and closes the
-connection with 1011. That close goes through the connection's 64-command
-mailbox, so a burst of room traffic that fills it during the join can drop it.
-The app closes a socket that has no welcome after 10 s and retries; BND-101
-tracks a close that can't be dropped.
+connection with 1011. A burst of room traffic can fill the connection's
+64-command mailbox during the join and crowd out the `error`, but never the
+close: a full mailbox still admits it, after the room lines already queued.
+The app also closes a socket that has no welcome after 10 s and retries.
 
 There are no accounts. Anyone who can reach the server can pick any name, and
 two people can share one. The server accepts any `Origin`, which is safe only

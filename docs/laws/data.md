@@ -8,6 +8,18 @@ route manifest. See the [laws index](README.md) for how to read an entry.
 
 - `json_roundtrip`: for every admissible JSON value and every writer setting (pretty or compact, ASCII-only or not), writing succeeds and parsing the UTF-8 output gives back the same value, member order and duplicate keys included. Admissible means valid JSON number text, strings and keys of Unicode scalar values, and at most 512 nested containers. See [JSON values and bodies](../data/json.md).
 
+## UTF-8 text
+
+`Utf8.encode` turns a `String` into UTF-8 octets. A Bend `Char` can hold any
+32-bit value, so a program can build a string with a surrogate (U+D800 to
+U+DFFF) or a value above U+10FFFF. The encoder writes each such character as
+U+FFFD, as WHATWG `TextEncoder` does, and the decoders that read a string as
+octets refuse it.
+
+- `utf8_encode_char_non_scalar`: a character that is not a Unicode scalar value encodes as the three octets of U+FFFD.
+- `utf8_encode_total`: every string encodes to valid UTF-8 that decodes back to the same string, with each non-scalar character replaced by U+FFFD. No character is dropped.
+- `utf8_encode_response`: `Utf8.encode` and `Response.utf8`, the encoder behind text responses, give the same octets for every string.
+
 ## Forms and query strings
 
 These laws cover percent-encoding and the lookup of repeated keys. See
@@ -16,6 +28,7 @@ These laws cover percent-encoding and the lookup of repeated keys. See
 - `query_component_roundtrip`: every string of Unicode scalar values survives query-component encoding and decoding.
 - `form_component_roundtrip`: every such string survives WHATWG form encoding and decoding, including space as `+` and a literal `+` as `%2B`.
 - `form_queries_all_in_order`: looking up a key returns every matching value, in order, for every entry list and key.
+- `url_decode_non_scalar`, `url_decode_form_non_scalar`, `url_parse_pairs_non_scalar`: `Url.decode`, `Url.decode_form` and `Url.parse_pairs` fail on any text that holds a non-scalar character, rather than decoding it as U+FFFD.
 
 ## Cookies
 
@@ -73,11 +86,11 @@ See [cookies](../cookies.md).
 - `signed_cookie_percent_spec`: the percent stage of `Url.decode` equals an independent RFC 3986 decoder for every octet list: `%HH` with hex digits in either case becomes one octet, a `%` without two hex digits fails with `InvalidPercent`, and every other octet, `+` included, stays literal.
 - `signed_cookie_utf8_sound`: when strict UTF-8 decoding returns a string, that string holds only Unicode scalars and encodes back to exactly the input octets. Overlong forms, surrogates, values above U+10FFFF, stray continuation bytes and non-octets cannot decode.
 - `signed_cookie_url_decode_sound`: a value `Url.decode` returns is a Unicode scalar string whose UTF-8 octets are the independent percent decoding of the wire's octets.
-- `signed_cookie_url_decode_complete`: conversely, every scalar string whose UTF-8 octets are that percent decoding is returned.
+- `signed_cookie_url_decode_complete`: conversely, for a wire of Unicode scalars, every scalar string whose UTF-8 octets are that percent decoding is returned. A wire with a non-scalar character fails instead (`url_decode_non_scalar`).
 - `signed_cookie_url_decode_percent_error`: a wire the independent percent decoder rejects fails with the same error.
-- `signed_cookie_url_decode_utf8_error`: a failure after a successful percent stage is always `InvalidUtf8`. With the three laws above, this fixes the result of `Url.decode` for every wire string.
+- `signed_cookie_url_decode_utf8_error`: a failure after a successful percent stage is always `InvalidUtf8`. With the three laws above and `url_decode_non_scalar`, this fixes the result of `Url.decode` for every wire string.
 - `signed_cookie_verify_sound`: verification restated against the independent decoders. If `verify` returns a value, the keys are usable, the value is a Unicode scalar string, and some listed key signed it: the wire percent decodes to the UTF-8 octets of the value, a dot, and the canonical base64 of that key's HMAC of the value.
-- `signed_cookie_verify_complete`: every wire of that form verifies to its value, under usable keys and any listed signing key, however its octets are escaped (either hex case, or unreserved characters escaped or not).
+- `signed_cookie_verify_complete`: every wire of that form made of Unicode scalars verifies to its value, under usable keys and any listed signing key, however its octets are escaped (either hex case, or unreserved characters escaped or not).
 
 ## Schemas
 
