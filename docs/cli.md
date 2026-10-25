@@ -88,7 +88,7 @@ ignores termination is killed after 500 ms. Compilation has a 180-second limit.
 The dev loop owns the public loopback port (`PORT`, default 8787) and forwards TCP
 connections to the current server. Candidates receive a private `PORT`; apps must
 honor it and listen on `127.0.0.1`, as the template does through
-`B.config_defaults`. A candidate must accept
+`B.config()`, whose server reads `PORT` at startup. A candidate must accept
 TCP connections within ten seconds before it replaces the old server. Failed
 startup leaves the old server available. The framework's listening message shows
 the candidate's private port; use the public port for requests. On replacement,

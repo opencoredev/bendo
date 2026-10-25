@@ -96,7 +96,7 @@ do not enter middleware.
 `B.Registration(Tag)`, a union of route and middleware entries. Existing
 `B.routes(Tag, [B.get(...)])` calls keep working. Explicitly typed app registration
 lists should use `List<&2, B.Registration(Tag)>`. Wrap low-level registrations
-with `B.route(Tag, Methods.get(...))` before passing them to `B.routes`.
+with `B.registration(Tag, Methods.get(...))` before passing them to `B.routes`.
 `Methods.Registration(Tag)` itself is unchanged for low-level router consumers.
 
 `B.handle` and `B.serve` keep their existing signatures for apps without

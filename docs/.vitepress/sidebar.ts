@@ -3,7 +3,6 @@ import type { DefaultTheme } from "vitepress";
 // One sidebar for the whole site. Every published page must appear here;
 // `config.ts` fails the build when a page is missing.
 //
-// Planned section: BND-71 adds "API reference" after "TypeScript toolkit".
 export const sidebar: DefaultTheme.SidebarItem[] = [
   {
     text: "Getting started",
@@ -119,6 +118,36 @@ export const sidebar: DefaultTheme.SidebarItem[] = [
       { text: "Share Bend code with JS", link: "/shared" },
       { text: "Vite plugin", link: "/vite-plugin" },
       { text: "OpenAPI and API docs", link: "/openapi" },
+    ],
+  },
+  {
+    text: "API reference",
+    collapsed: true,
+    items: [
+      { text: "Overview", link: "/api/" },
+      {
+        text: "Bend library",
+        items: [
+          { text: "App and server", link: "/api/bend/app" },
+          { text: "Routing", link: "/api/bend/routing" },
+          { text: "Context and responses", link: "/api/bend/context" },
+          { text: "Validation and JSON", link: "/api/bend/validation" },
+          { text: "Middleware", link: "/api/bend/middleware" },
+          { text: "Streaming and real time", link: "/api/bend/streaming" },
+          { text: "Stores and the clock", link: "/api/bend/state" },
+          { text: "Data and protocol modules", link: "/api/bend/modules" },
+        ],
+      },
+      {
+        text: "TypeScript packages",
+        items: [
+          { text: "bendo", link: "/api/ts/bendo" },
+          { text: "bendo/shared", link: "/api/ts/shared" },
+          { text: "bendo/client", link: "/api/ts/client" },
+          { text: "bendo/query", link: "/api/ts/query" },
+          { text: "vite-plugin-bendo", link: "/api/ts/vite-plugin" },
+        ],
+      },
     ],
   },
   {
