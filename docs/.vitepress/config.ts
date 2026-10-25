@@ -110,6 +110,7 @@ export default defineConfig({
     nav: [
       { text: "Quick start", link: "/getting-started" },
       { text: "Concepts", link: "/concepts/" },
+      { text: "API", link: "/api/" },
       { text: "Laws", link: "/laws/" },
       { text: "Examples", link: "/examples" },
     ],

@@ -37,7 +37,7 @@ def dispatch(tag: Tag, ctx: B.Ctx, env: Env) -> IO(B.Res):
 ```
 
 `ready` handles the result of `B.routes` and calls `B.serve`, as in the
-[quick start](../getting-started.md#3-create-an-app).
+[quick start](../getting-started.md).
 
 ## Why tags instead of functions
 
