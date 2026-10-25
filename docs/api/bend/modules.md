@@ -1,8 +1,8 @@
 # Data and protocol modules
 
 Names from Bendo's lower-level modules that the guides call directly: cookie
-options, form and multipart bodies, JSON Schema export, hashing and encodings,
-raw requests and responses, stream steps, route patterns and WebSocket frames.
+options and signing keys, form and multipart bodies, JSON Schema export, hashing, comparison,
+randomness and encodings, raw requests and responses, stream steps, route patterns and WebSocket frames.
 Everything else in these modules is internal.
 
 Examples on this page are one Bend program and share this setup:
@@ -17,7 +17,10 @@ import ./bendo/data/json.bend as J
 import ./bendo/data/schema.bend as S
 import ./bendo/data/json-schema.bend as JS
 import ./bendo/data/schema-pattern.bend as SchemaPattern
+import ./bendo/data/signed-cookie.bend as SignedCookie
 import ./bendo/crypto/sha256.bend as SHA
+import ./bendo/crypto/compare.bend as Compare
+import ./bendo/crypto/random.bend as Random
 import ./bendo/data/hex.bend as Hex
 import ./bendo/data/utf8.bend as Utf8
 import ./bendo/http/request.bend as Request
@@ -185,6 +188,28 @@ def ex_storable(name: String, value: String) -> Bool:
   Cookie.name_valid(name) && Cookie.value_valid(value)
 ```
 
+### `SignedCookie.Keys`, `SignedCookie.configure`
+
+```bend signature
+type Keys is Data:   # data/signed-cookie.bend
+  Keys{first: String, rest: List<&2, String>}
+
+def configure(xs: List<&2, String>) -> Maybe<&2, SignedCookie.Keys>
+```
+
+The secrets that `B.set_signed_cookie` and `B.signed_cookie` take. New cookies
+are signed with the first key, and a cookie verifies under any of them, so put
+a new secret first and keep the old one after it until its cookies expire.
+`SignedCookie.configure` returns `None{}` for an empty list or when any key is
+empty or holds a non-scalar character. Build keys with it once at startup
+rather than with the `Keys` constructor: the cookie calls recheck every slot
+and fail with `Cookie.InvalidSecret{}` on a bad one.
+
+```bend
+def ex_keys() -> Maybe<&2, SignedCookie.Keys>:
+  SignedCookie.configure(["new secret", "old secret"])
+```
+
 ## Form and multipart bodies
 
 [Multipart form bodies](../../data/multipart.md) covers parsing, limits and
@@ -291,11 +316,6 @@ def ex_upload_status(error: Multipart.Error) -> U32:
     case Multipart.Urlencoded{e}: 400
 ```
 
-## JSON Schema export
-
-[JSON Schema export](../../data/json-schema.md) lists how each schema maps
-and where validators differ from Bendo's decoder.
-
 ### `Multipart.error_status`
 
 ```bend signature
@@ -311,6 +331,11 @@ def ex_upload_answer(c: B.Ctx, result: Result<&2, &2, Multipart.Error, List<&2, 
     case Fail{error}: B.text(B.status(c, Multipart.error_status(error)), "Upload refused")
     case Done{parts}: B.text(c, "Uploaded")
 ```
+
+## JSON Schema export
+
+[JSON Schema export](../../data/json-schema.md) lists how each schema maps
+and where validators differ from Bendo's decoder.
 
 ### `JS.export`, `JS.document`
 
@@ -379,10 +404,6 @@ def ex_slug() -> SchemaPattern.Pattern:
   SchemaPattern.seq([SchemaPattern.Repeat{ex_lower(), 1n, None{}}, SchemaPattern.Repeat{SchemaPattern.Cat{SchemaPattern.Literal{"-"}, SchemaPattern.Repeat{ex_lower(), 1n, None{}}}, 0n, None{}}])
 ```
 
-## Hashing and encodings
-
-[Crypto and encoding](../../crypto.md) lists the other hashes, HMAC and Base64.
-
 ### `SchemaPattern.matches`, `SchemaPattern.source`
 
 ```bend signature
@@ -403,6 +424,10 @@ def ex_slug_source() -> String:
   SchemaPattern.source(ex_slug())
 ```
 
+## Hashing and encodings
+
+[Crypto and encoding](../../crypto.md) lists the other hashes, HMAC and Base64.
+
 ### `SHA.hash`, `Hex.encode`, `Utf8.encode`
 
 ```bend signature
@@ -420,8 +445,6 @@ Bytes are lists with one octet per `U32`.
 def ex_digest(text: String) -> String:
   Hex.encode(SHA.hash(Utf8.encode(text)))
 ```
-
-## Requests and responses
 
 ### `Utf8.valid`
 
@@ -442,6 +465,65 @@ def ex_digest_if(valid: Bool, secret: String) -> Maybe<&2, String>:
 def ex_safe_digest(+secret: String) -> Maybe<&2, String>:
   ex_digest_if(Utf8.valid(secret), secret)
 ```
+
+### `Utf8.decode`
+
+```bend signature
+def decode(xs: List<&2, U32>) -> Maybe<&2, String>
+```
+
+Decodes UTF-8 octets, such as a request body, into a string. It returns
+`None{}` for anything that is not strict UTF-8: a value above 255, an overlong
+encoding, a surrogate, a scalar above U+10FFFF, a stray continuation byte or
+an incomplete sequence. Nothing is replaced with U+FFFD.
+
+```bend
+def ex_body_text(+c: B.Ctx) -> String:
+  Maybe.default(&2, String, Utf8.decode(B.raw_body(c)), "")
+```
+
+### `Compare.ct_equal`
+
+```bend signature
+def ct_equal(xs: List<&2, U32>, ys: List<&2, U32>) -> Bool
+```
+
+Whether two byte lists are equal, visiting every element of both instead of
+stopping at the first difference. Use it to compare secrets, such as the
+SHA-256 digests of a submitted and a stored password. It is best effort: Bend
+gives no constant-time guarantee, and the list lengths stay observable, so
+compare fixed-length digests rather than the secrets themselves.
+
+```bend
+def ex_same_secret(a: String, b: String) -> Bool:
+  Compare.ct_equal(SHA.hash(Utf8.encode(a)), SHA.hash(Utf8.encode(b)))
+```
+
+### `Random.random_bytes`
+
+```bend signature
+def random_bytes(n: Nat) -> IO(Result<&1, &1, U32 & String, List<&2, U32>>)
+```
+
+`n` bytes from the operating system's secure source: `getrandom` on Linux,
+`arc4random_buf` on macOS and `crypto.getRandomValues` in JavaScript. A
+failure gives `Fail{(errno, message)}`, and JavaScript reports a missing or
+failing WebCrypto as error 5. There is no fallback generator. `0n` reads
+nothing.
+
+```bend
+def ex_token_text(r: Result<&1, &1, U32 & String, List<&2, U32>>) -> String:
+  match r:
+    case Done{bytes}: Hex.encode(bytes)
+    case Fail{e}: ""
+
+def ex_session_id() -> IO(String):
+  do IO<String>:
+    got : Result<&1, &1, U32 & String, List<&2, U32>> <- Random.random_bytes(32n)
+    return ex_token_text(got)
+```
+
+## Requests and responses
 
 ### `Request.Method`
 
@@ -476,6 +558,25 @@ def ex_is_write(m: Request.Method) -> Bool:
     case Request.Patch{}: True{}
     case Request.Delete{}: True{}
     case _: False{}
+```
+
+### `Request.Version`
+
+```bend signature
+type Version is Data:
+  Http10{}
+  Http11{}
+```
+
+The HTTP version of a request head, the `version` field of `B.Req`. Build one
+only for a request you pass to `B.handle`, usually `Request.Http11{}`.
+
+```bend
+def ex_http11() -> Request.Version:
+  Request.Http11{}
+
+def ex_test_request(path: String) -> B.Req:
+  Request.Req{Request.Get{}, path, None{}, ex_http11(), []}
 ```
 
 ### `Response.Res`

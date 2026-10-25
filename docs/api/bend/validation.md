@@ -498,17 +498,24 @@ def ex_json_error(e: J.Error) -> String:
     case _: "invalid JSON"
 ```
 
-### `J.parse_string`
+### `J.parse`, `J.parse_string`
 
 ```bend signature
+def parse(body: List<&2, U32>) -> Result<&2, &2, J.Error, J.Json>
 def parse_string(+s: String) -> Result<&2, &2, J.Error, J.Json>
 ```
 
-Parses an already decoded string. Only space, tab, LF and CR are whitespace,
-and a byte order mark is refused. For request body bytes use
-`J.parse(body)`, which decodes strict UTF-8 first.
+`J.parse` parses request body bytes, such as `B.raw_body(c)`: it decodes
+strict UTF-8 first and fails with `InvalidUtf8{}` on malformed bytes.
+`J.parse_string` parses an already decoded string. Only space, tab, LF and CR
+are whitespace, and a byte order mark is refused. A route with a
+[body schema](#declare-route-schemas) gets its body parsed and checked before the
+handler runs.
 
 ```bend
+def ex_parse_body(+c: B.Ctx) -> Result<&2, &2, J.Error, J.Json>:
+  J.parse(B.raw_body(c))
+
 def ex_parse_title(text: String) -> Result<&2, &2, J.Error, J.Json>:
   J.parse_string(text)
 ```

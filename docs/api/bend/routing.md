@@ -197,22 +197,38 @@ def ex_not_found() -> List<&2, B.Registration(Tag)>:
 
 ## Scopes
 
-### `B.Hook`, `B.hook`
+### `B.Hook`, `B.hook`, `Table.Stage`
 
 ```bend signature
 def Hook(-Tag: Data) -> Data
 def hook(-Tag: Data, stage: Table.Stage, id: Tag) -> B.Hook(Tag)
+
+type Stage is Data:   # app/table.bend
+  Request{}
+  Parse{}
+  Transform{}
+  BeforeHandle{}
+  AfterHandle{}
+  MapResponse{}
+  Error{}
+  AfterResponse{}
+  NotFound{}
 ```
 
 A hook given as an option to `B.group`, `B.guard_options` or `B.route_hooks`,
 rather than as an entry in the list. `stage` is one of `Table.Request{}`,
 `Table.Parse{}`, `Table.Transform{}`, `Table.BeforeHandle{}`,
 `Table.AfterHandle{}`, `Table.MapResponse{}`, `Table.Error{}` and
-`Table.AfterResponse{}`, from `app/table.bend`.
+`Table.AfterResponse{}`, from `app/table.bend`; `main.bend` has no names for
+these constructors. They match the list entries `B.on_request` through
+`B.on_after_response`. `Table.NotFound{}` is the stage of `B.on_not_found`.
 
 ```bend
+def ex_auth_stage() -> Table.Stage:
+  Table.BeforeHandle{}
+
 def ex_auth_hooks() -> List<&2, B.Hook(Tag)>:
-  [B.hook(Tag, Table.BeforeHandle{}, Auth{})]
+  [B.hook(Tag, ex_auth_stage(), Auth{})]
 ```
 
 ### `B.group`

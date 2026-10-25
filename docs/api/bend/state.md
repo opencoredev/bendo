@@ -171,17 +171,19 @@ def ex_add(visits: B.Store(U32), +n: U32) -> IO(Result<&2, &2, Store.Error, U32>
 
 ## Wall clock
 
-### `Clock.wall_millis`
+### `Clock.wall_millis`, `Clock.wall_seconds`
 
 ```bend signature
 def wall_millis() -> IO(Result<&1, &1, U32 & String, Nat>)
+def wall_seconds() -> IO(Result<&1, &1, U32 & String, Nat>)
 ```
 
 Milliseconds since the Unix epoch, read from `CLOCK_REALTIME` natively and
 `Date.now()` in JavaScript. It fails with an error code and message when the
 clock is unavailable, before the epoch, or past the year 9999. Use it for
 timestamps people read; for durations and timeouts use `IO.now`, which is
-monotonic.
+monotonic. `Clock.wall_seconds` is the same reading in whole seconds, rounded
+down, as JWT `iat` and `exp` claims use.
 
 ```bend
 def ex_stamp(r: Result<&1, &1, U32 & String, Nat>) -> String:
@@ -192,5 +194,10 @@ def ex_stamp(r: Result<&1, &1, U32 & String, Nat>) -> String:
 def ex_now() -> IO(String):
   do IO<String>:
     got : Result<&1, &1, U32 & String, Nat> <- Clock.wall_millis()
+    return ex_stamp(got)
+
+def ex_now_seconds() -> IO(String):
+  do IO<String>:
+    got : Result<&1, &1, U32 & String, Nat> <- Clock.wall_seconds()
     return ex_stamp(got)
 ```

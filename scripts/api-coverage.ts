@@ -30,8 +30,12 @@ const apiDir = "docs/api";
 // guides use, made unique. A module that starts being called through fails
 // until it is given one here.
 export const companionAliases: ReadonlyMap<string, string> = new Map([
+  ["src/app/config.bend", "Config"],
   ["src/app/context.bend", "C"],
   ["src/app/store.bend", "Store"],
+  ["src/app/table.bend", "Table"],
+  ["src/crypto/compare.bend", "Compare"],
+  ["src/crypto/random.bend", "Random"],
   ["src/crypto/sha256.bend", "SHA"],
   ["src/data/cookie.bend", "Cookie"],
   ["src/data/form.bend", "Form"],
@@ -41,6 +45,7 @@ export const companionAliases: ReadonlyMap<string, string> = new Map([
   ["src/data/multipart.bend", "Multipart"],
   ["src/data/schema-pattern.bend", "SchemaPattern"],
   ["src/data/schema.bend", "S"],
+  ["src/data/signed-cookie.bend", "SignedCookie"],
   ["src/data/utf8.bend", "Utf8"],
   ["src/effects/clock.bend", "Clock"],
   ["src/http/request.bend", "Request"],

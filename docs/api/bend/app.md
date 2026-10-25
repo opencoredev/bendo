@@ -43,7 +43,7 @@ def middleware(tag: Tag, c: B.Context(Unit), env: Env, next: B.Context(Unit) -> 
 
 ## Types
 
-### `B.Req`
+### `B.Req`, `Request.Req`
 
 ```bend signature
 def Req() -> Data
@@ -52,10 +52,12 @@ type Req is Data:
   Req{method: Method, path: String, query: Maybe<&2, String>, version: Version, headers: List<&2, Header>}
 ```
 
-A parsed request head, defined in `http/request.bend`. The server builds it
-for you; you construct one only to call `B.handle`. `path` excludes the query,
-which is the raw text after `?`. Handlers read requests through the
-[context](context.md) instead.
+A parsed request head. `B.Req` names the type `Request.Req` from
+`http/request.bend`, and the constructor is only reachable through that
+module. The server builds it for you; you construct one only to call
+`B.handle`. `path` excludes the query, which is the raw text after `?`, and
+`version` is a [`Request.Version`](modules.md#requests-and-responses). Handlers
+read requests through the [context](context.md) instead.
 
 ```bend
 def ex_request() -> B.Req:
@@ -293,7 +295,7 @@ def ex_print_routes(table: B.Routes(Tag)) -> IO(Unit):
 
 ## Server config
 
-### `B.ServerConfig`
+### `B.ServerConfig`, `Config.Config`
 
 ```bend signature
 def ServerConfig() -> Data
@@ -302,11 +304,13 @@ type Config is Data:
   Config{host: String, port: U32, body_limit: U32, header_limit: U32, idle_timeout_ms: U32, head_timeout_ms: U32, body_timeout_ms: U32, max_requests: U32, keep_alive: Bool, router: B.RouterKind, mode: Mode, workers: U32}
 ```
 
-Startup settings for `B.serve` and its variants, defined in
-`app/config.bend`. `host` must be an IPv4 literal. `body_limit` and
-`header_limit` count bytes, the timeouts are milliseconds, and `max_requests`
-caps the requests on one connection. To change a field with no helper here,
-import `app/config.bend` and rebuild the record.
+Startup settings for `B.serve` and its variants. `B.ServerConfig` names the
+type `Config.Config` from `app/config.bend`. `host` must be an IPv4 literal.
+`body_limit` and `header_limit` count bytes, the timeouts are milliseconds,
+and `max_requests` caps the requests on one connection. To change a field with
+no helper here, import `app/config.bend` as `Config`, take the record apart
+with the `Config.Config` constructor and build a new one, as below. Fields are
+positional, so keep the order of the signature.
 
 ```bend
 def ex_public(config: B.ServerConfig) -> B.ServerConfig:

@@ -6,6 +6,13 @@ context and leave the old one as it was. [Context](../../concepts/context.md)
 explains the model and [Request context](../../context.md) has the full rules;
 this page lists the calls.
 
+A heading that also names a `C.` function, such as `B.param`, `C.param`, marks
+the same call for a context that carries a typed record. `C` is
+`bendo/app/context.bend`. Each `C` function takes the erased `Vars` type first
+and `B.Context(Vars)` where the `B` one takes `B.Ctx`, so `B.param(c, name)` is
+`C.param(Unit, c, name)`. [Typed variables](#typed-variables) shows how to set
+the record.
+
 Examples on this page are one Bend program and share this setup:
 
 ```bend
@@ -15,6 +22,10 @@ import ./bendo/app/context.bend as C
 import ./bendo/data/json.bend as J
 import ./bendo/data/cookie.bend as Cookie
 import ./bendo/data/signed-cookie.bend as SignedCookie
+import ./bendo/http/request.bend as Request
+
+type Vars is Data:
+  Vars{user: String}
 
 def or_empty(value: Maybe<&2, String>) -> String:
   Maybe.default(&2, String, value, "")
@@ -22,7 +33,7 @@ def or_empty(value: Maybe<&2, String>) -> String:
 
 ## Read the request
 
-### `B.param`
+### `B.param`, `C.param`
 
 ```bend signature
 def param(c: B.Ctx, name: String) -> Maybe<&2, String>
@@ -34,9 +45,12 @@ pattern has no such capture. See [route patterns](../../router-patterns.md).
 ```bend
 def ex_user(+c: B.Ctx) -> B.Res:
   B.text(c, "user " ++ or_empty(B.param(c, "id")))
+
+def ex_typed_user(+c: B.Context(Vars)) -> B.Res:
+  C.text(Vars, c, "user " ++ or_empty(C.param(Vars, c, "id")))
 ```
 
-### `B.query`, `B.queries`
+### `B.query`, `B.queries`, `C.query`, `C.queries`
 
 ```bend signature
 def query(c: B.Ctx, name: String) -> Maybe<&2, String>
@@ -53,9 +67,13 @@ def ex_search(+c: B.Ctx) -> B.Res:
   term = or_empty(B.query(c, "q"))
   tags = B.queries(c, "tag")
   B.text(c, term ++ " in " ++ Nat.show(List.length(&2, String, tags)) ++ " tags")
+
+def ex_typed_search(+c: B.Context(Vars)) -> B.Res:
+  tags = C.queries(Vars, c, "tag")
+  C.text(Vars, c, or_empty(C.query(Vars, c, "q")) ++ " in " ++ Nat.show(List.length(&2, String, tags)) ++ " tags")
 ```
 
-### `B.request_header`, `B.header_bytes`
+### `B.request_header`, `B.header_bytes`, `C.request_header`
 
 ```bend signature
 def request_header(c: B.Ctx, name: String) -> Maybe<&2, String>
@@ -72,9 +90,12 @@ field in arrival order, so an empty list means absent. The name is
 def ex_agent(+c: B.Ctx) -> B.Res:
   fields = B.header_bytes(c, "x-forwarded-for")
   B.text(c, or_empty(B.request_header(c, "user-agent")) ++ " via " ++ Nat.show(List.length(&2, List<&2, U32>, fields)) ++ " proxies")
+
+def ex_typed_agent(+c: B.Context(Vars)) -> B.Res:
+  C.text(Vars, c, or_empty(C.request_header(Vars, c, "user-agent")))
 ```
 
-### `B.method`, `B.path`, `B.url`
+### `B.method`, `B.path`, `B.url`, `C.method`, `C.path`
 
 ```bend signature
 def method(c: B.Ctx) -> Request.Method
@@ -92,9 +113,18 @@ absolute URL or read `Host` or forwarded headers.
 def ex_echo(+c: B.Ctx) -> B.Res:
   same = B.rewrite(c, B.method(c), B.path(c))
   B.text(same, B.url(c))
+
+def ex_verb(m: Request.Method) -> String:
+  match m:
+    case Request.Get{}: "GET"
+    case Request.Post{}: "POST"
+    case _: "other"
+
+def ex_typed_path(+c: B.Context(Vars)) -> B.Res:
+  C.text(Vars, c, ex_verb(C.method(Vars, c)) ++ " " ++ C.path(Vars, c))
 ```
 
-### `B.raw_body`
+### `B.raw_body`, `C.raw_body`
 
 ```bend signature
 def raw_body(c: B.Ctx) -> List<&2, U32>
@@ -108,6 +138,9 @@ runs. Parse JSON from it with `J.parse`, or declare a
 ```bend
 def ex_size(+c: B.Ctx) -> B.Res:
   B.text(c, Nat.show(List.length(&2, U32, B.raw_body(c))) ++ " bytes")
+
+def ex_typed_size(+c: B.Context(Vars)) -> B.Res:
+  C.text(Vars, c, Nat.show(List.length(&2, U32, C.raw_body(Vars, c))) ++ " bytes")
 ```
 
 ### `B.rewrite`
@@ -135,7 +168,7 @@ as a header value with a newline or a status outside 100 to 599, becomes an
 empty 500 instead of reaching the wire. The writer always owns
 `Content-Length`, `Transfer-Encoding` and HEAD framing.
 
-### `B.text`, `B.html`
+### `B.text`, `B.html`, `C.text`, `C.html`
 
 ```bend signature
 def text(c: B.Ctx, value: String) -> B.Res
@@ -152,9 +185,15 @@ def ex_hello(c: B.Ctx) -> B.Res:
 
 def ex_page(c: B.Ctx) -> B.Res:
   B.html(c, "<h1>Hello</h1>")
+
+def ex_typed_hello(c: B.Context(Vars)) -> B.Res:
+  C.text(Vars, c, "Hello")
+
+def ex_typed_page(c: B.Context(Vars)) -> B.Res:
+  C.html(Vars, c, "<h1>Hello</h1>")
 ```
 
-### `B.json`
+### `B.json`, `C.json`
 
 ```bend signature
 def json(c: B.Ctx, value: J.Json) -> B.Res
@@ -167,9 +206,12 @@ Writes `value` with `J.stringify` and sends it as
 ```bend
 def ex_todo(c: B.Ctx) -> B.Res:
   B.json(c, J.JObject{[J.Field{"title", J.JString{"Write docs"}}, J.Field{"done", J.JBool{False{}}}]})
+
+def ex_typed_todo(c: B.Context(Vars)) -> B.Res:
+  C.json(Vars, c, J.JArray{[]})
 ```
 
-### `B.body`
+### `B.body`, `C.body`
 
 ```bend signature
 def body(c: B.Ctx, bytes: List<&2, U32>, content_type: Maybe<&2, String>) -> B.Res
@@ -181,9 +223,12 @@ pending one or leaves it absent. Every element must be an octet, 0 to 255.
 ```bend
 def ex_pixel(c: B.Ctx) -> B.Res:
   B.body(c, [71, 73, 70, 56, 57, 97], Some{"image/gif"})
+
+def ex_typed_empty(c: B.Context(Vars)) -> B.Res:
+  C.body(Vars, C.status(Vars, c, 204), [], None{})
 ```
 
-### `B.status`, `B.header`
+### `B.status`, `B.header`, `C.status`, `C.header`
 
 ```bend signature
 def status(c: B.Ctx, code: U32) -> B.Ctx
@@ -198,9 +243,12 @@ new context for the next setter or a final helper.
 ```bend
 def ex_created(c: B.Ctx) -> B.Res:
   B.text(B.header(B.status(c, 201), "location", "/todos/1"), "Created")
+
+def ex_typed_created(c: B.Context(Vars)) -> B.Res:
+  C.text(Vars, C.header(Vars, C.status(Vars, c, 201), "location", "/todos/1"), "Created")
 ```
 
-### `B.redirect`, `B.redirect_status`
+### `B.redirect`, `B.redirect_status`, `C.redirect`
 
 ```bend signature
 def redirect(c: B.Ctx, location: String) -> B.Res
@@ -217,9 +265,12 @@ def ex_login(c: B.Ctx) -> B.Res:
 
 def ex_moved(c: B.Ctx) -> B.Res:
   B.redirect_status(c, "/new-home", 301)
+
+def ex_typed_login(c: B.Context(Vars)) -> B.Res:
+  C.redirect(Vars, c, "/login")
 ```
 
-### `B.not_found`
+### `B.not_found`, `C.not_found`
 
 ```bend signature
 def not_found(c: B.Ctx) -> B.Res
@@ -232,6 +283,9 @@ custom answer to unmatched routes, register `B.on_not_found`.
 ```bend
 def ex_missing(c: B.Ctx) -> B.Res:
   B.not_found(c)
+
+def ex_typed_missing(c: B.Context(Vars)) -> B.Res:
+  C.not_found(Vars, c)
 ```
 
 ### `B.not_modified`
@@ -293,7 +347,7 @@ def ex_tea() -> B.HttpError:
   B.http_error(418, "Tea only")
 ```
 
-### `B.error`
+### `B.error`, `C.error`
 
 ```bend signature
 def error(c: B.Ctx, failure: B.HttpError) -> B.Res
@@ -307,6 +361,9 @@ plain text otherwise. `Accept` is appended to `Vary`. Pending headers are kept;
 ```bend
 def ex_forbidden(c: B.Ctx) -> B.Res:
   B.error(c, B.http_error(403, "Admins only"))
+
+def ex_typed_forbidden(c: B.Context(Vars)) -> B.Res:
+  C.error(Vars, c, B.http_error(403, "Admins only"))
 ```
 
 ### `B.result`
@@ -342,7 +399,7 @@ Import `bendo/data/cookie.bend` as `Cookie` for the options and error types.
 [Cookies](../../cookies.md) has the parsing rules, every option and the
 signed-cookie wire format.
 
-### `B.cookies`, `B.cookie`
+### `B.cookies`, `B.cookie`, `C.cookie`
 
 ```bend signature
 def cookies(c: B.Ctx) -> List<&2, Cookie.Entry>
@@ -359,9 +416,12 @@ percent-decoded.
 def ex_theme(+c: B.Ctx) -> B.Res:
   all = B.cookies(c)
   B.text(c, or_empty(B.cookie(c, "theme")) ++ " of " ++ Nat.show(List.length(&2, Cookie.Entry, all)))
+
+def ex_typed_theme(+c: B.Context(Vars)) -> B.Res:
+  C.text(Vars, c, or_empty(C.cookie(Vars, c, "theme")))
 ```
 
-### `B.set_cookie`, `B.delete_cookie`
+### `B.set_cookie`, `B.delete_cookie`, `C.set_cookie`, `C.delete_cookie`
 
 ```bend signature
 def set_cookie(c: B.Ctx, name: String, value: String, options: Cookie.Options) -> Result<&2, &2, Cookie.Error, B.Ctx>
@@ -385,9 +445,15 @@ def ex_remember(+c: B.Ctx) -> B.Res:
 
 def ex_forget(+c: B.Ctx) -> B.Res:
   ex_cookie_sent(c, B.delete_cookie(c, "theme", Cookie.defaults()))
+
+def ex_typed_remember(c: B.Context(Vars)) -> Result<&2, &2, Cookie.Error, B.Context(Vars)>:
+  C.set_cookie(Vars, c, "theme", "dark", Cookie.defaults())
+
+def ex_typed_forget(c: B.Context(Vars)) -> Result<&2, &2, Cookie.Error, B.Context(Vars)>:
+  C.delete_cookie(Vars, c, "theme", Cookie.defaults())
 ```
 
-### `B.set_signed_cookie`, `B.signed_cookie`
+### `B.set_signed_cookie`, `B.signed_cookie`, `C.set_signed_cookie`, `C.signed_cookie`
 
 ```bend signature
 def set_signed_cookie(c: B.Ctx, name: String, value: String, keys: SignedCookie.Keys, options: Cookie.Options) -> Result<&2, &2, Cookie.Error, B.Ctx>
@@ -406,6 +472,10 @@ not signed.
 def ex_session(+c: B.Ctx, +keys: SignedCookie.Keys) -> Result<&2, &2, Cookie.Error, B.Ctx>:
   user = or_empty(B.signed_cookie(c, "session", keys))
   B.set_signed_cookie(c, "session", user, keys, Cookie.defaults())
+
+def ex_typed_session(+c: B.Context(Vars), +keys: SignedCookie.Keys) -> Result<&2, &2, Cookie.Error, B.Context(Vars)>:
+  user = or_empty(C.signed_cookie(Vars, c, "session", keys))
+  C.set_signed_cookie(Vars, c, "session", user, keys, Cookie.defaults())
 ```
 
 ## Connection info
@@ -487,7 +557,9 @@ def ex_client(+c: B.Ctx) -> B.Res:
 `bendo/app/context.bend`, imported as `C`, defines `C.Ctx<Vars>`, which
 `main.bend` names `B.Context(Vars)`. `B.Ctx` is `B.Context(Unit)`. Each `C`
 function takes the erased `Vars` type first, so typed middleware keeps its
-record type. [Middleware](../../middleware.md) shows them in use.
+record type. The calls above that list a `C.` name work on such a context;
+the entries below set and read the record. [Middleware](../../middleware.md)
+shows them in use. The examples use the `Vars` record from the setup.
 
 ### `C.variables`
 
@@ -499,9 +571,6 @@ Turns a plain context into one that can carry a `Vars` record. The request and
 the pending response are kept, and no record is set yet.
 
 ```bend
-type Vars is Data:
-  Vars{user: String}
-
 def ex_scoped(c: B.Ctx) -> B.Context(Vars):
   C.variables(Vars, c)
 ```
@@ -525,37 +594,6 @@ def ex_user_name(value: Maybe<&2, Vars>) -> String:
 
 def ex_signed_in(c: B.Context(Vars)) -> String:
   ex_user_name(C.get(Vars, C.set(Vars, c, Vars{"Ada"})))
-```
-
-### `C.text`, `C.header`
-
-```bend signature
-def text(-Vars: Data, c: B.Context(Vars), value: String) -> B.Res
-def header(-Vars: Data, c: B.Context(Vars), name: String, value: String) -> B.Context(Vars)
-```
-
-`B.text` and `B.header` for a typed context. Every context call on this page
-exists in `C` the same way, with `Vars` first, such as `C.error(Vars, c,
-failure)`; the next two entries are the ones the guides use.
-
-```bend
-def ex_greet(+c: B.Context(Vars)) -> B.Res:
-  C.text(Vars, C.header(Vars, c, "x-user", ex_user_name(C.get(Vars, c))), "Hello")
-```
-
-### `C.query`, `C.status`
-
-```bend signature
-def query(-Vars: Data, c: B.Context(Vars), name: String) -> Maybe<&2, String>
-def status(-Vars: Data, c: B.Context(Vars), code: U32) -> B.Context(Vars)
-```
-
-`B.query` and `B.status` for a typed context: the first value of query
-parameter `name`, and the context with a pending status of `code`.
-
-```bend
-def ex_typed_search(+c: B.Context(Vars)) -> B.Res:
-  C.text(Vars, C.status(Vars, c, 202), "searching for " ++ or_empty(C.query(Vars, c, "q")))
 ```
 
 ### `C.request_id`

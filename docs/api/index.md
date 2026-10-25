@@ -22,7 +22,7 @@ import ./bendo/main.bend as B
 | [Middleware](bend/middleware.md) | Built-in middleware: logging, auth, JWT, CORS, security headers, caching, limits, IP rules, rate limits |
 | [Streaming and real time](bend/streaming.md) | Streams, Server-Sent Events, WebSockets, pub/sub, static files, the reverse proxy |
 | [Stores and the clock](bend/state.md) | Shared state actors and the wall clock |
-| [Data and protocol modules](bend/modules.md) | Cookies, forms, multipart, JSON Schema, encodings, route patterns, WebSocket frames, raw requests and responses |
+| [Data and protocol modules](bend/modules.md) | Cookies and signing keys, forms, multipart, JSON Schema, hashing, comparison, random bytes, encodings, route patterns, WebSocket frames, raw requests and responses |
 
 The examples and guides also import some modules beside `B`. The reference
 writes their names with these aliases:
@@ -45,6 +45,10 @@ writes their names with these aliases:
 | `JS` | `bendo/data/json-schema.bend` | JSON Schema export |
 | `SchemaPattern` | `bendo/data/schema-pattern.bend` | String patterns for schemas |
 | `SHA`, `Hex`, `Utf8` | `bendo/crypto/sha256.bend`, `bendo/data/hex.bend`, `bendo/data/utf8.bend` | Hashing and encodings |
+| `Compare`, `Random` | `bendo/crypto/compare.bend`, `bendo/crypto/random.bend` | Comparing secrets and random bytes |
+| `SignedCookie` | `bendo/data/signed-cookie.bend` | Signed-cookie keys |
+| `Config` | `bendo/app/config.bend` | The server config record, to change a field |
+| `Table` | `bendo/app/table.bend` | Hook stages for `B.hook` |
 | `Request`, `Response` | `bendo/http/request.bend`, `bendo/http/response.bend` | HTTP methods and raw responses |
 | `StreamTypes`, `SseTypes` | `bendo/http/stream_types.bend`, `bendo/http/sse_types.bend` | Stream and SSE step values |
 | `RoutePattern` | `bendo/router/pattern.bend` | Compiling and matching route patterns |
