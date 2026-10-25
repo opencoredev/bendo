@@ -3,8 +3,7 @@ import type { DefaultTheme } from "vitepress";
 // One sidebar for the whole site. Every published page must appear here;
 // `config.ts` fails the build when a page is missing.
 //
-// Planned sections: BND-71 adds "API reference" after "TypeScript toolkit",
-// and BND-72 adds task and migration guides to "Guides".
+// Planned section: BND-71 adds "API reference" after "TypeScript toolkit".
 export const sidebar: DefaultTheme.SidebarItem[] = [
   {
     text: "Getting started",
@@ -32,6 +31,13 @@ export const sidebar: DefaultTheme.SidebarItem[] = [
     items: [
       { text: "Develop with the CLI", link: "/cli" },
       { text: "Write a plugin", link: "/guides/plugins" },
+      { text: "Protect routes with auth", link: "/guides/auth" },
+      { text: "Call your API from another origin", link: "/guides/cors" },
+      { text: "Accept file uploads", link: "/guides/uploads" },
+      { text: "Add WebSockets", link: "/guides/websockets" },
+      { text: "Deploy behind Caddy or Cloudflare", link: "/guides/deploy" },
+      { text: "Migrate from Hono", link: "/guides/migrate-from-hono" },
+      { text: "Migrate from Elysia", link: "/guides/migrate-from-elysia" },
     ],
   },
   {
