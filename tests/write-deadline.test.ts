@@ -13,31 +13,35 @@ const WRITE_TIMEOUT_MS = 1000;
 
 // Test-only send fault (LD_PRELOAD, native only): a parser reply always finds
 // its socket's send buffer full, as an earlier response leaves it when the
-// client stops reading.
+// client stops reading. The shim needs glibc's LD_PRELOAD, so it runs on Linux
+// only; elsewhere those cases are skipped and the rest of the file still runs.
+const shimmed = process.platform === "linux";
 const shimDirectory = mkdtempSync(join(tmpdir(), "bendo-write-deadline-"));
 const fullSocketShim = join(shimDirectory, "full-socket.so");
-const compiled = Bun.spawnSync(
-  [
-    "timeout",
-    "10s",
-    "cc",
-    "-shared",
-    "-fPIC",
-    "tests/fixtures/write-deadline/full-socket.c",
-    "-o",
-    fullSocketShim,
-    "-ldl",
-  ],
-  { stdout: "pipe", stderr: "pipe" },
-);
-if (compiled.exitCode !== 0)
-  throw new Error(`send fault fixture compile failed: ${compiled.stderr}`);
+if (shimmed) {
+  const compiled = Bun.spawnSync(
+    [
+      "timeout",
+      "10s",
+      "cc",
+      "-shared",
+      "-fPIC",
+      "tests/fixtures/write-deadline/full-socket.c",
+      "-o",
+      fullSocketShim,
+      "-ldl",
+    ],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  if (compiled.exitCode !== 0)
+    throw new Error(`send fault fixture compile failed: ${compiled.stderr}`);
+}
 
 let server: RunningServer;
-let full: RunningServer;
+let full: RunningServer | undefined;
 beforeAll(async () => {
   server = await start(binary);
-  full = await start(binary, "127.0.0.1", { LD_PRELOAD: fullSocketShim });
+  if (shimmed) full = await start(binary, "127.0.0.1", { LD_PRELOAD: fullSocketShim });
 });
 afterAll(async () => {
   await server?.[Symbol.asyncDispose]();
@@ -192,20 +196,25 @@ const parserReplies: ReadonlyArray<readonly [string, string, string]> = [
 ];
 
 for (const [status, label, second] of parserReplies) {
-  test(`${label} on a full socket is dropped within the write deadline`, async () => {
-    const socket = connect(Number(new URL(full.url).port), "127.0.0.1");
-    socket.pause();
-    socket.write(`GET /ping HTTP/1.1\r\nHost: x\r\n\r\n${second}`);
-    // Two windows plus slack, while the server keeps answering others.
-    const until = Date.now() + 2 * WRITE_TIMEOUT_MS + 1500;
-    while (Date.now() < until) {
-      const ping = await fetch(full.url + "/ping");
-      expect(await ping.text()).toBe("pong");
-      await Bun.sleep(200);
-    }
-    const { text, closed } = await collect(socket, 3000);
-    expect(closed).toBe(true);
-    // A boolean, so a failure does not print megabytes of filler.
-    expect(text.includes(`HTTP/1.1 ${status} `)).toBe(false);
-  }, 20_000);
+  test.if(shimmed)(
+    `${label} on a full socket is dropped within the write deadline`,
+    async () => {
+      if (full === undefined) throw new Error("the full-socket server did not start");
+      const socket = connect(Number(new URL(full.url).port), "127.0.0.1");
+      socket.pause();
+      socket.write(`GET /ping HTTP/1.1\r\nHost: x\r\n\r\n${second}`);
+      // Two windows plus slack, while the server keeps answering others.
+      const until = Date.now() + 2 * WRITE_TIMEOUT_MS + 1500;
+      while (Date.now() < until) {
+        const ping = await fetch(full.url + "/ping");
+        expect(await ping.text()).toBe("pong");
+        await Bun.sleep(200);
+      }
+      const { text, closed } = await collect(socket, 3000);
+      expect(closed).toBe(true);
+      // A boolean, so a failure does not print megabytes of filler.
+      expect(text.includes(`HTTP/1.1 ${status} `)).toBe(false);
+    },
+    20_000,
+  );
 }
