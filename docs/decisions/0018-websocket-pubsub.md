@@ -37,7 +37,9 @@ but that wait can time out too.
 A `P.Peer` is ordinary data, so an application can keep one after its
 connection closes. `P.subscribe` goes through `T.admit_within`, which records
 the subscription only for an active ID and within the hub's limits (below).
-For an active ID within the limits it is exactly `T.admit`. A subscribe that
+When it admits a new subscription, the result is exactly `T.admit`. A repeat
+subscription leaves the registry unchanged, where `T.admit` would replace the
+existing record. A subscribe that
 the actor serializes after the close cleanup leaves the registry unchanged and
 returns `False`, so it cannot re-register a dead connection.
 
