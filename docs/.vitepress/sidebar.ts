@@ -115,6 +115,14 @@ export const sidebar: DefaultTheme.SidebarItem[] = [
     ],
   },
   {
+    text: "Releases",
+    collapsed: true,
+    items: [
+      { text: "Versioning", link: "/versioning" },
+      { text: "Releasing", link: "/releasing" },
+    ],
+  },
+  {
     text: "Laws",
     collapsed: true,
     items: [

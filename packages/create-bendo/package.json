@@ -11,7 +11,8 @@
     "src",
     "!src/**/*.test.ts",
     "templates",
-    "bend"
+    "bend",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "prepack": "bun src/bundle.ts"
@@ -19,5 +20,8 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/opencoredev/bendo"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

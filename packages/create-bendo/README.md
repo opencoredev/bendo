@@ -47,7 +47,7 @@ Run from a checkout, the CLI writes `file:` dependencies on the checkout's
 `packages/bendo` and `packages/vite-plugin-bendo`. Bun copies them into
 `node_modules` at install time, so reinstall after changing the toolkit. The
 generated `package.json` also has an `overrides` entry for `bendo`, because the
-checkout's `vite-plugin-bendo` names `bendo` as `workspace:*`, which only
+checkout's `vite-plugin-bendo` names `bendo` as `workspace:^`, which only
 resolves inside the monorepo.
 
 The CLI decides this by where it runs. When `packages/create-bendo` sits inside
