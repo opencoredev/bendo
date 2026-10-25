@@ -19,7 +19,7 @@ import ./bendo/main.bend as B
 | [Routing](bend/routing.md) | Route registration, middleware and hook entries, groups, guards, `Methods` |
 | [Context and responses](bend/context.md) | Reading the request, building responses, errors, cookies, connection info, `C` |
 | [Validation and JSON](bend/validation.md) | Route schemas, validated values, `S` schemas and decoding, `J` JSON values |
-| [Middleware](bend/middleware.md) | Built-in middleware: logging, auth, JWT, CORS, security headers, caching, limits, IP rules, rate limits |
+| [Middleware](bend/middleware.md) | Built-in middleware: logging, auth, JWT, compression, CORS, security headers, caching, limits, IP rules, rate limits |
 | [Streaming and real time](bend/streaming.md) | Streams, Server-Sent Events, WebSockets, pub/sub, static files, the reverse proxy |
 | [Stores and the clock](bend/state.md) | Shared state actors and the wall clock |
 | [Data and protocol modules](bend/modules.md) | Cookies and signing keys, forms, multipart, JSON Schema, hashing, comparison, random bytes, encodings, route patterns, WebSocket frames, raw requests and responses |
@@ -31,6 +31,7 @@ writes their names with these aliases:
 | --- | --- | --- |
 | `C` | `bendo/app/context.bend` | Middleware and handlers with typed request variables |
 | `Clock` | `bendo/effects/clock.bend` | Wall-clock time |
+| `Z` | `bendo/compress.bend` | Response compression |
 | `Cors`, `CorsPolicy` | `bendo/mw/cors.bend`, `bendo/mw/cors_policy.bend` | CORS as a middleware call |
 | `J` | `bendo/data/json.bend` | JSON values |
 | `M` | `bendo/ws/message.bend` | WebSocket messages |

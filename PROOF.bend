@@ -30,6 +30,11 @@ import ./proof/csrf-v1.bend as CsrfV1Proof
 # BND-47
 import ./proof/proxy.bend as ProxyProof
 
+# BND-46
+import ./proof/compress.bend as CompressProof
+import ./proof/compress-raw.bend as CompressRawProof
+import ./proof/compress-rewrites.bend as CompressRewriteProof
+
 # BND-106
 import ./proof/write-progress.bend as WriteProgressProof
 
@@ -981,3 +986,82 @@ def Laws.websocket_refusal_clock_failure(res, error):
 def Laws.json_roundtrip(value, pretty, ascii, valid):
   +output = String.reverse(JsonWriterProof.render_acc(512n, value, True{}, pretty, ascii, 0n, True{}, ""))
   (output, (JsonWriterProof.write_output(value, pretty, ascii, valid), JsonTreeParseProof.parse_output(value, pretty, ascii, valid)))
+
+# BND-46: response compression decisions.
+def Laws.compress_encode_accepted(cfg, m, accept, status, hs, body, rep, c, h):
+  CompressProof.encode_accepted(cfg, m, accept, status, hs, body, rep, c, h)
+
+def Laws.compress_select_nonzero(prefs, c, h):
+  CompressProof.select_nonzero(prefs, c, h)
+
+def Laws.compress_select_not_below_identity(prefs, c, h):
+  CompressProof.select_not_below_identity(prefs, c, h)
+
+def Laws.compress_select_tie_gzip(prefs, h):
+  CompressProof.select_deflate_strict(prefs, h)
+
+def Laws.compress_small_kept(cfg, m, accept, status, hs, body, rep, h):
+  CompressProof.small_kept(cfg, m, accept, status, hs, body, rep, h)
+
+def Laws.compress_large_kept(cfg, m, accept, status, hs, body, rep, h):
+  CompressProof.large_kept(cfg, m, accept, status, hs, body, rep, h)
+
+def Laws.compress_encoded_kept(cfg, m, accept, status, hs, body, rep, h):
+  CompressProof.encoded_kept(cfg, m, accept, status, hs, body, rep, h)
+
+def Laws.compress_stream_kept(cfg, m, accept, status, hs, body, rep, h):
+  CompressProof.stream_kept(cfg, m, accept, status, hs, body, rep, h)
+
+def Laws.compress_head_not_encoded(cfg, accept, status, hs, body, rep):
+  CompressProof.head_not_encoded(cfg, accept, status, hs, body, rep)
+
+def Laws.compress_no_content_not_encoded(cfg, m, accept, hs, body, rep):
+  CompressProof.no_content_not_encoded(cfg, m, accept, hs, body, rep)
+
+def Laws.compress_partial_not_encoded(cfg, m, accept, hs, body, rep):
+  CompressProof.partial_not_encoded(cfg, m, accept, hs, body, rep)
+
+def Laws.compress_not_modified_not_encoded(cfg, m, accept, hs, body, rep):
+  CompressProof.not_modified_not_encoded(cfg, m, accept, hs, body, rep)
+
+def Laws.compress_accept_spec(values):
+  CompressRawProof.choice(values)
+
+def Laws.compress_accepts_spec(values, c):
+  CompressRawProof.accepted(values, c)
+
+def Laws.compress_raw_refusal(cfg, m, values, status, hs, body, rep, c, h):
+  CompressRawProof.raw_refusal(cfg, m, values, status, hs, body, rep, c, h)
+
+def Laws.compress_raw_choice(cfg, m, values, status, hs, body, rep, c, h):
+  CompressRawProof.raw_choice(cfg, m, values, status, hs, body, rep, c, h)
+
+def Laws.compress_select_gzip(prefs, h1, h2, h3):
+  CompressRawProof.select_gzip(prefs, h1, h2, h3)
+
+def Laws.compress_media_kept(cfg, m, accept, status, hs, body, rep, h):
+  CompressRawProof.media_kept(cfg, m, accept, status, hs, body, rep, h)
+
+def Laws.compress_head_as_get(cfg, accept, status, hs, body, rep):
+  CompressRawProof.head_as_get(cfg, accept, status, hs, body, rep)
+
+def Laws.compress_head_responds_as_get(res, p, out):
+  CompressRawProof.head_responds(res, p, out)
+
+def Laws.compress_keep_ignores_accept(cfg, m, a1, a2, status, hs, body, rep):
+  CompressRawProof.keep_ignores_accept(cfg, m, a1, a2, status, hs, body, rep)
+
+def Laws.compress_vary_merged(res, p, out, h):
+  CompressRewriteProof.vary_merged(res, p, out, h)
+
+def Laws.compress_coded_encoding(res, p, c, out, hc, h):
+  CompressRewriteProof.coded_encoding(res, p, c, out, hc, h)
+
+def Laws.compress_identity_encoding(res, p, out, h):
+  CompressRewriteProof.identity_encoding(res, p, out, h)
+
+def Laws.compress_coded_weak_etag(res, p, c, out, hc, h):
+  CompressRewriteProof.coded_weak(res, p, c, out, hc, h)
+
+def Laws.compress_revalidated_weak_etag(res, c, out):
+  CompressRewriteProof.revalidated_weak(res, c, out)

@@ -22,6 +22,7 @@
     "bench/budget.test.ts": 120,
     "tests/mw-observability.test.ts": 150000,
     "tests/mw-cors.test.ts": 150000,
+    "tests/mw-compress.test.ts": 120000,
     "tests/pipelines.test.ts": 120000,
     "tests/schema-compound.test.ts": 120000,
     "tests/fuzz/http.test.ts": 180000,

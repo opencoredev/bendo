@@ -46,6 +46,7 @@ export const companionAliases: ReadonlyMap<string, string> = new Map([
   ["src/data/schema-pattern.bend", "SchemaPattern"],
   ["src/data/schema.bend", "S"],
   ["src/data/signed-cookie.bend", "SignedCookie"],
+  ["src/compress.bend", "Z"],
   ["src/data/utf8.bend", "Utf8"],
   ["src/effects/clock.bend", "Clock"],
   ["src/http/request.bend", "Request"],

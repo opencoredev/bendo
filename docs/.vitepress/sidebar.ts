@@ -85,6 +85,7 @@ export const sidebar: DefaultTheme.SidebarItem[] = [
       { text: "Crypto and encoding", link: "/crypto" },
       { text: "Observability", link: "/observability" },
       { text: "Proxy", link: "/proxy" },
+      { text: "Compression", link: "/compression" },
     ],
   },
   {
