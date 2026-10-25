@@ -333,6 +333,47 @@ test("a close is admitted when the mailbox is full and follows what was queued",
   await closedLog("1011:crowded");
 });
 
+test("two closes racing a draining mailbox write the first admitted one, once", async () => {
+  // /race-close fills the stored connection's 4-command mailbox from two
+  // computations at once, each ending with its own close, while the
+  // connection drains every 1 ms. Each computation first spends a random
+  // number of effects, so rounds differ in where the scheduler switches.
+  const codes: Record<string, number> = { first: 4001, second: 4002 };
+  const tally = { yesNo: 0, noYes: 0, both: 0 };
+  for (let round = 0; round < 40; round++) {
+    using wire = await raw("/race");
+    // An echo proves open has stored this connection's handle.
+    wire.socket.write(frame(1, Buffer.from("sync")));
+    expect(await wire.next()).toEqual({ opcode: 1, payload: Buffer.from("sync") });
+    const answer = await (await fetch(`${server.url}/race-close`)).text();
+    let close: WireFrame | undefined;
+    while (close === undefined) {
+      const next = await wire.next();
+      if (next.opcode === 8) close = next;
+      else expect(next).toEqual({ opcode: 1, payload: Buffer.from("m") });
+    }
+    // Only the first close goes out, and nothing follows it.
+    const code = close.payload.readUInt16BE(0);
+    const reason = close.payload.subarray(2).toString();
+    expect(codes[reason]).toBe(code);
+    wire.socket.write(frame(8, close.payload));
+    await until(() => wire.ended);
+    expect(wire.bytes.length).toBe(0);
+    await closedLog(`${code}:${reason}`);
+    // A close admitted behind the mailbox's own close is ignored, so both
+    // may say yes, but the written one always said yes.
+    if (answer === "yes:yes") tally.both++;
+    else if (answer === "yes:no") {
+      tally.yesNo++;
+      expect(reason).toBe("first");
+    } else if (answer === "no:yes") {
+      tally.noYes++;
+      expect(reason).toBe("second");
+    } else throw new Error(`unexpected answer ${answer}`);
+  }
+  console.log(`racing closes: ${JSON.stringify(tally)}`);
+}, 60000);
+
 test("a queued burst drains without one poll wait per command", async () => {
   // /many polls every 250 ms with backoff off. When each queued send waited
   // for a timed socket read, 100 sends took about 99 poll intervals.
