@@ -11,7 +11,7 @@ says and what it guarantees for an app built on Bendo.
 | [HTTP](http.md) | request parsing, response framing, HTTP dates, conditional requests and body limits, media types, error responses |
 | [Routing](routing.md) | patterns, the reference router, the trie, method resolution, route composition, the route manifest |
 | [Middleware](middleware.md) | composition, lifecycle hooks and scopes, plugins, CORS, secure headers, origins, CSRF, method override, trailing slash, IP restriction and client addresses, rate limiting, proxy |
-| [Data](data.md) | JSON, forms and queries, cookies, signed cookies, schemas, route validation, JSON Schema export |
+| [Data](data.md) | JSON, forms and queries, cookies, signed cookies, schemas, route validation, JSON Schema export, SQLite parameters and rows |
 | [Crypto and JWT](crypto.md) | hex, base64, constant-time comparison, JSON Web Tokens |
 | [Streaming, WebSocket and static files](streaming.md) | chunked bodies and streams, Server-Sent Events, the WebSocket handshake, frames, sessions and publish/subscribe, static file paths |
 | [Equivalences](equivalences.md) | hot-path and stack-safe rewrites, and general proof building blocks |
