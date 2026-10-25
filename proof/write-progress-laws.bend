@@ -25,3 +25,8 @@ law write_opening_continues:
 # The documented default window is 30,000 ms, the same as the body deadline.
 law write_timeout_default:
   {Config.write_timeout(Config.defaults()) == 30000 : U32}
+
+# The shell's tail-loop count of the unsent suffix is its length.
+law write_unsent_length:
+  for +xs: List<&2, U32>
+  {Progress.unsent(xs, 0n) == List.length(&2, U32, xs) : Nat}

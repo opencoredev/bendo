@@ -17,3 +17,10 @@ def progressed(window: Unsent, left: Nat) -> Bool:
   match window:
     case Opening{}: True{}
     case Left{before}: Nat.is_lt(left, before)
+
+# The unsent suffix's length plus acc. A tail loop, so the JavaScript build
+# counts a multi-megabyte suffix without growing the stack.
+def unsent(xs: List<&2, U32>, acc: Nat) -> Nat:
+  match xs:
+    case Nil{}: acc
+    case c <> t: unsent(t, 1n+acc)

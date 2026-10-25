@@ -157,7 +157,7 @@ def talk(~Env: Data, ~select: R.Req -> Env -> U32, ~app: R.Req -> List<&2, U32> 
         after
         talk(~Env, ~select, ~app, Sent{(s, result), state, rest, close}, env, config, peer)
     case Writing{(s, Wait{+bytes}), window, state, rest, close, after}:
-      +left = List.length(&2, U32, bytes)
+      +left = Progress.unsent(bytes, 0n)
       talk(~Env, ~select, ~app, Measured{s, bytes, left, Progress.progressed(window, left), state, rest, close, after}, env, config, peer)
     case Measured{s, bytes, left, True{}, state, rest, close, after}:
       do IO<Unit>:

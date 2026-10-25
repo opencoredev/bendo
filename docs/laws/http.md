@@ -115,6 +115,7 @@ See [decision 0009](../decisions/0009-connections.md#write-deadline).
 - `write_progress_continues`: a window that ends with fewer bytes unsent than it started with sends another window, for every count.
 - `write_stall_closes`: a window that ends with no fewer bytes unsent than it started with closes the connection, for every count.
 - `write_opening_continues`: the first send, which takes only what the socket accepts at once, always continues to a window.
+- `write_unsent_length`: the shell's count of the unsent bytes, a loop that keeps the JavaScript build's stack flat, equals the length of the unsent list for every list.
 - `write_timeout_default`: the default write timeout in `B.config()` is 30,000 ms.
 
 ## Media types and whitespace
