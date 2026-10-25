@@ -1,4 +1,5 @@
 import ./proof/ws-topics.bend as WsTopicsProof
+import ./proof/ws-limits.bend as WsLimitsProof
 import ./proof/ws-session.bend as WsSessionProof
 import ./proof/ws-session-trace.bend as WsSessionTraceProof
 import ./proof/ws-session-message.bend as WsSessionMessageProof

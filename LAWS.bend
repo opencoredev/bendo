@@ -1,4 +1,5 @@
 import ./proof/ws-topics-laws.bend as WsTopicsLaws
+import ./proof/ws-limits-laws.bend as WsLimitsLaws
 import ./proof/ws-session-laws.bend as WsSessionLaws
 # Bendo's laws. A human states each law; PROOF.bend proves it.
 # Agents may add laws. Never delete or weaken one without a written reason
