@@ -19,7 +19,7 @@ Bend v2 is newer than most model training data. Read `~/.bend/guide/GUIDE.md` an
 - `bun run lint` (oxlint, warnings are errors), `bun run format` and `bun run format:check` (oxfmt).
 - `bun run typecheck`: TypeScript. `bun run typecheck:bench`: the benchmark code.
 - `bun run test`: integration tests, under a 10-minute `timeout`. They compile Bend fixtures to native binaries and talk to them over HTTP.
-- `bun run test:ci`: the same with a 20-minute budget. `BENDO_TEST_SHARD=1` to `4` runs one of CI's four shards; `bun run test:shards` prints and validates the assignment.
+- `bun run test:ci`: the same with a 20-minute budget. `BENDO_TEST_SHARD=1` to `6` runs one of CI's six shards; `bun run test:shards` prints and validates the assignment.
 - `bun bench/run.ts`: the Hono and Elysia comparison, on a Boat sandbox. See `bench/README.md`.
 
 ## Test budgets and sharding

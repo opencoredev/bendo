@@ -94,7 +94,9 @@ A publication returns `P.Delivery{sent, dropped, gone}`:
   acceptance does not mean the peer has read it.
 - `dropped`: open subscribers whose mailbox was full, or whose `max_message`
   is smaller than the message. They miss this message and stay subscribed.
-- `gone`: subscribers that had already closed, whatever the message size. The
+- `gone`: subscribers that had already closed, whatever the message size,
+  including a connection whose close was admitted while its mailbox was full
+  ([which shuts that mailbox](websocket-sessions.md#send-from-a-handler-or-another-route)). The
   publication removes them from the registry and forgets the token each one
   joined under, so the hub's state shrinks back even if that connection's own
   cleanup never ran.

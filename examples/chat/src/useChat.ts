@@ -150,8 +150,9 @@ const NOTICE_MS = 5000;
 
 /**
  * How long an open socket may go without its welcome. The server sends the
- * welcome first, but a refusal it can't deliver (BND-101) would otherwise leave
- * the socket open and silent; closing it lands in the usual retry.
+ * welcome first, and a refusal always closes the socket, but a stalled server
+ * would otherwise leave it open and silent; closing it lands in the usual
+ * retry.
  */
 const WELCOME_MS = 10_000;
 

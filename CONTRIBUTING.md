@@ -68,7 +68,7 @@ copy syntax from Bend v1 or HVM examples.
 | `bun run typecheck:bench` | TypeScript for `bench/`, after installing its pinned servers. |
 | `bun run test` | The integration tests, within 10 minutes. |
 | `bun run test:ci` | The same tests with CI's 20-minute budget; set `BENDO_TEST_SHARD` to run one shard. |
-| `bun run test:shards` | Prints and validates the assignment of test files to the four shards. |
+| `bun run test:shards` | Prints and validates the assignment of test files to the six shards. |
 
 The full `bun run check` took 7.5 minutes warm on a 16 GB, four-CPU machine.
 On a smaller machine, or with a cold fixture cache, run the static checks, the
@@ -77,7 +77,7 @@ docs build and then one shard at a time:
 ```sh
 bun run check:static
 bun run check:docs
-for shard in 1 2 3 4; do CI=true BENDO_TEST_SHARD=$shard bun run test:ci; done
+for shard in 1 2 3 4 5 6; do CI=true BENDO_TEST_SHARD=$shard bun run test:ci; done
 ```
 
 [Test runner budgets](docs/test-runners.md) explains the shards, the fixture
