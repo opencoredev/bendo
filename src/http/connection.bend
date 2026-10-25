@@ -23,7 +23,7 @@ type Action is Data:
   Stop{}
 
 def initial(+now: Nat, config: Config.Config) -> State:
-  Config.Config{host, port, limit, headers, idle, head, body, max, keep, router, mode, workers} = config
+  Config.Config{host, port, limit, headers, idle, head, body, write, max, keep, router, mode, workers} = config
   State{Body.initial(), 0, Idle{Nat.add(now, U32.to_nat(idle))}, now}
 
 def deadline(phase: Phase) -> Nat:
@@ -75,7 +75,7 @@ def fed(pair: Body.State & Bool, count: U32, phase: Phase, +now: Nat, body: U32)
 
 def feed_nonempty_policy(~Policy: Data, ~select: R.Req -> Policy -> U32, policy: Policy, xs: List<&2, U32>, state: State, +now: Nat, config: Config.Config) -> State & Bool:
   State{input, count, phase, at} = state
-  Config.Config{host, port, limit, headers, idle, head, body, max, keep, router, mode, workers} = config
+  Config.Config{host, port, limit, headers, idle, head, body, write, max, keep, router, mode, workers} = config
   fed(Body.feed_policy(~Policy, ~select, policy, xs, input, limit, headers), count, started(phase, now, head), now, body)
 
 def feed_policy(~Policy: Data, ~select: R.Req -> Policy -> U32, policy: Policy, xs: List<&2, U32>, state: State, now: Nat, config: Config.Config) -> State & Bool:
@@ -92,10 +92,10 @@ def feed(xs: List<&2, U32>, state: State, now: Nat, +config: Config.Config) -> S
 def next_rest_policy(~Policy: Data, ~select: R.Req -> Policy -> U32, +policy: Policy, rest: List<&2, U32>, count: U32, +at: Nat, +now: Nat, +config: Config.Config) -> State & Bool:
   match rest:
     case Nil{}:
-      Config.Config{host, port, limit, headers, idle, head, body, max, keep, router, mode, workers} = config
+      Config.Config{host, port, limit, headers, idle, head, body, write, max, keep, router, mode, workers} = config
       (State{Body.initial(), (count + 1 : U32), Idle{Nat.add(now, U32.to_nat(idle))}, now}, False{})
     case c <> t:
-      Config.Config{host, port, limit, headers, idle, head, body, max, keep, router, mode, workers} = config
+      Config.Config{host, port, limit, headers, idle, head, body, write, max, keep, router, mode, workers} = config
       feed_policy(~Policy, ~select, policy, c <> t, State{Body.initial(), (count + 1 : U32), Idle{now}, at}, at, config)
 
 def next_policy(~Policy: Data, ~select: R.Req -> Policy -> U32, policy: Policy, state: State, rest: List<&2, U32>, now: Nat, config: Config.Config) -> State & Bool:
@@ -161,7 +161,7 @@ def closing(req: R.Req, count: U32, config: Config.Config) -> Bool:
   match req:
     case R.Req{m, p, q, R.Http10{}, hs}: True{}
     case R.Req{m, p, q, R.Http11{}, hs}:
-      Config.Config{host, port, limit, headers, idle, head, body, +max, keep, router, mode, workers} = config
+      Config.Config{host, port, limit, headers, idle, head, body, write, +max, keep, router, mode, workers} = config
       Bool.not(keep) || U32.is_eq(max, 0) || (count >= U32.sub(max, 1) : U32) || has_token(hs, "close")
 
 def eof(state: State) -> Action:

@@ -23,8 +23,8 @@ field changed:
 
 ```bend
 def with_body_limit(config: Config.Config, bytes: U32) -> Config.Config:
-  Config.Config{host, port, limit, headers, idle, head, body, max, keep, router, mode, workers} = config
-  Config.Config{host, port, bytes, headers, idle, head, body, max, keep, router, mode, workers}
+  Config.Config{host, port, limit, headers, idle, head, body, write, max, keep, router, mode, workers} = config
+  Config.Config{host, port, bytes, headers, idle, head, body, write, max, keep, router, mode, workers}
 ```
 
 ```bend
@@ -212,8 +212,8 @@ def limit(tag: Tag) -> Maybe<&2, U32>:
     case _: None{}
 
 def with_body_limit(config: Config.Config, bytes: U32) -> Config.Config:
-  Config.Config{host, port, limit, headers, idle, head, body, max, keep, router, mode, workers} = config
-  Config.Config{host, port, bytes, headers, idle, head, body, max, keep, router, mode, workers}
+  Config.Config{host, port, limit, headers, idle, head, body, write, max, keep, router, mode, workers} = config
+  Config.Config{host, port, bytes, headers, idle, head, body, write, max, keep, router, mode, workers}
 
 # Raise the server-wide ceiling from 1 MiB to the largest route's limit.
 def config() -> Config.Config:
