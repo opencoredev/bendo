@@ -44,6 +44,18 @@ still selects its hooks. See [decision 0010](../decisions/0010-hooks.md) and
 - `scoped_nested_assembly_isolation`: a guard around a group, with any contents, leaves the entries before and after it untouched.
 - `scoped_guard_built_selection`, `scoped_group_built_selection`: building a table from a guard or group followed by any other entries selects, per route and stage, exactly what the specification selects from the independent assembly.
 
+At startup the server indexes the scoped layers by route identity and keeps
+the global layers in their own list, so a request reads its own route's hooks
+and never walks another route's (BND-82, [decision 0014](../decisions/0014-performance.md)).
+These laws say the index changes nothing that is selected. The first five hold
+for every layer list, not only built ones, so every law above carries over to
+the index.
+
+- `scoped_index_stage_selection`, `scoped_index_lifecycle_selection`: selecting a stage's hooks, or the whole lifecycle plan, from the globals plus the route's bucket gives exactly what selecting from every layer gives, for every route (or none), path and stage.
+- `scoped_index_route_schemas`: a route's schemas read from its bucket equal the schemas read from every layer.
+- `scoped_index_global_stages`, `scoped_index_global_selected`: the global list alone selects every global stage hook and every path middleware, as the full list does. Not-found hooks and the path middleware before routing use it.
+- `scoped_index_spec_stage_selection`, `scoped_index_spec_lifecycle_selection`: for every built table, selection through the index equals the BND-24 specification read from the source registrations.
+
 ## Plugins
 
 A plugin is a named or anonymous bundle of registrations. These laws make
