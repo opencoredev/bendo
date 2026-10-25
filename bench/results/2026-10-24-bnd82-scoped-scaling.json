@@ -1,0 +1,801 @@
+{
+  "issue": "BND-82",
+  "sandbox": "Boat large (8 vCPU)",
+  "binary": "bench/router/handle.bend via bench/router/handle.py, 10,000 requests per sample, 5 repeats, one runtime thread",
+  "before": {
+    "commit": "main 92c36c6, Handle.parsed_transport with the schema flag prepared once",
+    "run": {
+      "samples": [
+        {
+          "repeat": 0,
+          "shape": "plain",
+          "count": 10,
+          "iterations": 10000,
+          "ns_per_request": 22000.0
+        },
+        {
+          "repeat": 0,
+          "shape": "plain",
+          "count": 2000,
+          "iterations": 10000,
+          "ns_per_request": 22100.0
+        },
+        {
+          "repeat": 0,
+          "shape": "group",
+          "count": 10,
+          "iterations": 10000,
+          "ns_per_request": 32500.0
+        },
+        {
+          "repeat": 0,
+          "shape": "group",
+          "count": 2000,
+          "iterations": 10000,
+          "ns_per_request": 1645600.0
+        },
+        {
+          "repeat": 0,
+          "shape": "guard",
+          "count": 10,
+          "iterations": 10000,
+          "ns_per_request": 31600.0
+        },
+        {
+          "repeat": 0,
+          "shape": "guard",
+          "count": 2000,
+          "iterations": 10000,
+          "ns_per_request": 1691100.0
+        },
+        {
+          "repeat": 1,
+          "shape": "plain",
+          "count": 2000,
+          "iterations": 10000,
+          "ns_per_request": 22500.0
+        },
+        {
+          "repeat": 1,
+          "shape": "plain",
+          "count": 10,
+          "iterations": 10000,
+          "ns_per_request": 22500.0
+        },
+        {
+          "repeat": 1,
+          "shape": "group",
+          "count": 2000,
+          "iterations": 10000,
+          "ns_per_request": 1693900.0
+        },
+        {
+          "repeat": 1,
+          "shape": "group",
+          "count": 10,
+          "iterations": 10000,
+          "ns_per_request": 33700.0
+        },
+        {
+          "repeat": 1,
+          "shape": "guard",
+          "count": 2000,
+          "iterations": 10000,
+          "ns_per_request": 1718600.0
+        },
+        {
+          "repeat": 1,
+          "shape": "guard",
+          "count": 10,
+          "iterations": 10000,
+          "ns_per_request": 32400.0
+        },
+        {
+          "repeat": 2,
+          "shape": "plain",
+          "count": 10,
+          "iterations": 10000,
+          "ns_per_request": 22000.0
+        },
+        {
+          "repeat": 2,
+          "shape": "plain",
+          "count": 2000,
+          "iterations": 10000,
+          "ns_per_request": 21800.0
+        },
+        {
+          "repeat": 2,
+          "shape": "group",
+          "count": 10,
+          "iterations": 10000,
+          "ns_per_request": 32700.0
+        },
+        {
+          "repeat": 2,
+          "shape": "group",
+          "count": 2000,
+          "iterations": 10000,
+          "ns_per_request": 1691400.0
+        },
+        {
+          "repeat": 2,
+          "shape": "guard",
+          "count": 10,
+          "iterations": 10000,
+          "ns_per_request": 31900.0
+        },
+        {
+          "repeat": 2,
+          "shape": "guard",
+          "count": 2000,
+          "iterations": 10000,
+          "ns_per_request": 1665900.0
+        },
+        {
+          "repeat": 3,
+          "shape": "plain",
+          "count": 2000,
+          "iterations": 10000,
+          "ns_per_request": 21500.0
+        },
+        {
+          "repeat": 3,
+          "shape": "plain",
+          "count": 10,
+          "iterations": 10000,
+          "ns_per_request": 21000.0
+        },
+        {
+          "repeat": 3,
+          "shape": "group",
+          "count": 2000,
+          "iterations": 10000,
+          "ns_per_request": 1732200.0
+        },
+        {
+          "repeat": 3,
+          "shape": "group",
+          "count": 10,
+          "iterations": 10000,
+          "ns_per_request": 32200.0
+        },
+        {
+          "repeat": 3,
+          "shape": "guard",
+          "count": 2000,
+          "iterations": 10000,
+          "ns_per_request": 1690800.0
+        },
+        {
+          "repeat": 3,
+          "shape": "guard",
+          "count": 10,
+          "iterations": 10000,
+          "ns_per_request": 33100.0
+        },
+        {
+          "repeat": 4,
+          "shape": "plain",
+          "count": 10,
+          "iterations": 10000,
+          "ns_per_request": 25100.0
+        },
+        {
+          "repeat": 4,
+          "shape": "plain",
+          "count": 2000,
+          "iterations": 10000,
+          "ns_per_request": 23100.0
+        },
+        {
+          "repeat": 4,
+          "shape": "group",
+          "count": 10,
+          "iterations": 10000,
+          "ns_per_request": 33600.0
+        },
+        {
+          "repeat": 4,
+          "shape": "group",
+          "count": 2000,
+          "iterations": 10000,
+          "ns_per_request": 1717800.0
+        },
+        {
+          "repeat": 4,
+          "shape": "guard",
+          "count": 10,
+          "iterations": 10000,
+          "ns_per_request": 34100.0
+        },
+        {
+          "repeat": 4,
+          "shape": "guard",
+          "count": 2000,
+          "iterations": 10000,
+          "ns_per_request": 1737700.0
+        }
+      ],
+      "shapes": {
+        "plain": {
+          "median_ns": {
+            "10": 22000.0,
+            "2000": 22100.0
+          },
+          "large_to_small": 1.0045454545454546
+        },
+        "group": {
+          "median_ns": {
+            "10": 32700.0,
+            "2000": 1693900.0
+          },
+          "large_to_small": 51.801223241590215
+        },
+        "guard": {
+          "median_ns": {
+            "10": 32400.0,
+            "2000": 1691100.0
+          },
+          "large_to_small": 52.19444444444444
+        }
+      }
+    }
+  },
+  "after": {
+    "commit": "BND-82",
+    "runs": [
+      {
+        "samples": [
+          {
+            "repeat": 0,
+            "shape": "plain",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 22600.0
+          },
+          {
+            "repeat": 0,
+            "shape": "plain",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 24500.0
+          },
+          {
+            "repeat": 0,
+            "shape": "group",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 27000.0
+          },
+          {
+            "repeat": 0,
+            "shape": "group",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 24900.0
+          },
+          {
+            "repeat": 0,
+            "shape": "guard",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 25100.0
+          },
+          {
+            "repeat": 0,
+            "shape": "guard",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 24500.0
+          },
+          {
+            "repeat": 1,
+            "shape": "plain",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 21600.0
+          },
+          {
+            "repeat": 1,
+            "shape": "plain",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 21500.0
+          },
+          {
+            "repeat": 1,
+            "shape": "group",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 25700.0
+          },
+          {
+            "repeat": 1,
+            "shape": "group",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 24800.0
+          },
+          {
+            "repeat": 1,
+            "shape": "guard",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 24600.0
+          },
+          {
+            "repeat": 1,
+            "shape": "guard",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 24600.0
+          },
+          {
+            "repeat": 2,
+            "shape": "plain",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 21600.0
+          },
+          {
+            "repeat": 2,
+            "shape": "plain",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 22300.0
+          },
+          {
+            "repeat": 2,
+            "shape": "group",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 25100.0
+          },
+          {
+            "repeat": 2,
+            "shape": "group",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 26000.0
+          },
+          {
+            "repeat": 2,
+            "shape": "guard",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 26000.0
+          },
+          {
+            "repeat": 2,
+            "shape": "guard",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 24400.0
+          },
+          {
+            "repeat": 3,
+            "shape": "plain",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 23000.0
+          },
+          {
+            "repeat": 3,
+            "shape": "plain",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 22500.0
+          },
+          {
+            "repeat": 3,
+            "shape": "group",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 24900.0
+          },
+          {
+            "repeat": 3,
+            "shape": "group",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 24500.0
+          },
+          {
+            "repeat": 3,
+            "shape": "guard",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 24500.0
+          },
+          {
+            "repeat": 3,
+            "shape": "guard",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 24600.0
+          },
+          {
+            "repeat": 4,
+            "shape": "plain",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 21800.0
+          },
+          {
+            "repeat": 4,
+            "shape": "plain",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 21800.0
+          },
+          {
+            "repeat": 4,
+            "shape": "group",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 24800.0
+          },
+          {
+            "repeat": 4,
+            "shape": "group",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 25100.0
+          },
+          {
+            "repeat": 4,
+            "shape": "guard",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 25000.0
+          },
+          {
+            "repeat": 4,
+            "shape": "guard",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 23900.0
+          }
+        ],
+        "shapes": {
+          "plain": {
+            "median_ns": {
+              "10": 21800.0,
+              "2000": 22300.0
+            },
+            "large_to_small": 1.0229357798165137
+          },
+          "group": {
+            "median_ns": {
+              "10": 24800.0,
+              "2000": 25100.0
+            },
+            "large_to_small": 1.0120967741935485
+          },
+          "guard": {
+            "median_ns": {
+              "10": 25000.0,
+              "2000": 24500.0
+            },
+            "large_to_small": 0.98
+          }
+        }
+      },
+      {
+        "samples": [
+          {
+            "repeat": 0,
+            "shape": "plain",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 22400.0
+          },
+          {
+            "repeat": 0,
+            "shape": "plain",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 23200.0
+          },
+          {
+            "repeat": 0,
+            "shape": "group",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 25200.0
+          },
+          {
+            "repeat": 0,
+            "shape": "group",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 26500.0
+          },
+          {
+            "repeat": 0,
+            "shape": "guard",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 24900.0
+          },
+          {
+            "repeat": 0,
+            "shape": "guard",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 25100.0
+          },
+          {
+            "repeat": 1,
+            "shape": "plain",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 23300.0
+          },
+          {
+            "repeat": 1,
+            "shape": "plain",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 23400.0
+          },
+          {
+            "repeat": 1,
+            "shape": "group",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 24700.0
+          },
+          {
+            "repeat": 1,
+            "shape": "group",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 24300.0
+          },
+          {
+            "repeat": 1,
+            "shape": "guard",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 24500.0
+          },
+          {
+            "repeat": 1,
+            "shape": "guard",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 24200.0
+          },
+          {
+            "repeat": 2,
+            "shape": "plain",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 22200.0
+          },
+          {
+            "repeat": 2,
+            "shape": "plain",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 22400.0
+          },
+          {
+            "repeat": 2,
+            "shape": "group",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 25100.0
+          },
+          {
+            "repeat": 2,
+            "shape": "group",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 26900.0
+          },
+          {
+            "repeat": 2,
+            "shape": "guard",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 27900.0
+          },
+          {
+            "repeat": 2,
+            "shape": "guard",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 26900.0
+          },
+          {
+            "repeat": 3,
+            "shape": "plain",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 24900.0
+          },
+          {
+            "repeat": 3,
+            "shape": "plain",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 25400.0
+          },
+          {
+            "repeat": 3,
+            "shape": "group",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 25200.0
+          },
+          {
+            "repeat": 3,
+            "shape": "group",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 26400.0
+          },
+          {
+            "repeat": 3,
+            "shape": "guard",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 26700.0
+          },
+          {
+            "repeat": 3,
+            "shape": "guard",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 26900.0
+          },
+          {
+            "repeat": 4,
+            "shape": "plain",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 22700.0
+          },
+          {
+            "repeat": 4,
+            "shape": "plain",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 23000.0
+          },
+          {
+            "repeat": 4,
+            "shape": "group",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 27600.0
+          },
+          {
+            "repeat": 4,
+            "shape": "group",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 25600.0
+          },
+          {
+            "repeat": 4,
+            "shape": "guard",
+            "count": 10,
+            "iterations": 10000,
+            "ns_per_request": 26800.0
+          },
+          {
+            "repeat": 4,
+            "shape": "guard",
+            "count": 2000,
+            "iterations": 10000,
+            "ns_per_request": 25500.0
+          }
+        ],
+        "shapes": {
+          "plain": {
+            "median_ns": {
+              "10": 22700.0,
+              "2000": 23200.0
+            },
+            "large_to_small": 1.0220264317180616
+          },
+          "group": {
+            "median_ns": {
+              "10": 25200.0,
+              "2000": 25600.0
+            },
+            "large_to_small": 1.0158730158730158
+          },
+          "guard": {
+            "median_ns": {
+              "10": 26800.0,
+              "2000": 25500.0
+            },
+            "large_to_small": 0.9514925373134329
+          }
+        }
+      }
+    ]
+  },
+  "perf_stat": {
+    "method": "perf stat -e instructions:u,cycles:u -p SERVER over oha -n 40000 -c 16, server on CPUs 0-3, oha on 4-7; main = 92c36c6",
+    "samples": [
+      {
+        "round": 1,
+        "fixture": "hello",
+        "build": "main",
+        "instructions_per_request": 636374,
+        "cycles_per_request": 196107,
+        "rps": 23116.0555,
+        "all_200": true
+      },
+      {
+        "round": 1,
+        "fixture": "hello",
+        "build": "after",
+        "instructions_per_request": 641174,
+        "cycles_per_request": 198373,
+        "rps": 22912.8905,
+        "all_200": true
+      },
+      {
+        "round": 1,
+        "fixture": "middleware",
+        "build": "main",
+        "instructions_per_request": 5986085,
+        "cycles_per_request": 1935661,
+        "rps": 1957.0229,
+        "all_200": true
+      },
+      {
+        "round": 1,
+        "fixture": "middleware",
+        "build": "after",
+        "instructions_per_request": 5989518,
+        "cycles_per_request": 1896830,
+        "rps": 2010.6827,
+        "all_200": true
+      },
+      {
+        "round": 2,
+        "fixture": "hello",
+        "build": "main",
+        "instructions_per_request": 636372,
+        "cycles_per_request": 184671,
+        "rps": 26151.0276,
+        "all_200": true
+      },
+      {
+        "round": 2,
+        "fixture": "hello",
+        "build": "after",
+        "instructions_per_request": 641156,
+        "cycles_per_request": 191687,
+        "rps": 24979.5814,
+        "all_200": true
+      },
+      {
+        "round": 2,
+        "fixture": "middleware",
+        "build": "main",
+        "instructions_per_request": 5985384,
+        "cycles_per_request": 1838950,
+        "rps": 2147.6018,
+        "all_200": true
+      },
+      {
+        "round": 2,
+        "fixture": "middleware",
+        "build": "after",
+        "instructions_per_request": 5989126,
+        "cycles_per_request": 1855106,
+        "rps": 2149.8602,
+        "all_200": true
+      }
+    ]
+  }
+}
