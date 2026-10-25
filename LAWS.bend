@@ -50,6 +50,9 @@ import ./proof/rate-limit-laws.bend as RateLimitLaws
 # BND-100
 import ./proof/utf8-scalar-laws.bend as Utf8ScalarLaws
 
+# BND-92
+import ./proof/parser-spec-laws.bend as ParserSpecLaws
+
 # BND-87
 import ./proof/signed-cookie-decoder-laws.bend as SignedCookieDecoderLaws
 
@@ -101,6 +104,7 @@ import ./proof/forms.bend as FormSpec
 import ./src/router/pattern.bend as Pattern
 import ./src/router/constraint.bend as Constraint
 import ./proof/router-match-spec.bend as MatchSpec
+import ./proof/router-compile-spec.bend as CompileSpec
 
 import ./src/router/spec.bend as Spec
 import ./src/router/spec-proofs.bend as SpecProof
@@ -711,6 +715,29 @@ law spec_optional_chain:
 
 law spec_greedy_span:
   {MatchSpec.match_path(Pattern.Pattern{[Pattern.Span{"prefix"}, Pattern.Static{"contents"}, Pattern.Capture{"id", Constraint.Any{}, True{}}]}, "/foo/bar/contents/123") == Some{[Pattern.Param{"prefix", "foo/bar"}, Pattern.Param{"id", "123"}]} : Maybe<&2, Pattern.Params>} & {MatchSpec.match_path(Pattern.Pattern{[Pattern.Span{"prefix"}, Pattern.Static{"contents"}, Pattern.Capture{"id", Constraint.Any{}, True{}}]}, "/a/contents/contents") == Some{[Pattern.Param{"prefix", "a/contents"}]} : Maybe<&2, Pattern.Params>}
+
+# BND-83
+
+# Compiling succeeds with a pattern exactly when the independent source
+# grammar in proof/router-compile-spec.bend maps the source to that pattern,
+# and fails exactly when the grammar rejects it, for every string. The grammar
+# is a reading of docs/router-patterns.md: static text with literal `:`,
+# captures and constraints, the trailing optional chain, bare `*`, named,
+# prefix and interior wildcards, and anchored spans. It calls no Pattern
+# helper; the text inside `{...}` goes to the shared constraint grammar.
+# Error kinds are not compared, only success and the pattern.
+law pattern_compile_spec:
+  for +source: String
+  {CompileSpec.accepted(Pattern.compile(source)) == CompileSpec.compile(source) : Maybe<&2, Pattern.Pattern>}
+
+# The grammar accepts documented forms that no single compile_* example pins.
+law compile_spec_forms:
+  {CompileSpec.compile("/images*") == Some{Pattern.Pattern{[Pattern.PrefixWildcard{"images"}]}} : Maybe<&2, Pattern.Pattern>} & ({CompileSpec.compile("/x/*/y/*") == Some{Pattern.Pattern{[Pattern.Static{"x"}, Pattern.InteriorWildcard{}, Pattern.Static{"y"}, Pattern.Wildcard{"*"}]}} : Maybe<&2, Pattern.Pattern>} & ({CompileSpec.compile("/:a?/:b?/:c?") == Some{Pattern.Pattern{[Pattern.Capture{"a", Constraint.Any{}, True{}}, Pattern.Capture{"b", Constraint.Any{}, True{}}, Pattern.Capture{"c", Constraint.Any{}, True{}}]}} : Maybe<&2, Pattern.Pattern>} & ({CompileSpec.compile("/jobs/run:now") == Some{Pattern.Pattern{[Pattern.Static{"jobs"}, Pattern.Static{"run:now"}]}} : Maybe<&2, Pattern.Pattern>} & {CompileSpec.compile("/:rest{.+}/end") == Some{Pattern.Pattern{[Pattern.Span{"rest"}, Pattern.Static{"end"}]}} : Maybe<&2, Pattern.Pattern>})))
+
+# The grammar rejects a named wildcard before the end, a present segment after
+# an optional, a repeated name, an optional span and a span with a wildcard.
+law compile_spec_rejects:
+  {CompileSpec.compile("/*path/x") == None{} : Maybe<&2, Pattern.Pattern>} & ({CompileSpec.compile("/:a?/b") == None{} : Maybe<&2, Pattern.Pattern>} & ({CompileSpec.compile("/:id/:id") == None{} : Maybe<&2, Pattern.Pattern>} & ({CompileSpec.compile("/:a{.+}?/x") == None{} : Maybe<&2, Pattern.Pattern>} & {CompileSpec.compile("/:a{.+}/*") == None{} : Maybe<&2, Pattern.Pattern>})))
 
 # BND-29: URL-encoded data and ordered repeated-key lookup.
 
