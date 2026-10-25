@@ -43,13 +43,13 @@ def L.mount_compile_spec(prefix, member, placed):
 
 # ---- Admissibility facts ----
 
-def placed_from(pp: Maybe<&2, List<&2, P.Segment>>, m: Maybe<&2, String>, adm: {S.fixed_and(pp, S.compiles(S.joined(pp, S.member_pieces(m)))) == True{} : Bool}) ->
+def placed_from(pp: Maybe<&2, List<&2, P.Segment>>, m: Maybe<&2, String>, adm: {S.kept_and(pp, S.compiles(S.joined(pp, S.member_pieces(m)))) == True{} : Bool}) ->
     {S.compiles_text(m) == True{} : Bool}:
   match pp m:
     case None{} y:
       Core.absurd({S.compiles_text(y) == True{} : Bool}, Core.false_true(adm))
     case Some{+a} None{}:
-      Core.absurd({S.compiles_text(None{}) == True{} : Bool}, Core.false_true(Core.and_right(S.fixed_prefix(a), False{}, adm)))
+      Core.absurd({S.compiles_text(None{}) == True{} : Bool}, Core.false_true(Core.and_right(S.ends_solid(a, False{}), False{}, adm)))
     case Some{a} Some{t}:
       {==}
 
@@ -62,13 +62,13 @@ def placed_at(at: S.Place, +member: String, adm: {S.admissible_at(at, member) ==
     case S.Unplaced{}:
       Core.absurd({S.placed_at(S.Unplaced{}, member) == True{} : Bool}, Core.false_true(adm))
 
-def compiles_from(pp: Maybe<&2, List<&2, P.Segment>>, +mp: Maybe<&2, List<&2, P.Segment>>, adm: {S.fixed_and(pp, S.compiles(S.joined(pp, mp))) == True{} : Bool}) ->
+def compiles_from(pp: Maybe<&2, List<&2, P.Segment>>, +mp: Maybe<&2, List<&2, P.Segment>>, adm: {S.kept_and(pp, S.compiles(S.joined(pp, mp))) == True{} : Bool}) ->
     {S.compiles(S.joined(pp, mp)) == True{} : Bool}:
   match pp:
     case None{}:
       Core.absurd({S.compiles(S.joined(None{}, mp)) == True{} : Bool}, Core.false_true(adm))
     case Some{+a}:
-      Core.and_right(S.fixed_prefix(a), S.compiles(S.joined(Some{a}, mp)), adm)
+      Core.and_right(S.ends_solid(a, False{}), S.compiles(S.joined(Some{a}, mp)), adm)
 
 def compiles_at(at: S.Place, +member: String, adm: {S.admissible_at(at, member) == True{} : Bool}) -> {S.compiles(S.assembled_at(at, member)) == True{} : Bool}:
   match at:
@@ -143,13 +143,38 @@ def same_refl(+sens: Bool, +raw: String) -> {S.text_same(sens, raw, raw) == True
 
 # A literal prefix consumes its own segments and leaves the rest.
 def walk_literal(+raws: List<&2, String>, +ys: List<&2, String>, +sens: Bool, +mb: List<&2, P.Segment>) ->
-    {S.walk(statics(raws), List.append(&2, String, raws, ys), sens, mb) == S.segments_with(sens, mb, ys) : Maybe<&2, P.Params>}:
+    {S.walk(statics(raws), List.append(&2, String, raws, ys), sens, mb, Nil{}) == S.segments_with(sens, mb, ys) : Maybe<&2, P.Params>}:
   match raws:
     case Nil{}:
-      {==}
+      Equal.sym(Maybe<&2, P.Params>, S.segments_with(sens, mb, ys), S.segments_at(sens, mb, ys, Nil{}), MD.with_at(sens, mb, ys))
     case +raw <> +t:
-      %Equal.sym(Bool, S.text_same(sens, raw, raw), True{}, same_refl(sens, raw)) : {MS.same_text(_, S.walk(statics(t), List.append(&2, String, t, ys), sens, mb)) == S.segments_with(sens, mb, ys) : Maybe<&2, P.Params>}
+      %Equal.sym(Bool, S.text_same(sens, raw, raw), True{}, same_refl(sens, raw)) : {MS.same_text(_, S.walk(statics(t), List.append(&2, String, t, ys), sens, mb, Nil{})) == S.segments_with(sens, mb, ys) : Maybe<&2, P.Params>}
       walk_literal(t, ys, sens, mb)
+
+def static_root(+xs: List<&2, String>, +r: String, +rest: List<&2, P.Segment>) -> {S.root_hit(xs, P.Static{r} <> rest) == None{} : Maybe<&2, P.Params>}:
+  match xs:
+    case Nil{}:
+      {==}
+    case SCon{a, b} <> t:
+      {==}
+    case SNil{} <> y <> z:
+      {==}
+    case SNil{} <> Nil{}:
+      {==}
+
+# Under a literal prefix the assembled root rule never fires.
+def rooted_cons(+sens: Bool, +r: String, +rt: List<&2, String>, +xs: List<&2, String>, +mb: List<&2, P.Segment>) ->
+    {S.rooted(sens, statics(r <> rt), xs, mb) == S.walk(statics(r <> rt), xs, sens, mb, Nil{}) : Maybe<&2, P.Params>}:
+  %Equal.sym(Maybe<&2, P.Params>, S.root_hit(xs, P.Static{r} <> List.append(&2, P.Segment, statics(rt), mb)), None{}, static_root(xs, r, List.append(&2, P.Segment, statics(rt), mb))) : {MS.or_else(S.walk(statics(r <> rt), xs, sens, mb, Nil{}), u => _) == S.walk(statics(r <> rt), xs, sens, mb, Nil{}) : Maybe<&2, P.Params>}
+  MSP.or_else_none(S.walk(statics(r <> rt), xs, sens, mb, Nil{}))
+
+def rooted_static(+sens: Bool, +raws: List<&2, String>, +xs: List<&2, String>, +mb: List<&2, P.Segment>, facts: MJ.UnderFacts(S.Under{raws})) ->
+    {S.rooted(sens, statics(raws), xs, mb) == S.walk(statics(raws), xs, sens, mb, Nil{}) : Maybe<&2, P.Params>}:
+  match raws:
+    case Nil{}:
+      Core.absurd({S.rooted(sens, statics(Nil{}), xs, mb) == S.walk(statics(Nil{}), xs, sens, mb, Nil{}) : Maybe<&2, P.Params>}, Core.false_true(facts))
+    case +r <> +rt:
+      rooted_cons(sens, r, rt, xs, mb)
 
 def split_join_all(+raws: List<&2, String>, facts: MJ.UnderFacts(S.Under{raws})) -> {String.split(String.join(raws, "/"), '/') == raws : List<&2, String>}:
   match raws:
@@ -187,17 +212,22 @@ def root_ordinary(+r: String, +b: List<&2, P.Segment>, ord: {String.eq(SCon{'/',
     case SCon{+x, +y}:
       MO.root_fin(x, String.split(y, '/'), Char.is_eq(x, '/'), b, e => MO.split_ne(y, e))
 
+def suffix_walk(+raws: List<&2, String>, +b: List<&2, P.Segment>, +r: String, +sens: Bool,
+    ord: {String.eq(SCon{'/', r}, "/") && S.chain_at(Some{P.Pattern{b}}) == False{} : Bool}, facts: MJ.UnderFacts(S.Under{raws})) ->
+    {S.walk(statics(raws), String.split(String.join(raws, "/") ++ SCon{'/', r}, '/'), sens, b, Nil{}) == S.member_alone(Some{P.Pattern{b}}, "/" ++ r, M.Options{True{}, sens}) : Maybe<&2, P.Params>}:
+  %Equal.sym(List<&2, String>, String.split(String.join(raws, "/") ++ SCon{'/', r}, '/'), List.append(&2, String, raws, String.split(r, '/')), lead_split(raws, r, facts)) : {S.walk(statics(raws), _, sens, b, Nil{}) == S.member_alone(Some{P.Pattern{b}}, "/" ++ r, M.Options{True{}, sens}) : Maybe<&2, P.Params>}
+  %Equal.sym(Maybe<&2, P.Params>, S.root_hit(String.split(r, '/'), b), None{}, root_ordinary(r, b, ord)) : {S.walk(statics(raws), List.append(&2, String, raws, String.split(r, '/')), sens, b, Nil{}) == MS.or_else(S.segments_with(sens, b, String.split(r, '/')), u => _) : Maybe<&2, P.Params>}
+  Equal.trans(Maybe<&2, P.Params>, S.walk(statics(raws), List.append(&2, String, raws, String.split(r, '/')), sens, b, Nil{}), S.segments_with(sens, b, String.split(r, '/')), MS.or_else(S.segments_with(sens, b, String.split(r, '/')), u => None{}), walk_literal(raws, String.split(r, '/'), sens, b), Equal.sym(Maybe<&2, P.Params>, MS.or_else(S.segments_with(sens, b, String.split(r, '/')), u => None{}), S.segments_with(sens, b, String.split(r, '/')), MSP.or_else_none(S.segments_with(sens, b, String.split(r, '/')))))
+
 def suffix_ok(+raws: List<&2, String>, +b: List<&2, P.Segment>, ok: Bool, +r: String, +sens: Bool,
     alone: {S.compiles(CS.accept(ok, b)) == True{} : Bool}, ord: {String.eq(SCon{'/', r}, "/") && S.chain_at(CS.accept(ok, b)) == False{} : Bool},
-    facts: MJ.UnderFacts(S.Under{raws})) ->
+    +facts: {Core.clean_segments(raws) && Bool.not(List.is_empty(&2, String, raws)) == True{} : Bool}) ->
     {S.walk_pieces(Some{statics(raws)}, Some{b}, ("/" ++ String.join(raws, "/")) ++ ("/" ++ r), M.Options{True{}, sens}) == S.member_alone(CS.accept(ok, b), "/" ++ r, M.Options{True{}, sens}) : Maybe<&2, P.Params>}:
   match ok:
     case False{}:
       Core.absurd({S.walk_pieces(Some{statics(raws)}, Some{b}, ("/" ++ String.join(raws, "/")) ++ ("/" ++ r), M.Options{True{}, sens}) == S.member_alone(CS.accept(False{}, b), "/" ++ r, M.Options{True{}, sens}) : Maybe<&2, P.Params>}, Core.false_true(alone))
     case True{}:
-      %Equal.sym(List<&2, String>, String.split(String.join(raws, "/") ++ SCon{'/', r}, '/'), List.append(&2, String, raws, String.split(r, '/')), lead_split(raws, r, facts)) : {S.walk(statics(raws), _, sens, b) == S.member_alone(Some{P.Pattern{b}}, "/" ++ r, M.Options{True{}, sens}) : Maybe<&2, P.Params>}
-      %Equal.sym(Maybe<&2, P.Params>, S.root_hit(String.split(r, '/'), b), None{}, root_ordinary(r, b, ord)) : {S.walk(statics(raws), List.append(&2, String, raws, String.split(r, '/')), sens, b) == MS.or_else(S.segments_with(sens, b, String.split(r, '/')), u => _) : Maybe<&2, P.Params>}
-      Equal.trans(Maybe<&2, P.Params>, S.walk(statics(raws), List.append(&2, String, raws, String.split(r, '/')), sens, b), S.segments_with(sens, b, String.split(r, '/')), MS.or_else(S.segments_with(sens, b, String.split(r, '/')), u => None{}), walk_literal(raws, String.split(r, '/'), sens, b), Equal.sym(Maybe<&2, P.Params>, MS.or_else(S.segments_with(sens, b, String.split(r, '/')), u => None{}), S.segments_with(sens, b, String.split(r, '/')), MSP.or_else_none(S.segments_with(sens, b, String.split(r, '/')))))
+      Equal.trans(Maybe<&2, P.Params>, S.rooted(sens, statics(raws), String.split(String.join(raws, "/") ++ SCon{'/', r}, '/'), b), S.walk(statics(raws), String.split(String.join(raws, "/") ++ SCon{'/', r}, '/'), sens, b, Nil{}), S.member_alone(Some{P.Pattern{b}}, "/" ++ r, M.Options{True{}, sens}), rooted_static(sens, raws, String.split(String.join(raws, "/") ++ SCon{'/', r}, '/'), b, facts), suffix_walk(raws, b, r, sens, ord, facts))
 
 def suffix_pieces(+raws: List<&2, String>, mp: Maybe<&2, List<&2, P.Segment>>, +r: String, +sens: Bool,
     alone: {S.compiles(CS.checked(mp)) == True{} : Bool}, ord: {String.eq(SCon{'/', r}, "/") && S.chain_at(CS.checked(mp)) == False{} : Bool},
@@ -293,50 +323,58 @@ def D() -> M.Options:
   M.Options{True{}, True{}}
 
 # What the mount answers at the bare prefix path and at the prefix plus `/`.
-def root_b(+raws: List<&2, String>, +b: List<&2, P.Segment>, chain: {S.chain_at(Some{P.Pattern{b}}) == True{} : Bool}, facts: MJ.UnderFacts(S.Under{raws})) ->
-    {S.walk_pieces(Some{statics(raws)}, Some{b}, "/" ++ String.join(raws, "/"), D()) == S.member_alone(Some{P.Pattern{b}}, "/", D()) : Maybe<&2, P.Params>}:
+def root_bw(+raws: List<&2, String>, +b: List<&2, P.Segment>, chain: {S.chain_at(Some{P.Pattern{b}}) == True{} : Bool}, facts: MJ.UnderFacts(S.Under{raws})) ->
+    {S.walk(statics(raws), String.split(String.join(raws, "/"), '/'), True{}, b, Nil{}) == S.member_alone(Some{P.Pattern{b}}, "/", D()) : Maybe<&2, P.Params>}:
   match b:
     case P.Capture{+n, +c, True{}} <> +rest:
       +oo = chain
-      %Equal.sym(List<&2, String>, String.split(String.join(raws, "/"), '/'), List.append(&2, String, raws, Nil{}), Equal.trans(List<&2, String>, String.split(String.join(raws, "/"), '/'), raws, List.append(&2, String, raws, Nil{}), split_join_all(raws, facts), Equal.sym(List<&2, String>, List.append(&2, String, raws, Nil{}), raws, app_nil(raws)))) : {S.walk(statics(raws), _, True{}, P.Capture{n, c, True{}} <> rest) == S.member_alone(Some{P.Pattern{P.Capture{n, c, True{}} <> rest}}, "/", D()) : Maybe<&2, P.Params>}
-      %Equal.sym(Maybe<&2, P.Params>, S.walk(statics(raws), List.append(&2, String, raws, Nil{}), True{}, P.Capture{n, c, True{}} <> rest), S.segments_with(True{}, P.Capture{n, c, True{}} <> rest, Nil{}), walk_literal(raws, Nil{}, True{}, P.Capture{n, c, True{}} <> rest)) : {_ == S.member_alone(Some{P.Pattern{P.Capture{n, c, True{}} <> rest}}, "/", D()) : Maybe<&2, P.Params>}
+      %Equal.sym(List<&2, String>, String.split(String.join(raws, "/"), '/'), List.append(&2, String, raws, Nil{}), Equal.trans(List<&2, String>, String.split(String.join(raws, "/"), '/'), raws, List.append(&2, String, raws, Nil{}), split_join_all(raws, facts), Equal.sym(List<&2, String>, List.append(&2, String, raws, Nil{}), raws, app_nil(raws)))) : {S.walk(statics(raws), _, True{}, P.Capture{n, c, True{}} <> rest, Nil{}) == S.member_alone(Some{P.Pattern{P.Capture{n, c, True{}} <> rest}}, "/", D()) : Maybe<&2, P.Params>}
+      %Equal.sym(Maybe<&2, P.Params>, S.walk(statics(raws), List.append(&2, String, raws, Nil{}), True{}, P.Capture{n, c, True{}} <> rest, Nil{}), S.segments_with(True{}, P.Capture{n, c, True{}} <> rest, Nil{}), walk_literal(raws, Nil{}, True{}, P.Capture{n, c, True{}} <> rest)) : {_ == S.member_alone(Some{P.Pattern{P.Capture{n, c, True{}} <> rest}}, "/", D()) : Maybe<&2, P.Params>}
       %Equal.sym(Bool, MS.only_optional(rest), True{}, oo) : {MS.matches(rest, Nil{}, Nil{}) == MS.prefix_hit(_) : Maybe<&2, P.Params>}
       opt_nil(rest, oo)
     case Nil{}:
-      Core.absurd({S.walk_pieces(Some{statics(raws)}, Some{Nil{}}, "/" ++ String.join(raws, "/"), D()) == S.member_alone(Some{P.Pattern{Nil{}}}, "/", D()) : Maybe<&2, P.Params>}, Core.false_true(chain))
+      Core.absurd({S.walk(statics(raws), String.split(String.join(raws, "/"), '/'), True{}, Nil{}, Nil{}) == S.member_alone(Some{P.Pattern{Nil{}}}, "/", D()) : Maybe<&2, P.Params>}, Core.false_true(chain))
     case P.Capture{n, c, False{}} <> rest:
-      Core.absurd({S.walk_pieces(Some{statics(raws)}, Some{P.Capture{n, c, False{}} <> rest}, "/" ++ String.join(raws, "/"), D()) == S.member_alone(Some{P.Pattern{P.Capture{n, c, False{}} <> rest}}, "/", D()) : Maybe<&2, P.Params>}, Core.false_true(chain))
+      Core.absurd({S.walk(statics(raws), String.split(String.join(raws, "/"), '/'), True{}, P.Capture{n, c, False{}} <> rest, Nil{}) == S.member_alone(Some{P.Pattern{P.Capture{n, c, False{}} <> rest}}, "/", D()) : Maybe<&2, P.Params>}, Core.false_true(chain))
     case P.Static{x} <> rest:
-      Core.absurd({S.walk_pieces(Some{statics(raws)}, Some{P.Static{x} <> rest}, "/" ++ String.join(raws, "/"), D()) == S.member_alone(Some{P.Pattern{P.Static{x} <> rest}}, "/", D()) : Maybe<&2, P.Params>}, Core.false_true(chain))
+      Core.absurd({S.walk(statics(raws), String.split(String.join(raws, "/"), '/'), True{}, P.Static{x} <> rest, Nil{}) == S.member_alone(Some{P.Pattern{P.Static{x} <> rest}}, "/", D()) : Maybe<&2, P.Params>}, Core.false_true(chain))
     case P.Wildcard{n} <> rest:
-      Core.absurd({S.walk_pieces(Some{statics(raws)}, Some{P.Wildcard{n} <> rest}, "/" ++ String.join(raws, "/"), D()) == S.member_alone(Some{P.Pattern{P.Wildcard{n} <> rest}}, "/", D()) : Maybe<&2, P.Params>}, Core.false_true(chain))
+      Core.absurd({S.walk(statics(raws), String.split(String.join(raws, "/"), '/'), True{}, P.Wildcard{n} <> rest, Nil{}) == S.member_alone(Some{P.Pattern{P.Wildcard{n} <> rest}}, "/", D()) : Maybe<&2, P.Params>}, Core.false_true(chain))
     case P.InteriorWildcard{} <> rest:
-      Core.absurd({S.walk_pieces(Some{statics(raws)}, Some{P.InteriorWildcard{} <> rest}, "/" ++ String.join(raws, "/"), D()) == S.member_alone(Some{P.Pattern{P.InteriorWildcard{} <> rest}}, "/", D()) : Maybe<&2, P.Params>}, Core.false_true(chain))
+      Core.absurd({S.walk(statics(raws), String.split(String.join(raws, "/"), '/'), True{}, P.InteriorWildcard{} <> rest, Nil{}) == S.member_alone(Some{P.Pattern{P.InteriorWildcard{} <> rest}}, "/", D()) : Maybe<&2, P.Params>}, Core.false_true(chain))
     case P.PrefixWildcard{x} <> rest:
-      Core.absurd({S.walk_pieces(Some{statics(raws)}, Some{P.PrefixWildcard{x} <> rest}, "/" ++ String.join(raws, "/"), D()) == S.member_alone(Some{P.Pattern{P.PrefixWildcard{x} <> rest}}, "/", D()) : Maybe<&2, P.Params>}, Core.false_true(chain))
+      Core.absurd({S.walk(statics(raws), String.split(String.join(raws, "/"), '/'), True{}, P.PrefixWildcard{x} <> rest, Nil{}) == S.member_alone(Some{P.Pattern{P.PrefixWildcard{x} <> rest}}, "/", D()) : Maybe<&2, P.Params>}, Core.false_true(chain))
     case P.Span{n} <> rest:
-      Core.absurd({S.walk_pieces(Some{statics(raws)}, Some{P.Span{n} <> rest}, "/" ++ String.join(raws, "/"), D()) == S.member_alone(Some{P.Pattern{P.Span{n} <> rest}}, "/", D()) : Maybe<&2, P.Params>}, Core.false_true(chain))
+      Core.absurd({S.walk(statics(raws), String.split(String.join(raws, "/"), '/'), True{}, P.Span{n} <> rest, Nil{}) == S.member_alone(Some{P.Pattern{P.Span{n} <> rest}}, "/", D()) : Maybe<&2, P.Params>}, Core.false_true(chain))
 
-def root_b2(+raws: List<&2, String>, +b: List<&2, P.Segment>, chain: {S.chain_at(Some{P.Pattern{b}}) == True{} : Bool}, facts: MJ.UnderFacts(S.Under{raws})) ->
-    {S.walk_pieces(Some{statics(raws)}, Some{b}, ("/" ++ String.join(raws, "/")) ++ "/", D()) == None{} : Maybe<&2, P.Params>}:
+def root_bw2(+raws: List<&2, String>, +b: List<&2, P.Segment>, chain: {S.chain_at(Some{P.Pattern{b}}) == True{} : Bool}, facts: MJ.UnderFacts(S.Under{raws})) ->
+    {S.walk(statics(raws), String.split(String.join(raws, "/") ++ "/", '/'), True{}, b, Nil{}) == None{} : Maybe<&2, P.Params>}:
   match b:
     case P.Capture{+n, +c, True{}} <> +rest:
-      %Equal.sym(List<&2, String>, String.split(String.join(raws, "/") ++ SCon{'/', SNil{}}, '/'), List.append(&2, String, raws, [""]), lead_split(raws, SNil{}, facts)) : {S.walk(statics(raws), _, True{}, P.Capture{n, c, True{}} <> rest) == None{} : Maybe<&2, P.Params>}
+      %Equal.sym(List<&2, String>, String.split(String.join(raws, "/") ++ SCon{'/', SNil{}}, '/'), List.append(&2, String, raws, [""]), lead_split(raws, SNil{}, facts)) : {S.walk(statics(raws), _, True{}, P.Capture{n, c, True{}} <> rest, Nil{}) == None{} : Maybe<&2, P.Params>}
       walk_literal(raws, [""], True{}, P.Capture{n, c, True{}} <> rest)
     case Nil{}:
-      Core.absurd({S.walk_pieces(Some{statics(raws)}, Some{Nil{}}, ("/" ++ String.join(raws, "/")) ++ "/", D()) == None{} : Maybe<&2, P.Params>}, Core.false_true(chain))
+      Core.absurd({S.walk(statics(raws), String.split(String.join(raws, "/") ++ "/", '/'), True{}, Nil{}, Nil{}) == None{} : Maybe<&2, P.Params>}, Core.false_true(chain))
     case P.Capture{n, c, False{}} <> rest:
-      Core.absurd({S.walk_pieces(Some{statics(raws)}, Some{P.Capture{n, c, False{}} <> rest}, ("/" ++ String.join(raws, "/")) ++ "/", D()) == None{} : Maybe<&2, P.Params>}, Core.false_true(chain))
+      Core.absurd({S.walk(statics(raws), String.split(String.join(raws, "/") ++ "/", '/'), True{}, P.Capture{n, c, False{}} <> rest, Nil{}) == None{} : Maybe<&2, P.Params>}, Core.false_true(chain))
     case P.Static{x} <> rest:
-      Core.absurd({S.walk_pieces(Some{statics(raws)}, Some{P.Static{x} <> rest}, ("/" ++ String.join(raws, "/")) ++ "/", D()) == None{} : Maybe<&2, P.Params>}, Core.false_true(chain))
+      Core.absurd({S.walk(statics(raws), String.split(String.join(raws, "/") ++ "/", '/'), True{}, P.Static{x} <> rest, Nil{}) == None{} : Maybe<&2, P.Params>}, Core.false_true(chain))
     case P.Wildcard{n} <> rest:
-      Core.absurd({S.walk_pieces(Some{statics(raws)}, Some{P.Wildcard{n} <> rest}, ("/" ++ String.join(raws, "/")) ++ "/", D()) == None{} : Maybe<&2, P.Params>}, Core.false_true(chain))
+      Core.absurd({S.walk(statics(raws), String.split(String.join(raws, "/") ++ "/", '/'), True{}, P.Wildcard{n} <> rest, Nil{}) == None{} : Maybe<&2, P.Params>}, Core.false_true(chain))
     case P.InteriorWildcard{} <> rest:
-      Core.absurd({S.walk_pieces(Some{statics(raws)}, Some{P.InteriorWildcard{} <> rest}, ("/" ++ String.join(raws, "/")) ++ "/", D()) == None{} : Maybe<&2, P.Params>}, Core.false_true(chain))
+      Core.absurd({S.walk(statics(raws), String.split(String.join(raws, "/") ++ "/", '/'), True{}, P.InteriorWildcard{} <> rest, Nil{}) == None{} : Maybe<&2, P.Params>}, Core.false_true(chain))
     case P.PrefixWildcard{x} <> rest:
-      Core.absurd({S.walk_pieces(Some{statics(raws)}, Some{P.PrefixWildcard{x} <> rest}, ("/" ++ String.join(raws, "/")) ++ "/", D()) == None{} : Maybe<&2, P.Params>}, Core.false_true(chain))
+      Core.absurd({S.walk(statics(raws), String.split(String.join(raws, "/") ++ "/", '/'), True{}, P.PrefixWildcard{x} <> rest, Nil{}) == None{} : Maybe<&2, P.Params>}, Core.false_true(chain))
     case P.Span{n} <> rest:
-      Core.absurd({S.walk_pieces(Some{statics(raws)}, Some{P.Span{n} <> rest}, ("/" ++ String.join(raws, "/")) ++ "/", D()) == None{} : Maybe<&2, P.Params>}, Core.false_true(chain))
+      Core.absurd({S.walk(statics(raws), String.split(String.join(raws, "/") ++ "/", '/'), True{}, P.Span{n} <> rest, Nil{}) == None{} : Maybe<&2, P.Params>}, Core.false_true(chain))
+
+def root_b(+raws: List<&2, String>, +b: List<&2, P.Segment>, chain: {S.chain_at(Some{P.Pattern{b}}) == True{} : Bool}, +facts: {Core.clean_segments(raws) && Bool.not(List.is_empty(&2, String, raws)) == True{} : Bool}) ->
+    {S.walk_pieces(Some{statics(raws)}, Some{b}, "/" ++ String.join(raws, "/"), D()) == S.member_alone(Some{P.Pattern{b}}, "/", D()) : Maybe<&2, P.Params>}:
+  Equal.trans(Maybe<&2, P.Params>, S.rooted(True{}, statics(raws), String.split(String.join(raws, "/"), '/'), b), S.walk(statics(raws), String.split(String.join(raws, "/"), '/'), True{}, b, Nil{}), S.member_alone(Some{P.Pattern{b}}, "/", D()), rooted_static(True{}, raws, String.split(String.join(raws, "/"), '/'), b, facts), root_bw(raws, b, chain, facts))
+
+def root_b2(+raws: List<&2, String>, +b: List<&2, P.Segment>, chain: {S.chain_at(Some{P.Pattern{b}}) == True{} : Bool}, +facts: {Core.clean_segments(raws) && Bool.not(List.is_empty(&2, String, raws)) == True{} : Bool}) ->
+    {S.walk_pieces(Some{statics(raws)}, Some{b}, ("/" ++ String.join(raws, "/")) ++ "/", D()) == None{} : Maybe<&2, P.Params>}:
+  Equal.trans(Maybe<&2, P.Params>, S.rooted(True{}, statics(raws), String.split(String.join(raws, "/") ++ "/", '/'), b), S.walk(statics(raws), String.split(String.join(raws, "/") ++ "/", '/'), True{}, b, Nil{}), None{}, rooted_static(True{}, raws, String.split(String.join(raws, "/") ++ "/", '/'), b, facts), root_bw2(raws, b, chain, facts))
 
 def root_ok(+raws: List<&2, String>, +b: List<&2, P.Segment>, ok: Bool, chain: {S.chain_at(CS.accept(ok, b)) == True{} : Bool}, facts: MJ.UnderFacts(S.Under{raws})) ->
     {S.walk_pieces(Some{statics(raws)}, Some{b}, "/" ++ String.join(raws, "/"), D()) == S.member_alone(CS.accept(ok, b), "/", D()) : Maybe<&2, P.Params>}:
@@ -476,94 +514,296 @@ def join_app(+t: List<&2, String>, +h: String, +y: String, +yt: List<&2, String>
       %Equal.sym(String, String.join.go(List.append(&2, String, tt, y <> yt), t1, "/"), String.join.go(tt, t1, "/") ++ ("/" ++ String.join.go(yt, y, "/")), join_app(tt, t1, y, yt)) : {h ++ ("/" ++ _) == String.join.go(t1 <> tt, h, "/") ++ ("/" ++ String.join.go(yt, y, "/")) : String}
       Equal.sym(String, (h ++ ("/" ++ String.join.go(tt, t1, "/"))) ++ ("/" ++ String.join.go(yt, y, "/")), h ++ (("/" ++ String.join.go(tt, t1, "/")) ++ ("/" ++ String.join.go(yt, y, "/"))), str_assoc(h, "/" ++ String.join.go(tt, t1, "/"), "/" ++ String.join.go(yt, y, "/")))
 
-def Rest(+raws: List<&2, String>, +ys: List<&2, String>) -> Type:
-  &rest: String -> ({String.join(List.append(&2, String, raws, ys), "/") == String.join(raws, "/") ++ rest : String} & {S.boundary(rest) == True{} : Bool})
+def Rest(+segs: List<&2, String>, +ys: List<&2, String>) -> Type:
+  &rest: String -> ({String.join(List.append(&2, String, segs, ys), "/") == String.join(segs, "/") ++ rest : String} & {S.boundary(rest) == True{} : Bool})
 
-def conv_rest(+raws: List<&2, String>, +ys: List<&2, String>, facts: MJ.UnderFacts(S.Under{raws})) -> Rest(raws, ys):
-  match raws ys:
-    case +rs Nil{}:
-      ("", (Equal.trans(String, String.join(List.append(&2, String, rs, Nil{}), "/"), String.join(rs, "/"), String.join(rs, "/") ++ "", Equal.cong(List<&2, String>, String, z => String.join(z, "/"), List.append(&2, String, rs, Nil{}), rs, app_nil(rs)), Equal.sym(String, String.join(rs, "/") ++ "", String.join(rs, "/"), str_app_nil(String.join(rs, "/")))), {==}))
-    case Nil{} +y <> +yt:
-      Core.absurd(Rest(Nil{}, y <> yt), Core.false_true(facts))
-    case +h <> +t +y <> +yt:
+def conv_rest(+h: String, +t: List<&2, String>, ys: List<&2, String>) -> Rest(h <> t, ys):
+  match ys:
+    case Nil{}:
+      ("", (Equal.trans(String, String.join(List.append(&2, String, h <> t, Nil{}), "/"), String.join(h <> t, "/"), String.join(h <> t, "/") ++ "", Equal.cong(List<&2, String>, String, z => String.join(z, "/"), List.append(&2, String, h <> t, Nil{}), h <> t, app_nil(h <> t)), Equal.sym(String, String.join(h <> t, "/") ++ "", String.join(h <> t, "/"), str_app_nil(String.join(h <> t, "/")))), {==}))
+    case +y <> +yt:
       ("/" ++ String.join(y <> yt, "/"), (join_app(t, h, y, yt), {==}))
 
-def Inv(+raws: List<&2, String>, +xs: List<&2, String>) -> Type:
-  &ys: List<&2, String> -> {xs == List.append(&2, String, raws, ys) : List<&2, String>}
+# What a literal walk consumed: request segments matching the prefix's
+# segments under the case option, then the rest.
+type Took is Data:
+  Took{segs: List<&2, String>, ys: List<&2, String>}
 
-def inv_rest(+raw: String, +x: String, +w: Maybe<&2, P.Params>, +ps: P.Params, q: Bool, eq: {String.eq(raw, x) == q : Bool}, e: {MS.same_text(String.eq(raw, x), w) == Some{ps} : Maybe<&2, P.Params>}) -> {w == Some{ps} : Maybe<&2, P.Params>}:
+def took_segs(k: Took) -> List<&2, String>:
+  match k:
+    case Took{segs, ys}:
+      segs
+
+def took_ys(k: Took) -> List<&2, String>:
+  match k:
+    case Took{segs, ys}:
+      ys
+
+def Inv(+sens: Bool, +raws: List<&2, String>, +xs: List<&2, String>) -> Type:
+  &k: Took -> ({xs == List.append(&2, String, took_segs(k), took_ys(k)) : List<&2, String>} & {S.same_segments(sens, raws, took_segs(k)) == True{} : Bool})
+
+def inv_rest(+sens: Bool, +raw: String, +x: String, +w: Maybe<&2, P.Params>, +ps: P.Params, q: Bool, eq: {S.text_same(sens, raw, x) == q : Bool}, e: {MS.same_text(S.text_same(sens, raw, x), w) == Some{ps} : Maybe<&2, P.Params>}) -> {w == Some{ps} : Maybe<&2, P.Params>}:
   match q:
     case True{}:
-      Equal.trans(Maybe<&2, P.Params>, w, MS.same_text(String.eq(raw, x), w), Some{ps}, Equal.cong(Bool, Maybe<&2, P.Params>, z => MS.same_text(z, w), True{}, String.eq(raw, x), Equal.sym(Bool, String.eq(raw, x), True{}, eq)), e)
+      Equal.trans(Maybe<&2, P.Params>, w, MS.same_text(S.text_same(sens, raw, x), w), Some{ps}, Equal.cong(Bool, Maybe<&2, P.Params>, z => MS.same_text(z, w), True{}, S.text_same(sens, raw, x), Equal.sym(Bool, S.text_same(sens, raw, x), True{}, eq)), e)
     case False{}:
-      Core.absurd({w == Some{ps} : Maybe<&2, P.Params>}, none_some_p(ps, Equal.trans(Maybe<&2, P.Params>, None{}, MS.same_text(String.eq(raw, x), w), Some{ps}, Equal.cong(Bool, Maybe<&2, P.Params>, z => MS.same_text(z, w), False{}, String.eq(raw, x), Equal.sym(Bool, String.eq(raw, x), False{}, eq)), e)))
+      Core.absurd({w == Some{ps} : Maybe<&2, P.Params>}, none_some_p(ps, Equal.trans(Maybe<&2, P.Params>, None{}, MS.same_text(S.text_same(sens, raw, x), w), Some{ps}, Equal.cong(Bool, Maybe<&2, P.Params>, z => MS.same_text(z, w), False{}, S.text_same(sens, raw, x), Equal.sym(Bool, S.text_same(sens, raw, x), False{}, eq)), e)))
 
-def inv_same(+raw: String, +x: String, +w: Maybe<&2, P.Params>, +ps: P.Params, q: Bool, eq: {String.eq(raw, x) == q : Bool}, e: {MS.same_text(String.eq(raw, x), w) == Some{ps} : Maybe<&2, P.Params>}) -> {raw == x : String}:
+def inv_same(+sens: Bool, +raw: String, +x: String, +w: Maybe<&2, P.Params>, +ps: P.Params, q: Bool, eq: {S.text_same(sens, raw, x) == q : Bool}, e: {MS.same_text(S.text_same(sens, raw, x), w) == Some{ps} : Maybe<&2, P.Params>}) -> {S.text_same(sens, raw, x) == True{} : Bool}:
   match q:
     case True{}:
-      Eq.string_eq_sound(raw, x, eq)
+      eq
     case False{}:
-      Core.absurd({raw == x : String}, none_some_p(ps, Equal.trans(Maybe<&2, P.Params>, None{}, MS.same_text(String.eq(raw, x), w), Some{ps}, Equal.cong(Bool, Maybe<&2, P.Params>, z => MS.same_text(z, w), False{}, String.eq(raw, x), Equal.sym(Bool, String.eq(raw, x), False{}, eq)), e)))
+      Core.absurd({S.text_same(sens, raw, x) == True{} : Bool}, none_some_p(ps, Equal.trans(Maybe<&2, P.Params>, None{}, MS.same_text(S.text_same(sens, raw, x), w), Some{ps}, Equal.cong(Bool, Maybe<&2, P.Params>, z => MS.same_text(z, w), False{}, S.text_same(sens, raw, x), Equal.sym(Bool, S.text_same(sens, raw, x), False{}, eq)), e)))
 
-def inv_pack(+raw: String, +rt: List<&2, String>, +x: String, +xt: List<&2, String>, same: {raw == x : String}, ih: Inv(rt, xt)) -> Inv(raw <> rt, x <> xt):
-  (+ys, h) = ih
-  (ys, Equal.trans(List<&2, String>, x <> xt, raw <> xt, raw <> List.append(&2, String, rt, ys), Equal.cong(String, List<&2, String>, z => z <> xt, x, raw, Equal.sym(String, raw, x, same)), Equal.cong(List<&2, String>, List<&2, String>, z => raw <> z, xt, List.append(&2, String, rt, ys), h)))
+def and_true(a: Bool, +b: Bool, ea: {a == True{} : Bool}, eb: {b == True{} : Bool}) -> {a && b == True{} : Bool}:
+  match a:
+    case True{}:
+      eb
+    case False{}:
+      Core.absurd({False{} && b == True{} : Bool}, Core.false_true(ea))
 
-# A literal walk that answers consumed exactly the prefix's segments first.
-def walk_inv(+raws: List<&2, String>, +xs: List<&2, String>, +b: List<&2, P.Segment>, +ps: P.Params, +e: {S.walk(statics(raws), xs, True{}, b) == Some{ps} : Maybe<&2, P.Params>}) -> Inv(raws, xs):
+def inv_pack(+sens: Bool, +raw: String, +rt: List<&2, String>, +x: String, +xt: List<&2, String>, same: {S.text_same(sens, raw, x) == True{} : Bool}, ih: Inv(sens, rt, xt)) -> Inv(sens, raw <> rt, x <> xt):
+  (+k, pr) = ih
+  (h1, h2) = pr
+  (Took{x <> took_segs(k), took_ys(k)}, (Equal.cong(List<&2, String>, List<&2, String>, z => x <> z, xt, List.append(&2, String, took_segs(k), took_ys(k)), h1), and_true(S.text_same(sens, raw, x), S.same_segments(sens, rt, took_segs(k)), same, h2)))
+
+# A literal walk that answers consumed request segments matching the
+# prefix's segments first.
+def walk_inv(+sens: Bool, +raws: List<&2, String>, +xs: List<&2, String>, +b: List<&2, P.Segment>, +ps: P.Params, +e: {S.walk(statics(raws), xs, sens, b, Nil{}) == Some{ps} : Maybe<&2, P.Params>}) -> Inv(sens, raws, xs):
   match raws xs:
     case Nil{} ys:
-      (ys, {==})
+      (Took{Nil{}, ys}, ({==}, {==}))
     case +raw <> +rt Nil{}:
-      Core.absurd(Inv(raw <> rt, Nil{}), none_some_p(ps, e))
+      Core.absurd(Inv(sens, raw <> rt, Nil{}), none_some_p(ps, e))
     case +raw <> +rt +x <> +xt:
-      inv_pack(raw, rt, x, xt, inv_same(raw, x, S.walk(statics(rt), xt, True{}, b), ps, String.eq(raw, x), {==}, e), walk_inv(rt, xt, b, ps, inv_rest(raw, x, S.walk(statics(rt), xt, True{}, b), ps, String.eq(raw, x), {==}, e)))
+      inv_pack(sens, raw, rt, x, xt, inv_same(sens, raw, x, S.walk(statics(rt), xt, sens, b, Nil{}), ps, S.text_same(sens, raw, x), {==}, e), walk_inv(sens, rt, xt, b, ps, inv_rest(sens, raw, x, S.walk(statics(rt), xt, sens, b, Nil{}), ps, S.text_same(sens, raw, x), {==}, e)))
 
-def Conv(+path: String, +lead: String) -> Type:
-  &rest: String -> ({path == lead ++ rest : String} & {S.boundary(rest) == True{} : Bool})
+def eq_blank(+c: Char, +y: String) -> {String.eq(SCon{c, y}, "") == False{} : Bool}:
+  match c:
+    case Chr{x}:
+      {==}
 
-def conv_fin2(+raws: List<&2, String>, +t: String, +path: String, +ys: List<&2, String>, eqpath: {path == SCon{'/', t} : String}, h1: {String.split(t, '/') == List.append(&2, String, raws, ys) : List<&2, String>}, cr: Rest(raws, ys)) ->
-    Conv(path, "/" ++ String.join(raws, "/")):
+# A nonempty segment never equals the empty one, folded or not.
+def blank_differs(sens: Bool, +c: Char, +y: String) -> {S.text_same(sens, SCon{c, y}, "") == False{} : Bool}:
+  match sens:
+    case True{}:
+      eq_blank(c, y)
+    case False{}:
+      eq_blank(F.small(c, F.letters()), F.fold(y))
+
+# Lenient mode keeps one empty segment for an otherwise empty path, which a
+# plain first prefix segment never matches.
+def lenient_walk(d: List<&2, String>, r: String, +sens: Bool, +rt: List<&2, String>, +b: List<&2, P.Segment>, +ps: P.Params, lit: {S.all_plain(r <> rt) == True{} : Bool},
+    e: {S.walk(statics(r <> rt), S.root_text(d), sens, b, Nil{}) == Some{ps} : Maybe<&2, P.Params>}) -> {S.walk(statics(r <> rt), d, sens, b, Nil{}) == Some{ps} : Maybe<&2, P.Params>}:
+  match d:
+    case dh <> dt:
+      e
+    case Nil{}:
+      match r:
+        case SNil{}:
+          Core.absurd({S.walk(statics(SNil{} <> rt), Nil{}, sens, b, Nil{}) == Some{ps} : Maybe<&2, P.Params>}, Core.false_true(lit))
+        case SCon{+c, +y}:
+          Core.absurd({S.walk(statics(SCon{c, y} <> rt), Nil{}, sens, b, Nil{}) == Some{ps} : Maybe<&2, P.Params>}, none_some_p(ps, Equal.trans(Maybe<&2, P.Params>, None{}, MS.same_text(S.text_same(sens, SCon{c, y}, ""), S.walk(statics(rt), Nil{}, sens, b, Nil{})), Some{ps}, Equal.cong(Bool, Maybe<&2, P.Params>, z => MS.same_text(z, S.walk(statics(rt), Nil{}, sens, b, Nil{})), False{}, S.text_same(sens, SCon{c, y}, ""), Equal.sym(Bool, S.text_same(sens, SCon{c, y}, ""), False{}, blank_differs(sens, c, y))), e)))
+
+# ---- Lenient mode only drops trailing empty segments ----
+
+def list_head(l: List<&2, String>, +d: String) -> String:
+  match l:
+    case Nil{}:
+      d
+    case h <> t:
+      h
+
+def list_tail(l: List<&2, String>) -> List<&2, String>:
+  match l:
+    case Nil{}:
+      Nil{}
+    case h <> t:
+      t
+
+def nil_type(l: List<&2, String>) -> Type:
+  match l:
+    case Nil{}:
+      Unit
+    case h <> t:
+      Empty
+
+def cons_nil(+w: String, +ws: List<&2, String>, e: {Nil{} == w <> ws : List<&2, String>}) -> Empty:
+  %e : nil_type(_)
+  Unit{}
+
+def keep_z(+d: List<&2, String>, +z: String, +w: String, +ws: List<&2, String>, e: {S.keep_text(d, z) == w <> ws : List<&2, String>}) -> {z == w : String}:
+  match d:
+    case Nil{}:
+      match z:
+        case SNil{}:
+          Core.absurd({SNil{} == w : String}, cons_nil(w, ws, e))
+        case SCon{+x, +y}:
+          Equal.cong(List<&2, String>, String, l => list_head(l, SCon{x, y}), [SCon{x, y}], w <> ws, e)
+    case +r <> +t:
+      Equal.cong(List<&2, String>, String, l => list_head(l, z), z <> r <> t, w <> ws, e)
+
+def keep_d(+d: List<&2, String>, +z: String, +w: String, +ws: List<&2, String>, e: {S.keep_text(d, z) == w <> ws : List<&2, String>}) -> {d == ws : List<&2, String>}:
+  match d:
+    case Nil{}:
+      match z:
+        case SNil{}:
+          Core.absurd({Nil{} == ws : List<&2, String>}, cons_nil(w, ws, e))
+        case SCon{+x, +y}:
+          Equal.cong(List<&2, String>, List<&2, String>, l => list_tail(l), [SCon{x, y}], w <> ws, e)
+    case +r <> +t:
+      Equal.cong(List<&2, String>, List<&2, String>, l => list_tail(l), z <> r <> t, w <> ws, e)
+
+def Undrop(+zs: List<&2, String>, +s1: String, +st: List<&2, String>) -> Type:
+  &ys2: List<&2, String> -> {zs == s1 <> List.append(&2, String, st, ys2) : List<&2, String>}
+
+def undrop_pack(+z: String, +zt: List<&2, String>, +s1: String, +sh: String, +stt: List<&2, String>, hz: {z == s1 : String}, ih: Undrop(zt, sh, stt)) -> Undrop(z <> zt, s1, sh <> stt):
+  (+ys2, h) = ih
+  (ys2, Equal.trans(List<&2, String>, z <> zt, s1 <> zt, s1 <> sh <> List.append(&2, String, stt, ys2), Equal.cong(String, List<&2, String>, q => q <> zt, z, s1, hz), Equal.cong(List<&2, String>, List<&2, String>, l => s1 <> l, zt, sh <> List.append(&2, String, stt, ys2), h)))
+
+# When the kept segments start with some segments, so do the raw ones.
+def undrop(zs: List<&2, String>, +s1: String, st: List<&2, String>, +ys: List<&2, String>, +e: {S.drop_empty(zs) == s1 <> List.append(&2, String, st, ys) : List<&2, String>}) -> Undrop(zs, s1, st):
+  match zs st:
+    case Nil{} st2:
+      Core.absurd(Undrop(Nil{}, s1, st2), cons_nil(s1, List.append(&2, String, st2, ys), e))
+    case +z <> +zt Nil{}:
+      (zt, Equal.cong(String, List<&2, String>, q => q <> zt, z, s1, keep_z(S.drop_empty(zt), z, s1, ys, e)))
+    case +z <> +zt +sh <> +stt:
+      undrop_pack(z, zt, s1, sh, stt, keep_z(S.drop_empty(zt), z, s1, sh <> List.append(&2, String, stt, ys), e), undrop(zt, sh, stt, ys, keep_d(S.drop_empty(zt), z, s1, sh <> List.append(&2, String, stt, ys), e)))
+
+# ---- The converse under every option ----
+
+def Conv(+path: String, at: S.Place, +sens: Bool) -> Type:
+  &cut: S.Cut -> ({path == S.cut_path(cut) : String} & ({S.boundary(S.cut_rest(cut)) == True{} : Bool} & {S.prefix_same_at(at, sens, S.cut_segs(cut)) == True{} : Bool}))
+
+def conv_fin2(+raws: List<&2, String>, +sens: Bool, +t: String, +path: String, +s1: String, +st: List<&2, String>, +ys2: List<&2, String>, eqpath: {path == SCon{'/', t} : String},
+    hsplit: {String.split(t, '/') == s1 <> List.append(&2, String, st, ys2) : List<&2, String>}, same: {S.same_segments(sens, raws, s1 <> st) == True{} : Bool}, cr: Rest(s1 <> st, ys2)) ->
+    Conv(path, S.Under{raws}, sens):
   (+rest, pr) = cr
   (h2, h3) = pr
-  (rest, (Equal.trans(String, path, SCon{'/', t}, SCon{'/', String.join(raws, "/") ++ rest}, eqpath, Equal.cong(String, String, z => SCon{'/', z}, t, String.join(raws, "/") ++ rest, Equal.trans(String, t, String.join(String.split(t, '/'), "/"), String.join(raws, "/") ++ rest, Equal.sym(String, String.join(String.split(t, '/'), "/"), t, join_split(t)), Equal.trans(String, String.join(String.split(t, '/'), "/"), String.join(List.append(&2, String, raws, ys), "/"), String.join(raws, "/") ++ rest, Equal.cong(List<&2, String>, String, z => String.join(z, "/"), String.split(t, '/'), List.append(&2, String, raws, ys), h1), h2)))), h3))
+  (S.Cut{s1 <> st, rest}, (Equal.trans(String, path, SCon{'/', t}, SCon{'/', String.join(s1 <> st, "/") ++ rest}, eqpath, Equal.cong(String, String, z => SCon{'/', z}, t, String.join(s1 <> st, "/") ++ rest, Equal.trans(String, t, String.join(String.split(t, '/'), "/"), String.join(s1 <> st, "/") ++ rest, Equal.sym(String, String.join(String.split(t, '/'), "/"), t, join_split(t)), Equal.trans(String, String.join(String.split(t, '/'), "/"), String.join(List.append(&2, String, s1 <> st, ys2), "/"), String.join(s1 <> st, "/") ++ rest, Equal.cong(List<&2, String>, String, z => String.join(z, "/"), String.split(t, '/'), List.append(&2, String, s1 <> st, ys2), hsplit), h2)))), (h3, same)))
 
-def conv_fin(+raws: List<&2, String>, +t: String, +path: String, eqpath: {path == SCon{'/', t} : String}, inv: Inv(raws, String.split(t, '/')), facts: MJ.UnderFacts(S.Under{raws})) ->
-    Conv(path, "/" ++ String.join(raws, "/")):
-  (+ys, h1) = inv
-  conv_fin2(raws, t, path, ys, eqpath, h1, conv_rest(raws, ys, facts))
+def conv_fin(+raws: List<&2, String>, +sens: Bool, +t: String, +path: String, +s1: String, +st: List<&2, String>, +ys2: List<&2, String>, eqpath: {path == SCon{'/', t} : String},
+    hsplit: {String.split(t, '/') == s1 <> List.append(&2, String, st, ys2) : List<&2, String>}, same: {S.same_segments(sens, raws, s1 <> st) == True{} : Bool}) ->
+    Conv(path, S.Under{raws}, sens):
+  conv_fin2(raws, sens, t, path, s1, st, ys2, eqpath, hsplit, same, conv_rest(s1, st, ys2))
 
-def conv_tail(+raws: List<&2, String>, +b: List<&2, P.Segment>, m: Maybe<&2, String>, +path: String, e: {S.slash_tail(path) == m : Maybe<&2, String>}, +ps: P.Params,
-    facts: MJ.UnderFacts(S.Under{raws}), ms: {S.walk_at(m, statics(raws), b, D()) == Some{ps} : Maybe<&2, P.Params>}) ->
-    Conv(path, "/" ++ String.join(raws, "/")):
+def conv_took_s(+sens: Bool, +r: String, +rt: List<&2, String>, +t: String, +path: String, segs: List<&2, String>, +ys: List<&2, String>, eqpath: {path == SCon{'/', t} : String},
+    h1: {String.split(t, '/') == List.append(&2, String, segs, ys) : List<&2, String>}, h2: {S.same_segments(sens, r <> rt, segs) == True{} : Bool}) -> Conv(path, S.Under{r <> rt}, sens):
+  match segs:
+    case Nil{}:
+      Core.absurd(Conv(path, S.Under{r <> rt}, sens), Core.false_true(h2))
+    case +s1 <> +st:
+      conv_fin(r <> rt, sens, t, path, s1, st, ys, eqpath, h1, h2)
+
+def conv_undrop(+sens: Bool, +r: String, +rt: List<&2, String>, +t: String, +path: String, +s1: String, +st: List<&2, String>, eqpath: {path == SCon{'/', t} : String},
+    u: Undrop(String.split(t, '/'), s1, st), h2: {S.same_segments(sens, r <> rt, s1 <> st) == True{} : Bool}) -> Conv(path, S.Under{r <> rt}, sens):
+  (+ys2, h) = u
+  conv_fin(r <> rt, sens, t, path, s1, st, ys2, eqpath, h, h2)
+
+def conv_took_l(+sens: Bool, +r: String, +rt: List<&2, String>, +t: String, +path: String, segs: List<&2, String>, +ys: List<&2, String>, eqpath: {path == SCon{'/', t} : String},
+    h1: {S.drop_empty(String.split(t, '/')) == List.append(&2, String, segs, ys) : List<&2, String>}, h2: {S.same_segments(sens, r <> rt, segs) == True{} : Bool}) -> Conv(path, S.Under{r <> rt}, sens):
+  match segs:
+    case Nil{}:
+      Core.absurd(Conv(path, S.Under{r <> rt}, sens), Core.false_true(h2))
+    case +s1 <> +st:
+      conv_undrop(sens, r, rt, t, path, s1, st, eqpath, undrop(String.split(t, '/'), s1, st, ys, h1), h2)
+
+def conv_strict(+sens: Bool, +r: String, +rt: List<&2, String>, +t: String, +path: String, eqpath: {path == SCon{'/', t} : String}, inv: Inv(sens, r <> rt, String.split(t, '/'))) -> Conv(path, S.Under{r <> rt}, sens):
+  (+k, pr) = inv
+  (h1, h2) = pr
+  conv_took_s(sens, r, rt, t, path, took_segs(k), took_ys(k), eqpath, h1, h2)
+
+def conv_lenient(+sens: Bool, +r: String, +rt: List<&2, String>, +t: String, +path: String, eqpath: {path == SCon{'/', t} : String}, inv: Inv(sens, r <> rt, S.drop_empty(String.split(t, '/')))) -> Conv(path, S.Under{r <> rt}, sens):
+  (+k, pr) = inv
+  (h1, h2) = pr
+  conv_took_l(sens, r, rt, t, path, took_segs(k), took_ys(k), eqpath, h1, h2)
+
+def walk_opts(strict: Bool, +sens: Bool, +r: String, +rt: List<&2, String>, +t: String, +path: String, +b: List<&2, P.Segment>, +ps: P.Params, eqpath: {path == SCon{'/', t} : String},
+    lit: {S.all_plain(r <> rt) == True{} : Bool}, e: {S.walk(statics(r <> rt), S.normal_path(strict, String.split(t, '/')), sens, S.member_segments(strict, b), Nil{}) == Some{ps} : Maybe<&2, P.Params>}) ->
+    Conv(path, S.Under{r <> rt}, sens):
+  match strict:
+    case True{}:
+      conv_strict(sens, r, rt, t, path, eqpath, walk_inv(sens, r <> rt, String.split(t, '/'), b, ps, e))
+    case False{}:
+      conv_lenient(sens, r, rt, t, path, eqpath, walk_inv(sens, r <> rt, S.drop_empty(String.split(t, '/')), S.drop_static(b), ps, lenient_walk(S.drop_empty(String.split(t, '/')), r, sens, rt, S.drop_static(b), ps, lit, e)))
+
+def conv_tail(+r: String, +rt: List<&2, String>, +b: List<&2, P.Segment>, m: Maybe<&2, String>, +path: String, e: {S.slash_tail(path) == m : Maybe<&2, String>}, +ps: P.Params,
+    +strict: Bool, +sens: Bool, lit: {S.all_plain(r <> rt) == True{} : Bool}, ms: {S.walk_at(m, statics(r <> rt), b, M.Options{strict, sens}) == Some{ps} : Maybe<&2, P.Params>}) ->
+    Conv(path, S.Under{r <> rt}, sens):
   match m:
     case None{}:
-      Core.absurd(Conv(path, "/" ++ String.join(raws, "/")), none_some_p(ps, ms))
+      Core.absurd(Conv(path, S.Under{r <> rt}, sens), none_some_p(ps, ms))
     case Some{+t}:
-      conv_fin(raws, t, path, MJ.tail_inv(path, t, e), walk_inv(raws, String.split(t, '/'), b, ps, ms), facts)
+      walk_opts(strict, sens, r, rt, t, path, b, ps, MJ.tail_inv(path, t, e), lit, Equal.trans(Maybe<&2, P.Params>, S.walk(statics(r <> rt), S.normal_path(strict, String.split(t, '/')), sens, S.member_segments(strict, b), Nil{}), S.rooted(sens, statics(r <> rt), S.normal_path(strict, String.split(t, '/')), S.member_segments(strict, b)), Some{ps}, Equal.sym(Maybe<&2, P.Params>, S.rooted(sens, statics(r <> rt), S.normal_path(strict, String.split(t, '/')), S.member_segments(strict, b)), S.walk(statics(r <> rt), S.normal_path(strict, String.split(t, '/')), sens, S.member_segments(strict, b), Nil{}), rooted_cons(sens, r, rt, S.normal_path(strict, String.split(t, '/')), S.member_segments(strict, b))), ms))
 
-def conv_pieces(+raws: List<&2, String>, mp: Maybe<&2, List<&2, P.Segment>>, +path: String, +ps: P.Params, facts: MJ.UnderFacts(S.Under{raws}),
-    ms: {S.walk_pieces(Some{statics(raws)}, mp, path, D()) == Some{ps} : Maybe<&2, P.Params>}) -> Conv(path, "/" ++ String.join(raws, "/")):
+def conv_pieces(+r: String, +rt: List<&2, String>, mp: Maybe<&2, List<&2, P.Segment>>, +path: String, +ps: P.Params, +strict: Bool, +sens: Bool, lit: {S.all_plain(r <> rt) == True{} : Bool},
+    ms: {S.walk_pieces(Some{statics(r <> rt)}, mp, path, M.Options{strict, sens}) == Some{ps} : Maybe<&2, P.Params>}) -> Conv(path, S.Under{r <> rt}, sens):
   match mp:
     case None{}:
-      Core.absurd(Conv(path, "/" ++ String.join(raws, "/")), none_some_p(ps, ms))
+      Core.absurd(Conv(path, S.Under{r <> rt}, sens), none_some_p(ps, ms))
     case Some{+b}:
-      conv_tail(raws, b, S.slash_tail(path), path, {==}, ps, facts, ms)
+      conv_tail(r, rt, b, S.slash_tail(path), path, {==}, ps, strict, sens, lit, ms)
 
-def conv_at(at: S.Place, +member: String, +path: String, +ps: P.Params, lit: {S.literal_at(at) == True{} : Bool}, facts: MJ.UnderFacts(at),
-    ms: {S.mounted_at(at, member, path, D()) == Some{ps} : Maybe<&2, P.Params>}) -> Conv(path, S.lead_at(at)):
+def conv_under(+raws: List<&2, String>, +member: String, +path: String, +ps: P.Params, +strict: Bool, +sens: Bool, +lit: {S.all_plain(raws) == True{} : Bool}, facts: MJ.UnderFacts(S.Under{raws}),
+    ms: {S.mounted_at(S.Under{raws}, member, path, M.Options{strict, sens}) == Some{ps} : Maybe<&2, P.Params>}) -> Conv(path, S.Under{raws}, sens):
+  match raws:
+    case Nil{}:
+      Core.absurd(Conv(path, S.Under{Nil{}}, sens), Core.false_true(facts))
+    case +r <> +rt:
+      +mp = S.member_pieces(S.member_text(member))
+      conv_pieces(r, rt, mp, path, ps, strict, sens, lit, Equal.trans(Maybe<&2, P.Params>, S.walk_pieces(Some{statics(r <> rt)}, mp, path, M.Options{strict, sens}), S.walk_pieces(S.prefix_pieces(r <> rt), mp, path, M.Options{strict, sens}), Some{ps}, Equal.cong(Maybe<&2, List<&2, P.Segment>>, Maybe<&2, P.Params>, z => S.walk_pieces(z, mp, path, M.Options{strict, sens}), Some{statics(r <> rt)}, S.prefix_pieces(r <> rt), Equal.sym(Maybe<&2, List<&2, P.Segment>>, S.prefix_pieces(r <> rt), Some{statics(r <> rt)}, pieces_plain(r <> rt, lit))), ms))
+
+def conv_at(at: S.Place, +member: String, +path: String, +ps: P.Params, +strict: Bool, +sens: Bool, lit: {S.literal_at(at) == True{} : Bool}, facts: MJ.UnderFacts(at),
+    ms: {S.mounted_at(at, member, path, M.Options{strict, sens}) == Some{ps} : Maybe<&2, P.Params>}) -> Conv(path, at, sens):
   match at:
     case S.AtRoot{}:
-      Core.absurd(Conv(path, S.lead_at(S.AtRoot{})), Core.false_true(lit))
+      Core.absurd(Conv(path, S.AtRoot{}, sens), Core.false_true(lit))
     case S.Unplaced{}:
-      Core.absurd(Conv(path, S.lead_at(S.Unplaced{})), Core.false_true(lit))
+      Core.absurd(Conv(path, S.Unplaced{}, sens), Core.false_true(lit))
     case S.Under{+raws}:
-      +mp = S.member_pieces(S.member_text(member))
-      conv_pieces(raws, mp, path, ps, facts, Equal.trans(Maybe<&2, P.Params>, S.walk_pieces(Some{statics(raws)}, mp, path, D()), S.walk_pieces(S.prefix_pieces(raws), mp, path, D()), Some{ps}, Equal.cong(Maybe<&2, List<&2, P.Segment>>, Maybe<&2, P.Params>, z => S.walk_pieces(z, mp, path, D()), Some{statics(raws)}, S.prefix_pieces(raws), Equal.sym(Maybe<&2, List<&2, P.Segment>>, S.prefix_pieces(raws), Some{statics(raws)}, pieces_plain(raws, lit))), ms))
+      conv_under(raws, member, path, ps, strict, sens, lit, facts, ms)
+
+def L.mount_literal_converse_options(prefix, member, path, strict, sensitive, ps, admissible, literal, hit):
+  +adm = admissible
+  conv_at(S.place(prefix), member, path, ps, strict, sensitive, literal, MJ.under_facts(prefix), Equal.trans(Maybe<&2, P.Params>, S.mounted(prefix, member, path, M.Options{strict, sensitive}), L.public_match(prefix, member, path, M.Options{strict, sensitive}), Some{ps}, Equal.sym(Maybe<&2, P.Params>, L.public_match(prefix, member, path, M.Options{strict, sensitive}), S.mounted(prefix, member, path, M.Options{strict, sensitive}), L.mount_match_spec(prefix, member, path, M.Options{strict, sensitive}, adm)), hit))
+
+# Case-sensitive matching compares exactly, so the request spells the prefix.
+def same_eq(raws: List<&2, String>, segs: List<&2, String>, h: {S.same_segments(True{}, raws, segs) == True{} : Bool}) -> {segs == raws : List<&2, String>}:
+  match raws segs:
+    case Nil{} Nil{}:
+      {==}
+    case +r <> +rt +x <> +xt:
+      +e = h
+      Equal.trans(List<&2, String>, x <> xt, r <> xt, r <> rt, Equal.cong(String, List<&2, String>, q => q <> xt, x, r, Equal.sym(String, r, x, Eq.string_eq_sound(r, x, Core.and_left(String.eq(r, x), S.same_segments(True{}, rt, xt), e)))), Equal.cong(List<&2, String>, List<&2, String>, l => r <> l, xt, rt, same_eq(rt, xt, Core.and_right(String.eq(r, x), S.same_segments(True{}, rt, xt), e))))
+    case Nil{} x <> xt:
+      Core.absurd({x <> xt == Nil{} : List<&2, String>}, Core.false_true(h))
+    case r <> rt Nil{}:
+      Core.absurd({Nil{} == r <> rt : List<&2, String>}, Core.false_true(h))
+
+def lead_same(at: S.Place, cut: S.Cut, h: {S.prefix_same_at(at, True{}, S.cut_segs(cut)) == True{} : Bool}) -> {S.cut_path(cut) == S.lead_at(at) ++ S.cut_rest(cut) : String}:
+  match at:
+    case S.AtRoot{}:
+      Core.absurd({S.cut_path(cut) == S.lead_at(S.AtRoot{}) ++ S.cut_rest(cut) : String}, Core.false_true(h))
+    case S.Unplaced{}:
+      Core.absurd({S.cut_path(cut) == S.lead_at(S.Unplaced{}) ++ S.cut_rest(cut) : String}, Core.false_true(h))
+    case S.Under{+raws}:
+      match cut:
+        case S.Cut{+segs, +rest}:
+          Equal.cong(List<&2, String>, String, z => ("/" ++ String.join(z, "/")) ++ rest, segs, raws, same_eq(raws, segs, h))
+
+def sens_pack(at: S.Place, +path: String, c: Conv(path, at, True{})) -> &rest: String -> ({path == S.lead_at(at) ++ rest : String} & {S.boundary(rest) == True{} : Bool}):
+  (+cut, pr) = c
+  (h1, pr2) = pr
+  (h2, h3) = pr2
+  (S.cut_rest(cut), (Equal.trans(String, path, S.cut_path(cut), S.lead_at(at) ++ S.cut_rest(cut), h1, lead_same(at, cut, h3)), h2))
+
+def L.mount_literal_converse_sensitive(prefix, member, path, strict, ps, admissible, literal, hit):
+  sens_pack(S.place(prefix), path, L.mount_literal_converse_options(prefix, member, path, strict, True{}, ps, admissible, literal, hit))
 
 def L.mount_literal_converse(prefix, member, path, ps, admissible, literal, hit):
-  +adm = admissible
-  conv_at(S.place(prefix), member, path, ps, literal, MJ.under_facts(prefix), Equal.trans(Maybe<&2, P.Params>, S.mounted(prefix, member, path, D()), L.public_match(prefix, member, path, D()), Some{ps}, Equal.sym(Maybe<&2, P.Params>, L.public_match(prefix, member, path, D()), S.mounted(prefix, member, path, D()), L.mount_match_spec(prefix, member, path, D(), adm)), hit))
+  L.mount_literal_converse_sensitive(prefix, member, path, True{}, ps, admissible, literal, hit)
 
 
 # ---- Examples ----
@@ -571,8 +811,17 @@ def L.mount_literal_converse(prefix, member, path, ps, admissible, literal, hit)
 def L.mount_admissible_examples():
   {==}
 
+def L.mount_admissible_forms():
+  ({==}, {==})
+
 def L.mount_spec_examples():
   ({==}, ({==}, ({==}, ({==}, ({==}, {==})))))
 
+def L.mount_spec_form_examples():
+  ({==}, ({==}, ({==}, ({==}, ({==}, ({==}, ({==}, ({==}, ({==}, {==})))))))))
+
 def L.mount_counterexamples():
   ({==}, ({==}, ({==}, ({==}, {==}))))
+
+def L.mount_lenient_suffix_counterexample():
+  ({==}, ({==}, ({==}, {==})))

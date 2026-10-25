@@ -76,6 +76,14 @@ def segments_with(sensitive: Bool, segs: List<&2, P.Segment>, paths: List<&2, St
     case False{}:
       folded(segs, paths, Nil{})
 
+# The same, resuming with a span's raw segments already taken.
+def segments_at(sensitive: Bool, segs: List<&2, P.Segment>, paths: List<&2, String>, +taken: List<&2, String>) -> Maybe<&2, P.Params>:
+  match sensitive:
+    case True{}:
+      MS.matches(segs, paths, taken)
+    case False{}:
+      folded(segs, paths, taken)
+
 # Lenient mode drops every terminal empty segment of the request path and
 # every terminal empty static of the pattern, then keeps one for root.
 def keep_text(rest: List<&2, String>, +h: String) -> List<&2, String>:
@@ -256,27 +264,28 @@ def assembled_at(at: Place, member: String) -> Maybe<&2, P.Pattern>:
 def assembled(prefix: String, member: String) -> Maybe<&2, P.Pattern>:
   assembled_at(place(prefix), member)
 
-# Where the laws apply: the prefix is empty, `/`, or nonempty static
-# segments and required captures (with or without constraints). Optional,
-# wildcard and span prefix segments, and empty prefix segments from repeated
-# slashes, are outside. The assembled pattern must compile.
-def fixed_segments(segs: List<&2, P.Segment>) -> Bool:
-  match segs:
-    case Nil{}:
-      True{}
-    case P.Static{SCon{x, y}} <> t:
-      fixed_segments(t)
-    case P.Capture{name, c, False{}} <> t:
-      fixed_segments(t)
+# Where the laws apply: the prefix is empty, `/`, or segments of any pattern
+# syntax (static text, captures with or without constraints, optional
+# captures, wildcards and spans) whose last segment is not empty, and the
+# assembled pattern compiles, so the whole-pattern rules (one trailing
+# optional chain across prefix and member, wildcard and span placement,
+# distinct names) hold. A last empty prefix segment comes from repeated
+# trailing slashes (`/a//`); lenient mode could then drop a prefix segment
+# along with the member's, which is the documented flattening counterexample.
+def solid(s: P.Segment) -> Bool:
+  match s:
+    case P.Static{SNil{}}:
+      False{}
     case _:
-      False{}
+      True{}
 
-def fixed_prefix(segs: List<&2, P.Segment>) -> Bool:
+# Whether the last segment is solid (`ok` for an empty list).
+def ends_solid(segs: List<&2, P.Segment>, ok: Bool) -> Bool:
   match segs:
     case Nil{}:
-      False{}
+      ok
     case s <> t:
-      fixed_segments(s <> t)
+      ends_solid(t, solid(s))
 
 def compiles(m: Maybe<&2, P.Pattern>) -> Bool:
   match m:
@@ -285,19 +294,19 @@ def compiles(m: Maybe<&2, P.Pattern>) -> Bool:
     case Some{p}:
       True{}
 
-def fixed_and(ps: Maybe<&2, List<&2, P.Segment>>, ok: Bool) -> Bool:
+def kept_and(ps: Maybe<&2, List<&2, P.Segment>>, ok: Bool) -> Bool:
   match ps:
     case None{}:
       False{}
     case Some{segs}:
-      fixed_prefix(segs) && ok
+      ends_solid(segs, False{}) && ok
 
 def admissible_at(at: Place, +member: String) -> Bool:
   match at:
     case AtRoot{}:
       compiles(CS.compile(member))
     case Under{+raws}:
-      fixed_and(prefix_pieces(raws), compiles(joined(prefix_pieces(raws), member_pieces(member_text(member)))))
+      kept_and(prefix_pieces(raws), compiles(joined(prefix_pieces(raws), member_pieces(member_text(member)))))
     case Unplaced{}:
       False{}
 
@@ -322,20 +331,70 @@ def member_segments(strict: Bool, segs: List<&2, P.Segment>) -> List<&2, P.Segme
     case False{}:
       drop_static(segs)
 
-# Each prefix segment takes one request segment: static text compares under
-# the case option, a capture decodes and checks its constraint. The member
-# then matches the remaining segments, with no root rule of its own. Prefix
-# captures come before member captures.
-def walk(prefix: List<&2, P.Segment>, paths: List<&2, String>, +sensitive: Bool, member: List<&2, P.Segment>) -> Maybe<&2, P.Params>:
-  match prefix paths:
-    case Nil{} ps:
-      segments_with(sensitive, member, ps)
-    case P.Static{+raw} <> rest +h <> t:
-      MS.same_text(text_same(sensitive, raw, h), walk(rest, t, sensitive, member))
-    case P.Capture{+name, +c, o} <> rest raw <> t:
-      MS.capture(name, c, E.decode(raw), walk(rest, t, sensitive, member))
+# A terminal wildcard takes every remaining segment, only when no pattern
+# segment follows it.
+def wildcard_end(+name: String, after: List<&2, P.Segment>, ps: List<&2, String>) -> Maybe<&2, P.Params>:
+  match after:
+    case Nil{}:
+      MS.wildcard(name, MS.decoded_all(ps))
+    case h <> t:
+      None{}
+
+def start_same(sensitive: Bool, +h: String, +prefix: String) -> Bool:
+  match sensitive:
+    case True{}:
+      String.starts_with(h, prefix)
+    case False{}:
+      folded_start(h, prefix)
+
+# A prefix wildcard matches one last segment that starts with its text, only
+# when no pattern segment follows it.
+def prefix_end(+sensitive: Bool, +prefix: String, after: List<&2, P.Segment>, ps: List<&2, String>) -> Maybe<&2, P.Params>:
+  match after ps:
+    case Nil{} h <> t:
+      MS.prefix_hit(start_same(sensitive, h, prefix))
     case _ _:
       None{}
+
+# The prefix walks the request's segments first, each segment by its own
+# rule: static text compares under the case option; a capture decodes and
+# checks its constraint, and an optional one may stand at the end of the
+# path; an interior wildcard skips as few whole segments as possible; a span
+# takes as many as it can and still lets the rest match. When the prefix is
+# used up, the member matches the remaining segments. Captures come out in
+# that order, so prefix captures precede member captures.
+def walk(prefix: List<&2, P.Segment>, paths: List<&2, String>, +sensitive: Bool, +member: List<&2, P.Segment>, +taken: List<&2, String>) -> Maybe<&2, P.Params>:
+  match prefix paths:
+    case Nil{} ps:
+      segments_at(sensitive, member, ps, taken)
+    case P.Static{raw} <> rest Nil{}:
+      None{}
+    case P.Static{+raw} <> rest +h <> t:
+      MS.same_text(text_same(sensitive, raw, h), walk(rest, t, sensitive, member, Nil{}))
+    case P.Capture{name, c, True{}} <> rest Nil{}:
+      walk(rest, Nil{}, sensitive, member, Nil{})
+    case P.Capture{name, c, False{}} <> rest Nil{}:
+      None{}
+    case P.Capture{+name, +c, optional} <> rest raw <> t:
+      MS.capture(name, c, E.decode(raw), walk(rest, t, sensitive, member, Nil{}))
+    case P.Wildcard{+name} <> rest ps:
+      wildcard_end(name, List.append(&2, P.Segment, rest, member), ps)
+    case P.InteriorWildcard{} <> rest Nil{}:
+      walk(rest, Nil{}, sensitive, member, Nil{})
+    case P.InteriorWildcard{} <> +rest +h <> +t:
+      MS.or_else(walk(rest, h <> t, sensitive, member, Nil{}), u => walk(P.InteriorWildcard{} <> rest, t, sensitive, member, Nil{}))
+    case P.PrefixWildcard{+p} <> rest ps:
+      prefix_end(sensitive, p, List.append(&2, P.Segment, rest, member), ps)
+    case P.Span{name} <> rest Nil{}:
+      None{}
+    case P.Span{+name} <> +rest +h <> +t:
+      MS.or_else(walk(P.Span{name} <> rest, t, sensitive, member, h <> taken), u => MS.span_here(name, h <> taken, walk(rest, t, sensitive, member, Nil{})))
+
+# The member has no root rule of its own under a nonroot prefix. The root
+# rule belongs to the assembled pattern: when the prefix and member are both
+# optional captures, the bare root path matches with no params.
+def rooted(+sensitive: Bool, +prefix: List<&2, P.Segment>, +xs: List<&2, String>, +member: List<&2, P.Segment>) -> Maybe<&2, P.Params>:
+  MS.or_else(walk(prefix, xs, sensitive, member, Nil{}), u => root_hit(xs, List.append(&2, P.Segment, prefix, member)))
 
 def walk_at(tail: Maybe<&2, String>, prefix: List<&2, P.Segment>, member: List<&2, P.Segment>, opts: M.Options) -> Maybe<&2, P.Params>:
   match tail:
@@ -344,7 +403,7 @@ def walk_at(tail: Maybe<&2, String>, prefix: List<&2, P.Segment>, member: List<&
     case Some{t}:
       match opts:
         case M.Options{+strict, sensitive}:
-          walk(prefix, normal_path(strict, String.split(t, '/')), sensitive, member_segments(strict, member))
+          rooted(sensitive, prefix, normal_path(strict, String.split(t, '/')), member_segments(strict, member))
 
 def walk_pieces(ps: Maybe<&2, List<&2, P.Segment>>, ms: Maybe<&2, List<&2, P.Segment>>, path: String, opts: M.Options) -> Maybe<&2, P.Params>:
   match ps ms:
@@ -562,6 +621,47 @@ def boundary(rest: String) -> Bool:
       True{}
     case SCon{h, t}:
       Char.is_eq(h, '/')
+
+# Each request segment equals its prefix segment under the case option:
+# exactly, or after ASCII folding when matching is case-insensitive.
+def same_segments(+sensitive: Bool, raws: List<&2, String>, segs: List<&2, String>) -> Bool:
+  match raws segs:
+    case Nil{} Nil{}:
+      True{}
+    case raw <> rt x <> xt:
+      text_same(sensitive, raw, x) && same_segments(sensitive, rt, xt)
+    case _ _:
+      False{}
+
+def prefix_same_at(at: Place, +sensitive: Bool, segs: List<&2, String>) -> Bool:
+  match at:
+    case Under{raws}:
+      same_segments(sensitive, raws, segs)
+    case _:
+      False{}
+
+# The request's leading segments spell the prefix under the case option.
+def prefix_same(prefix: String, +sensitive: Bool, segs: List<&2, String>) -> Bool:
+  prefix_same_at(place(prefix), sensitive, segs)
+
+# A request path cut after its leading segments.
+type Cut is Data:
+  Cut{segs: List<&2, String>, rest: String}
+
+def cut_path(c: Cut) -> String:
+  match c:
+    case Cut{segs, rest}:
+      ("/" ++ String.join(segs, "/")) ++ rest
+
+def cut_segs(c: Cut) -> List<&2, String>:
+  match c:
+    case Cut{segs, rest}:
+      segs
+
+def cut_rest(c: Cut) -> String:
+  match c:
+    case Cut{segs, rest}:
+      rest
 
 def compiles_text(m: Maybe<&2, String>) -> Bool:
   match m:
