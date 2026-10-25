@@ -4,8 +4,8 @@ Bendo's built-in middleware are `B.Builtin` values. Wrap one in a case of
 your own middleware tag, register it with `B.use`, `B.use_path` or a lifecycle
 hook, and hand that case to `B.builtin` in your middleware dispatcher.
 [Middleware](../../middleware.md) explains the onion and the dispatcher; this
-page lists the calls. The rate limiter and `Cors.middleware` are called
-directly from a middleware case instead.
+page lists the calls. The rate limiter, `Cors.middleware` and `Z.compress`
+are called directly from a middleware case instead.
 
 Examples on this page are one Bend program and share this setup:
 
@@ -17,10 +17,12 @@ import ./bendo/data/json.bend as J
 import ./bendo/crypto/jwt.bend as Jwt
 import ./bendo/mw/cors.bend as Cors
 import ./bendo/mw/cors_policy.bend as CorsPolicy
+import ./bendo/compress.bend as Z
 
 type Tag is Data:
   Home{}
   Builtin{id: B.Builtin}
+  Zip{config: Z.Config}
 
 def ex_or_none(cs: Maybe<&2, List<&2, B.Cidr>>) -> List<&2, B.Cidr>:
   match cs:
@@ -504,6 +506,69 @@ def ex_policies() -> List<&2, B.Registration(Tag)>:
     B.use_path(Tag, "/assets/*", Builtin{B.cache_control(B.cache_public(31536000, True{}))}),
     B.use_path(Tag, "/me", Builtin{B.cache_control(B.cache_private(60))})
   ]
+```
+
+## Compression
+
+`Z` is `bendo/compress.bend`, an opt-in module: apps that do not import it
+compile without zlib. [Compress responses](../../compression.md) explains which
+responses are compressed and which fields change.
+
+### `Z.Config`, `Z.defaults`
+
+```bend signature
+def Config() -> Data
+def defaults() -> Z.Config
+```
+
+The compression settings: a threshold, a limit and a zlib level. The
+defaults are a 1024-octet threshold, an 8 MiB limit and level 6. `Z.Config`
+is `Data`, so it can sit in your middleware tag.
+
+```bend
+def ex_zip_defaults() -> Z.Config:
+  Z.defaults()
+
+def ex_zip() -> B.Registration(Tag):
+  B.use(Tag, Zip{ex_zip_defaults()})
+```
+
+### `Z.threshold`, `Z.limit`, `Z.level`
+
+```bend signature
+def threshold(config: Z.Config, n: U32) -> Z.Config
+def limit(config: Z.Config, n: U32) -> Z.Config
+def level(config: Z.Config, n: U32) -> Z.Config
+```
+
+Bodies shorter than the threshold or longer than the limit are sent
+uncompressed; a body of exactly the threshold may be compressed. The limit
+bounds the memory one compression takes. The level is clamped to 1 (fastest)
+through 9 (smallest output).
+
+```bend
+def ex_zip_config() -> Z.Config:
+  Z.level(Z.limit(Z.threshold(Z.defaults(), 512), 1048576), 9)
+```
+
+### `Z.compress`
+
+```bend signature
+def compress(-Vars: Data, +config: Z.Config, +c: B.Context(Vars), next: B.Context(Vars) -> IO(B.Res)) -> IO(B.Res)
+```
+
+Runs `next`, then compresses its response with gzip or deflate as the
+request's `Accept-Encoding` allows. Call it from a middleware case. Keep it
+off routes that put secrets next to reflected input; the guide's
+[BREACH section](../../compression.md#keep-secrets-out-of-compressed-responses)
+shows how.
+
+```bend
+def ex_zip_case(+config: Z.Config, +c: B.Ctx, next: B.Ctx -> IO(B.Res)) -> IO(B.Res):
+  Z.compress(Unit, config, c, next)
+
+def ex_zip_assets() -> B.Registration(Tag):
+  B.use_path(Tag, "/assets/*", Zip{Z.defaults()})
 ```
 
 ## CORS

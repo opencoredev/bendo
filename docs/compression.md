@@ -106,12 +106,43 @@ When the response could have been compressed but is not, because the client
 did not accept a coding or because compression would not make the body
 smaller, it goes out as it is with `Accept-Encoding` added to `Vary`.
 
-A HEAD answer is never compressed. It gets the same `Vary` as the GET would,
-but its `Content-Length` is the identity length.
+A HEAD request gets the fields the same GET would get: `Content-Encoding`,
+`Vary`, the weakened `ETag`, and the `Content-Length` of the coded body, as
+RFC 9110 section 8.6 requires. To learn that length the middleware compresses
+the body, then the server sends no body. A HEAD costs as much CPU as the GET.
 
 A 304 whose response carries its representation witness (static files do)
 gets `Vary` and the weakened `ETag` the 200 would have had, and no
 `Content-Length`. A 304 without the witness is left as it is.
+
+## Keep secrets out of compressed responses
+
+Compression leaks how much of a response repeats itself. When one response
+holds both a secret, such as a CSRF token, an API key or account data, and
+text an attacker controls, such as a reflected query parameter or search
+term, an attacker who can make the victim's browser send requests and can
+watch their sizes on the network can recover the secret a few characters at a
+time. TLS does not hide the sizes. This is the BREACH attack, and it works
+against any HTTP compression, not just Bendo's.
+
+Don't compress those responses. Either register compression only for the
+routes that carry no secrets:
+
+```bend
+B.use_path(Tag, "/assets/*", Zip{Z.defaults()})
+```
+
+or have the sensitive handler set `Cache-Control: no-transform`, which the
+middleware always leaves alone:
+
+```bend
+def account(c: B.Ctx) -> B.Res:
+  B.html(B.header(c, "cache-control", "no-store, no-transform"), "<form>...</form>")
+```
+
+Static assets, public pages and API responses that echo nothing from the
+request are safe to compress. Masking a token with fresh random bytes on every
+response also defeats the attack, if a page must have both.
 
 ## Use it with ETags
 
@@ -147,62 +178,18 @@ JavaScript event loop while it runs.
 
 ## Laws
 
-`src/mw/compress_policy.bend` holds the decision, free of IO, and
-[the middleware laws](laws/middleware.md#compression) state what it
-guarantees: a coding is only used when accepted at a nonzero weight, short,
-oversized, already-encoded, streamed, HEAD, 204, 206 and 304 responses are
-never compressed, and ties go to gzip.
+`src/mw/compress_policy.bend` holds the decision and the header rewrites, free
+of IO, and [the middleware laws](laws/middleware.md#compression) state what
+they guarantee. Negotiation from the raw `Accept-Encoding` fields equals an
+independent statement of RFC 9110's rules, so `q=0` provably refuses a coding
+and a positive tie provably goes to gzip. Short, oversized, already-encoded,
+already-compressed, streamed, 204, 206 and 304 responses are never compressed,
+and HEAD gets exactly the fields GET would. Every response that read
+`Accept-Encoding` gets it in `Vary`, and a compressed one names exactly its
+coding in `Content-Encoding` and has no strong `ETag`.
 
 ## API reference
 
-### `Z.Config`
-
-```bend signature
-def Config() -> Data
-```
-
-The compression settings: threshold, limit and zlib level. It is `Data`, so it
-can sit in your middleware tag.
-
-### `Z.defaults`
-
-```bend signature
-def defaults() -> Z.Config
-```
-
-A 1024-octet threshold, an 8 MiB limit and zlib level 6.
-
-### `Z.threshold`
-
-```bend signature
-def threshold(config: Z.Config, n: U32) -> Z.Config
-```
-
-Bodies shorter than `n` octets are sent uncompressed. A body of exactly `n`
-octets may be compressed.
-
-### `Z.limit`
-
-```bend signature
-def limit(config: Z.Config, n: U32) -> Z.Config
-```
-
-Bodies longer than `n` octets are sent uncompressed. This bounds the memory one
-compression takes.
-
-### `Z.level`
-
-```bend signature
-def level(config: Z.Config, n: U32) -> Z.Config
-```
-
-The zlib level, clamped to 1 (fastest) through 9 (smallest output).
-
-### `Z.compress`
-
-```bend signature
-def compress(-Vars: Data, +config: Z.Config, +c: B.Context(Vars), next: B.Context(Vars) -> IO(B.Res)) -> IO(B.Res)
-```
-
-Runs `next`, then compresses its response as this page describes. Call it from
-a middleware case.
+`Z.Config`, `Z.defaults`, `Z.threshold`, `Z.limit`, `Z.level` and
+`Z.compress` are listed with the other
+[middleware calls](api/bend/middleware.md#compression).

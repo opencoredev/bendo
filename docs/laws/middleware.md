@@ -202,15 +202,45 @@ The upstream host laws compare `Upstream.read_authority` with `proof/upstream-ho
 
 ## Compression
 
-These laws are about `Compress.decide` in `src/mw/compress_policy.bend`, which judges one buffered response for the request's method and its parsed `Accept-Encoding` preferences. The shell in `src/compress.bend` and the zlib effect are covered by `tests/mw-compress.test.ts`. See [compress responses](../compression.md).
+These laws are about `src/mw/compress_policy.bend`: `Compress.decide`, which judges one buffered response for the request's method and its `Accept-Encoding` preferences, and `Compress.respond`, which builds the response the shell in `src/compress.bend` sends for that decision. The zlib effect itself is covered by `tests/mw-compress.test.ts`. See [compress responses](../compression.md).
 
-- `compress_encode_accepted`: a response is compressed with a coding only when the request accepts that coding at a nonzero weight. So `q=0` refuses a coding, and a request without `Accept-Encoding` never gets a compressed body.
+`proof/compress-spec.bend` restates Accept-Encoding handling from RFC 9110 sections 12.4.2 and 12.5.3 without the policy's parsing and selection helpers: the qvalue grammar, which parameter is the weight, `*` and `identity`, the `x-gzip` alias, and the choice between gzip and deflate. It shares the comma-list splitting, trimming and lowercasing of proof/response-policy-spec.bend and the media-type essence of proof/media-spec.bend. It also lists the already-compressed media categories and defines field lookup and strong ETags.
+
+Negotiation from the raw fields:
+
+- `compress_accept_spec`: the coding chosen from the raw `Accept-Encoding` field values equals the specification's choice for every list of values. A member's weight is its first `q=` parameter read as an RFC 9110 qvalue (up to three decimals), a malformed one weighs 0, and a member without `q` weighs 1. An explicitly named coding takes precedence over `*`, names compare without case, and a request with no field gets no coding.
+- `compress_accepts_spec`: the raw fields accept a coding exactly when the specification weighs it above 0.
+- `compress_raw_refusal`: a response is compressed with a coding only when the raw fields give that coding a weight above 0. So `gzip;q=0`, or a `*;q=0` that no named member overrides, means gzip is never sent.
+- `compress_raw_choice`: a response is compressed with a coding only when the specification, reading the raw fields, chooses that coding.
+
+Negotiation over parsed preferences:
+
+- `compress_encode_accepted`: a response is compressed with a coding only when the parsed preferences accept that coding at a nonzero weight, and a request without `Accept-Encoding` never gets a compressed body.
 - `compress_select_nonzero`: negotiation never picks a coding whose weight is 0.
 - `compress_select_not_below_identity`: negotiation never picks a coding the client weighs below `identity`.
-- `compress_select_tie_gzip`: deflate is picked only when it weighs strictly more than gzip, so a tie goes to gzip.
+- `compress_select_tie_gzip`: deflate is picked only when it weighs strictly more than gzip, so deflate never wins a tie.
+- `compress_select_gzip`: gzip is picked whenever its weight is above 0, at least deflate's and at least identity's. So a positive tie between gzip and deflate goes to gzip.
+
+What is left alone:
+
 - `compress_small_kept`: a body shorter than the configured threshold is never compressed.
 - `compress_large_kept`: a body longer than the configured limit is never compressed, which bounds the memory one compression takes.
 - `compress_encoded_kept`: a response that already has `Content-Encoding` is left exactly as it is, so nothing is encoded twice.
 - `compress_stream_kept`: a streamed response (a stream, Server-Sent Events, the proxy) is left exactly as it is.
-- `compress_head_not_encoded`: a HEAD answer is never compressed.
+- `compress_media_kept`: a response whose first `Content-Type` is already-compressed media is left exactly as it is, with or without `Content-Encoding`. The list is raster images (any `image/` type but `image/svg+xml`), `video/` and `audio/` types, zip, gzip, bzip2, xz, zstd, brotli, 7z and rar archives, and WOFF and WOFF2 fonts. Parameters, surrounding spaces and case do not matter: `Image/PNG; foo=bar` counts.
 - `compress_no_content_not_encoded`, `compress_partial_not_encoded`, `compress_not_modified_not_encoded`: 204, 206 and 304 responses are never compressed.
+- `compress_keep_ignores_accept`: whether a response is left exactly as it is never depends on `Accept-Encoding`. Every other plan read the header, which is why the next law adds it to `Vary`.
+
+HEAD:
+
+- `compress_head_not_encoded`: a HEAD answer never gets the Encode plan, since it has no body to send.
+- `compress_head_as_get`: a HEAD request gets the plan the same GET would, with Encode turned into Measure.
+- `compress_head_responds_as_get`: a Measure plan produces exactly the response the Encode plan would. So HEAD carries the `Content-Encoding`, `Vary`, `ETag` and `Content-Length` that GET sends, as RFC 9110 section 8.6 requires of `Content-Length`; the writer then leaves out the body.
+
+The response fields:
+
+- `compress_vary_merged`: every plan other than Keep, compressed or not, leaves one `Vary` field: `*` if it was `*`, otherwise every earlier `Vary` value byte for byte followed by `Accept-Encoding` unless it was already listed.
+- `compress_coded_encoding`: a response sent with a coded body has exactly one `Content-Encoding` value, in any name case, and it names the coding the plan chose.
+- `compress_identity_encoding`: a response sent without a coded body, because compression failed or did not shrink it or was never tried, keeps the `Content-Encoding` values it had.
+- `compress_coded_weak_etag`: no strong `ETag` remains on a response sent with a coded body.
+- `compress_revalidated_weak_etag`: no strong `ETag` remains on a 304 whose 200 would have been compressed.
