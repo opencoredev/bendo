@@ -264,21 +264,25 @@ both decoders independently, so a decoder bug cannot hide behind the wire law:
 - A string `Utf8.decode` returns holds only Unicode scalars and encodes back to
   exactly its input octets. With the existing roundtrip law (every scalar
   string decodes back), strict UTF-8 decoding is the inverse of the encoder.
-- Together, four laws fix `Url.decode(wire)` completely. It returns
-  `Done{value}` exactly when `value` is a scalar string whose UTF-8 octets are
-  `unpercent` of the wire's UTF-8 octets. It returns the percent error when
-  `unpercent` fails, and `InvalidUtf8` otherwise.
+- Together, five laws fix `Url.decode(wire)` completely. It returns
+  `Done{value}` exactly when the wire is a scalar string and `value` is a
+  scalar string whose UTF-8 octets are `unpercent` of the wire's UTF-8 octets.
+  It returns the percent error when `unpercent` fails, and `InvalidUtf8`
+  otherwise.
 - Verification is restated over these decoders alone. `verify(Keys{first,
-  rest}, wire) == Some{value}` holds exactly when the keys are usable, `value`
-  is a scalar string, and for some listed key, `unpercent` of the wire's octets
+  rest}, wire) == Some{value}` holds exactly when the wire and `value` are
+  scalar strings, the keys are usable, and for some listed key, `unpercent` of
+  the wire's octets
   is the UTF-8 encoding of `value ++ "." ++ Spec.base64(HMAC-SHA256(key,
   value))`. Every escaping of that payload verifies, and nothing else does.
 
-`Url.decode` reads the wire's characters as their UTF-8 octets first.
-`Utf8.encode` expects scalar strings and drops characters above U+1FFFFF, so a
-wire string holding such a character verifies as if it were absent. HTTP
-cookie values cannot carry one, because the cookie parser accepts only ASCII
-cookie-octets, and the HMAC still covers the decoded value. Wires that reach
-`verify` through `B.signed_cookie` never hold one.
+`Url.decode` reads the wire's characters as their UTF-8 octets first. A Bend
+`Char` can hold a surrogate or a value above U+10FFFF, which has no UTF-8
+encoding. `Utf8.encode` writes such a character as U+FFFD, so `Url.decode`
+checks the wire with `Utf8.valid` and fails with `InvalidUtf8` instead of
+decoding a replacement character, and `verify` returns `None{}`. HTTP cookie
+values cannot carry one, because the cookie parser accepts only ASCII
+cookie-octets, so wires that reach `verify` through `B.signed_cookie` never
+hold one.
 
 Cookie-name binding is out of scope by design (see above).

@@ -13,10 +13,19 @@ type Credential is Data:
 def pair_digest(user: String, pass: String) -> List<&2, U32>:
   List.append(&2, U32, A.digest(user), A.digest(pass))
 
+# A configured credential with a non-scalar character can never be matched:
+# Utf8.encode would hash it as U+FFFD, so the password with U+FFFD in its
+# place would otherwise authenticate. A client's credential is strictly
+# decoded and never holds one.
+def kept(usable: Bool, u: String, p: String, rest: List<&2, List<&2, U32>>) -> List<&2, List<&2, U32>>:
+  match usable:
+    case True{}: pair_digest(u, p) <> rest
+    case False{}: rest
+
 def digests(users: List<&2, Credential>) -> List<&2, List<&2, U32>>:
   match users:
     case Nil{}: []
-    case Credential{u, p} <> t: pair_digest(u, p) <> digests(t)
+    case Credential{+u, +p} <> t: kept(Utf8.valid(u) && Utf8.valid(p), u, p, digests(t))
 
 def split_pair(parts: Maybe<&2, A.Cut>) -> Maybe<&2, Credential>:
   match parts:

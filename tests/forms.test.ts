@@ -54,6 +54,11 @@ const query = exported("query");
 const serialize = exported("serialize");
 const utf8Encode = exported("utf8_encode");
 const utf8Decode = exported("utf8_decode");
+const nonscalarDecode = exported("nonscalar_decode");
+const nonscalarDecodeForm = exported("nonscalar_decode_form");
+const nonscalarParsePairs = exported("nonscalar_parse_pairs");
+const nonscalarEncode = exported("nonscalar_encode");
+const nonscalarUtf8 = exported("nonscalar_utf8");
 const done = (value: unknown) => ({ $: "Done", value });
 const fail = (error: string) => ({ $: "Fail", error: { $: error } });
 const entry = (key: string, value: string) => ({ $: "Entry", key, value });
@@ -273,6 +278,24 @@ describe("real compiled Bend URL-encoded components and forms", () => {
       "x=1",
     );
     expect(native("body", long, "x=1")).toBe("unsupported-media-type");
+  });
+
+  test("non-scalar characters encode as U+FFFD and fail to decode", () => {
+    // Surrogates, values above U+10FFFF, and values above U+1FFFFF, which the
+    // encoder used to drop. Bend builds them, since a JavaScript string's lone
+    // surrogate becomes U+FFFD when it enters Bend.
+    for (const k of [0xd800, 0xdfff, 0x110000, 0x200000, 0xffffffff]) {
+      expect(nonscalarUtf8(k)).toEqual(list([97, 239, 191, 189, 98]));
+      expect(utf8Decode(nonscalarUtf8(k))).toEqual({ $: "Some", value: "a\ufffdb" });
+      expect(nonscalarEncode(k)).toBe("a%EF%BF%BDb");
+      expect(nonscalarDecode(k)).toEqual(fail("InvalidUtf8"));
+      expect(nonscalarDecodeForm(k)).toEqual(fail("InvalidUtf8"));
+      expect(nonscalarParsePairs(k)).toEqual(fail("InvalidUtf8"));
+    }
+    // The same octets as WHATWG TextEncoder for a lone surrogate.
+    expect(utf8Encode("a\ud800b")).toEqual(list([...new TextEncoder().encode("a\ud800b")]));
+    const row = "decode-error|decode-error|parse-error|a%EF%BF%BDb|a\ufffdb";
+    expect(native("nonscalar")).toBe(Array.from({ length: 5 }, () => row).join("\n"));
   });
 
   test("native components, UTF-8, and bodies handle 64 KiB inputs", () => {

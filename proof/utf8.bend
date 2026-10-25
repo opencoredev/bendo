@@ -406,19 +406,32 @@ def encode_char_equiv(+c: U32) -> {U.encode_char_spec(c) == U.encode_char(c) : L
     case U32{+w}:
       Equal.trans(List<&2, U32>, U.encode_char_spec(U32{w}), U.encode_char_pick(U32{w}, U.zero(25n, U.high(7n, 25n, w))), U.encode_char_pick(U32{w}, (U32{w} < 128 : U32)), Equal.sym(List<&2, U32>, U.encode_char_pick(U32{w}, U.zero(25n, U.high(7n, 25n, w))), U.encode_char_spec(U32{w}), ascii_pick(w, U.zero(25n, U.high(7n, 25n, w)), {==})), Equal.cong(Bool, List<&2, U32>, z => U.encode_char_pick(U32{w}, z), U.zero(25n, U.high(7n, 25n, w)), (U32{w} < 128 : U32), Equal.sym(Bool, (U32{w} < 128 : U32), U.zero(25n, U.high(7n, 25n, w)), ascii_lt(w))))
 
-def step_char_padded_spec(+w: Word(21n), +rev: String, ok: {U.scalar(U32{U.join(21n, 11n, w, Word.zero(11n))}) == True{} : Bool}) -> {walk(U.encode_char_spec(U32{U.join(21n, 11n, w, Word.zero(11n))}), U.UtfReady{rev}) == U.UtfReady{SCon{Chr{U32{U.join(21n, 11n, w, Word.zero(11n))}}, rev}} : U.State}:
+def step_bits_padded(+w: Word(21n), +rev: String, ok: {U.scalar(U32{U.join(21n, 11n, w, Word.zero(11n))}) == True{} : Bool}) -> {walk(U.encode_bits(U32{U.join(21n, 11n, w, Word.zero(11n))}), U.UtfReady{rev}) == U.UtfReady{SCon{Chr{U32{U.join(21n, 11n, w, Word.zero(11n))}}, rev}} : U.State}:
   match w:
     case WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{b4, WCon{b5, WCon{b6, WCon{b7, WCon{b8, WCon{b9, WCon{b10, WCon{b11, WCon{b12, WCon{b13, WCon{b14, WCon{b15, WCon{b16, WCon{b17, WCon{b18, WCon{b19, WCon{b20, WNil{}}}}}}}}}}}}}}}}}}}}}}:
       step21(WCon{b0, WCon{b1, WCon{b2, WCon{b3, WCon{b4, WCon{b5, WCon{b6, WCon{b7, WCon{b8, WCon{b9, WCon{b10, WCon{b11, WCon{b12, WCon{b13, WCon{b14, WCon{b15, WCon{b16, WCon{b17, WCon{b18, WCon{b19, WCon{b20, WNil{}}}}}}}}}}}}}}}}}}}}}}, rev, ok)
 
-def step_char32_spec(+w: Word(32n), +rev: String, upper: {U.high(21n, 11n, w) == Word.zero(11n) : Word(11n)}) -> {U.scalar(U32{w}) == True{} : Bool} -> {walk(U.encode_char_spec(U32{w}), U.UtfReady{rev}) == U.UtfReady{SCon{Chr{U32{w}}, rev}} : U.State}:
-  %pad_reconstruct(21n, 11n, w, upper) : {U.scalar(U32{_}) == True{} : Bool} -> {walk(U.encode_char_spec(U32{_}), U.UtfReady{rev}) == U.UtfReady{SCon{Chr{U32{_}}, rev}} : U.State}
-  ok => step_char_padded_spec(U.low(21n, 11n, w), rev, ok)
+def step_bits32(+w: Word(32n), +rev: String, upper: {U.high(21n, 11n, w) == Word.zero(11n) : Word(11n)}) -> {U.scalar(U32{w}) == True{} : Bool} -> {walk(U.encode_bits(U32{w}), U.UtfReady{rev}) == U.UtfReady{SCon{Chr{U32{w}}, rev}} : U.State}:
+  %pad_reconstruct(21n, 11n, w, upper) : {U.scalar(U32{_}) == True{} : Bool} -> {walk(U.encode_bits(U32{_}), U.UtfReady{rev}) == U.UtfReady{SCon{Chr{U32{_}}, rev}} : U.State}
+  ok => step_bits_padded(U.low(21n, 11n, w), rev, ok)
 
-def step_char_spec(+c: U32, +rev: String, +ok: {U.scalar(c) == True{} : Bool}) -> {walk(U.encode_char_spec(c), U.UtfReady{rev}) == U.UtfReady{SCon{Chr{c}, rev}} : U.State}:
+def step_bits(+c: U32, +rev: String, +ok: {U.scalar(c) == True{} : Bool}) -> {walk(U.encode_bits(c), U.UtfReady{rev}) == U.UtfReady{SCon{Chr{c}, rev}} : U.State}:
   match c:
     case U32{w}:
-      step_char32_spec(w, rev, zero_sound(11n, U.high(21n, 11n, w), fits(w, ok)), ok)
+      step_bits32(w, rev, zero_sound(11n, U.high(21n, 11n, w), fits(w, ok)), ok)
+
+# BND-100: on a scalar the general encoder is the bit-level one.
+def spec_bits(+c: U32, ok: {U.scalar(c) == True{} : Bool}) -> {U.encode_bits(c) == U.encode_char_spec(c) : List<&2, U32>}:
+  %Equal.sym(Bool, U.scalar(c), True{}, ok) : {U.encode_bits(c) == U.encode_scalar(c, _) : List<&2, U32>}
+  {==}
+
+# encode_char of a scalar is the bit-level encoding.
+def char_bits(+c: U32, ok: {U.scalar(c) == True{} : Bool}) -> {U.encode_bits(c) == U.encode_char(c) : List<&2, U32>}:
+  Equal.trans(List<&2, U32>, U.encode_bits(c), U.encode_char_spec(c), U.encode_char(c), spec_bits(c, ok), encode_char_equiv(c))
+
+def step_char_spec(+c: U32, +rev: String, +ok: {U.scalar(c) == True{} : Bool}) -> {walk(U.encode_char_spec(c), U.UtfReady{rev}) == U.UtfReady{SCon{Chr{c}, rev}} : U.State}:
+  %spec_bits(c, ok) : {walk(_, U.UtfReady{rev}) == U.UtfReady{SCon{Chr{c}, rev}} : U.State}
+  step_bits(c, rev, ok)
 
 def step_char(+c: U32, +rev: String, +ok: {U.scalar(c) == True{} : Bool}) -> {walk(U.encode_char(c), U.UtfReady{rev}) == U.UtfReady{SCon{Chr{c}, rev}} : U.State}:
   %encode_char_equiv(c) : {walk(_, U.UtfReady{rev}) == U.UtfReady{SCon{Chr{c}, rev}} : U.State}
