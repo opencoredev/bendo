@@ -20,6 +20,10 @@ import ./proof/compose.bend as ComposeProof
 import ./proof/validate.bend as ValidateProof
 import ./proof/plugin.bend as PluginProof
 
+# BND-86
+import ./proof/mount.bend as MountProof
+import ./proof/mount-resolve.bend as MountResolveProof
+
 # BND-85
 import ./proof/trim.bend as TrimProof
 import ./proof/media.bend as MediaProof

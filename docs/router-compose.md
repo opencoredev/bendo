@@ -133,15 +133,26 @@ full assembled source path, methods normalized as registration normalizes them
 (order and duplicates kept, one `ALL` row, no implicit HEAD) and capture names
 taken from compiling that route's own source. Hooks and middleware add no rows.
 
-The end-to-end source-string mounting bridge is not proved. That theorem would
-say a request under a mount prefix routes as the sub-app routes the remaining
-suffix. It must account for the optional-root case above, captures introduced
-by prefixes, matching options, and compilation and splitting at the join. The
-segment law above is not that bridge. BND-86 tracks it.
+The BND-86 laws prove the source-string bridge end to end, against the
+independent specification in
+[`proof/mount-spec.bend`](../proof/mount-spec.bend). For an admissible mount
+(a prefix of nonempty static segments and required captures, or an empty or
+`/` root prefix, whose assembled pattern compiles), compiling the source that
+`B.route` builds and matching it under any slash and case options gives
+exactly this: the request's segments start with one segment per prefix
+segment, and the member matches the rest with no root rule of its own, prefix
+captures first. Method resolution over a mounted registration list, through
+either router, is first-match over those answers, with HEAD fallback, 405 and
+404. Under a literal prefix with strict trailing slashes, `prefix + /r` routes
+as the member alone routes `/r`, except that an optional-capture member such
+as `/:id?` answers `/api` and rejects `/api/` (the root convention above). With
+default options a literal mount answers nothing outside its prefix path. The
+[routing laws](laws/routing.md#source-string-mounting) list each statement.
 
 Arbitrary group flattening is not an equality of entries: hook provenance records
 the original inner prefixes. Even path joining is not associative for every raw
 string: nesting `/a//`, an empty prefix and `/x` gives `/a//x`, while flattening
-the first two prefixes and joining `/x` gives `/a/x`. A route-observable
+the first two prefixes and joining `/x` gives `/a/x`. The mounting laws exclude
+such prefixes, since `/a//` has an empty prefix segment. A route-observable
 associativity theorem for normalized prefixes, preserving nested hook order,
 remains unproved. Existing BND-24 laws and slash behavior are unchanged.

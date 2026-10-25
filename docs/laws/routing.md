@@ -66,14 +66,43 @@ setting (strict trailing slash and case sensitivity). See
 `group`, `mount` and base paths rewrite route lists before the table is built.
 The first three laws pin each operation to an independent assembly in
 `proof/compose-spec.bend`. The segment laws state the cancellation facts
-behind prefixes; they are stated on compiled segments, and lifting them to
-source strings is not claimed. See [compose route lists](../router-compose.md).
+behind prefixes on compiled segments; the mounting laws below lift them to
+source strings. See [compose route lists](../router-compose.md).
 
 - `compose_prepare`, `compose_group`, `compose_mount`: preparing, grouping and mounting a route list equal the independent assembly, entry for entry.
 - `compose_mount_routing`: routing a mounted list, for every router kind, path, method and option setting, equals routing the independently prefixed list, build failures included. It does not relate a mounted request to the unmounted suffix.
 - `compose_literal_segments_suffix`: a pattern behind literal prefix segments matches the prefix plus a path exactly as the pattern alone matches the path.
 - `compose_literal_groups_associate`: nesting literal prefix groups gives the same matches and captures as one combined prefix.
 - `compose_literal_boundary_miss`: a literal segment misses a different whole segment, even when one string is a prefix of the other.
+
+## Source-string mounting
+
+These laws start from what users write: a prefix string, a member route
+source and a request. They compile the source that `B.route` builds and match
+it with the method layer's slash and case options, and compare the result with
+the independent specification in `proof/mount-spec.bend`. That specification
+joins at the segment level instead of concatenating strings: it splits the
+prefix (dropping one terminal slash), reads each prefix segment and the member
+with the BND-83 source grammar, and matches with the BND-78 matcher, so it
+calls no composition, compilation, splitting or matching helper of the router.
+
+Most of the laws assume an admissible mount. The prefix is empty, `/`, or
+nonempty static segments and required captures (with or without constraints),
+and the assembled pattern compiles. An optional, wildcard or span prefix
+segment, or an empty one from repeated slashes, is outside, so `/a//` is not an
+admissible prefix. `/api` with `/users/:id`, `/v1/:tenant` with `/files/*`, a
+root mount and an optional member are admissible.
+
+- `match_options_spec`: for every pattern, raw path and option setting, method-layer matching equals the independent option reading: lenient mode drops every terminal empty segment of the path and every terminal empty static of the pattern, keeping one for root, and case-insensitive mode folds ASCII letters (the letter-table fold) only in static text and a prefix wildcard's literal prefix. Captures keep the request's bytes.
+- `mount_compile_spec`: for every prefix that is empty or starts with `/`, and every member that starts with `/` or is `*` (any member under a root prefix), the public assembled source compiles to exactly the specification's segment-level join, or fails exactly when the join fails.
+- `mount_match_spec`: for an admissible prefix and member, every request path and every option setting, compiling and matching the public assembled source gives exactly the specified mounted match. The request's segments (normalized for the slash option) start with one segment per prefix segment, static text compared under the case option and captures decoded and checked; the member then matches the remaining segments with no root rule of its own, and prefix captures come before member captures. It gives no match exactly when the specification has none. Under a root prefix the member answers alone, root rule included.
+- `mount_resolve_spec`: for a mounted registration list whose routes are all admissible and whose methods are valid, building the table succeeds, and method resolution through every router kind equals first-match over the specified mounted answers in registration order: a direct hit wins, HEAD falls back to the first GET, a path some route answers gives 405 with the canonical Allow set of every answering route, and any other path gives 404.
+- `mount_literal_suffix`: under a literal prefix (every prefix segment plain static text), with strict trailing slashes and either case mode, a request for the prefix's path plus `/r` routes exactly as the member alone routes `/r`, unless `/r` is `/` and the member is a chain of optional captures.
+- `mount_literal_root`: that exception is the documented root convention. A member made of optional captures answers the bare prefix path as it alone answers `/`, and the prefix path plus `/` not at all.
+- `mount_literal_converse`: with default options, every request a literal mount answers is the prefix's path followed by nothing or by a suffix that starts with `/`. A mount under `/api` never answers `/apix` or `/users`.
+- `mount_admissible_examples`: `/api` with `/users/:id`, `/v1/:tenant` with `/files/*`, `/` with `/:id?`, the empty prefix with `/users`, `/api` with `/:id?`, `/t/:n{int}` with `/` and `/api/` with `*` are admissible.
+- `mount_spec_examples`: the specification answers `/api/users/42` with `id=42` and neither `/users/42` nor `/apix/users/42`; `/v1/acme/files/a/b` with `tenant=acme` then `*=a/b`; `/` under a root mount of `/:id?`; and `/api/users/` for `/API/` with `/Users` under lenient, case-insensitive options.
+- `mount_counterexamples`: mounted `/:id?` answers `/api` but not `/api/`, although alone it answers `/`, so `mount_literal_suffix` excludes it by its root-convention premise; the prefixes `/a//` and `/a//b` are not admissible.
 
 ## Route manifest
 
