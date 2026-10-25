@@ -260,7 +260,9 @@ def jwt_config(secret: String, leeway: Nat, realm: String) -> B.JwtConfig
 
 The settings for `B.jwt` and `B.jwt_with`. `leeway` is the allowed clock skew
 in seconds, applied to `exp`, `nbf` and `iat`. `realm` goes in the
-`WWW-Authenticate` challenge.
+`WWW-Authenticate` challenge. A secret holding a non-scalar character (a lone
+surrogate) is refused rather than encoded, and then every token fails with
+`BadSignature`.
 
 ```bend
 def ex_jwt_config() -> B.JwtConfig:
@@ -343,8 +345,9 @@ def jwt_sign(secret: String, claims: J.Json) -> Result<&2, &2, B.JwtError, Strin
 ```
 
 Signs `claims` with the header `{"alg":"HS256","typ":"JWT"}`. It fails with
-`BadClaims` when `claims` is not a JSON object, and with `DuplicateMember` or
-`TooManyMembers` (over 256 members) when verifying the token would fail.
+`BadClaims` when `claims` is not a JSON object, with `DuplicateMember` or
+`TooManyMembers` (over 256 members) when verifying the token would fail, and
+with `BadEncoding` when `secret` holds a non-scalar character.
 
 ```bend
 def ex_token() -> Result<&2, &2, B.JwtError, String>:
@@ -359,11 +362,39 @@ def jwt_verify(secret: String, token: String, now: Nat, leeway: Nat) -> Result<&
 
 Checks the signature, the header and the time claims of `token` and returns
 its claims. `now` is the current time in Unix seconds and `leeway` the allowed
-skew in seconds. It is pure, so tests can pass any time.
+skew in seconds. It is pure, so tests can pass any time. A `secret` holding a
+non-scalar character fails every token with `BadSignature`.
 
 ```bend
 def ex_check(token: String, now: Nat) -> Result<&2, &2, B.JwtError, J.Json>:
   B.jwt_verify("a-long-random-secret", token, now, 30n)
+```
+
+### `B.jwt_secret`, `B.jwt_key`, `B.jwt_signed`
+
+```bend signature
+def jwt_secret(+secret: String) -> Maybe<&2, List<&2, U32>>
+def jwt_key(valid: Bool, secret: String) -> Maybe<&2, List<&2, U32>>
+def jwt_signed(key: Maybe<&2, List<&2, U32>>, claims: J.Json) -> Result<&2, &2, B.JwtError, String>
+```
+
+The steps behind the string-secret functions above. `B.jwt_secret` returns
+the secret's UTF-8 octets, or `None{}` when it holds a non-scalar character,
+since writing U+FFFD in its place would let a different secret sign the same
+tokens. `B.jwt_key` is its second half, given the validity check's result.
+`B.jwt_signed` is `B.jwt_sign` on such a key, failing with `BadEncoding` on
+`None{}`. Most apps need only `B.jwt_config`, `B.jwt_sign` and
+`B.jwt_verify`.
+
+```bend
+def ex_jwt_key() -> Maybe<&2, List<&2, U32>>:
+  B.jwt_secret("a-long-random-secret")
+
+def ex_no_key() -> Maybe<&2, List<&2, U32>>:
+  B.jwt_key(False{}, "ignored")
+
+def ex_signed() -> Result<&2, &2, B.JwtError, String>:
+  B.jwt_signed(ex_jwt_key(), J.JObject{[J.Field{"sub", J.JString{"ada"}}]})
 ```
 
 ## Limits and caching

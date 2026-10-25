@@ -253,8 +253,9 @@ def encode(s: String) -> List<&2, U32>           # data/utf8.bend
 ```
 
 `SHA.hash` is SHA-256: 32 bytes, big-endian. `Hex.encode` writes bytes as
-lowercase hex. `Utf8.encode` turns a string into its UTF-8 octets. Bytes are
-lists with one octet per `U32`.
+lowercase hex. `Utf8.encode` turns a string into its UTF-8 octets, writing
+U+FFFD for a non-scalar character (a lone surrogate), as `TextEncoder` does.
+Bytes are lists with one octet per `U32`.
 
 ```bend
 def ex_digest(text: String) -> String:
