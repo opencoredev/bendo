@@ -36,6 +36,9 @@ import ./proof/rate-limit.bend as RateLimitProof
 # BND-100
 import ./proof/utf8-scalar.bend as Utf8ScalarProof
 
+# BND-104
+import ./proof/jwt-key.bend as JwtKeyProof
+
 # BND-92
 import ./proof/parser-spec.bend as ParserSpecProof
 

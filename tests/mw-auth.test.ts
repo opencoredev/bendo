@@ -601,6 +601,39 @@ describe("JWT middleware", () => {
     expect((await get("/jwt-lone/ok", { authorization: `Bearer ${token}` })).status).toBe(401);
   });
 
+  test("an empty secret or key verifies and signs nothing", async () => {
+    // The review's token: HS256 under the empty key, signed outside Bendo.
+    const empty = new Uint8Array(0);
+    const token = forge(
+      empty,
+      { alg: "HS256", typ: "JWT" },
+      JSON.stringify({ sub: "attacker", admin: true, exp: 2000 }),
+    );
+    expect(token.split(".")[2]).toBe(
+      createHmac("sha256", "").update(token.split(".").slice(0, 2).join(".")).digest("base64url"),
+    );
+    // B.jwt_verify("", token, 1000n, 0n)
+    const direct = await fetch(`${server.url}/verify-empty`, { method: "POST", body: token });
+    expect(direct.status).toBe(401);
+    expect(await direct.text()).toBe("refused");
+    // The middleware, with B.jwt_config("") and with Config{Some{[]}, ..} built directly.
+    const live = forge(empty, { alg: "HS256" }, JSON.stringify({ sub: "eve", exp: now() + 600 }));
+    for (const path of ["/jwt-empty/ok", "/jwt-empty-key/ok"]) {
+      const res = await get(path, { authorization: `Bearer ${live}` });
+      expect(res.status).toBe(401);
+      expect(res.headers.get("www-authenticate")).toContain('error="invalid_token"');
+    }
+    // Signing under the empty secret, as a string or a raw key, fails.
+    for (const path of ["/sign-empty", "/sign-empty-key"]) {
+      const res = await fetch(`${server.url}${path}`, {
+        method: "POST",
+        body: JSON.stringify({ sub: "ada" }),
+      });
+      expect(res.status).toBe(400);
+      expect(await res.text()).toBe("cannot sign");
+    }
+  });
+
   test("server-signed tokens verify with jose", async () => {
     const claims = { sub: "José", exp: now() + 600 };
     const res = await fetch(`${server.url}/sign`, {

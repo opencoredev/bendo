@@ -50,6 +50,9 @@ import ./proof/rate-limit-laws.bend as RateLimitLaws
 # BND-100
 import ./proof/utf8-scalar-laws.bend as Utf8ScalarLaws
 
+# BND-104
+import ./proof/jwt-key-laws.bend as JwtKeyLaws
+
 # BND-92
 import ./proof/parser-spec-laws.bend as ParserSpecLaws
 
