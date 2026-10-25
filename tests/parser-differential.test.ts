@@ -193,7 +193,10 @@ function reference(bytes: Uint8Array): Outcome {
       if (!isDigit(peek())) syntax();
       while (isDigit(peek())) i++;
     }
-    return String.fromCodePoint(...cps.slice(start, i));
+    // A number is ASCII and can be megabytes long: no argument spread.
+    let spelling = "";
+    for (let k = start; k < i; k++) spelling += String.fromCharCode(cps[k] ?? 0);
+    return spelling;
   };
   const literal = (word: string, tree: Tree): Tree => {
     for (const ch of word) expect(ch.charCodeAt(0));
@@ -590,6 +593,26 @@ describe("J.parse against an independent RFC 8259 reference", () => {
       expect(errors.DepthLimit).toBeGreaterThan(0);
     }, 60_000);
   }
+
+  // Bendo sets no limit on a number's length, and json.test.ts parses 1 MiB ones.
+  test("numbers far longer than the seeded corpus reaches", () => {
+    const digits = "7".repeat(1_048_576);
+    expect(reference(utf8(digits))).toEqual({
+      kind: "done",
+      value: { kind: "number", text: digits },
+    });
+    for (const spelling of [
+      `-${"9".repeat(70_000)}.5e+${"1".repeat(70_000)}`,
+      `0.${"3".repeat(70_000)}`,
+    ]) {
+      const bytes = utf8(`[${spelling}]`);
+      expect(reference(bytes)).toEqual({
+        kind: "done",
+        value: { kind: "array", items: [{ kind: "number", text: spelling }] },
+      });
+      expect(bendParse(bytes)).toEqual(reference(bytes));
+    }
+  }, 60_000);
 });
 
 // ---- the query specification against URLSearchParams ----
