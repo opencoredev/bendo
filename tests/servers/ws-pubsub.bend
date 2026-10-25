@@ -200,11 +200,11 @@ def relay_start(+from: Chan(Request()), +to: Chan(Request())) -> IO(Unit):
 
 @unsafe
 def delayed(hub: P.Hub) -> IO(P.Hub):
-  P.Hub{Store.Store{to, ms}} = hub
+  P.Hub{Store.Store{to, ms}, limits} = hub
   do IO<P.Hub>:
     +from : Chan(Request()) <- Chan.new(Request(), 128)
     IO.spawn(Unit, relay_start(from, to))
-    return P.Hub{Store.Store{from, 100}}
+    return P.Hub{Store.Store{from, 100}, limits}
 
 # Waits while `held` is True.
 @unsafe
@@ -240,14 +240,14 @@ def gate_start(+from: Chan(Request()), +to: Chan(Request()), +held: Store.Store<
 # A hub over the same registry whose requests give up after 100 ms.
 @unsafe
 def jammed(hub: P.Hub, +held: Store.Store<Bool>) -> IO(P.Hub):
-  P.Hub{Store.Store{to, ms}} = hub
+  P.Hub{Store.Store{to, ms}, limits} = hub
   do IO<P.Hub>:
     +from : Chan(Request()) <- Chan.new(Request(), 128)
     IO.spawn(Unit, gate_start(from, to, held))
-    return P.Hub{Store.Store{from, 100}}
+    return P.Hub{Store.Store{from, 100}, limits}
 
 def front_of(hub: P.Hub) -> Chan(Request()):
-  P.Hub{Store.Store{front, ms}} = hub
+  P.Hub{Store.Store{front, ms}, limits} = hub
   front
 
 # Offers throwaway reads to `front` without waiting until one is refused, and

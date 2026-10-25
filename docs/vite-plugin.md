@@ -156,3 +156,18 @@ for leftover `bend` processes with `pgrep -a bend` after such a crash.
 
 `?raw` and `?url` imports of a `.bend` file are left to Vite and return the
 source text or its URL.
+
+## Files outside `server.fs.allow`
+
+The dev server compiles a `.bend` file only if Vite itself would load it under
+[`server.fs`](https://vite.dev/config/server-options.html#server-fs-allow):
+the file is in an allowed directory, or a module Vite already loaded imports
+it. Any other file, such as one named directly in a `/@fs/` URL, gets Vite's
+own 403. It is never compiled, and no `.d.bend.ts` is written beside it. The
+plugin asks Vite through `isFileLoadingAllowed`, so `fs.strict: false`,
+`fs.deny` and the default allow list (the workspace root) behave exactly as
+they do for other files. To import shared Bend code from a directory beside
+the app, add it to `server.fs.allow`.
+
+`vite build` has no allow list. It compiles every `.bend` file the app's
+import graph reaches, as it does with any other import.

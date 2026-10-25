@@ -59,8 +59,13 @@ of the listed tokens. The responses follow RFC 6750:
 ## JWT
 
 `B.jwt_config(secret, leeway, realm)` configures HS256 verification with a UTF-8
-secret. A secret holding a non-scalar character (a lone surrogate, or a code
-point above U+10FFFF) has no UTF-8 form, so that config refuses every token.
+secret. Use at least 32 random bytes, such as `openssl rand -base64 32`, and
+load it from the environment rather than the source. HS256 is only as strong
+as its secret: anyone who guesses it can sign any claims. A secret holding a
+non-scalar character (a lone surrogate, or a code point above U+10FFFF) has no
+UTF-8 form, and the empty secret is no secret, since anyone can compute HMAC
+under an empty key. A config with either refuses every token, and so does one
+built directly with an empty key.
 `leeway` is the allowed clock skew in whole seconds. `B.jwt(config)`
 reads `Authorization: Bearer <token>`, verifies it against the wall clock
 (`src/effects/clock.bend`) and calls the next layer. To hand the claim set to
@@ -123,14 +128,16 @@ fails, the response is an empty 500. Cookie tokens are not supported.
 `B.jwt_sign(secret, claims)` signs a `JObject` claim set with the header
 `{"alg":"HS256","typ":"JWT"}` and returns `Result<.., B.JwtError, String>`.
 `B.jwt_verify(secret, token, now, leeway)` returns the claims or the error.
-With a secret holding a non-scalar character, `jwt_sign` fails with
-`BadEncoding` and `jwt_verify` with `BadSignature`.
+With an empty secret, or one holding a non-scalar character, `jwt_sign` fails
+with `BadEncoding` and `jwt_verify` with `BadSignature`.
 Both are pure. The tests check every direction against the `jose` npm package.
 Signing a claim set with a repeated member name, or with more than 256
 members, fails with the same error (`DuplicateMember` or `TooManyMembers`) that
 verifying it would give.
-For byte secrets, use `src/crypto/jwt.bend` (`sign`, `verify`, `error_text`)
-directly.
+For byte secrets, pass the octets to `B.jwt_signed` or put them in the config
+yourself; an empty key is refused there too. `src/crypto/jwt.bend` (`sign`,
+`verify`, `error_text`) is the raw HS256 layer under them and does not check
+the key, so do not call its `sign` or `verify` with an empty one.
 
 ## CSRF
 

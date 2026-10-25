@@ -23,9 +23,11 @@ function bendo(options?: BendoPluginOptions): Plugin & { api: BendoApi };
 
 Returns the plugin. It runs before Vite's own plugins (`enforce: "pre"`),
 resolves `.bend` imports, compiles each with Bend's JavaScript backend on
-demand, and writes declarations beside the source. Vite's `configResolved` hook
-throws when no `bend` binary is found. Supports Vite 7 and 8, under Node 24 or
-Bun.
+demand, and writes declarations beside the source. In dev it compiles only
+files Vite's `server.fs` rules let it load and leaves the rest to Vite's 403
+(see [the plugin guide](../../vite-plugin.md)).
+Vite's `configResolved` hook throws when no `bend` binary is found. Supports
+Vite 7 and 8, under Node 24 or Bun.
 
 ```ts
 // vite.config.ts
