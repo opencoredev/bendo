@@ -17,8 +17,8 @@ the exact fields Bendo sends.
 ## List the origins
 
 Name each origin that may call the API. An origin is a scheme, host and
-optional port, with no path. Choose per origin whether the browser may send
-cookies and `Authorization` headers:
+optional port, with no path. Choose per origin whether its pages may read the
+responses to credentialed requests, the ones a page sends with cookies:
 
 ```bend
 def origins() -> List<&2, B.CorsOrigin>:
@@ -27,8 +27,17 @@ def origins() -> List<&2, B.CorsOrigin>:
 ```
 
 `B.cors_origin_credentials` adds `Access-Control-Allow-Credentials: true` for
-the production app. The Vite dev server on port 5173 gets plain CORS, so its
-requests carry no cookies.
+the production app, so its page can read the response to a `fetch` made with
+`credentials: "include"`. The Vite dev server on port 5173 gets plain CORS.
+
+Leaving that header out does not stop cookies from being sent. A credentialed
+simple request from the dev server still reaches the API with whatever cookies
+the browser attaches, and the handler still runs; the browser only hides the
+response from the page. A credentialed request that needs a preflight is
+stopped at the preflight. An `Authorization` header is different again: the
+page sets it itself, and `B.cors_headers` below decides whether it may.
+Requests that change state need [CSRF protection](#stop-cross-site-form-posts)
+whatever CORS allows.
 
 Build the configuration in `main` with `B.cors_allow_checked`. It drops entries
 that are not origins, such as `app.example` without a scheme, and prints one

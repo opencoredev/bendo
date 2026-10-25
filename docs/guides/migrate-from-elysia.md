@@ -786,6 +786,17 @@ See [deploy behind Caddy or Cloudflare](deploy.md).
 
 ## Move traffic over
 
+Before you move traffic, check that Bendo can carry it. It is much slower than
+Elysia today. In the [README benchmarks](../../README.md#benchmarks), Elysia serves
+about 11 times more hello-world requests per second than one Bendo process,
+about 19 times more with route parameters, and 47 to 75 times more for a JSON
+body echo or a five-middleware chain. [Workers](../workers.md) run
+several processes on one port; four of them raised hello throughput about 3
+times. Load-test the routes you are porting at your peak traffic, with the
+worker count you plan to run, before routing real requests to them.
+[bench/README.md](../../bench/README.md) describes the method if you want to
+reproduce it on your hardware.
+
 Port one group of routes at a time. Run the Bendo app next to the Elysia app
 and let the proxy send it one path:
 

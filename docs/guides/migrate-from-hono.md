@@ -809,6 +809,17 @@ See [deploy behind Caddy or Cloudflare](deploy.md).
 
 ## Move traffic over
 
+Before you move traffic, check that Bendo can carry it. It is much slower than
+Hono today. In the [README benchmarks](../../README.md#benchmarks), Hono on Bun
+serves about 10 times more hello-world requests per second than one Bendo
+process, about 19 times more with route parameters, and 44 to 54 times more for
+a JSON body echo or a five-middleware chain. [Workers](../workers.md) run
+several processes on one port; four of them raised hello throughput about 3
+times. Load-test the routes you are porting at your peak traffic, with the
+worker count you plan to run, before routing real requests to them.
+[bench/README.md](../../bench/README.md) describes the method if you want to
+reproduce it on your hardware.
+
 You do not have to port everything at once. Run the Bendo app next to the
 Hono app and let the proxy send it one path at a time:
 

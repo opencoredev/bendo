@@ -102,6 +102,14 @@ them. A client can put anything at the left of the header, but it cannot get
 past the entry your proxy appended. `B.conn_info` always reports the socket
 peer.
 
+Trusting `127.0.0.1` trusts every process on the machine, not only Caddy. Any
+local process can connect to the port directly and send whatever
+`X-Forwarded-For` it likes. Bendo cannot listen on a Unix socket, so limit who
+can reach the port instead: run the app on a host or container that runs
+nothing untrusted, or add a firewall rule that accepts loopback connections to
+the port only from the proxy's user (nftables matches that with
+`meta skuid`).
+
 This app lets only the office network reach `/admin`, judged by that client
 address:
 
@@ -127,9 +135,12 @@ def legacy() -> B.ProxyOptions:
 ```
 
 A request from `203.0.113.7` through Caddy reaches that service with
-`X-Forwarded-For: 203.0.113.7, 127.0.0.1`. Only enable it when every client
-reaches Bendo through a proxy you control, which is true when Bendo listens on
-the loopback address.
+`X-Forwarded-For: 203.0.113.7, 127.0.0.1`. Only enable it when every caller
+reaches Bendo through a proxy you control. Listening on the loopback address
+keeps out other machines, but not other processes on this one: they can
+connect directly and forge the header, which the next service then trusts.
+Enable it only when you trust every local caller or restrict the port as
+[above](#trust-the-client-address-from-the-proxy) describes.
 
 ## Run it under systemd
 

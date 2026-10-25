@@ -183,16 +183,27 @@ value that was never signed, so the middleware treats them all as signed out.
 
 ### Sign out
 
-`POST /logout` removes the session from the store and deletes the cookie.
-`C.delete_cookie` needs the same path and options as the cookie it replaces:
+`POST /logout` removes the session from the store, then deletes the cookie:
 
 ```bend
 dropped : Result<&2, &2, Store.Error, List<&2, Session>> <- Store.update(List<&2, Session>, sessions, xs => without(xs, id))
-return signed_out(c, C.delete_cookie(Vars, c, "sid", cookie_options()))
+return revoked(c, dropped)
 ```
 
-A copy of the old cookie no longer works, because its ID is gone from the
-store.
+Only a successful update confirms the sign-out. `Store.update` fails when the
+store is unavailable or does not answer within its timeout, and then the
+session may still be valid. The handler answers 503 and keeps the cookie, so
+the browser still holds the ID it needs to try again. Removing an ID twice is
+harmless, so a retry is safe even when the first update did land late:
+
+```bend
+case Fail{e}: C.error(Vars, c, B.http_error(503, "Try again"))
+case Done{rest}: signed_out(c, C.delete_cookie(Vars, c, "sid", cookie_options()))
+```
+
+`C.delete_cookie` needs the same path and options as the cookie it replaces.
+After a successful sign-out a copy of the old cookie no longer works, because
+its ID is gone from the store.
 
 ### Stop cross-site form posts
 
@@ -450,13 +461,18 @@ def signed_out(+c: B.Context(Vars), cookie: Result<&2, &2, Cookie.Error, B.Conte
     case Fail{e}: C.error(Vars, c, B.http_error(500, "cannot clear the cookie"))
     case Done{ctx}: C.text(Vars, ctx, "Signed out")
 
+def revoked(+c: B.Context(Vars), dropped: Result<&2, &2, Store.Error, List<&2, Session>>) -> B.Res:
+  match dropped:
+    case Fail{e}: C.error(Vars, c, B.http_error(503, "Try again"))
+    case Done{rest}: signed_out(c, C.delete_cookie(Vars, c, "sid", cookie_options()))
+
 def forget(+c: B.Context(Vars), sessions: B.Store(List<&2, Session>), sid: Maybe<&2, String>) -> IO(B.Res):
   match sid:
     case None{}: IO.pure(B.Res, signed_out(c, C.delete_cookie(Vars, c, "sid", cookie_options())))
     case Some{id}:
       do IO<B.Res>:
         dropped : Result<&2, &2, Store.Error, List<&2, Session>> <- Store.update(List<&2, Session>, sessions, xs => without(xs, id))
-        return signed_out(c, C.delete_cookie(Vars, c, "sid", cookie_options()))
+        return revoked(c, dropped)
 
 def logout(+c: B.Context(Vars), env: Env) -> IO(B.Res):
   Env{sessions, keys} = env

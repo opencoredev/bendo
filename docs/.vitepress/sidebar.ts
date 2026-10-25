@@ -3,8 +3,7 @@ import type { DefaultTheme } from "vitepress";
 // One sidebar for the whole site. Every published page must appear here;
 // `config.ts` fails the build when a page is missing.
 //
-// Planned sections: BND-71 adds "API reference" after "TypeScript toolkit",
-// and BND-72 adds task and migration guides to "Guides".
+// Planned section: BND-71 adds "API reference" after "TypeScript toolkit".
 export const sidebar: DefaultTheme.SidebarItem[] = [
   {
     text: "Getting started",

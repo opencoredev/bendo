@@ -60,7 +60,11 @@ case EchoSocket{} _: B.websocket_handlers(~Unit, ~Nat, ~echo_opened, ~echo_messa
 
 The send helpers return `IO(Bool)`. `True` means the message joined the
 connection's outbound queue, not that the client has read it. `False` means the
-queue was full or the connection is closing.
+queue was full or the connection is closing. `B.websocket_close` is the
+exception: a valid close is admitted even when the queue is full, so a handler
+can always end its connection. Every later send to that connection returns
+`False`. The [handler reference](../websocket-sessions.md#send-from-a-handler-or-another-route)
+gives the exact order.
 
 ## Put connections in rooms
 
