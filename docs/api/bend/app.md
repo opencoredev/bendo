@@ -310,7 +310,8 @@ type `Config.Config` from `app/config.bend`. `host` must be an IPv4 literal.
 and `max_requests` caps the requests on one connection. `write_timeout_ms`
 bounds sending a buffered response: the server sends it in windows of that
 length and closes the connection, after running the response's after-response
-hooks, when the client accepts no bytes during a whole window. A client that
+hooks, when the client accepts no bytes during a whole window. The server's
+own 400, 408, 413 and 431 replies and `100 Continue` go out the same way. A client that
 keeps reading gets the whole body however long it takes. Streaming responses
 use their own `B.StreamConfig` timeout instead. To change a field with
 no helper here, import `app/config.bend` as `Config`, take the record apart

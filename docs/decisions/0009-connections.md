@@ -108,13 +108,25 @@ timeout. A client that accepts a few bytes every window can still hold a
 connection for as long as the transfer takes; that is the cost of not capping
 download time.
 
+The same bounded sender writes the shell's own replies: the 400, 408, 413 and
+431 rejects and `100 Continue`. These are small, but on a keep-alive
+connection an earlier response can leave the socket buffer full when a
+pipelined request draws one, and an unbounded send would then wait forever and
+never reach the lingering close. A reply that times out closes the socket, and
+so does a `100 Continue` that fails. Every other write to a client socket goes
+through `Stream.send`, which has its own total deadline.
+
 The close is `Socket.close`, not the lingering close: there is no request to
 protect, and the client is not reading. The window only measures bytes the
 kernel accepted, so a client's own socket buffers absorb part of a response
 before its first window stalls. `tests/write-deadline.test.ts` serves an
 8 MiB buffered body with a 1000 ms window: a client that never reads is closed
 within two windows plus slack while other clients are served, the hooks run
-once, and a client reading 512 KiB every 200 ms gets the whole body.
+once, and a client reading 512 KiB every 200 ms gets the whole body. Three
+more cases pipeline a request that draws a 431, a 413 or a `100 Continue`
+after a keep-alive response, with a test-only `LD_PRELOAD` shim keeping the
+socket full when that reply is sent; the connection must be closed, without
+the reply, before the client reads again.
 
 ## Verification
 

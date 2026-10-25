@@ -32,9 +32,9 @@ type Config is Data:
 # idle_timeout_ms: 5000 ms between requests; enforced by BND-11.
 # head_timeout_ms: 10000 ms to read the request head; enforced by BND-11.
 # body_timeout_ms: 30000 ms to read the body; enforced by BND-11.
-# write_timeout_ms: 30000 ms; a buffered response whose client accepts no
-#   bytes for a whole window this long is abandoned and its connection closed
-#   (BND-106, decision 0009).
+# write_timeout_ms: 30000 ms; a buffered response, parser reply or 100 Continue
+#   whose client accepts no bytes for a whole window this long is abandoned
+#   and its connection closed (BND-106, decision 0009).
 # max_requests: 100 requests per connection; enforced by BND-11.
 # keep_alive: True; enables HTTP/1.1 connection reuse.
 # router: Trie, proven equal to Spec (BND-17); B.serve resolves methods with it.
