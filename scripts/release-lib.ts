@@ -140,6 +140,16 @@ export function isNpmConfig(name: string): boolean {
   return /^npm_config_/i.test(name);
 }
 
+/** npm settings that change what or where a publish uploads. */
+function publishSetting(name: string): boolean {
+  const key = name.toLowerCase().slice("npm_config_".length).replace(/-/g, "_");
+  return (
+    ["dry_run", "registry", "tag", "access", "userconfig", "globalconfig", "provenance"].includes(
+      key,
+    ) || key.endsWith(":registry")
+  );
+}
+
 /**
  * The real npm publish: the shared command plus `--dry-run=false`, so neither
  * an `.npmrc` nor the environment can turn it into a dry run.
@@ -157,12 +167,11 @@ export function envOverrides(env: Readonly<Record<string, string | undefined>>):
   }
   const tls = env.NODE_TLS_REJECT_UNAUTHORIZED;
   if (tls === "0") found.push({ name: "NODE_TLS_REJECT_UNAUTHORIZED", value: tls });
+  // Release commands never inherit npm settings, but one that would change a
+  // publish is reported anyway, so whoever set it finds out. `bun run` sets
+  // others (npm_config_user_agent, npm_config_local_prefix) on every run.
   for (const [name, value] of Object.entries(env))
-    if (
-      value !== undefined &&
-      isNpmConfig(name) &&
-      name.toLowerCase() !== "npm_config_update_notifier"
-    )
+    if (value !== undefined && isNpmConfig(name) && publishSetting(name))
       found.push({ name, value });
   return found;
 }

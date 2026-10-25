@@ -233,6 +233,9 @@ describe("release destination", () => {
     const overrides = envOverrides({
       npm_config_dry_run: "true",
       npm_config_update_notifier: "false",
+      // `bun run` sets these on every run; they must not block a release.
+      npm_config_user_agent: "bun/1.4.4",
+      npm_config_local_prefix: "/repo",
     });
     expect(overrides.map((override) => override.name)).toEqual(["npm_config_dry_run"]);
     expect(decide({ ...cleanMain, overrides }).kind).toBe("stop");
