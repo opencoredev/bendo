@@ -810,6 +810,121 @@ def reported(r: Result<&2, &2, S.Errors(), S.Value>, +path: List<&2, S.PathPart>
     case Done{x}: False{}
     case Fail{+es}: Nat.is_le(error_cap(), error_count(es)) || names(es, path)
 
+# The exact error list (BND-89).
+#
+# failures(s, v, Node{}) lists every failure occurrence, in the order
+# docs/data/schema.md documents, by its path:
+# - one at the value itself when it fails a scalar schema, has the wrong kind
+#   or array length, or matches no union member; nothing below such a value;
+# - each array item's failures in item order, under the item's index;
+# - in an object, under Strict, one per member whose key no field declares, in
+#   input order, so a repeated undeclared key appears once per member; then
+#   for each declared field in schema order: one at [k] when the key appears a
+#   number of times its presence forbids, or the failures of its one member
+#   under k;
+# - a non-null value under a nullable, against the inner schema.
+# The decoder reports the first error_cap() of them, or one error at the root
+# for an invalid schema.
+
+type Visit is Data:
+  # v against s.
+  Node{}
+  # v is a suffix of an array whose first item has this index; s is the item schema.
+  Items{index: Nat}
+  # v is an object; s holds the declared fields not yet visited.
+  Fields{}
+
+def join(a: List<&2, List<&2, S.PathPart>>, b: List<&2, List<&2, S.PathPart>>) -> List<&2, List<&2, S.PathPart>>:
+  match a:
+    case Nil{}: b
+    case p <> t: p <> join(t, b)
+
+def under(+part: S.PathPart, ps: List<&2, List<&2, S.PathPart>>) -> List<&2, List<&2, S.PathPart>>:
+  match ps:
+    case Nil{}: []
+    case p <> t: (part <> p) <> under(part, t)
+
+# One failure at p unless the check passed.
+def flag(ok: Bool, p: List<&2, S.PathPart>) -> List<&2, List<&2, S.PathPart>>:
+  match ok:
+    case True{}: []
+    case False{}: [p]
+
+# What lies below a container check: nothing when it fails, which counts as
+# one failure at the container.
+def below(ok: Bool, rest: List<&2, List<&2, S.PathPart>>) -> List<&2, List<&2, S.PathPart>>:
+  match ok:
+    case True{}: rest
+    case False{}: [[]]
+
+def undeclared(+fs: List<&2, S.Field>, input: List<&2, J.Field>) -> List<&2, List<&2, S.PathPart>>:
+  match input:
+    case Nil{}: []
+    case J.Field{+k, v} <> t: join(flag(declares(fs, k), [S.PathKey{k}]), undeclared(fs, t))
+
+def strays(u: S.Unknown, +fs: List<&2, S.Field>, input: List<&2, J.Field>) -> List<&2, List<&2, S.PathPart>>:
+  match u:
+    case S.Strict{}: undeclared(fs, input)
+    case S.Strip{}: []
+
+# A declared key k: its one member's failures, or one failure at [k] when it
+# appears a number of times its presence forbids.
+def field_failures(once: Bool, ok: Bool, k: String, inner: List<&2, List<&2, S.PathPart>>) -> List<&2, List<&2, S.PathPart>>:
+  match once ok:
+    case True{} b: inner
+    case False{} True{}: []
+    case False{} False{}: [[S.PathKey{k}]]
+
+def failures(s: S.Schema, v: J.Json, visit: Visit) -> List<&2, List<&2, S.PathPart>>:
+  match s v visit:
+    case S.StringSchema{a, b, c, d} x Node{}: flag(accepts(S.StringSchema{a, b, c, d}, x), [])
+    case S.NumberSchema{a, b} x Node{}: flag(accepts(S.NumberSchema{a, b}, x), [])
+    case S.IntegerSchema{a, b} x Node{}: flag(accepts(S.IntegerSchema{a, b}, x), [])
+    case S.BooleanSchema{} x Node{}: flag(accepts(S.BooleanSchema{}, x), [])
+    case S.LiteralSchema{a} x Node{}: flag(accepts(S.LiteralSchema{a}, x), [])
+    case S.EnumSchema{a} x Node{}: flag(accepts(S.EnumSchema{a}, x), [])
+    case S.ArraySchema{i, +min, max} J.JArray{+xs} Node{}: below(Nat.is_le(min, size(xs)) && at_most(max, size(xs)), failures(i, J.JArray{xs}, Items{0n}))
+    case S.ArraySchema{i, min, max} x Node{}: [[]]
+    case i J.JArray{Nil{}} Items{k}: []
+    case +i J.JArray{h <> t} Items{+k}: join(under(S.PathIndex{k}, failures(i, h, Node{})), failures(i, J.JArray{t}, Items{1n+k}))
+    case S.ObjectSchema{Nil{}, u} J.JObject{input} Node{}: strays(u, [], input)
+    case S.ObjectSchema{S.Field{+k, +c, +p} <> +t, +u} J.JObject{+input} Node{}: join(strays(u, S.Field{k, c, p} <> t, input), join(field_failures(Nat.is_eq(named(input, k), 1n), presence(p, named(input, k)), k, under(S.PathKey{k}, failures(c, member(input, k), Node{}))), failures(S.ObjectSchema{t, u}, J.JObject{input}, Fields{})))
+    case S.ObjectSchema{fs, u} x Node{}: [[]]
+    case S.ObjectSchema{Nil{}, u} J.JObject{input} Fields{}: []
+    case S.ObjectSchema{S.Field{+k, +c, +p} <> t, u} J.JObject{+input} Fields{}: join(field_failures(Nat.is_eq(named(input, k), 1n), presence(p, named(input, k)), k, under(S.PathKey{k}, failures(c, member(input, k), Node{}))), failures(S.ObjectSchema{t, u}, J.JObject{input}, Fields{}))
+    case S.NullableSchema{i} J.JNull{} Node{}: []
+    case S.NullableSchema{i} x Node{}: failures(i, x, Node{})
+    case S.UnionSchema{ms} x Node{}: flag(meets(S.UnionSchema{ms}, Holds{}, x), [])
+    case _ _ _: []
+
+# The first n entries.
+def first_paths(ps: List<&2, List<&2, S.PathPart>>, n: Nat) -> List<&2, List<&2, S.PathPart>>:
+  match ps n:
+    case Nil{} k: []
+    case p <> t 0n: []
+    case p <> t 1n+k: p <> first_paths(t, k)
+
+def located_paths(ok: Bool, +s: S.Schema, v: J.Json) -> List<&2, List<&2, S.PathPart>>:
+  match ok:
+    case True{}: first_paths(failures(s, v, Node{}), error_cap())
+    case False{}: [[]]
+
+# The paths the decoder must list, in order: the first error_cap() failures,
+# or the root alone for an invalid schema. Empty exactly when v satisfies s.
+def error_paths(+s: S.Schema, v: J.Json) -> List<&2, List<&2, S.PathPart>>:
+  located_paths(schema_ok(s), s, v)
+
+def paths(es: List<&2, S.Error>) -> List<&2, List<&2, S.PathPart>>:
+  match es:
+    case Nil{}: []
+    case S.Error{c, m, p} <> t: p <> paths(t)
+
+# The paths a result lists: none for a success.
+def listed_paths(r: Result<&2, &2, S.Errors(), S.Value>) -> List<&2, List<&2, S.PathPart>>:
+  match r:
+    case Done{x}: []
+    case Fail{es}: paths(es)
+
 # Coercion for text sources (BND-35), restated: a string under a number or
 # integer schema that is an RFC 8259 number token becomes that number; "true"
 # and "false" under a boolean schema become booleans; arrays coerce each item

@@ -1254,6 +1254,27 @@ law schema_errors_complete:
   for fault: {SchemaSpec.error_at(schema, value, path) == True{} : Bool}
   {SchemaSpec.reported(Schema.decode(schema, value), path) == True{} : Bool}
 
+# BND-89: and nothing else, in order. The paths a decoder lists equal the
+# first error_cap() entries of SchemaSpec.failures, an independent enumeration
+# of every failure occurrence in the documented traversal order: array items
+# in order, under Strict one per undeclared member in input order (so repeated
+# undeclared keys give repeated paths), then declared fields in schema order;
+# nothing below a failed kind or length check, and one entry at a union that
+# no member matches. An invalid schema lists the root alone, and an accepted
+# value lists nothing, which happens exactly when the enumeration is empty.
+law schema_errors_exact:
+  for +schema: Schema.Schema
+  for +value: Json.Json
+  {SchemaSpec.listed_paths(Schema.decode(schema, value)) == SchemaSpec.error_paths(schema, value) : List<&2, List<&2, Schema.PathPart>>}
+
+# BND-89: an invalid schema rejects every value with one InvalidSchema error at
+# the root.
+law schema_invalid_reports_root:
+  for +schema: Schema.Schema
+  for +value: Json.Json
+  for invalid: {SchemaSpec.schema_ok(schema) == False{} : Bool}
+  {Schema.decode(schema, value) == Fail{[Schema.Error{Schema.InvalidSchema{}, "invalid schema", []}]} : Result<&2, &2, Schema.Errors(), Schema.Value>}
+
 # BND-35: coercion for text sources (params, query, headers, forms) is exactly
 # the independent restatement SchemaSpec.coerce_text: number tokens under number
 # and integer schemas, "true"/"false" under boolean schemas, items under arrays,
@@ -1288,6 +1309,19 @@ law schema_coerced_errors_complete:
   for +path: List<&2, Schema.PathPart>
   for fault: {SchemaSpec.error_at(schema, SchemaSpec.coerce_text(schema, value), path) == True{} : Bool}
   {SchemaSpec.reported(Schema.decode_from(Schema.TextSource{}, schema, value), path) == True{} : Bool}
+
+# BND-89: the exact error list and the invalid-schema rule in text mode, read
+# against the coerced value.
+law schema_coerced_errors_exact:
+  for +schema: Schema.Schema
+  for +value: Json.Json
+  {SchemaSpec.listed_paths(Schema.decode_from(Schema.TextSource{}, schema, value)) == SchemaSpec.error_paths(schema, SchemaSpec.coerce_text(schema, value)) : List<&2, List<&2, Schema.PathPart>>}
+
+law schema_coerced_invalid_reports_root:
+  for +schema: Schema.Schema
+  for +value: Json.Json
+  for invalid: {SchemaSpec.schema_ok(schema) == False{} : Bool}
+  {Schema.decode_from(Schema.TextSource{}, schema, value) == Fail{[Schema.Error{Schema.InvalidSchema{}, "invalid schema", []}]} : Result<&2, &2, Schema.Errors(), Schema.Value>}
 
 # BND-24: selection from source memberships, independent of runtime helpers.
 # Globals precede inherited group/guard placements and then route-local hooks;
