@@ -185,3 +185,18 @@ The upstream host laws compare `Upstream.read_authority` with `proof/upstream-ho
 - `proxy_upstream_rejects_hyphen_edge`, `proxy_upstream_rejects_trailing_hyphen`: `-a.example` and `a-.example` are refused, because a label may not start or end with `-`.
 - `proxy_upstream_rejects_port_zero`: `a.example:0` is refused.
 - `proxy_upstream_keeps_port_digits`: `a.example:080` is accepted and keeps the port digits `080` as written.
+
+## Compression
+
+These laws are about `Compress.decide` in `src/mw/compress_policy.bend`, which judges one buffered response for the request's method and its parsed `Accept-Encoding` preferences. The shell in `src/compress.bend` and the zlib effect are covered by `tests/mw-compress.test.ts`. See [compress responses](../compression.md).
+
+- `compress_encode_accepted`: a response is compressed with a coding only when the request accepts that coding at a nonzero weight. So `q=0` refuses a coding, and a request without `Accept-Encoding` never gets a compressed body.
+- `compress_select_nonzero`: negotiation never picks a coding whose weight is 0.
+- `compress_select_not_below_identity`: negotiation never picks a coding the client weighs below `identity`.
+- `compress_select_tie_gzip`: deflate is picked only when it weighs strictly more than gzip, so a tie goes to gzip.
+- `compress_small_kept`: a body shorter than the configured threshold is never compressed.
+- `compress_large_kept`: a body longer than the configured limit is never compressed, which bounds the memory one compression takes.
+- `compress_encoded_kept`: a response that already has `Content-Encoding` is left exactly as it is, so nothing is encoded twice.
+- `compress_stream_kept`: a streamed response (a stream, Server-Sent Events, the proxy) is left exactly as it is.
+- `compress_head_not_encoded`: a HEAD answer is never compressed.
+- `compress_no_content_not_encoded`, `compress_partial_not_encoded`, `compress_not_modified_not_encoded`: 204, 206 and 304 responses are never compressed.

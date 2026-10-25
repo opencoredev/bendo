@@ -29,6 +29,9 @@ import ./proof/csrf-v1.bend as CsrfV1Proof
 # BND-47
 import ./proof/proxy.bend as ProxyProof
 
+# BND-46
+import ./proof/compress.bend as CompressProof
+
 # BND-44
 import ./proof/ip.bend as IpProof
 import ./proof/rate-limit.bend as RateLimitProof
@@ -958,3 +961,40 @@ def Laws.websocket_refusal_clock_failure(res, error):
 def Laws.json_roundtrip(value, pretty, ascii, valid):
   +output = String.reverse(JsonWriterProof.render_acc(512n, value, True{}, pretty, ascii, 0n, True{}, ""))
   (output, (JsonWriterProof.write_output(value, pretty, ascii, valid), JsonTreeParseProof.parse_output(value, pretty, ascii, valid)))
+
+# BND-46: response compression decisions.
+def Laws.compress_encode_accepted(cfg, m, accept, status, hs, body, rep, c, h):
+  CompressProof.encode_accepted(cfg, m, accept, status, hs, body, rep, c, h)
+
+def Laws.compress_select_nonzero(prefs, c, h):
+  CompressProof.select_nonzero(prefs, c, h)
+
+def Laws.compress_select_not_below_identity(prefs, c, h):
+  CompressProof.select_not_below_identity(prefs, c, h)
+
+def Laws.compress_select_tie_gzip(prefs, h):
+  CompressProof.select_deflate_strict(prefs, h)
+
+def Laws.compress_small_kept(cfg, m, accept, status, hs, body, rep, h):
+  CompressProof.small_kept(cfg, m, accept, status, hs, body, rep, h)
+
+def Laws.compress_large_kept(cfg, m, accept, status, hs, body, rep, h):
+  CompressProof.large_kept(cfg, m, accept, status, hs, body, rep, h)
+
+def Laws.compress_encoded_kept(cfg, m, accept, status, hs, body, rep, h):
+  CompressProof.encoded_kept(cfg, m, accept, status, hs, body, rep, h)
+
+def Laws.compress_stream_kept(cfg, m, accept, status, hs, body, rep, h):
+  CompressProof.stream_kept(cfg, m, accept, status, hs, body, rep, h)
+
+def Laws.compress_head_not_encoded(cfg, accept, status, hs, body, rep):
+  CompressProof.head_not_encoded(cfg, accept, status, hs, body, rep)
+
+def Laws.compress_no_content_not_encoded(cfg, m, accept, hs, body, rep):
+  CompressProof.no_content_not_encoded(cfg, m, accept, hs, body, rep)
+
+def Laws.compress_partial_not_encoded(cfg, m, accept, hs, body, rep):
+  CompressProof.partial_not_encoded(cfg, m, accept, hs, body, rep)
+
+def Laws.compress_not_modified_not_encoded(cfg, m, accept, hs, body, rep):
+  CompressProof.not_modified_not_encoded(cfg, m, accept, hs, body, rep)

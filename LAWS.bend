@@ -139,6 +139,7 @@ import ./proof/date-spec.bend as HttpDateSpec
 
 # BND-45
 import ./src/static/path.bend as StaticPath
+import ./src/mw/compress_policy.bend as Compress
 import ./proof/static-spec.bend as StaticSpec
 
 # BND-51
@@ -2471,3 +2472,130 @@ law json_roundtrip:
   exs output: String
   {Json.write(value, pretty, ascii) == Done{output} : Result<&2, &2, Json.Error, String>} &
   {Json.parse(Utf8.encode(output)) == Done{value} : Result<&2, &2, Json.Error, Json.Json>}
+
+# BND-46: response compression. Compress.decide judges one buffered response
+# for a request's method and parsed Accept-Encoding preferences.
+
+# A coding is only ever applied when the request accepts it at a nonzero
+# weight. In particular q=0 refuses a coding, and a request without
+# Accept-Encoding never gets a compressed body.
+law compress_encode_accepted:
+  for +cfg: Compress.Config
+  for +m: Request.Method
+  for +accept: Maybe<&2, List<&2, Compress.Pref>>
+  for +status: U32
+  for +hs: List<&2, Request.Header>
+  for +body: List<&2, U32>
+  for +rep: Maybe<&2, List<&2, U32>>
+  for +c: Compress.Coding
+  for h: {Compress.decide(cfg, m, accept, Response.Res{status, hs, body, rep}) == Compress.Encode{c} : Compress.Plan}
+  {Compress.accepts(accept, c) == True{} : Bool}
+
+# Negotiation never picks a coding whose weight is 0.
+law compress_select_nonzero:
+  for +prefs: List<&2, Compress.Pref>
+  for +c: Compress.Coding
+  for h: {Compress.select(prefs) == Some{c} : Maybe<&2, Compress.Coding>}
+  {Nat.is_eq(Compress.quality(prefs, c), 0n) == False{} : Bool}
+
+# Negotiation never picks a coding the client weighs below identity.
+law compress_select_not_below_identity:
+  for +prefs: List<&2, Compress.Pref>
+  for +c: Compress.Coding
+  for h: {Compress.select(prefs) == Some{c} : Maybe<&2, Compress.Coding>}
+  {Nat.is_lt(Compress.quality(prefs, c), Compress.identity_quality(prefs)) == False{} : Bool}
+
+# Deflate is picked only when its weight is strictly above gzip's, so a tie
+# goes to gzip.
+law compress_select_tie_gzip:
+  for +prefs: List<&2, Compress.Pref>
+  for h: {Compress.select(prefs) == Some{Compress.Deflate{}} : Maybe<&2, Compress.Coding>}
+  {Nat.is_lt(Compress.quality(prefs, Compress.Gzip{}), Compress.quality(prefs, Compress.Deflate{})) == True{} : Bool}
+
+# A body shorter than the threshold is never compressed.
+law compress_small_kept:
+  for +cfg: Compress.Config
+  for +m: Request.Method
+  for +accept: Maybe<&2, List<&2, Compress.Pref>>
+  for +status: U32
+  for +hs: List<&2, Request.Header>
+  for +body: List<&2, U32>
+  for +rep: Maybe<&2, List<&2, U32>>
+  for h: {Nat.is_lt(Response.length(body), U32.to_nat(Compress.threshold(cfg))) == True{} : Bool}
+  {Compress.encodes(Compress.decide(cfg, m, accept, Response.Res{status, hs, body, rep})) == False{} : Bool}
+
+# A body longer than the limit is never compressed, which bounds the memory
+# one compression takes.
+law compress_large_kept:
+  for +cfg: Compress.Config
+  for +m: Request.Method
+  for +accept: Maybe<&2, List<&2, Compress.Pref>>
+  for +status: U32
+  for +hs: List<&2, Request.Header>
+  for +body: List<&2, U32>
+  for +rep: Maybe<&2, List<&2, U32>>
+  for h: {Nat.is_lt(U32.to_nat(Compress.limit(cfg)), Response.length(body)) == True{} : Bool}
+  {Compress.encodes(Compress.decide(cfg, m, accept, Response.Res{status, hs, body, rep})) == False{} : Bool}
+
+# A response that already has Content-Encoding is left exactly as it is: it
+# is never encoded twice, and no Vary is added.
+law compress_encoded_kept:
+  for +cfg: Compress.Config
+  for +m: Request.Method
+  for +accept: Maybe<&2, List<&2, Compress.Pref>>
+  for +status: U32
+  for +hs: List<&2, Request.Header>
+  for +body: List<&2, U32>
+  for +rep: Maybe<&2, List<&2, U32>>
+  for h: {List.is_empty(&2, List<&2, U32>, Request.lookup(hs, "content-encoding")) == False{} : Bool}
+  {Compress.decide(cfg, m, accept, Response.Res{status, hs, body, rep}) == Compress.Keep{} : Compress.Plan}
+
+# A streamed response (B.stream, SSE, the proxy) is left exactly as it is.
+law compress_stream_kept:
+  for +cfg: Compress.Config
+  for +m: Request.Method
+  for +accept: Maybe<&2, List<&2, Compress.Pref>>
+  for +status: U32
+  for +hs: List<&2, Request.Header>
+  for +body: List<&2, U32>
+  for +rep: Maybe<&2, List<&2, U32>>
+  for h: {List.is_empty(&2, List<&2, U32>, Request.lookup(hs, "x-bendo-stream-internal")) == False{} : Bool}
+  {Compress.decide(cfg, m, accept, Response.Res{status, hs, body, rep}) == Compress.Keep{} : Compress.Plan}
+
+# A HEAD answer is never compressed.
+law compress_head_not_encoded:
+  for +cfg: Compress.Config
+  for +accept: Maybe<&2, List<&2, Compress.Pref>>
+  for +status: U32
+  for +hs: List<&2, Request.Header>
+  for +body: List<&2, U32>
+  for +rep: Maybe<&2, List<&2, U32>>
+  {Compress.encodes(Compress.decide(cfg, Request.Head{}, accept, Response.Res{status, hs, body, rep})) == False{} : Bool}
+
+# 204, 206 and 304 responses are never compressed.
+law compress_no_content_not_encoded:
+  for +cfg: Compress.Config
+  for +m: Request.Method
+  for +accept: Maybe<&2, List<&2, Compress.Pref>>
+  for +hs: List<&2, Request.Header>
+  for +body: List<&2, U32>
+  for +rep: Maybe<&2, List<&2, U32>>
+  {Compress.encodes(Compress.decide(cfg, m, accept, Response.Res{204, hs, body, rep})) == False{} : Bool}
+
+law compress_partial_not_encoded:
+  for +cfg: Compress.Config
+  for +m: Request.Method
+  for +accept: Maybe<&2, List<&2, Compress.Pref>>
+  for +hs: List<&2, Request.Header>
+  for +body: List<&2, U32>
+  for +rep: Maybe<&2, List<&2, U32>>
+  {Compress.encodes(Compress.decide(cfg, m, accept, Response.Res{206, hs, body, rep})) == False{} : Bool}
+
+law compress_not_modified_not_encoded:
+  for +cfg: Compress.Config
+  for +m: Request.Method
+  for +accept: Maybe<&2, List<&2, Compress.Pref>>
+  for +hs: List<&2, Request.Header>
+  for +body: List<&2, U32>
+  for +rep: Maybe<&2, List<&2, U32>>
+  {Compress.encodes(Compress.decide(cfg, m, accept, Response.Res{304, hs, body, rep})) == False{} : Bool}
