@@ -451,7 +451,7 @@ describe("bun run release --dry-run", () => {
         for (const pkg of report.npm) {
           expect(pkg.version).toBe(report.version);
           expect(pkg.access).toBe("public");
-          expect(pkg.npmCheck.kind).toBe("agrees");
+          expect(pkg.npmCheck).toMatchObject({ kind: "agrees" });
           expect(pkg.registry).toEqual({ kind: "publish" });
           expect(pkg.command.slice(0, 3)).toEqual(["npm", "publish", pkg.tarball]);
           expect(pkg.command).toContain("--access");

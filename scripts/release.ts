@@ -373,7 +373,8 @@ function npmCheck(input: {
       reason: `exit ${result.code}: ${result.stderr.trim().split("\n").at(-1) ?? ""}`,
     };
   const data: unknown = JSON.parse(result.stdout);
-  const entry = isRecord(data) ? data[name] : undefined;
+  // npm 11 keys the entry by package name; npm 10 prints the entry itself.
+  const entry = !isRecord(data) ? undefined : typeof data.id === "string" ? data : data[name];
   if (
     !isRecord(entry) ||
     typeof entry.id !== "string" ||
