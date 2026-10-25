@@ -130,7 +130,8 @@ that declares none.
 
 A rejection lists the errors of every failing slot, in the order params, query,
 headers, body. Within a slot the errors are exactly the
-[schema error list](data/schema.md#errors), with the slot name in front of each
+[schema error list](data/schema.md#errors), every failure once in a fixed order
+(`schema_errors_exact`), with the slot name in front of each
 path, so a query error for `page` has the path `["query","page"]`. A request
 reports at most 100 errors in all: the first 100 in slot order. Every slot is
 still checked, so the status follows the table below even when the list is
