@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { release } from "node:os";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { findBend } from "../packages/bendo/src/bend.ts";
@@ -50,13 +58,26 @@ function nativeIdentity(): string {
   return nativePlatform;
 }
 
-/** Cache a complete dependency graph, including foreign effects and their twins. */
-export function compile(entry: string, target: Target): string {
+type Compiler = Extract<ReturnType<typeof findBend>, { kind: "found" }>;
+
+function pinnedCompiler(): Compiler {
   compiler ??= findBend();
   if (compiler.kind === "missing") throw new Error("bend is not installed");
   const pinned = readFileSync(join(ROOT, ".bend-version"), "utf8").trim();
   if (compiler.version !== pinned)
     throw new Error(`Expected Bend ${pinned}, found ${compiler.version}`);
+  return compiler;
+}
+
+/**
+ * The cache directory for an entry's complete dependency graph, including
+ * foreign effects and their twins. `mode` is a compile target or "check".
+ */
+function graphDirectory(
+  entry: string,
+  mode: Target | "check",
+): { source: string; directory: string } {
+  const pinned = pinnedCompiler().version;
   const source = resolve(ROOT, entry);
   const graph = new Map<string, Buffer>();
   function visit(path: string): void {
@@ -86,11 +107,11 @@ export function compile(entry: string, target: Target): string {
     JSON.stringify([
       "bendo-fixture-v1",
       pinned,
-      target,
+      mode,
       process.platform,
       process.arch,
       relative(base, source),
-      target === "native" ? `${nativeIdentity()}\nsequential-c-v1` : "",
+      mode === "native" ? `${nativeIdentity()}\nsequential-c-v1` : "",
     ]),
   );
   for (const [path, contents] of [...graph]
@@ -101,6 +122,13 @@ export function compile(entry: string, target: Target): string {
   }
   const directory = join(ROOT, ".cache/bend", hash.digest("hex"));
   mkdirSync(directory, { recursive: true });
+  return { source, directory };
+}
+
+/** Cache a complete dependency graph, including foreign effects and their twins. */
+export function compile(entry: string, target: Target): string {
+  const compiler = pinnedCompiler();
+  const { source, directory } = graphDirectory(entry, target);
   const name = target === "native" ? "fixture" : `fixture.${target}`;
   const output = join(directory, name);
   if (existsSync(output)) return output;
@@ -136,6 +164,36 @@ export function compile(entry: string, target: Target): string {
   } finally {
     rmSync(temporary, { recursive: true, force: true });
   }
+}
+
+/**
+ * Typechecks a Bend entry and its imports with `bend --check-only`, without
+ * building it. A server always depends on `@unsafe` and foreign code, which
+ * the checker reports as its one error; any other error fails. A passing graph
+ * is remembered in the fixture cache.
+ */
+export function checkOnly(entry: string): void {
+  const compiler = pinnedCompiler();
+  const { source, directory } = graphDirectory(entry, "check");
+  const marker = join(directory, "checked");
+  if (existsSync(marker)) return;
+  const result = Bun.spawnSync(
+    ["timeout", "--foreground", BEND_COMPILE_TIMEOUT, compiler.path, source, "--check-only"],
+    { stdout: "pipe", stderr: "pipe", env: { ...process.env, BEND_NO_TELEMETRY: "1" } },
+  );
+  const output = `${result.stdout}${result.stderr}`;
+  const errors = output.split("\n").filter((line) => line.startsWith("Error"));
+  const clean =
+    (result.exitCode === 0 && errors.length === 0) ||
+    (result.exitCode === 1 &&
+      errors.length === 1 &&
+      /^Error: \d+ defs rely on unsafe or foreign code:$/.test(errors[0] ?? "") &&
+      !output.includes("\nLocation"));
+  if (!clean)
+    throw new Error(
+      `bend --check-only failed (${entry}, exit ${result.exitCode}, signal ${result.signalCode}):\n${output}`,
+    );
+  writeFileSync(marker, "");
 }
 
 /** Compiles a Bend entry file to a cached native binary and returns its path. */
