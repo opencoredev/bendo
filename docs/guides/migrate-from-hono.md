@@ -126,8 +126,8 @@ const app = new Hono<Env>({ router: new RegExpRouter() });
 
 ```bend [Bendo]
 def with_router(config: Config.Config, kind: B.RouterKind) -> Config.Config:
-  Config.Config{host, port, limit, headers, idle, head, body, max, keep, old, mode, workers} = config
-  Config.Config{host, port, limit, headers, idle, head, body, max, keep, kind, mode, workers}
+  Config.Config{host, port, limit, headers, idle, head, body, write, max, keep, old, mode, workers} = config
+  Config.Config{host, port, limit, headers, idle, head, body, write, max, keep, kind, mode, workers}
 ```
 
 :::
@@ -1221,8 +1221,8 @@ def app() -> B.Builder(Tag):
   health(B.app_from(Tag, entries()))
 
 def with_router(config: Config.Config, kind: B.RouterKind) -> Config.Config:
-  Config.Config{host, port, limit, headers, idle, head, body, max, keep, old, mode, workers} = config
-  Config.Config{host, port, limit, headers, idle, head, body, max, keep, kind, mode, workers}
+  Config.Config{host, port, limit, headers, idle, head, body, write, max, keep, old, mode, workers} = config
+  Config.Config{host, port, limit, headers, idle, head, body, write, max, keep, kind, mode, workers}
 
 def ready(env: Env, result: Result<&2, &2, B.RouteError, B.Routes(Tag)>) -> IO(Unit):
   match result:

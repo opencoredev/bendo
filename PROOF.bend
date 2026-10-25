@@ -30,6 +30,9 @@ import ./proof/csrf-v1.bend as CsrfV1Proof
 # BND-47
 import ./proof/proxy.bend as ProxyProof
 
+# BND-106
+import ./proof/write-progress.bend as WriteProgressProof
+
 # BND-44
 import ./proof/ip.bend as IpProof
 import ./proof/rate-limit.bend as RateLimitProof
