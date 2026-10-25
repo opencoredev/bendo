@@ -133,10 +133,10 @@ def send_ms(-User: Data, cfg: Config, state: State<User>, now: Nat) -> U32:
     case S.WsClosing{}: remaining(now, closing, wait_ms(closing_ms), wait_ms(write))
     case _: wait_ms(write)
 
+# The NeedMore, Partial and Got arms of drive keep exactly the state F.feed
+# models, so ws_decode_incremental covers every way reads split the input.
 def decode(max: U32, bytes: List<&2, U32>, body: Maybe<&2, F.Body>) -> F.Decoded:
-  match body:
-    case None{}: F.start(F.Config{F.Server{}, S.cap(max)}, bytes)
-    case Some{b}: F.resume(b, bytes)
+  F.next(F.Config{F.Server{}, S.cap(max)}, body, bytes)
 
 def writing(-User: Data, state: State<User>, phase: S.Phase, now: Nat) -> State<User>:
   State{user, old, assembly, pending, body, received, ping, closing, wait} = state

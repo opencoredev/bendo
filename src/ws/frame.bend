@@ -556,3 +556,38 @@ def settle(d: Decoded) -> Decoded:
 # bytes needs at least `left` more.
 def decode(cfg: Config, xs: List<&2, U32>) -> Decoded:
   settle(start(cfg, xs))
+
+# One decode on the bytes buffered so far, as the connection runs it: `start`
+# with no frame in progress, `resume` once a header was accepted.
+def next(cfg: Config, body: Maybe<&2, Body>, xs: List<&2, U32>) -> Decoded:
+  match body:
+    case None{}:
+      start(cfg, xs)
+    case Some{b}:
+      resume(b, xs)
+
+# The connection's read loop (drive in connection.bend) over the chunks its
+# reads return, as a pure fold. `d` came from decoding `pending`. A header
+# still short of bytes keeps them and decodes again with the next chunk
+# appended; a frame in progress drops them, since its Body holds the progress,
+# and resumes on the next chunk alone. Once a frame or rejection is out, later
+# chunks only follow the frame's rest. The connection skips a decode while
+# nothing is buffered; that decode would leave its state as it was.
+def feed_go(+cfg: Config, chunks: List<&2, List<&2, U32>>, d: Decoded, +pending: List<&2, U32>) -> Decoded:
+  match chunks:
+    case Nil{}:
+      d
+    case +c <> t:
+      match d:
+        case NeedMore{_}:
+          feed_go(cfg, t, next(cfg, None{}, List.append(&2, U32, pending, c)), List.append(&2, U32, pending, c))
+        case Partial{b}:
+          feed_go(cfg, t, next(cfg, Some{b}, c), c)
+        case Got{f, k, rest}:
+          Got{f, k, List.append(&2, U32, rest, List.concat(&2, U32, c <> t))}
+        case Reject{code}:
+          Reject{code}
+
+# Decode `pending` from the state `body`, then each chunk as it arrives.
+def feed(+cfg: Config, +body: Maybe<&2, Body>, +pending: List<&2, U32>, chunks: List<&2, List<&2, U32>>) -> Decoded:
+  feed_go(cfg, chunks, next(cfg, body, pending), pending)
