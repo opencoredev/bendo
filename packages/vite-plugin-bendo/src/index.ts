@@ -1,12 +1,14 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
-import type {
-  DevEnvironment,
-  EnvironmentModuleNode,
-  ErrorPayload,
-  HotUpdateOptions,
-  Plugin,
-  ViteDevServer,
+import {
+  isFileLoadingAllowed,
+  normalizePath,
+  type DevEnvironment,
+  type EnvironmentModuleNode,
+  type ErrorPayload,
+  type HotUpdateOptions,
+  type Plugin,
+  type ViteDevServer,
 } from "vite";
 import { Compiler, canonical, findBendPath, type CompilerOptions } from "./compiler.ts";
 import type { Diagnostic } from "./diagnostic.ts";
@@ -307,6 +309,12 @@ export default function bendo(options: BendoPluginOptions = {}): Plugin & { api:
     async load(id) {
       const file = bendFile(id);
       if (file === undefined || !existsSync(file)) return null;
+      // A dev server answers requests, so it compiles only what `server.fs`
+      // lets Vite load: the allow list, plus files an allowed module imports.
+      // Leaving the file to Vite gets its own 403, with nothing compiled or
+      // written. A build reads only the app's import graph and has no allow list.
+      if (server !== undefined && !isFileLoadingAllowed(server.config, normalizePath(file)))
+        return null;
       const outcome = await ready().compile(file);
       if (outcome.kind === "cancelled")
         throw new Error(`${NAME}: Vite closed while ${file} compiled`);
