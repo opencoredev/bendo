@@ -202,8 +202,9 @@ are signed with the first key, and a cookie verifies under any of them, so put
 a new secret first and keep the old one after it until its cookies expire.
 `SignedCookie.configure` returns `None{}` for an empty list or when any key is
 empty or holds a non-scalar character. Build keys with it once at startup
-rather than with the `Keys` constructor: the cookie calls recheck every slot
-and fail with `Cookie.InvalidSecret{}` on a bad one.
+rather than with the `Keys` constructor: the cookie calls recheck every slot.
+On a bad one, `B.set_signed_cookie` fails with `Cookie.InvalidSecret{}` and
+`B.signed_cookie` returns `None{}`, as it does for a cookie that doesn't verify.
 
 ```bend
 def ex_keys() -> Maybe<&2, SignedCookie.Keys>:
