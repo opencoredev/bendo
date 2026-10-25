@@ -625,11 +625,12 @@ def ex_echo_socket(c: B.Ctx) -> IO(B.Res):
 
 ```bend signature
 type Hub is Data:
-  Hub{registry: B.Store(Ledger<B.WebSocketHandle>)}
+  Hub{registry: B.Store(Ledger<B.WebSocketHandle>), limits: Limits}
 ```
 
-The topic registry for `P.handlers`, held by a store actor. It is copyable
-`Data`: create one at startup and keep it in `env`. Its fields are internal.
+The topic registry for `P.handlers`, held by a store actor, and the
+subscription limits it enforces. It is copyable `Data`: create one at startup
+and keep it in `env`. Its fields are internal.
 
 ```bend
 type ExEnv is Data:
@@ -642,8 +643,8 @@ type ExEnv is Data:
 def hub() -> IO(P.Hub)
 ```
 
-Spawns the registry actor and returns its hub. Each registry operation waits
-at most 5,000 milliseconds.
+Spawns the registry actor and returns its hub, with `P.limits_default()`. Each
+registry operation waits at most 5,000 milliseconds.
 
 ```bend
 def ex_startup() -> IO(ExEnv):
@@ -666,6 +667,42 @@ def ex_patient_startup() -> IO(ExEnv):
   do IO<ExEnv>:
     hub : P.Hub <- P.hub_with_timeout(15000)
     return ExEnv{hub}
+```
+
+### `P.hub_with`
+
+```bend signature
+def hub_with(limits: Limits, timeout_ms: U32) -> IO(P.Hub)
+```
+
+`P.hub` with your own subscription limits and registry budget.
+
+```bend
+def ex_limited_startup() -> IO(ExEnv):
+  do IO<ExEnv>:
+    hub : P.Hub <- P.hub_with(P.limits(32n, 10000n, 64n), 5000)
+    return ExEnv{hub}
+```
+
+### `P.limits`, `P.limits_default`
+
+```bend signature
+def limits(per_peer: Nat, per_hub: Nat, topic_bytes: Nat) -> Limits
+def limits_default() -> Limits
+```
+
+Subscription limits for `P.hub_with`: how many topics one connection may hold
+at once, how many subscriptions the hub holds across all connections, and the
+longest topic name in UTF-8 bytes. `P.limits_default()` is 128 per connection,
+65,536 per hub and 255 bytes, the limits `P.hub` uses. A subscribe over any
+limit is refused before the registry changes; see `P.subscribe_checked`.
+
+```bend
+def ex_tight() -> IO(P.Hub):
+  P.hub_with(P.limits(8n, 1024n, 32n), 5000)
+
+def ex_default_limits() -> IO(P.Hub):
+  P.hub_with(P.limits_default(), 5000)
 ```
 
 ### `P.Peer`
@@ -711,13 +748,53 @@ def subscribe(peer: P.Peer, topic: String) -> IO(Bool)
 
 Adds the connection to `topic` and returns `True` once the registry has
 applied it, so a publication that starts afterwards reaches it. Subscribing
-twice keeps one membership. `False` means the hub timed out or is
-unavailable, or the connection has already closed. The connection leaves
-every topic when it closes, so `on_close` need not unsubscribe.
+twice keeps one membership and uses one slot. `False` means a limit refused
+it, the hub timed out or is unavailable, or the connection has already
+closed; `P.subscribe_checked` says which. The connection leaves every topic
+when it closes, so `on_close` need not unsubscribe.
 
 ```bend
 def ex_follow(peer: P.Peer, topic: String) -> IO(Bool):
   P.subscribe(peer, topic)
+```
+
+### `P.subscribe_checked`, `P.Subscription`
+
+```bend signature
+def subscribe_checked(peer: P.Peer, topic: String) -> IO(P.Subscription)
+
+type Subscription is Data:
+  Subscribed{}
+  Closed{}
+  TopicTooLong{}
+  PeerLimit{}
+  HubLimit{}
+  HubError{error: B.StoreError}
+```
+
+`P.subscribe` with the reason. The hub checks, in this order, inside one
+registry update: the connection is open (else `Closed`), `topic` fits the
+hub's `topic_bytes` in UTF-8 (`TopicTooLong`), the connection is not already
+in `topic` (then `Subscribed` with nothing changed, so a repeat uses no slot),
+the connection holds fewer than `per_peer` topics (`PeerLimit`), and the hub
+holds fewer than `per_hub` subscriptions (`HubLimit`). Every refusal leaves the
+registry as it was. `HubError` means the hub timed out or is unavailable; a
+timed-out subscribe may still apply. Closing or unsubscribing frees slots.
+
+```bend
+def ex_reason(s: P.Subscription) -> String:
+  match s:
+    case P.Subscribed{}: "subscribed"
+    case P.Closed{}: "closed"
+    case P.TopicTooLong{}: "topic too long"
+    case P.PeerLimit{}: "too many topics for this connection"
+    case P.HubLimit{}: "server is full"
+    case P.HubError{e}: "try again"
+
+def ex_follow_checked(+peer: P.Peer, topic: String) -> IO(Bool):
+  do IO<Bool>:
+    got : P.Subscription <- P.subscribe_checked(peer, topic)
+    B.websocket_send_text(P.handle(peer), ex_reason(got))
 ```
 
 ### `P.unsubscribe`

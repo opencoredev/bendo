@@ -97,12 +97,15 @@ export function compilerDiagnostic(
   return `${entry}: location ${matches.length > 1 ? `ambiguous (${candidates})` : "unavailable"}: ${plain || "Bend compilation failed"}`;
 }
 
-/** Precompile schema seam; the manifest phase runs only after an app exists. */
+/**
+ * Route types and response schemas come from the built app's manifest, so
+ * before a compile there is nothing to generate; `bendo gen` writes them.
+ */
 export async function generateSchemas(): Promise<void>;
 export async function generateSchemas(binary: string): Promise<Manifest>;
 export async function generateSchemas(binary?: string): Promise<void | Manifest> {
   if (binary === undefined) {
-    log("generate: schema generation pending BND-34/35 (no production generator)");
+    log("generate: route types come from the built app; run `bendo gen` to refresh .bendo/");
     return;
   }
   const manifest = fetchManifest(binary);

@@ -14,8 +14,10 @@ import ../app/context.bend as Context
 import ../http/websocket.bend as Handshake
 import ../http/response.bend as Response
 
+# `limits` caps subscriptions per connection and per hub, and topic length
+# (BND-105); every subscribe is checked against them inside the actor.
 type Hub is Data:
-  Hub{registry: Store.Store<T.Ledger<W.Handle>>}
+  Hub{registry: Store.Store<T.Ledger<W.Handle>>, limits: T.Limits}
 
 # What a pub/sub handler receives in place of the bare handle: the
 # connection's mailbox, its registry ID, and the hub it joined.
@@ -29,17 +31,33 @@ type Peer is Data:
 type Delivery is Data:
   Delivery{sent: Nat, dropped: Nat, gone: Nat}
 
-def hub_with_timeout(timeout_ms: U32) -> IO(Hub):
+# Subscriptions one connection may hold, subscriptions the hub may hold in
+# all, and the longest topic name in UTF-8 bytes.
+def limits(per_peer: Nat, per_hub: Nat, topic_bytes: Nat) -> T.Limits:
+  T.Limits{per_peer, per_hub, topic_bytes}
+
+# 128 per connection, 65,536 per hub, 255-byte topics.
+def limits_default() -> T.Limits:
+  T.limits_default()
+
+def hub_with(limits: T.Limits, timeout_ms: U32) -> IO(Hub):
   do IO<Hub>:
     registry : Store.Store<T.Ledger<W.Handle>> <- StoreActor.store_with_timeout(T.Ledger<W.Handle>, T.ledger(W.Handle), timeout_ms)
-    return Hub{registry}
+    return Hub{registry, limits}
+
+def hub_with_timeout(timeout_ms: U32) -> IO(Hub):
+  hub_with(T.limits_default(), timeout_ms)
 
 def hub() -> IO(Hub):
   hub_with_timeout(5000)
 
 def registry(hub: Hub) -> Store.Store<T.Ledger<W.Handle>>:
-  Hub{r} = hub
+  Hub{r, l} = hub
   r
+
+def hub_limits(hub: Hub) -> T.Limits:
+  Hub{r, l} = hub
+  l
 
 def handle(peer: Peer) -> W.Handle:
   Peer{h, id, hub} = peer
@@ -78,29 +96,75 @@ def change(hub: Hub, update: T.Registry<W.Handle> -> T.Registry<W.Handle>) -> IO
     got : Result<&2, &2, Store.Error, T.Ledger<W.Handle>> <- Store.update(T.Ledger<W.Handle>, registry(hub), l => T.within(W.Handle, l, update))
     return acknowledged(got)
 
-def subscribed(got: Result<&2, &2, Store.Error, T.Ledger<W.Handle>>, +id: Nat) -> Bool:
+# How a subscribe went. Only Subscribed means the connection is in the topic;
+# every other answer left the registry as it was.
+type Subscription is Data:
+  # Recorded now, or the connection already had the topic.
+  Subscribed{}
+  # The connection never joined, or has closed.
+  Closed{}
+  # The topic is longer than the hub's `topic_bytes` in UTF-8.
+  TopicTooLong{}
+  # The connection already holds `per_peer` subscriptions.
+  PeerLimit{}
+  # The hub already holds `per_hub` subscriptions.
+  HubLimit{}
+  # The hub timed out or is unavailable; the subscribe may still apply.
+  HubError{error: Store.Error}
+
+def outcome(a: T.Admission) -> Subscription:
+  match a:
+    case T.Admitted{}: Subscribed{}
+    case T.AlreadyMember{}: Subscribed{}
+    case T.NotActive{}: Closed{}
+    case T.TopicTooLong{}: TopicTooLong{}
+    case T.PeerFull{}: PeerLimit{}
+    case T.HubFull{}: HubLimit{}
+
+# The registry after the update decides again: a refusal left it unchanged,
+# so the same check fails the same way, and an admission now finds the
+# connection in the topic.
+def subscribed(got: Result<&2, &2, Store.Error, T.Ledger<W.Handle>>, +limits: T.Limits, +id: Nat, +topic: String) -> Subscription:
   match got:
-    case Done{l}: T.active(W.Handle, T.registry(W.Handle, l), id)
-    case Fail{e}: False{}
+    case Done{l}: outcome(T.decide(W.Handle, limits, T.registry(W.Handle, l), id, topic))
+    case Fail{e}: HubError{e}
 
-def subscribe_active(+id: Nat, hub: Hub, topic: String, +handle: W.Handle) -> IO(Bool):
-  do IO<Bool>:
-    got : Result<&2, &2, Store.Error, T.Ledger<W.Handle>> <- Store.update(T.Ledger<W.Handle>, registry(hub), l => T.within(W.Handle, l, r => T.admit(W.Handle, r, id, topic, handle)))
-    return subscribed(got, id)
+def subscribe_active(+id: Nat, hub: Hub, +topic: String, +handle: W.Handle) -> IO(Subscription):
+  Hub{store, +limits} = hub
+  do IO<Subscription>:
+    got : Result<&2, &2, Store.Error, T.Ledger<W.Handle>> <- Store.update(T.Ledger<W.Handle>, store, l => T.within(W.Handle, l, r => T.admit_within(W.Handle, limits, r, id, topic, handle)))
+    return subscribed(got, limits, id, topic)
 
-def subscribe_id(id: Nat, hub: Hub, topic: String, +handle: W.Handle) -> IO(Bool):
+def subscribe_id(id: Nat, hub: Hub, topic: String, +handle: W.Handle) -> IO(Subscription):
   match id:
-    case 0n: IO.pure(Bool, False{})
+    case 0n: IO.pure(Subscription, Closed{})
     case 1n+n: subscribe_active(1n+n, hub, topic, handle)
 
-# True once the registry has recorded the subscription. A publication that
-# starts after this returns reaches the connection. False means the hub
-# timed out or is unavailable, or the connection never joined or has already
-# closed: the close path revokes the ID in the same registry update that
-# removes its subscriptions, so a Peer kept after close cannot re-register.
-def subscribe(peer: Peer, topic: String) -> IO(Bool):
+# Adds the connection to `topic` within the hub's limits and says how it
+# went. A publication that starts after Subscribed reaches the connection.
+# The close path revokes the ID in the same registry update that removes its
+# subscriptions, so a Peer kept after close gets Closed and cannot
+# re-register.
+def subscribe_checked(peer: Peer, topic: String) -> IO(Subscription):
   Peer{+h, id, hub} = peer
   subscribe_id(id, hub, topic, h)
+
+def is_subscribed(s: Subscription) -> Bool:
+  match s:
+    case Subscribed{}: True{}
+    case Closed{}: False{}
+    case TopicTooLong{}: False{}
+    case PeerLimit{}: False{}
+    case HubLimit{}: False{}
+    case HubError{e}: False{}
+
+# True once the registry has recorded the subscription; `subscribe_checked`
+# without the reason. False means a limit refused it, the hub timed out or is
+# unavailable, or the connection never joined or has already closed.
+def subscribe(peer: Peer, topic: String) -> IO(Bool):
+  do IO<Bool>:
+    got : Subscription <- subscribe_checked(peer, topic)
+    return is_subscribed(got)
 
 def unsubscribe(peer: Peer, topic: String) -> IO(Bool):
   Peer{h, id, hub} = peer

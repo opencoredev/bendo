@@ -208,6 +208,24 @@ Well-formedness:
 - `ws_topics_wf_empty`, `ws_topics_wf_join`, `ws_topics_wf_admit`, `ws_topics_wf_unsubscribe`, `ws_topics_wf_remove`, `ws_topics_wf_remove_all`, `ws_topics_wf_claim`, `ws_topics_wf_release`, `ws_topics_wf_prune`: the empty registry is well-formed, and every operation the shell uses preserves it.
 - `ws_topics_history_wf`, `ws_topics_ledger_history_wf`: so every registry reachable through any history of joins, subscribes, unsubscribes, closes and prunes is well-formed, including histories of claims, releases and ledger prunes.
 
+Subscription limits:
+
+The shell subscribes through `T.admit_within`, which checks the hub's three
+limits (topics per connection, subscriptions per hub, topic length) inside
+the same registry update. These
+laws are in `proof/ws-limits-laws.bend`.
+
+- `ws_limits_refusal_unchanged`: a subscribe refused for any reason (closed connection, topic too long, already subscribed, connection or hub full) leaves the registry exactly as it was.
+- `ws_limits_admitted_is_admit`: an admitted subscribe is exactly `T.admit`, so every law above about `admit`, well-formedness included, covers it.
+- `ws_limits_peer_bound`, `ws_limits_hub_bound`: no subscribe takes a connection past its per-connection limit or the registry past the per-hub limit. A connection within its limit before stays within it, whoever subscribed.
+- `ws_limits_long_topic_unchanged`: a topic longer than the topic limit, counted in UTF-8 bytes, is never recorded.
+- `ws_limits_repeat_unchanged`: subscribing again to a topic the connection already holds changes nothing, so it uses no slot.
+- `ws_limits_remove_frees`, `ws_limits_remove_returns_slots`: closing a connection leaves it no subscriptions, and the registry shrinks by exactly the number it held.
+- `ws_limits_reported`: deciding again on the updated registry gives the verdict the subscribe got, with an admission read as membership. That is how `P.subscribe_checked` reports the result.
+- `ws_limits_decide_exact`: the decision equals an independent table in `proof/ws-limits-spec.bend`, whose checks are stated over the membership model instead of the registry's own helpers. The checks run in order: the connection is active, the topic fits the byte limit, the connection does not hold the topic yet, the connection has a slot free, and the hub has a slot free. The first one that fails names the refusal, so a closed connection asking for a long topic is reported as closed. A request that passes every check is admitted.
+- `ws_limits_admitted_iff`: a subscribe is admitted if and only if every check in that table passes.
+- `ws_limits_admits`: an active connection asking for a topic it does not hold, within the byte limit and with a connection slot and a hub slot free, is subscribed by `T.admit_within`. Without this law, a decision that refused everything would satisfy all the bounds above.
+
 ## Static files
 
 `B.serve_static` turns a request path into a file under a root directory. These
