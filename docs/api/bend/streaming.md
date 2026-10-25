@@ -566,8 +566,10 @@ def websocket_close(handle: B.WebSocketHandle, code: U32, reason: String) -> IO(
 
 Begins the close handshake. `code` must be a sendable RFC 6455 or IANA code
 and `reason` must fit in 123 UTF-8 bytes. A valid close is never refused for
-a full mailbox: the call shuts the mailbox, so later sends return `False`,
-and puts the close in a reserved slot behind the commands already queued.
+a full mailbox. With room, the close simply joins the queue; a later send may
+still return `True`, but it is discarded behind the close. With the mailbox
+full, the call shuts it, so later sends return `False`, and puts the close in
+a reserved slot behind the commands already queued.
 Only the first admitted close is written. A close queued behind another
 returns `True` and is ignored, and when two closes find the mailbox full at
 once, one of them returns `False`. `False` otherwise means the code or reason

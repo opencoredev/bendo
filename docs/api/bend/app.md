@@ -4,7 +4,7 @@ An app is a route table of tags, one dispatcher that turns a tag into a
 response, and an `env` value that every request receives. This page lists the
 core types, the calls that serve a table or run it without a socket, the
 server config, and the plugin builder. The
-[quick start](../../getting-started.md#3-create-an-app) shows a whole app;
+[quick start](../../getting-started.md) shows a whole app;
 [Routing](routing.md) lists the calls that build the table.
 
 Examples on this page are one Bend program and share this setup:
