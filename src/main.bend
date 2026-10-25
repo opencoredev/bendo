@@ -250,20 +250,14 @@ def JwtConfig() -> Data: JwtConfig.Config
 def JwtError() -> Data: Jwt.Error
 # A string secret holding a non-scalar character is refused rather than
 # encoded: Utf8.encode would write U+FFFD, so the secret with U+FFFD in its
-# place would sign and verify the same tokens.
-def jwt_key(valid: Bool, secret: String) -> Maybe<&2, List<&2, U32>>:
-  match valid:
-    case True{}: Some{Utf8.encode(secret)}
-    case False{}: None{}
-def jwt_secret(+secret: String) -> Maybe<&2, List<&2, U32>>: jwt_key(Utf8.valid(secret), secret)
+# place would sign and verify the same tokens. An empty secret is refused too.
+def jwt_key(valid: Bool, secret: String) -> Maybe<&2, List<&2, U32>>: JwtConfig.text_key(valid, secret)
+def jwt_secret(+secret: String) -> Maybe<&2, List<&2, U32>>: JwtConfig.secret_key(secret)
 def jwt_config(secret: String, leeway: Nat, realm: String) -> JwtConfig.Config: JwtConfig.Config{jwt_secret(secret), leeway, realm}
 def jwt(config: JwtConfig.Config) -> Builtin.Builtin: Builtin.Jwt{config}
 def jwt_with(-Vars: Data, config: JwtConfig.Config, c: Context.Ctx<Vars>, next: Json.Json -> Context.Ctx<Vars> -> IO(Response.Res)) -> IO(Response.Res):
   JwtAuth.with_claims(Vars, config, c, next)
-def jwt_signed(key: Maybe<&2, List<&2, U32>>, claims: Json.Json) -> Result<&2, &2, Jwt.Error, String>:
-  match key:
-    case None{}: Fail{Jwt.BadEncoding{}}
-    case Some{k}: Jwt.sign(k, claims)
+def jwt_signed(key: Maybe<&2, List<&2, U32>>, claims: Json.Json) -> Result<&2, &2, Jwt.Error, String>: JwtConfig.sign_key(key, claims)
 def jwt_sign(secret: String, claims: Json.Json) -> Result<&2, &2, Jwt.Error, String>: jwt_signed(jwt_secret(secret), claims)
 def jwt_verify(secret: String, token: String, now: Nat, leeway: Nat) -> Result<&2, &2, Jwt.Error, Json.Json>: JwtAuth.keyed(jwt_secret(secret), token, now, leeway)
 

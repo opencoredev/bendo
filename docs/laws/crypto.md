@@ -33,3 +33,16 @@ secret, time and leeway rather than sample tokens.
 - `jwt_verify_rejects_repeated_header_member`, `jwt_verify_rejects_repeated_claim`: a header or payload object with two top-level members of the same name never verifies.
 - `jwt_verify_rejects_bad_alg`: a header object without exactly one `alg` member holding the string `HS256` never verifies, whether `alg` is missing, repeated, not a string or another algorithm.
 - `jwt_verify_bad_alg_exact`: with canonical segments, the correct signature and no repeated header member, such a header fails with exactly `BadAlgorithm`.
+
+### Empty keys
+
+The laws above hold for every secret, including the empty one, because they
+describe the raw `Jwt.open` and `Jwt.verify`. HMAC under an empty key is no
+secret at all, so the configured entry points (`B.jwt`, `B.jwt_with`,
+`B.jwt_verify`, `B.jwt_sign` and `B.jwt_signed`) refuse it. These laws are in
+`proof/jwt-key-laws.bend`.
+
+- `jwt_empty_key_verifies_nothing`: under an empty key no token verifies, even in a config built directly with the constructor. Every token fails with `BadSignature`.
+- `jwt_empty_key_signs_nothing`: under an empty key no claim set is signed. Signing fails with `BadEncoding`.
+- `jwt_empty_secret_has_no_key`: the empty string secret gives no key, like a secret with no UTF-8 form.
+- `jwt_nonempty_key_verifies_as_jwt`, `jwt_nonempty_key_signs_as_jwt`: a key with at least one byte verifies and signs exactly as `Jwt.verify` and `Jwt.sign` do, so the laws above apply to it unchanged.
