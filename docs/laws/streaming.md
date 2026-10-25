@@ -59,7 +59,7 @@ See [accept a WebSocket upgrade](../websocket.md).
 - `websocket_response_refuse_400`, `websocket_response_refuse_403`: 400 and 403 refusals are empty; the context layer adds error bodies.
 - `websocket_rebuilt_framing`: whatever response middleware produced, the rebuilt 101 has no body and neither `Content-Length` nor `Transfer-Encoding`, in any case.
 - `websocket_rebuilt_response`: every middleware header survives unchanged, in order with duplicates, except handshake fields, framing fields and the internal marker; the computed handshake fields come first.
-- `websocket_refusal_clock_failure`: when the clock cannot date a refused handshake, the answer is an empty 500 with `Content-Length: 0` that keeps every field the refusal carried, in order with duplicates, such as CORS, security headers and the request ID. Only framing, `Content-Type`, handshake fields and the internal marker are dropped, in any case. Transport dates the refusal before the access log records it, so the log shows this 500.
+- `websocket_refusal_clock_failure`: when the clock cannot date a refused handshake, the answer is an empty 500 with `Content-Length: 0` that keeps every field the refusal carried, in order with duplicates, such as CORS, security headers and the request ID. Only framing, `Content-Type`, fields describing the discarded body (`Content-Encoding`, `Content-Range`, `Content-MD5`, `Digest`, `Content-Digest`, `Repr-Digest`, `ETag`, `Last-Modified`), handshake fields and the internal marker are dropped, in any case. Transport dates the refusal before the access log records it, so the log shows this 500.
 
 ## WebSocket frames
 

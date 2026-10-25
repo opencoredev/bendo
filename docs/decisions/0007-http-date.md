@@ -66,7 +66,8 @@ A WebSocket refusal is the one final response transport builds after
 finalization: it replaces a 101, which received no Date. BND-94 dates it during
 transport selection, before the access log records the status, rather than at
 `DateWire.ensure`. A clock failure there becomes an empty, framed 500 that keeps
-the refusal's fields (retained policies, request ID, timing), so the logged
+the refusal's fields (retained policies, request ID, timing) but not those that
+described the discarded body (coding, range, digests, validators), so the logged
 status is the one sent and the policies survive. Law
 `websocket_refusal_clock_failure` states that 500 against an independent spec.
 

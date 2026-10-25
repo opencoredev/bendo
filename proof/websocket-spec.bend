@@ -230,11 +230,12 @@ def rebuilt(res: Response.Res, accept: String, protocol: Maybe<&2, String>) -> R
 
 # BND-94: a refused handshake the clock cannot date. Keep every field the
 # refusal carried byte for byte, in order and with duplicates, except private
-# metadata, framing, the media type and every handshake-owned field, regardless
+# metadata, framing, the media type, the old body's coding, range, digests and
+# validators, and every handshake-owned field, regardless
 # of ASCII name case; answer an empty 500 framed as zero bytes.
 def refusal_allowed(name: String) -> Bool:
   +n = String.to_lower(name)
-  Bool.not(((String.eq(n, "content-length") || String.eq(n, "transfer-encoding")) || (String.eq(n, "upgrade") || String.eq(n, "connection") || String.eq(n, "sec-websocket-accept") || String.eq(n, "sec-websocket-protocol") || String.eq(n, "sec-websocket-extensions") || String.eq(n, "sec-websocket-version"))) || String.eq(n, "x-bendo-stream-internal") || String.eq(n, "content-type"))
+  Bool.not(((String.eq(n, "content-length") || String.eq(n, "transfer-encoding")) || (String.eq(n, "upgrade") || String.eq(n, "connection") || String.eq(n, "sec-websocket-accept") || String.eq(n, "sec-websocket-protocol") || String.eq(n, "sec-websocket-extensions") || String.eq(n, "sec-websocket-version"))) || String.eq(n, "x-bendo-stream-internal") || String.eq(n, "content-type") || (String.eq(n, "content-encoding") || String.eq(n, "content-range") || String.eq(n, "content-md5") || String.eq(n, "digest") || String.eq(n, "content-digest") || String.eq(n, "repr-digest") || String.eq(n, "etag") || String.eq(n, "last-modified")))
 
 def refusal_kept(hs: List<&2, Request.Header>) -> List<&2, Request.Header>:
   match hs:

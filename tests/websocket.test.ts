@@ -61,11 +61,16 @@ async function startLogged(env: Readonly<Record<string, string>> = {}): Promise<
     })();
     const url = `http://127.0.0.1:${port}`;
     const deadline = Date.now() + 20_000;
+    // Only this process's own listening line proves it bound the port: another
+    // server that already holds the port would answer the probe too.
+    const listening = `listening on ${url}`;
     while (Date.now() < deadline && proc.exitCode === null) {
-      const up = await fetch(`${url}/ws`, { signal: AbortSignal.timeout(1000) }).then(
-        () => true,
-        () => false,
-      );
+      const up =
+        output.includes(listening) &&
+        (await fetch(`${url}/ws`, { signal: AbortSignal.timeout(1000) }).then(
+          () => true,
+          () => false,
+        ));
       if (up)
         return {
           url,

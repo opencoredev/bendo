@@ -28,15 +28,21 @@ def normalized(+method: Request.Method, +res: Response.Res) -> Response.Res:
   Response.Res{status, hs, body, rep} = res
   Response.Res{status, Write.response_headers(method, res), Write.payload(method, res), rep}
 
+# Fields that describe the discarded body: its coding, range, digests and
+# validators. They would be wrong on the refusal's own body or an empty 500.
+def stale(+n: String) -> Bool:
+  (String.eq(n, "content-encoding") || String.eq(n, "content-range") || String.eq(n, "content-md5") || String.eq(n, "digest") || String.eq(n, "content-digest") || String.eq(n, "repr-digest") || String.eq(n, "etag") || String.eq(n, "last-modified"))
+
 def final_field(h: Request.Header) -> Bool:
   Request.Header{name, value} = h
   +folded = Bytes.fold(name)
-  Bool.not(WebSocket.owned(folded) || String.eq(folded, Stream.marker()) || String.eq(folded, "content-type"))
+  Bool.not(WebSocket.owned(folded) || String.eq(folded, Stream.marker()) || String.eq(folded, "content-type") || stale(folded))
 
 # The wire request disagrees with the handler's (a rewrite changed its
 # method). Refuse it here, after finalization, keeping the fields middleware
 # and finalizers added (security, CORS, request ID, timing, Date) and dropping
-# only the handshake's own fields and the old body's framing and type.
+# the handshake's own fields and the old body's framing, type, coding, range,
+# digests and validators.
 def wire_refusal(+req: Request.Req, res: Response.Res, status: U32) -> Response.Res:
   Request.Req{+method, path, query, version, hs} = req
   Response.Res{code, fields, body, rep} = res
