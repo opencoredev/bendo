@@ -28,10 +28,10 @@ def normalized(+method: Request.Method, +res: Response.Res) -> Response.Res:
   Response.Res{status, hs, body, rep} = res
   Response.Res{status, Write.response_headers(method, res), Write.payload(method, res), rep}
 
-# Fields that describe the discarded body: its coding, range, digests and
-# validators. They would be wrong on the refusal's own body or an empty 500.
+# Fields that describe the discarded body: its coding, range, digests,
+# validators, language and location. They would be wrong on the refusal's own body or an empty 500.
 def stale(+n: String) -> Bool:
-  (String.eq(n, "content-encoding") || String.eq(n, "content-range") || String.eq(n, "content-md5") || String.eq(n, "digest") || String.eq(n, "content-digest") || String.eq(n, "repr-digest") || String.eq(n, "etag") || String.eq(n, "last-modified"))
+  (String.eq(n, "content-encoding") || String.eq(n, "content-range") || String.eq(n, "content-md5") || String.eq(n, "digest") || String.eq(n, "content-digest") || String.eq(n, "repr-digest") || String.eq(n, "etag") || String.eq(n, "last-modified") || String.eq(n, "content-language") || String.eq(n, "content-location"))
 
 def final_field(h: Request.Header) -> Bool:
   Request.Header{name, value} = h

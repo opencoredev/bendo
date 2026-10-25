@@ -138,7 +138,8 @@ marker ties to the registration:
   and drops any body, framing or handshake fields middleware added. A rewrite
   that changed the method (for example a POST rewritten to GET) is refused here
   with 400, keeping the fields middleware and finalizers added, except those that
-  described the replaced body (its coding, range, digests and validators). Method override
+  described the replaced body (its coding, language, location, range, digests
+  and validators). Method override
   never produces GET, so it cannot turn a POST into an upgrade.
 
 A second `B.websocket` or `B.stream` call in one request, or one made after
