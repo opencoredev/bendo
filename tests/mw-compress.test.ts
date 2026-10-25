@@ -215,14 +215,29 @@ describe("eligibility", () => {
     expect(reply.body.length).toBe(4096);
   });
 
-  test("HEAD is never compressed but carries Vary", async () => {
-    const get200 = await get({ path: "/z/html" });
-    const head = await get({ path: "/z/html", encoding: "gzip", method: "HEAD" });
-    expect(head.status).toBe(200);
-    expect(head.body.length).toBe(0);
-    expect(head.fields.has("content-encoding")).toBe(false);
-    expect(head.fields.get("vary")).toBe("Accept-Encoding");
-    expect(head.fields.get("content-length")).toBe(String(get200.body.length));
+  test("HEAD sends the fields the same GET would, with no body", async () => {
+    // RFC 9110 section 8.6: HEAD's Content-Length is the length GET sends.
+    const offers: ReadonlyArray<{ encoding?: string }> = [
+      { encoding: "gzip" },
+      { encoding: "deflate" },
+      {},
+    ];
+    for (const offer of offers) {
+      const getReply = await get({ path: "/z/html", ...offer });
+      const head = await get({ path: "/z/html", ...offer, method: "HEAD" });
+      expect(head.status).toBe(200);
+      expect(head.body.length).toBe(0);
+      expect(head.fields.get("content-encoding")).toBe(getReply.fields.get("content-encoding"));
+      expect(head.fields.get("vary")).toBe("Accept-Encoding");
+      expect(head.fields.get("content-length")).toBe(String(getReply.body.length));
+    }
+    const coded = await get({ path: "/z/html", encoding: "gzip", method: "HEAD" });
+    expect(coded.fields.get("content-encoding")).toBe("gzip");
+    expect(Number(coded.fields.get("content-length"))).toBeLessThan(1000);
+    const tagged = await get({ path: "/etagged/html", encoding: "gzip" });
+    const taggedHead = await get({ path: "/etagged/html", encoding: "gzip", method: "HEAD" });
+    expect(taggedHead.fields.get("etag")).toBe(tagged.fields.get("etag"));
+    expect(taggedHead.fields.get("content-length")).toBe(String(tagged.body.length));
   });
 
   test("204, 206, no-transform and streamed responses are left alone", async () => {

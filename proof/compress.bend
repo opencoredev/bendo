@@ -82,7 +82,9 @@ def plan_bad(+e: Bool, +s: Bool, +b: Bool, +mode: P.Mode, +ch: Maybe<&2, P.Codin
     case False{} False{} False{}: absurd({P.encodes(P.plan(False{}, False{}, False{}, mode, ch)) == False{} : Bool}, false_true(hb))
 
 def gated_headers(+ch: Maybe<&2, P.Coding>) -> {P.encodes(P.gated(P.Headers{}, ch)) == False{} : Bool}:
-  {==}
+  match ch:
+    case None{}: {==}
+    case Some{c}: {==}
 
 def gated_revalidate(+ch: Maybe<&2, P.Coding>) -> {P.encodes(P.gated(P.Revalidate{}, ch)) == False{} : Bool}:
   match ch:
@@ -105,7 +107,8 @@ def plan_revalidate(+e: Bool, +s: Bool, +b: Bool, +ch: Maybe<&2, P.Coding>) -> {
 
 def gated_choice(+mode: P.Mode, +ch: Maybe<&2, P.Coding>, +c: P.Coding, h: {P.gated(mode, ch) == P.Encode{c} : P.Plan}) -> {ch == Some{c} : Maybe<&2, P.Coding>}:
   match mode ch:
-    case P.Headers{} _: absurd({ch == Some{c} : Maybe<&2, P.Coding>}, not_encode(P.Vary{}, c, {==}, h))
+    case P.Headers{} None{}: absurd({None{} == Some{c} : Maybe<&2, P.Coding>}, not_encode(P.Vary{}, c, {==}, h))
+    case P.Headers{} Some{x}: absurd({Some{x} == Some{c} : Maybe<&2, P.Coding>}, not_encode(P.Measure{x}, c, {==}, h))
     case P.Full{} None{}: absurd({None{} == Some{c} : Maybe<&2, P.Coding>}, not_encode(P.Vary{}, c, {==}, h))
     case P.Full{} Some{x}: Equal.cong(P.Plan, Maybe<&2, P.Coding>, coded, P.Encode{x}, P.Encode{c}, h)
     case P.Revalidate{} None{}: absurd({None{} == Some{c} : Maybe<&2, P.Coding>}, not_encode(P.Vary{}, c, {==}, h))

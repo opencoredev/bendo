@@ -147,6 +147,7 @@ import ./proof/date-spec.bend as HttpDateSpec
 # BND-45
 import ./src/static/path.bend as StaticPath
 import ./src/mw/compress_policy.bend as Compress
+import ./proof/compress-spec.bend as CompressSpec
 import ./proof/static-spec.bend as StaticSpec
 
 # BND-51
@@ -2506,9 +2507,9 @@ law json_roundtrip:
 # BND-46: response compression. Compress.decide judges one buffered response
 # for a request's method and parsed Accept-Encoding preferences.
 
-# A coding is only ever applied when the request accepts it at a nonzero
-# weight. In particular q=0 refuses a coding, and a request without
-# Accept-Encoding never gets a compressed body.
+# A coding is only ever applied when the parsed preferences accept it at a
+# nonzero weight, and a request without Accept-Encoding never gets a
+# compressed body. compress_raw_refusal states the same from the raw fields.
 law compress_encode_accepted:
   for +cfg: Compress.Config
   for +m: Request.Method
@@ -2535,8 +2536,8 @@ law compress_select_not_below_identity:
   for h: {Compress.select(prefs) == Some{c} : Maybe<&2, Compress.Coding>}
   {Nat.is_lt(Compress.quality(prefs, c), Compress.identity_quality(prefs)) == False{} : Bool}
 
-# Deflate is picked only when its weight is strictly above gzip's, so a tie
-# goes to gzip.
+# Deflate is picked only when its weight is strictly above gzip's, so it
+# never wins a tie. compress_select_gzip says who does.
 law compress_select_tie_gzip:
   for +prefs: List<&2, Compress.Pref>
   for h: {Compress.select(prefs) == Some{Compress.Deflate{}} : Maybe<&2, Compress.Coding>}
@@ -2592,7 +2593,9 @@ law compress_stream_kept:
   for h: {List.is_empty(&2, List<&2, U32>, Request.lookup(hs, "x-bendo-stream-internal")) == False{} : Bool}
   {Compress.decide(cfg, m, accept, Response.Res{status, hs, body, rep}) == Compress.Keep{} : Compress.Plan}
 
-# A HEAD answer is never compressed.
+# A HEAD answer is never given the Encode plan: it has no body to send.
+# compress_head_as_get says it is measured instead, so that its fields are
+# the ones GET would send.
 law compress_head_not_encoded:
   for +cfg: Compress.Config
   for +accept: Maybe<&2, List<&2, Compress.Pref>>
@@ -2629,3 +2632,151 @@ law compress_not_modified_not_encoded:
   for +body: List<&2, U32>
   for +rep: Maybe<&2, List<&2, U32>>
   {Compress.encodes(Compress.decide(cfg, m, accept, Response.Res{304, hs, body, rep})) == False{} : Bool}
+
+# Accept-Encoding, read from the raw field values, selects exactly the coding
+# proof/compress-spec.bend selects: q-values parsed as RFC 9110 qvalues with
+# a malformed one weighing 0, an explicit coding before "*", x-gzip as gzip,
+# names without case, identity's weight, and gzip on a tie.
+law compress_accept_spec:
+  for +values: List<&2, List<&2, U32>>
+  {Compress.choice(Compress.accept(values)) == CompressSpec.choice(values) : Maybe<&2, Compress.Coding>}
+
+# The raw fields accept a coding exactly when the specification weighs it
+# above 0.
+law compress_accepts_spec:
+  for +values: List<&2, List<&2, U32>>
+  for +c: Compress.Coding
+  {Compress.accepts(Compress.accept(values), c) == CompressSpec.accepted(values, c) : Bool}
+
+# A response is compressed with c only when the raw Accept-Encoding fields
+# give c a weight above 0. So gzip;q=0 (or a "*;q=0" that nothing overrides)
+# refuses gzip.
+law compress_raw_refusal:
+  for +cfg: Compress.Config
+  for +m: Request.Method
+  for +values: List<&2, List<&2, U32>>
+  for +status: U32
+  for +hs: List<&2, Request.Header>
+  for +body: List<&2, U32>
+  for +rep: Maybe<&2, List<&2, U32>>
+  for +c: Compress.Coding
+  for h: {Compress.decide(cfg, m, Compress.accept(values), Response.Res{status, hs, body, rep}) == Compress.Encode{c} : Compress.Plan}
+  {Nat.is_eq(CompressSpec.quality(values, c), 0n) == False{} : Bool}
+
+# A response is compressed with c only when the specification, reading the
+# raw fields, chooses c.
+law compress_raw_choice:
+  for +cfg: Compress.Config
+  for +m: Request.Method
+  for +values: List<&2, List<&2, U32>>
+  for +status: U32
+  for +hs: List<&2, Request.Header>
+  for +body: List<&2, U32>
+  for +rep: Maybe<&2, List<&2, U32>>
+  for +c: Compress.Coding
+  for h: {Compress.decide(cfg, m, Compress.accept(values), Response.Res{status, hs, body, rep}) == Compress.Encode{c} : Compress.Plan}
+  {CompressSpec.choice(values) == Some{c} : Maybe<&2, Compress.Coding>}
+
+# Gzip is picked whenever its weight is above 0, not below deflate's and not
+# below identity's. In particular a positive tie with deflate goes to gzip.
+law compress_select_gzip:
+  for +prefs: List<&2, Compress.Pref>
+  for +h1: {Nat.is_lt(Compress.quality(prefs, Compress.Gzip{}), Compress.quality(prefs, Compress.Deflate{})) == False{} : Bool}
+  for +h2: {Nat.is_eq(Compress.quality(prefs, Compress.Gzip{}), 0n) == False{} : Bool}
+  for +h3: {Nat.is_lt(Compress.quality(prefs, Compress.Gzip{}), Compress.identity_quality(prefs)) == False{} : Bool}
+  {Compress.select(prefs) == Some{Compress.Gzip{}} : Maybe<&2, Compress.Coding>}
+
+# A response whose first Content-Type names already-compressed media (raster
+# images, video, audio, archives, WOFF fonts; parameters and case ignored, as
+# proof/compress-spec.bend lists them) is left exactly as it is, whatever its
+# Content-Encoding.
+law compress_media_kept:
+  for +cfg: Compress.Config
+  for +m: Request.Method
+  for +accept: Maybe<&2, List<&2, Compress.Pref>>
+  for +status: U32
+  for +hs: List<&2, Request.Header>
+  for +body: List<&2, U32>
+  for +rep: Maybe<&2, List<&2, U32>>
+  for h: {CompressSpec.precompressed(CompressSpec.content_type(Request.lookup(hs, "content-type"))) == True{} : Bool}
+  {Compress.decide(cfg, m, accept, Response.Res{status, hs, body, rep}) == Compress.Keep{} : Compress.Plan}
+
+# A HEAD request gets the plan the same GET would, with Encode turned into
+# Measure.
+law compress_head_as_get:
+  for +cfg: Compress.Config
+  for +accept: Maybe<&2, List<&2, Compress.Pref>>
+  for +status: U32
+  for +hs: List<&2, Request.Header>
+  for +body: List<&2, U32>
+  for +rep: Maybe<&2, List<&2, U32>>
+  {Compress.decide(cfg, Request.Head{}, accept, Response.Res{status, hs, body, rep}) == Compress.headed(Compress.decide(cfg, Request.Get{}, accept, Response.Res{status, hs, body, rep})) : Compress.Plan}
+
+# A HEAD plan gets exactly the response its GET plan would, so HEAD carries
+# GET's Content-Encoding, Vary, ETag and Content-Length; the writer then
+# sends no body.
+law compress_head_responds_as_get:
+  for +res: Response.Res
+  for +p: Compress.Plan
+  for +out: Maybe<&2, List<&2, U32>>
+  {Compress.respond(res, Compress.headed(p), out) == Compress.respond(res, p, out) : Response.Res}
+
+# Keep, the one plan that leaves the response without Vary, never depends
+# on Accept-Encoding.
+law compress_keep_ignores_accept:
+  for +cfg: Compress.Config
+  for +m: Request.Method
+  for +a1: Maybe<&2, List<&2, Compress.Pref>>
+  for +a2: Maybe<&2, List<&2, Compress.Pref>>
+  for +status: U32
+  for +hs: List<&2, Request.Header>
+  for +body: List<&2, U32>
+  for +rep: Maybe<&2, List<&2, U32>>
+  {Compress.is_keep(Compress.decide(cfg, m, a1, Response.Res{status, hs, body, rep})) == Compress.is_keep(Compress.decide(cfg, m, a2, Response.Res{status, hs, body, rep})) : Bool}
+
+# Every response whose plan read Accept-Encoding, compressed or not, ends with
+# one Vary field: "*" when it was "*", else every earlier Vary value byte for
+# byte followed by Accept-Encoding unless already listed.
+law compress_vary_merged:
+  for +res: Response.Res
+  for +p: Compress.Plan
+  for +out: Maybe<&2, List<&2, U32>>
+  for +h: {Compress.is_keep(p) == False{} : Bool}
+  {ResponsePolicySpec.vary_values(ResponsePolicySpec.headers(Compress.respond(res, p, out))) == ResponsePolicySpec.vary_result(ResponsePolicySpec.vary_values(ResponsePolicySpec.headers(res)), ["Accept-Encoding"]) : List<&2, List<&2, U32>>}
+
+# A response sent with a coded body (an Encode or Measure plan whose zlib
+# output is shorter than the body) has exactly one Content-Encoding field,
+# in any case, naming the plan's coding.
+law compress_coded_encoding:
+  for +res: Response.Res
+  for +p: Compress.Plan
+  for +c: Compress.Coding
+  for +out: Maybe<&2, List<&2, U32>>
+  for +hc: {Compress.coding(p) == Some{c} : Maybe<&2, Compress.Coding>}
+  for +h: {Compress.shrinks(res, out) == True{} : Bool}
+  {CompressSpec.field_values(ResponsePolicySpec.headers(Compress.respond(res, p, out)), "content-encoding") == [Bytes.encode(CompressSpec.token(c))] : List<&2, List<&2, U32>>}
+
+# A response sent without a coded body keeps its Content-Encoding values.
+law compress_identity_encoding:
+  for +res: Response.Res
+  for +p: Compress.Plan
+  for +out: Maybe<&2, List<&2, U32>>
+  for +h: {Compress.shrinks(res, out) == False{} : Bool}
+  {CompressSpec.field_values(ResponsePolicySpec.headers(Compress.respond(res, p, out)), "content-encoding") == CompressSpec.field_values(ResponsePolicySpec.headers(res), "content-encoding") : List<&2, List<&2, U32>>}
+
+# No strong ETag remains on a response sent with a coded body.
+law compress_coded_weak_etag:
+  for +res: Response.Res
+  for +p: Compress.Plan
+  for +c: Compress.Coding
+  for +out: Maybe<&2, List<&2, U32>>
+  for +hc: {Compress.coding(p) == Some{c} : Maybe<&2, Compress.Coding>}
+  for +h: {Compress.shrinks(res, out) == True{} : Bool}
+  {CompressSpec.strong_etag(ResponsePolicySpec.headers(Compress.respond(res, p, out))) == False{} : Bool}
+
+# No strong ETag remains on a 304 whose 200 would be compressed.
+law compress_revalidated_weak_etag:
+  for +res: Response.Res
+  for +c: Compress.Coding
+  for +out: Maybe<&2, List<&2, U32>>
+  {CompressSpec.strong_etag(ResponsePolicySpec.headers(Compress.respond(res, Compress.Revalidated{c}, out))) == False{} : Bool}

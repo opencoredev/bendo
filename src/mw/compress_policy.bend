@@ -33,6 +33,10 @@ type Plan is Data:
   Vary{}
   # Compress the body with the coding.
   Encode{coding: Coding}
+  # A HEAD answer whose GET would be compressed: compress the body to send
+  # the fields GET would send, Content-Length included. The writer sends no
+  # body for HEAD.
+  Measure{coding: Coding}
   # A 304 whose 200 would be compressed: add Vary, weaken a strong ETag and
   # drop the identity length witness.
   Revalidated{coding: Coding}
@@ -41,7 +45,7 @@ type Plan is Data:
 type Mode is Data:
   # A body the client receives.
   Full{}
-  # A HEAD answer. Its body is never compressed.
+  # A HEAD answer. It has no body to send, so it is measured instead.
   Headers{}
   # A 304 with the representation a matching GET would send.
   Revalidate{}
@@ -290,7 +294,8 @@ def unfit(+hs: List<&2, Request.Header>, +n: Nat, l: U32) -> Bool:
 
 def gated(mode: Mode, choice: Maybe<&2, Coding>) -> Plan:
   match mode choice:
-    case Headers{} _: Vary{}
+    case Headers{} None{}: Vary{}
+    case Headers{} Some{c}: Measure{c}
     case Full{} None{}: Vary{}
     case Full{} Some{c}: Encode{c}
     case Revalidate{} None{}: Vary{}
@@ -337,6 +342,25 @@ def encodes(p: Plan) -> Bool:
   match p:
     case Encode{c}: True{}
     case _: False{}
+
+# Keep is the one plan made without reading Accept-Encoding.
+def is_keep(p: Plan) -> Bool:
+  match p:
+    case Keep{}: True{}
+    case _: False{}
+
+# The coding an Encode or Measure plan compresses with.
+def coding(p: Plan) -> Maybe<&2, Coding>:
+  match p:
+    case Encode{c}: Some{c}
+    case Measure{c}: Some{c}
+    case _: None{}
+
+# The plan a HEAD request gets where its GET would get p.
+def headed(p: Plan) -> Plan:
+  match p:
+    case Encode{c}: Measure{c}
+    case _: p
 
 # ---------------------------------------------------------------- rewrites
 
@@ -388,8 +412,10 @@ def revalidated_res(res: Response.Res) -> Response.Res:
   Response.Res{s, hs, b, rep} = res
   Response.Res{s, varied_headers(weaken(hs)), b, None{}}
 
+# Content-Encoding is only ever set by this rewrite, so the coded response
+# names exactly one coding.
 def drop_framing(+hs: List<&2, Request.Header>) -> List<&2, Request.Header>:
-  Fields.without(Fields.without(hs, "content-length"), "accept-ranges")
+  Fields.without(Fields.without(Fields.without(hs, "content-length"), "accept-ranges"), "content-encoding")
 
 # The coded response: the coded body, Content-Encoding, Vary and a weak
 # ETag. Accept-Ranges goes, because ranges would count identity octets.
@@ -397,3 +423,36 @@ def drop_framing(+hs: List<&2, Request.Header>) -> List<&2, Request.Header>:
 def encoded(res: Response.Res, c: Coding, z: List<&2, U32>) -> Response.Res:
   Response.Res{s, hs, b, rep} = res
   Response.Res{s, List.append(&2, Request.Header, varied_headers(weaken(drop_framing(hs))), [Request.Header{"content-encoding", Bytes.encode(coding_name(c))}]), z, None{}}
+
+def body_length(res: Response.Res) -> Nat:
+  Response.Res{s, hs, b, rep} = res
+  Response.length(b)
+
+def smaller(res: Response.Res, c: Coding, z: List<&2, U32>, shorter: Bool) -> Response.Res:
+  match shorter:
+    case True{}: encoded(res, c, z)
+    case False{}: varied(res)
+
+# Whether out is a coded body shorter than res's, which coded() sends.
+def shrinks(res: Response.Res, out: Maybe<&2, List<&2, U32>>) -> Bool:
+  match out:
+    case None{}: False{}
+    case Some{z}: Nat.is_lt(Response.length(z), body_length(res))
+
+# The response for an Encode or Measure plan once zlib has run: the coded
+# octets, or None when compression failed. A coded body no shorter than the
+# original is not worth sending.
+def coded(+res: Response.Res, c: Coding, out: Maybe<&2, List<&2, U32>>) -> Response.Res:
+  match out:
+    case None{}: varied(res)
+    case Some{+z}: smaller(res, c, z, Nat.is_lt(Response.length(z), body_length(res)))
+
+# The response the shell sends for a plan; out is the zlib result, read
+# only by Encode and Measure. The laws about header rewrites are about this.
+def respond(+res: Response.Res, p: Plan, out: Maybe<&2, List<&2, U32>>) -> Response.Res:
+  match p:
+    case Keep{}: res
+    case Vary{}: varied(res)
+    case Encode{c}: coded(res, c, out)
+    case Measure{c}: coded(res, c, out)
+    case Revalidated{c}: revalidated_res(res)

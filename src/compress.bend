@@ -25,34 +25,28 @@ def limit(config: P.Config, n: U32) -> P.Config: P.with_limit(config, n)
 # The zlib level, clamped to 1 (fastest) through 9 (smallest).
 def level(config: P.Config, n: U32) -> P.Config: P.with_level(config, n)
 
-def body_length(res: Response.Res) -> Nat:
-  Response.Res{s, hs, b, rep} = res
-  Response.length(b)
-
 def body(res: Response.Res) -> List<&2, U32>:
   Response.Res{s, hs, b, rep} = res
   b
 
-def smaller(res: Response.Res, c: P.Coding, z: List<&2, U32>, shorter: Bool) -> Response.Res:
-  match shorter:
-    case True{}: P.encoded(res, c, z)
-    case False{}: P.varied(res)
-
-# A coded body no shorter than the original is not worth sending.
-def finish(+res: Response.Res, c: P.Coding, r: Result<&1, &1, U32 & String, List<&2, U32>>) -> Response.Res:
+def outcome(r: Result<&1, &1, U32 & String, List<&2, U32>>) -> Maybe<&2, List<&2, U32>>:
   match r:
-    case Fail{e}: P.varied(res)
-    case Done{+z}: smaller(res, c, z, Nat.is_lt(Response.length(z), body_length(res)))
+    case Fail{e}: None{}
+    case Done{z}: Some{z}
 
+def compressed(+config: P.Config, +res: Response.Res, +c: P.Coding) -> IO(Response.Res):
+  do IO<Response.Res>:
+    r : Result<&1, &1, U32 & String, List<&2, U32>> <- Zlib.zlib_compress(P.format(c), P.level(config), P.limit(config), body(res))
+    return P.coded(res, c, outcome(r))
+
+# Each case is P.respond(res, plan, out); only Encode and Measure run zlib.
 def run(+config: P.Config, +res: Response.Res, plan: P.Plan) -> IO(Response.Res):
   match plan:
     case P.Keep{}: IO.pure(Response.Res, res)
     case P.Vary{}: IO.pure(Response.Res, P.varied(res))
     case P.Revalidated{c}: IO.pure(Response.Res, P.revalidated_res(res))
-    case P.Encode{+c}:
-      do IO<Response.Res>:
-        r : Result<&1, &1, U32 & String, List<&2, U32>> <- Zlib.zlib_compress(P.format(c), P.level(config), P.limit(config), body(res))
-        return finish(res, c, r)
+    case P.Encode{+c}: compressed(config, res, c)
+    case P.Measure{+c}: compressed(config, res, c)
 
 def received(-Vars: Data, +config: P.Config, +c: C.Ctx<Vars>, +res: Response.Res) -> IO(Response.Res):
   run(config, res, P.decide(config, C.method(Vars, c), P.accept(C.header_bytes(Vars, c, "accept-encoding")), res))
