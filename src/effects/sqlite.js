@@ -74,7 +74,9 @@ function bsq_load(state) {
   }
   const ffi = require("bun:ffi");
   const mac = process.platform === "darwin";
-  const names = mac ? ["libsqlite3.dylib", "/usr/lib/libsqlite3.dylib"] : ["libsqlite3.so.0", "libsqlite3.so"];
+  const names = mac
+    ? ["libsqlite3.dylib", "/usr/lib/libsqlite3.dylib"]
+    : ["libsqlite3.so.0", "libsqlite3.so"];
   const tried = mac ? "libsqlite3.dylib" : "libsqlite3.so.0, libsqlite3.so";
   const spec = (name, args, returns) => ({ [name]: { args, returns } });
   let found;
@@ -255,7 +257,9 @@ function bsq_bind_one(lib, st, at, tag, p) {
       }
       return bsq_check(
         lib,
-        b.length === 0 ? s.sqlite3_bind_zeroblob(st, at, 0) : s.sqlite3_bind_blob(st, at, b, b.length, -1n),
+        b.length === 0
+          ? s.sqlite3_bind_zeroblob(st, at, 0)
+          : s.sqlite3_bind_blob(st, at, b, b.length, -1n),
       );
     }
     default:
@@ -368,13 +372,18 @@ function bsq_prepare_one(lib, db, sql) {
       s.sqlite3_finalize(Number(more[0]));
     }
     s.sqlite3_finalize(st);
-    throw new BsqError(BSQ_MISUSE, "bendo sqlite: one statement per call; run scripts with Sql.exec");
+    throw new BsqError(
+      BSQ_MISUSE,
+      "bendo sqlite: one statement per call; run scripts with Sql.exec",
+    );
   }
   return st;
 }
 
 function bsq_total(lib, db) {
-  return lib.total64 !== undefined ? BigInt(lib.total64(db)) : BigInt(lib.s.sqlite3_total_changes(db));
+  return lib.total64 !== undefined
+    ? BigInt(lib.total64(db))
+    : BigInt(lib.s.sqlite3_total_changes(db));
 }
 
 function bsq_cell(lib, st, c) {
@@ -391,14 +400,18 @@ function bsq_cell(lib, st, c) {
     }
     case 4: {
       const p = s.sqlite3_column_blob(st, c);
-      return { $: CID(CellBlob), bytes: bsq_list(Array.from(bsq_bytes(lib, p, s.sqlite3_column_bytes(st, c)))) };
+      return {
+        $: CID(CellBlob),
+        bytes: bsq_list(Array.from(bsq_bytes(lib, p, s.sqlite3_column_bytes(st, c)))),
+      };
     }
     default:
       return { $: CID(CellNull) };
   }
 }
 
-const BSQ_ROLLED_BACK = "bendo sqlite: the transaction was rolled back; roll it back and start again";
+const BSQ_ROLLED_BACK =
+  "bendo sqlite: the transaction was rolled back; roll it back and start again";
 
 function bsq_before(lib, db, token) {
   if (token !== 0 && lib.s.sqlite3_get_autocommit(db) !== 0) {
@@ -411,7 +424,10 @@ function bsq_after(lib, db, token, failure) {
   const autocommit = lib.s.sqlite3_get_autocommit(db) !== 0;
   if (token === 0 && !autocommit) {
     bsq_exec_plain(lib, db, "ROLLBACK");
-    return new BsqError(BSQ_MISUSE, "bendo sqlite: a statement may not begin a transaction; use Sql.begin");
+    return new BsqError(
+      BSQ_MISUSE,
+      "bendo sqlite: a statement may not begin a transaction; use Sql.begin",
+    );
   }
   if (token !== 0 && autocommit && failure === undefined) {
     return new BsqError(
@@ -437,7 +453,10 @@ function bsq_query(lib, conn, j) {
   } else {
     const rec = conn.stmts[j.index - 1];
     if (rec === undefined || rec.stmt === 0 || rec.gen !== j.sgen) {
-      throw new BsqError(BSQ_MISUSE, "bendo sqlite: the statement is finalized or belongs to another connection");
+      throw new BsqError(
+        BSQ_MISUSE,
+        "bendo sqlite: the statement is finalized or belongs to another connection",
+      );
     }
     st = rec.stmt;
     s.sqlite3_reset(st);
@@ -462,7 +481,10 @@ function bsq_query(lib, conn, j) {
           continue;
         }
         if (j.mode === 1 && rows.length >= j.limit) {
-          failure = new BsqError(BSQ_TOOBIG, `bendo sqlite: the query returned more than ${j.limit} rows`);
+          failure = new BsqError(
+            BSQ_TOOBIG,
+            `bendo sqlite: the query returned more than ${j.limit} rows`,
+          );
           break;
         }
         const row = [];
@@ -592,7 +614,10 @@ function bsq_call(lib, conn, j) {
     case 3: {
       const rec = j.index === 0 ? undefined : conn.stmts[j.index - 1];
       if (rec === undefined || rec.stmt === 0 || rec.gen !== j.sgen) {
-        throw new BsqError(BSQ_MISUSE, "bendo sqlite: the statement is finalized or belongs to another connection");
+        throw new BsqError(
+          BSQ_MISUSE,
+          "bendo sqlite: the statement is finalized or belongs to another connection",
+        );
       }
       s.sqlite3_finalize(rec.stmt);
       rec.stmt = 0;
@@ -603,7 +628,8 @@ function bsq_call(lib, conn, j) {
     case 5:
       return bsq_exec(lib, conn, j);
     case 6: {
-      const sql = j.mode === 2 ? "BEGIN EXCLUSIVE" : j.mode === 1 ? "BEGIN IMMEDIATE" : "BEGIN DEFERRED";
+      const sql =
+        j.mode === 2 ? "BEGIN EXCLUSIVE" : j.mode === 1 ? "BEGIN IMMEDIATE" : "BEGIN DEFERRED";
       if (bsq_exec_plain(lib, conn.db, sql) !== 0) {
         throw bsq_db_error(lib, conn.db);
       }
@@ -672,7 +698,9 @@ function bsq_finish(state, conn, j) {
   } else if ((j.op === 6 && failure !== undefined) || j.op === 7) {
     conn.owner = 0;
   }
-  return failure !== undefined ? bsq_failure(failure.code, failure.message) : { $: CID(Done), value: reply };
+  return failure !== undefined
+    ? bsq_failure(failure.code, failure.message)
+    : { $: CID(Done), value: reply };
 }
 
 function bsq_refuse(conn, j, code, message) {
@@ -695,14 +723,25 @@ function bsq_try(state, j, k) {
   if (verdict === "hold") {
     const now = performance.now();
     if (now >= j.deadline || typeof io_park_on !== "function") {
-      return bsq_refuse(conn, j, BSQ_BUSY, "bendo sqlite: the connection is busy with another transaction");
+      return bsq_refuse(
+        conn,
+        j,
+        BSQ_BUSY,
+        "bendo sqlite: the connection is busy with another transaction",
+      );
     }
     if (j.op === 6 && !j.counted) {
       j.counted = true;
       conn.pending += 1;
     }
     // A woken wait is dropped; more parks again itself when still held.
-    io_park_on(undefined, false, k, () => bsq_try(state, j, k), Math.min(now + BSQ_POLL_MS, j.deadline));
+    io_park_on(
+      undefined,
+      false,
+      k,
+      () => bsq_try(state, j, k),
+      Math.min(now + BSQ_POLL_MS, j.deadline),
+    );
     return undefined;
   }
   if (j.counted) {
@@ -719,7 +758,20 @@ function bsq_try(state, j, k) {
 
 function bendo_sqlite_call(op, slot, gen, token, index, sgen, mode, limit, text1, text2, k) {
   const state = bsq_state();
-  const j = { op, slot, gen, token, index, sgen, mode, limit, text1, text2, counted: false, deadline: 0 };
+  const j = {
+    op,
+    slot,
+    gen,
+    token,
+    index,
+    sgen,
+    mode,
+    limit,
+    text1,
+    text2,
+    counted: false,
+    deadline: 0,
+  };
   if (op > 7) {
     return bsq_failure(BSQ_MISUSE, "bendo sqlite: unknown operation");
   }
@@ -733,7 +785,16 @@ function bendo_sqlite_call(op, slot, gen, token, index, sgen, mode, limit, text1
     let at = state.conns.findIndex((c) => c.state === "free");
     if (at < 0) {
       at = state.conns.length;
-      state.conns.push({ gen: 0, state: "free", owner: 0, next_token: 0, pending: 0, busy_ms: 0, db: 0, stmts: [] });
+      state.conns.push({
+        gen: 0,
+        state: "free",
+        owner: 0,
+        next_token: 0,
+        pending: 0,
+        busy_ms: 0,
+        db: 0,
+        stmts: [],
+      });
     }
     const conn = state.conns[at];
     conn.state = "opening";

@@ -24,7 +24,11 @@ afterAll(async () => {
 
 type Reply = { status: number; body: unknown };
 
-async function call(method: string, path: string, query: Record<string, string> = {}): Promise<Reply> {
+async function call(
+  method: string,
+  path: string,
+  query: Record<string, string> = {},
+): Promise<Reply> {
   const url = new URL(path, server.url);
   for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
   const res = await fetch(url, { method });
@@ -61,7 +65,9 @@ describe("CRUD through prepared statements in a compiled server", () => {
       { id: 1, name: "ann", email: "ann@example.com" },
       { id: 2, name: "robert", email: null },
     ]);
-    expect((await call("GET", "/search", { name: "robert" })).body).toEqual([{ id: 2, name: "robert" }]);
+    expect((await call("GET", "/search", { name: "robert" })).body).toEqual([
+      { id: 2, name: "robert" },
+    ]);
 
     expect((await call("DELETE", "/users/1")).body).toEqual({ changes: 1, rowid: 2 });
     expect((await call("DELETE", "/users/1")).status).toBe(404);
@@ -69,7 +75,9 @@ describe("CRUD through prepared statements in a compiled server", () => {
   });
 
   test("a constraint violation is a typed error with SQLite's extended code", async () => {
-    expect((await call("POST", "/users", { name: "a", email: "same@example.com" })).status).toBe(200);
+    expect((await call("POST", "/users", { name: "a", email: "same@example.com" })).status).toBe(
+      200,
+    );
     expect(await call("POST", "/users", { name: "b", email: "same@example.com" })).toEqual({
       status: 409,
       body: { code: 2067, message: "UNIQUE constraint failed: users.email" },
@@ -90,7 +98,12 @@ describe("CRUD through prepared statements in a compiled server", () => {
 
 describe("bound parameters", () => {
   test("SQL injection through a bound parameter is stored and returned literally", async () => {
-    const attacks = ["'; DROP TABLE users; --", "1 OR 1=1", "x' OR '1'='1", 'a"; DELETE FROM users; --'];
+    const attacks = [
+      "'; DROP TABLE users; --",
+      "1 OR 1=1",
+      "x' OR '1'='1",
+      'a"; DELETE FROM users; --',
+    ];
     for (const name of attacks) {
       const created = await call("POST", "/users", { name });
       expect(created.status).toBe(200);
@@ -109,7 +122,8 @@ describe("bound parameters", () => {
       status: 400,
       body: {
         code: 20,
-        message: "parameter 1: an integer must be canonical decimal text in the signed 64-bit range",
+        message:
+          "parameter 1: an integer must be canonical decimal text in the signed 64-bit range",
       },
     });
   });
@@ -163,13 +177,21 @@ describe("transactions", () => {
     expect(await balances()).toEqual(moved);
 
     // Each of these debits alice first, then fails; the debit is rolled back.
-    expect(await call("POST", "/transfer", { from: "alice", to: "bob", amount: "30", fail: "abort" })).toEqual(
-      { status: 422, body: "transfer aborted" },
-    );
+    expect(
+      await call("POST", "/transfer", { from: "alice", to: "bob", amount: "30", fail: "abort" }),
+    ).toEqual({ status: 422, body: "transfer aborted" });
     expect(await balances()).toEqual(moved);
     expect(
-      await call("POST", "/transfer", { from: "alice", to: "bob", amount: "30", fail: "constraint" }),
-    ).toEqual({ status: 409, body: { code: 1555, message: "UNIQUE constraint failed: accounts.name" } });
+      await call("POST", "/transfer", {
+        from: "alice",
+        to: "bob",
+        amount: "30",
+        fail: "constraint",
+      }),
+    ).toEqual({
+      status: 409,
+      body: { code: 1555, message: "UNIQUE constraint failed: accounts.name" },
+    });
     expect(await balances()).toEqual(moved);
     expect(await call("POST", "/transfer", { from: "alice", to: "bob", amount: "1000" })).toEqual({
       status: 409,
@@ -180,7 +202,9 @@ describe("transactions", () => {
 
   test("a statement from another request waits for an open transaction and sees its commit", async () => {
     const before = await balances();
-    const bob = Array.isArray(before) ? before.find((row: { name: string }) => row.name === "bob") : undefined;
+    const bob = Array.isArray(before)
+      ? before.find((row: { name: string }) => row.name === "bob")
+      : undefined;
     const slow = call("POST", "/slow", { ms: "600" });
     await Bun.sleep(150);
     const began = performance.now();
@@ -201,7 +225,9 @@ describe("workers", () => {
     try {
       const writes = await Promise.all(
         Array.from({ length: 30 }, (_, i) =>
-          fetch(new URL(`/users?name=w${i}`, many.url), { method: "POST" }).then((res) => res.status),
+          fetch(new URL(`/users?name=w${i}`, many.url), { method: "POST" }).then(
+            (res) => res.status,
+          ),
         ),
       );
       expect(writes).toEqual(Array.from({ length: 30 }, () => 200));
@@ -214,7 +240,12 @@ describe("workers", () => {
 });
 
 describe("the JS twin", () => {
-  function runParity(file: string, js: boolean, env: Record<string, string> = {}, arg?: string): string {
+  function runParity(
+    file: string,
+    js: boolean,
+    env: Record<string, string> = {},
+    arg?: string,
+  ): string {
     const dir = mkdtempSync(join(scratch, js ? "js-" : "native-"));
     const command = js ? [process.execPath, file, arg ?? dir] : [file, arg ?? dir];
     const result = Bun.spawnSync(command, { env: { ...process.env, ...env }, timeout: 60_000 });
