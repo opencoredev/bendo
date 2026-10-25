@@ -88,7 +88,10 @@ admitted to it, so every command in it, closes included, was admitted before
 the shut and is written before the slot is read. A close that finds the
 mailbox closed returns `False`. Two closes that both found it full both shut
 it (closing a channel twice is harmless), and the one-command slot admits
-whichever writes first; the other returns `False`. If the connection polls
+whichever writes first; the other returns `False`. The connection closes the
+slot as it takes the reserved close, so the slot is claimed only once: a
+close that arrives after the loop has drained it finds it closed and also
+returns `False`, instead of refilling it and being ignored. If the connection polls
 between the shut and the slot write, it finds the slot empty and checks again
 on its next cycle. Writing the slot before shutting, as the first version
 did, let the loop free a place in between, so a later close could be queued

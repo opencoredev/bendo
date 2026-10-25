@@ -74,7 +74,8 @@ def ping(handle: Handle, bytes: List<&2, U32>) -> IO(Bool): enqueue(handle, S.Se
 # no send is admitted and a publisher sees the connection as gone. Only then
 # does the close claim the reserved slot. Every close the mailbox admitted got
 # in before the shut, so it is written before the slot is read, and a close
-# that loses the slot to a concurrent one returns False. The connection sends
+# that loses the slot to a concurrent one returns False, whether it finds the
+# slot still full or already taken and closed by the loop. The connection sends
 # the close once it has written what was already queued.
 def close_offered(result: Poll<&1, &1, Result<&1, &1, S.Command, Unit>, S.Command>, channel: Chan(S.Command), alive: Chan(Unit), slot: Chan(S.Command)) -> IO(Bool):
   match result:
@@ -237,8 +238,12 @@ def drive(~User: Data, ~on_message: User -> Handle -> M.Message -> IO(User), ~on
         drive(~User, ~on_message, ~on_close, handle, cfg, Reserved{s, state, got})
     case Mail{s, state, _}:
       drive(~User, ~on_message, ~on_close, handle, cfg, Input{s, state})
+    # The slot closes as its close is taken, so it is claimed once: a close
+    # that finds it full or closed returns False and never refills it.
     case Reserved{s, +state, Ready{Some{command}}}:
-      drive(~User, ~on_message, ~on_close, handle, cfg, Stepped{s, with_wait(User, state, 0), S.step(max, session(User, state), S.Outbound{command}), ReadNext{}})
+      do IO<Unit>:
+        Chan.close(S.Command, closer(handle))
+        drive(~User, ~on_message, ~on_close, handle, cfg, Stepped{s, with_wait(User, state, 0), S.step(max, session(User, state), S.Outbound{command}), ReadNext{}})
     case Reserved{s, state, _}:
       drive(~User, ~on_message, ~on_close, handle, cfg, Input{s, state})
     case Stepped{s, State{user, phase, old, pending, body, received, ping, closing, wait}, S.Transition{assembly, action}, next}:
