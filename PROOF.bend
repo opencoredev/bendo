@@ -7,6 +7,7 @@ import ./proof/ws-session-admit.bend as WsSessionAdmitProof
 import ./proof/ws-session-strict.bend as WsSessionStrictProof
 import ./proof/ws-session-ready.bend as WsSessionReadyProof
 import ./proof/ws-session-decode.bend as WsSessionDecodeProof
+import ./proof/ws-session-reserve.bend as WsSessionReserveProof
 # Proofs of LAWS.bend. Run: bend PROOF.bend --verdict
 import Base
 import ./proof/manifest-schema-documents.bend as ManifestSchemaDocuments

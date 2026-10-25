@@ -107,6 +107,7 @@ Whole-history laws:
 - `ws_session_fragments`: a fragmented message interleaved with pings and pongs concatenates its pieces in order, answers each ping, and delivers the whole message on its final fragment as the only message notice. A message over the size limit fails with 1009, a control frame over 125 bytes with 1002, invalid UTF-8 text with 1007, and every frame after a failure is ignored.
 - `ws_session_fragments_end`: after such a message the session is open and ready for the next one, or done if the message failed.
 - `ws_session_single_message`, `ws_session_single_message_end`: the same two facts for a message in one frame.
+- `ws_session_close_after_queue`, `ws_session_close_after_queue_end`: from an open session at any point in a message's assembly, texts, binaries and pings queued ahead of a close are each written in order, then the close is written, and the session ends closing with its assembly untouched. This is what a close reserved while the mailbox was full relies on. That such a close comes after everything else that was admitted is a property of the runtime's channels, covered by integration tests, not by these laws ([decision 0015](../decisions/0015-websocket-mailbox.md#close-ordering)).
 - `ws_session_message_ready`: a single data frame that fits, and is UTF-8 if text, delivers its message and leaves the session ready.
 - `ws_session_incomplete`: a message without its final fragment is never delivered.
 

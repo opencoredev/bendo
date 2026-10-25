@@ -1,12 +1,12 @@
 # Test runner budgets
 
 `bun run check` runs the static checks and the local 10-minute `test` budget.
-CI runs static checks separately and gives each of four test shards the existing
+CI runs static checks separately and gives each of six test shards the existing
 20-minute `test:ci` budget inside a 25-minute job. A failed shard fails the
 workflow; the matrix does not cancel the other shards when one fails.
 
 Run `bun run test:shards` to print and validate the assignment. Set
-`BENDO_TEST_SHARD=1` through `4` when running `bun run test:ci` to reproduce one
+`BENDO_TEST_SHARD=1` through `6` when running `bun run test:ci` to reproduce one
 shard. Without that variable, both test commands run the complete suite.
 
 The planner discovers `.test`, `_test`, `.spec` and `_spec` JavaScript and

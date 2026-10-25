@@ -2,7 +2,9 @@ import { readFileSync } from "node:fs";
 
 // Use committed costs only: restored, partially updated timings must never move
 // a file between matrix jobs. Bun can still use its local timings within a job.
-export const SHARD_COUNT = 4;
+// Six shards keep a cold run (fixture cache invalidated) inside test:ci's
+// 20-minute budget on GitHub's runners; four came within minutes of it (BND-102).
+export const SHARD_COUNT = 6;
 const roots = [
   "tests",
   "bench",
@@ -40,6 +42,11 @@ function timingCosts(): Map<string, number> {
   );
 }
 
+/** A file's committed cost in milliseconds, or 90 s for one not yet measured. */
+export function estimatedCost(path: string): number {
+  return timingCosts().get(path) ?? 90_000;
+}
+
 export function shardPlan(files = testFiles()): string[][] {
   const costs = timingCosts();
   const cost = (path: string) => costs.get(path) ?? 90_000;
@@ -68,7 +75,7 @@ export function guardAssignment(files: string[], shards: string[][]): void {
     throw new Error("Shard assignment has missing, duplicate, or unknown test files");
   }
   if (shards.length !== SHARD_COUNT || shards.some((shard) => shard.length === 0))
-    throw new Error("Shard assignment must contain four nonempty shards");
+    throw new Error(`Shard assignment must contain ${SHARD_COUNT} nonempty shards`);
 }
 
 export function selectedTestFiles(): string[] {
@@ -77,8 +84,10 @@ export function selectedTestFiles(): string[] {
   guardAssignment(files, shards);
   const value = process.env.BENDO_TEST_SHARD;
   if (value === undefined) return files;
-  if (!/^[1-4]$/.test(value)) throw new Error("BENDO_TEST_SHARD must be 1, 2, 3, or 4");
-  const selected = shards[Number(value) - 1];
+  const index = /^[0-9]+$/.test(value) ? Number(value) : 0;
+  if (index < 1 || index > SHARD_COUNT)
+    throw new Error(`BENDO_TEST_SHARD must be a number from 1 to ${SHARD_COUNT}`);
+  const selected = shards[index - 1];
   if (selected === undefined) throw new Error("Missing shard");
   return selected;
 }
@@ -88,7 +97,10 @@ if (import.meta.main) {
   const shards = shardPlan(files);
   guardAssignment(files, shards);
   for (const [index, shard] of shards.entries()) {
-    console.log(`Shard ${index + 1}: ${shard.length} files\n${shard.join("\n")}\n`);
+    const seconds = Math.round(shard.reduce((sum, path) => sum + estimatedCost(path), 0) / 1000);
+    console.log(
+      `Shard ${index + 1}: ${shard.length} files, about ${seconds} s estimated\n${shard.join("\n")}\n`,
+    );
   }
   console.log(
     `PASS: ${files.length} test files assigned exactly once across ${SHARD_COUNT} shards`,
