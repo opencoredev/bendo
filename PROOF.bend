@@ -32,6 +32,9 @@ import ./proof/proxy.bend as ProxyProof
 import ./proof/ip.bend as IpProof
 import ./proof/rate-limit.bend as RateLimitProof
 
+# BND-100
+import ./proof/utf8-scalar.bend as Utf8ScalarProof
+
 # BND-87
 import ./proof/signed-cookie-decoders.bend as SignedCookieDecoderProof
 
@@ -153,6 +156,7 @@ import ./proof/static-path.bend as StaticProof
 import ./proof/ws-frame.bend as WsFrameProof
 import ./proof/ws-frame-roundtrip.bend as WsFrameRoundtrip
 import ./proof/ws-frame-decode.bend as WsFrameDecode
+import ./proof/ws-frame-incremental.bend as WsFrameIncremental
 
 # Check the pure crypto implementations with the strict kernel as well.
 import ./src/crypto/sha1.bend as SHA1
@@ -285,10 +289,10 @@ def Laws.form_queries_all_in_order(pairs, key):
   FormSpec.ordered(pairs, key)
 
 def Laws.query_component_roundtrip(s, valid):
-  Percent.component_roundtrip(s, False{}, Utf8Proof.roundtrip(s, valid))
+  Percent.text_roundtrip(s, False{}, Utf8Proof.roundtrip(s, valid))
 
 def Laws.form_component_roundtrip(s, valid):
-  Percent.component_roundtrip(s, True{}, Utf8Proof.roundtrip(s, valid))
+  Percent.text_roundtrip(s, True{}, Utf8Proof.roundtrip(s, valid))
 
 # BND-15: indexed routing proofs are independent of the root pattern law.
 def Laws.router_sound(T, table, path, i, tag, params, returned):

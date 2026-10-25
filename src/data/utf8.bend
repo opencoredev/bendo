@@ -117,11 +117,28 @@ def encode_fit(w: Word(21n), fits: Bool) -> List<&2, U32>:
     case False{}:
       []
 
-# The general bit-level encoder; encode_char equals it for every U32.
-def encode_char_spec(c: U32) -> List<&2, U32>:
+# The bit-level encoder for a Unicode scalar value.
+def encode_bits(c: U32) -> List<&2, U32>:
   match c:
     case U32{+w}:
       encode_fit(low(21n, 11n, w), zero(11n, high(21n, 11n, w)))
+
+# U+FFFD, the replacement character, as UTF-8 octets.
+def replacement() -> List<&2, U32>:
+  [239, 191, 189]
+
+def encode_scalar(+c: U32, ok: Bool) -> List<&2, U32>:
+  match ok:
+    case True{}:
+      encode_bits(c)
+    case False{}:
+      replacement()
+
+# The general encoder; encode_char equals it for every U32. A non-scalar
+# (a surrogate or a value above U+10FFFF) becomes U+FFFD, as in WHATWG
+# TextEncoder, so the output is always valid UTF-8 and no Char is dropped.
+def encode_char_spec(+c: U32) -> List<&2, U32>:
+  encode_scalar(c, scalar(c))
 
 def encode_char_pick(+c: U32, ascii: Bool) -> List<&2, U32>:
   match ascii:
@@ -151,7 +168,8 @@ def encode_go(s: String, acc: List<&2, U32>) -> List<&2, U32>:
     case SCon{Chr{c}, t}:
       encode_go(t, List.append(&2, U32, encode_char(c), acc))
 
-# Callers encoding a String must supply Unicode scalar values (valid).
+# Total: every non-scalar Char encodes as U+FFFD (BND-100). Decoders that
+# read a String as octets check Utf8.valid first and refuse non-scalars.
 def encode(s: String) -> List<&2, U32>:
   encode_go(String.reverse(s), [])
 
