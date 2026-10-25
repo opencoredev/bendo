@@ -227,3 +227,21 @@ def opening_fields(accept: String, protocol: Maybe<&2, String>) -> List<&2, Requ
 def rebuilt(res: Response.Res, accept: String, protocol: Maybe<&2, String>) -> Response.Res:
   Response.Res{status, hs, body, rep} = res
   Response.Res{101, List.append(&2, Request.Header, opening_fields(accept, protocol), middleware_fields(hs)), [], None{}}
+
+# BND-94: a refused handshake the clock cannot date. Keep every field the
+# refusal carried byte for byte, in order and with duplicates, except private
+# metadata, framing, the media type and every handshake-owned field, regardless
+# of ASCII name case; answer an empty 500 framed as zero bytes.
+def refusal_allowed(name: String) -> Bool:
+  +n = String.to_lower(name)
+  Bool.not(((String.eq(n, "content-length") || String.eq(n, "transfer-encoding")) || (String.eq(n, "upgrade") || String.eq(n, "connection") || String.eq(n, "sec-websocket-accept") || String.eq(n, "sec-websocket-protocol") || String.eq(n, "sec-websocket-extensions") || String.eq(n, "sec-websocket-version"))) || String.eq(n, "x-bendo-stream-internal") || String.eq(n, "content-type"))
+
+def refusal_kept(hs: List<&2, Request.Header>) -> List<&2, Request.Header>:
+  match hs:
+    case Nil{}: []
+    case Request.Header{+name, value} <> tail:
+      middleware_pick(Request.Header{name, value}, refusal_kept(tail), refusal_allowed(name))
+
+def unavailable(res: Response.Res) -> Response.Res:
+  Response.Res{status, hs, body, rep} = res
+  Response.Res{500, Request.Header{"content-length", Bytes.encode("0")} <> refusal_kept(hs), [], None{}}

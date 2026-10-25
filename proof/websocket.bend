@@ -376,3 +376,21 @@ def rebuilt_response(+res: Response.Res, +accept: String, +protocol: Maybe<&2, S
     case Response.Res{status, +hs, body, rep} Some{p}:
       %Equal.sym(List<&2, Request.Header>, Spec.middleware_fields(hs), List.filter(~Request.Header, ~W.kept, List.filter(~Request.Header, ~Stream.keep, hs)), middleware_fields(hs)) : {Transport.rebuilt(Response.Res{status, hs, body, rep}, accept, Some{p}) == Response.Res{101, List.append(&2, Request.Header, Spec.opening_fields(accept, Some{p}), _), [], None{}} : Response.Res}
       {==}
+
+# BND-94: the spec folds names with String.to_lower; Bytes.fold is equal to it.
+def refusal_allowed_fold(+name: String, +value: List<&2, U32>) -> {Spec.refusal_allowed(name) == Transport.final_field(Request.Header{name, value}) : Bool}:
+  Equal.cong(String, Bool, n => Bool.not(((String.eq(n, "content-length") || String.eq(n, "transfer-encoding")) || (String.eq(n, "upgrade") || String.eq(n, "connection") || String.eq(n, "sec-websocket-accept") || String.eq(n, "sec-websocket-protocol") || String.eq(n, "sec-websocket-extensions") || String.eq(n, "sec-websocket-version"))) || String.eq(n, "x-bendo-stream-internal") || String.eq(n, "content-type")), String.to_lower(name), Bytes.fold(name), Equal.sym(String, Bytes.fold(name), String.to_lower(name), BT.fold_equiv(name)))
+
+def refusal_fields(+hs: List<&2, Request.Header>) -> {Spec.refusal_kept(hs) == List.filter(~Request.Header, ~Transport.final_field, hs) : List<&2, Request.Header>}:
+  match hs:
+    case Nil{}: {==}
+    case Request.Header{+name, +value} <> +tail:
+      %Equal.sym(List<&2, Request.Header>, Spec.refusal_kept(tail), List.filter(~Request.Header, ~Transport.final_field, tail), refusal_fields(tail)) : {Spec.middleware_pick(Request.Header{name, value}, _, Spec.refusal_allowed(name)) == List.filter.put(Request.Header, Request.Header{name, value}, List.filter(~Request.Header, ~Transport.final_field, tail), Transport.final_field(Request.Header{name, value})) : List<&2, Request.Header>}
+      %Equal.sym(Bool, Spec.refusal_allowed(name), Transport.final_field(Request.Header{name, value}), refusal_allowed_fold(name, value)) : {Spec.middleware_pick(Request.Header{name, value}, List.filter(~Request.Header, ~Transport.final_field, tail), _) == List.filter.put(Request.Header, Request.Header{name, value}, List.filter(~Request.Header, ~Transport.final_field, tail), Transport.final_field(Request.Header{name, value})) : List<&2, Request.Header>}
+      middleware_put(Request.Header{name, value}, List.filter(~Request.Header, ~Transport.final_field, tail), Transport.final_field(Request.Header{name, value}))
+
+def refusal_clock_failure(+res: Response.Res, error: U32 & String) -> {Transport.sampled(res, Fail{error}) == Spec.unavailable(res) : Response.Res}:
+  match res:
+    case Response.Res{status, +hs, body, rep}:
+      %Equal.sym(List<&2, Request.Header>, Spec.refusal_kept(hs), List.filter(~Request.Header, ~Transport.final_field, hs), refusal_fields(hs)) : {Transport.sampled(Response.Res{status, hs, body, rep}, Fail{error}) == Response.Res{500, Request.Header{"content-length", Bytes.encode("0")} <> _, [], None{}} : Response.Res}
+      {==}

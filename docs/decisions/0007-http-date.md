@@ -62,6 +62,14 @@ preserved. The transport's raw 100 Continue already omits it. This follows RFC
 Date; other final responses become an empty, framed 500. One clock sample is
 used for each response that needs a generated field. No cache is introduced.
 
+A WebSocket refusal is the one final response transport builds after
+finalization: it replaces a 101, which received no Date. BND-94 dates it during
+transport selection, before the access log records the status, rather than at
+`DateWire.ensure`. A clock failure there becomes an empty, framed 500 that keeps
+the refusal's fields (retained policies, request ID, timing), so the logged
+status is the one sent and the policies survive. Law
+`websocket_refusal_clock_failure` states that 500 against an independent spec.
+
 Date belongs to the transport or return boundary, after response middleware.
 Deferred response observers retain the application response captured before
 this boundary and therefore do not see the generated Date. An explicit

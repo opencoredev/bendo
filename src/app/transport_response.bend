@@ -9,6 +9,7 @@ import ./context.bend as Context
 import ./errors.bend as Errors
 import ./observability.bend as Obs
 import ../http/bytes.bend as Bytes
+import ../http/date.bend as Date
 
 def opening_context(-Vars: Data, c: Context.Ctx<Vars>, opening: Response.Res) -> Context.Ctx<Vars>:
   Context.Ctx{req, ps, body, pairs, code, hs, vars, obs} = c
@@ -40,6 +41,24 @@ def wire_refusal(+req: Request.Req, res: Response.Res, status: U32) -> Response.
   Request.Req{+method, path, query, version, hs} = req
   Response.Res{code, fields, body, rep} = res
   normalized(method, refusal(Unit, Context.Ctx{req, [], [], [], 200, List.filter(~Request.Header, ~final_field, fields), None{}, Obs.empty()}, status))
+
+# BND-94: the refusal is built after finalization from a 101, which got no
+# Date, so transport dates it before the access log sees it. When the clock
+# fails it becomes an empty, framed 500, as any undatable final response does
+# (decision 0007), but it keeps the fields the refusal kept: the retained
+# policies, request ID and timing (law websocket_refusal_clock_failure).
+def unavailable(res: Response.Res) -> Response.Res:
+  Response.Res{code, fields, body, rep} = res
+  Response.Res{500, Request.Header{"content-length", [48]} <> List.filter(~Request.Header, ~final_field, fields), [], None{}}
+
+def with_date(res: Response.Res, second: Nat) -> Response.Res:
+  Response.Res{status, hs, body, rep} = res
+  Response.Res{status, Request.Header{"date", Bytes.encode(Date.format_imf(second))} <> hs, body, rep}
+
+def sampled(res: Response.Res, sample: Result<&1, &1, U32 & String, Nat>) -> Response.Res:
+  match sample:
+    case Done{s}: with_date(res, s)
+    case Fail{error}: unavailable(res)
 
 # Keep every middleware and finalizer field except those the handshake owns,
 # then put the computed handshake first. A 101 has no body or framing.

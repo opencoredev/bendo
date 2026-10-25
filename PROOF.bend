@@ -934,6 +934,9 @@ def Laws.websocket_response_refuse_400():
 def Laws.websocket_response_refuse_403():
   {==}
 
+def Laws.websocket_refusal_clock_failure(res, error):
+  WebSocketProof.refusal_clock_failure(res, error)
+
 # BND-28: the writer is total within its actual scan budget, and its exact
 # rendered output decodes and parses back to the original tree.
 def Laws.json_roundtrip(value, pretty, ascii, valid):

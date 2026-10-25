@@ -1,10 +1,35 @@
 import { afterAll, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
 import { connect, type Socket } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { build } from "./harness.ts";
 
 // Compilation stays at module scope, so the harness's compile budget applies.
 const binary = build("tests/servers/websocket.bend");
+
+// Test-only clock fault (LD_PRELOAD): the wall clock fails, monotonic time works.
+const clockDirectory = mkdtempSync(join(tmpdir(), "bendo-websocket-clock-"));
+const clockShim = join(clockDirectory, "clock-fail.so");
+if (process.platform === "linux") {
+  const run = Bun.spawnSync(
+    [
+      "timeout",
+      "10s",
+      "cc",
+      "-shared",
+      "-fPIC",
+      "tests/fixtures/stream/clock-fail.c",
+      "-o",
+      clockShim,
+      "-ldl",
+    ],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  if (run.exitCode !== 0) throw new Error(`clock fault fixture compile failed: ${run.stderr}`);
+}
+afterAll(() => rmSync(clockDirectory, { recursive: true, force: true }));
 
 type Logged = {
   url: string;
@@ -16,11 +41,11 @@ type Logged = {
 
 // The harness's start() discards stdout; these tests read the fixture's
 // session, cleanup and observer lines, so they collect it themselves.
-async function startLogged(): Promise<Logged> {
+async function startLogged(env: Readonly<Record<string, string>> = {}): Promise<Logged> {
   for (let attempt = 0; attempt < 3; attempt++) {
     const port = 20000 + Math.floor(Math.random() * 10000);
     const proc = Bun.spawn([binary], {
-      env: { ...process.env, PORT: String(port) },
+      env: { ...process.env, ...env, PORT: String(port) },
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -88,9 +113,9 @@ type Wire = {
 
 const hasHead = (wire: Buffer) => wire.includes("\r\n\r\n");
 
-function open(payload: string | Buffer): Promise<Wire> {
+function open(payload: string | Buffer, target: Logged = server): Promise<Wire> {
   return new Promise((resolve, reject) => {
-    const socket = connect(server.port, "127.0.0.1");
+    const socket = connect(target.port, "127.0.0.1");
     const parts: Buffer[] = [];
     let ended = false;
     let wake = () => {};
@@ -142,8 +167,8 @@ function complete(wire: Buffer): boolean {
 }
 
 // Send a request and read one complete response (or until the server closes).
-async function exchange(payload: string | Buffer): Promise<Buffer> {
-  const wire = await open(payload);
+async function exchange(payload: string | Buffer, target: Logged = server): Promise<Buffer> {
+  const wire = await open(payload, target);
   const response = await wire.waitFor(complete);
   wire.socket.destroy();
   return response;
@@ -488,10 +513,60 @@ test("the wire method is re-checked after a rewrite, keeping finalized fields", 
   expect(response.headers.get("access-control-allow-origin")).toBe("https://app.example");
   expect(response.headers.get("x-request-id")).toMatch(/^[0-9a-f]{32}$/);
   expect(response.headers.get("content-length")).toBe("11");
+  expect(response.headers.get("date")).toMatch(/ GMT$/);
   for (const name of ["upgrade", "sec-websocket-accept", "x-bendo-stream-internal"])
     expect(response.names).not.toContain(name);
   await waitForLog("cleanup:/policy/ws");
 });
+
+// BND-94: the refusal is dated before the access log records it, so a clock
+// failure's 500 is the status logged, and it keeps the refusal's fields.
+test.skipIf(process.platform !== "linux")(
+  "a clock failure after a wire refusal sends and logs one finalized 500",
+  async () => {
+    const failing = await startLogged({ LD_PRELOAD: clockShim });
+    try {
+      const id = "clock-refusal";
+      const response = head(
+        await exchange(
+          handshake({
+            path: "/policy/ws",
+            method: "POST",
+            fields: { "x-rewrite-get": "1", origin: "https://app.example", "x-request-id": id },
+          }),
+          failing,
+        ),
+      );
+      expect(response.status).toBe(500);
+      expect(response.rest.length).toBe(0);
+      expect(response.headers.get("content-length")).toBe("0");
+      expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+      expect(response.headers.get("access-control-allow-origin")).toBe("https://app.example");
+      expect(response.headers.get("x-request-id")).toBe(id);
+      expect(response.headers.has("server-timing")).toBe(true);
+      for (const name of [
+        "date",
+        "content-type",
+        "upgrade",
+        "sec-websocket-accept",
+        "x-bendo-stream-internal",
+      ])
+        expect(response.names).not.toContain(name);
+      const deadline = Date.now() + 3000;
+      const entries = () =>
+        failing
+          .accessLog()
+          .split("\n")
+          .filter((entry) => entry.includes(`id=${id}`));
+      while (Date.now() < deadline && entries().length < 2) await Bun.sleep(20);
+      expect(entries()).toHaveLength(2);
+      for (const entry of entries()) expect(entry.split(" ")[2]).toBe("500");
+      await waitForLog("cleanup:/policy/ws", 3000, failing.log);
+    } finally {
+      await failing.stop();
+    }
+  },
+);
 
 test("method override cannot turn a POST into an upgrade", async () => {
   const override = head(

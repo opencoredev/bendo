@@ -146,8 +146,10 @@ empty 500 and runs that registration's cleanup. The first registration is
 cleaned up too, because the 500 no longer carries its marker.
 
 The access logger records the status after transport selection, including a
-400 refusal caused by a method rewrite. Cache middleware skips all 1xx
-responses.
+400 refusal caused by a method rewrite. Bendo dates that refusal before the log
+records it. If the clock fails, the refusal becomes an empty 500 that keeps the
+same fields, such as CORS, security headers and the request ID, and the log
+records that 500. Cache middleware skips all 1xx responses.
 
 `on_after_response` observers run once, after the 101 has been sent and before
 the session starts. A 101 does not take the connection's keep-alive or
