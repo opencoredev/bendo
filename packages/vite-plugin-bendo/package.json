@@ -8,7 +8,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "bendo": "workspace:*"
+    "bendo": "workspace:^"
   },
   "peerDependencies": {
     "vite": "^7.0.0 || ^8.0.0"
@@ -19,5 +19,14 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/opencoredev/bendo"
+  },
+  "files": [
+    "src",
+    "!src/**/*.test.ts",
+    "!src/fixture.ts",
+    "CHANGELOG.md"
+  ],
+  "publishConfig": {
+    "access": "public"
   }
 }

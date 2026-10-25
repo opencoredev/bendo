@@ -66,6 +66,10 @@ The middleware table stores each scoped route's ordinal counted from the end
 of the route list. Runtime converts the router's forward index once. This
 internal key distinguishes duplicate registrations without comparing app tags;
 it is not a public identifier or a stable cross-build plugin key.
+Serving indexes these layers by that ordinal once, at startup, and keeps the
+global layers apart, so a request reads only the globals and its own route's
+layers. Selection results are unchanged; see
+[decision 0014](0014-performance.md).
 
 Request hooks use a provisional resolution of the original method and path.
 Their selected chain stays fixed while they run. Once they call their terminal,
