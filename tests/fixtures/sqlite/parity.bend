@@ -1,6 +1,7 @@
 # Runs the same SQLite operations in the native and JS builds and prints one
 # line per result, so tests/sqlite.test.ts can compare the two (BND-38).
-# The first argument is a scratch directory for file databases.
+# The first argument is a scratch directory for file databases, or --open to
+# only open an in-memory database and print the result.
 import Base
 import ../../../src/sqlite.bend as Sql
 import ../../../src/data/sqlite.bend as D
@@ -294,19 +295,31 @@ def limits(+dir: String) -> IO(Unit):
     m : Result<&2, &2, Sql.Error, Unit> <- Sql.close(fdb)
     say("closed files", unit(m))
 
+def everything(+dir: String) -> IO(Unit):
+  do IO<Unit>:
+    a : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.open(":memory:")
+    +db : Sql.Db <- db_or_die(a)
+    values(db)
+    injection(db)
+    errors(db)
+    transactions(db)
+    statements(db)
+    limits(dir)
+
+def only_open() -> IO(Unit):
+  do IO<Unit>:
+    a : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.open(":memory:")
+    say("open", opened(a))
+
+def pick(+dir: String, open: Bool) -> IO(Unit):
+  match open:
+    case True{}: only_open()
+    case False{}: everything(dir)
+
 def run(args: List<String>) -> IO(Unit):
   match args:
-    case program <> dir <> rest:
-      do IO<Unit>:
-        a : Result<&2, &2, Sql.Error, Sql.Db> <- Sql.open(":memory:")
-        +db : Sql.Db <- db_or_die(a)
-        values(db)
-        injection(db)
-        errors(db)
-        transactions(db)
-        statements(db)
-        limits(dir)
-    case _: IO.die(Unit, 2, "usage: parity DIR")
+    case program <> +dir <> rest: pick(dir, String.eq(dir, "--open"))
+    case _: IO.die(Unit, 2, "usage: parity DIR | parity --open")
 
 def main() -> IO(Unit):
   do IO<Unit>:
