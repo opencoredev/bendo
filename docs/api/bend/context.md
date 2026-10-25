@@ -535,10 +535,41 @@ def header(-Vars: Data, c: B.Context(Vars), name: String, value: String) -> B.Co
 ```
 
 `B.text` and `B.header` for a typed context. Every context call on this page
-exists in `C` the same way, with `Vars` first: `C.query(Vars, c, name)`,
-`C.status(Vars, c, code)`, `C.error(Vars, c, failure)` and so on.
+exists in `C` the same way, with `Vars` first, such as `C.error(Vars, c,
+failure)`; the next two entries are the ones the guides use.
 
 ```bend
 def ex_greet(+c: B.Context(Vars)) -> B.Res:
   C.text(Vars, C.header(Vars, c, "x-user", ex_user_name(C.get(Vars, c))), "Hello")
+```
+
+### `C.query`, `C.status`
+
+```bend signature
+def query(-Vars: Data, c: B.Context(Vars), name: String) -> Maybe<&2, String>
+def status(-Vars: Data, c: B.Context(Vars), code: U32) -> B.Context(Vars)
+```
+
+`B.query` and `B.status` for a typed context: the first value of query
+parameter `name`, and the context with a pending status of `code`.
+
+```bend
+def ex_typed_search(+c: B.Context(Vars)) -> B.Res:
+  C.text(Vars, C.status(Vars, c, 202), "searching for " ++ or_empty(C.query(Vars, c, "q")))
+```
+
+### `C.request_id`
+
+```bend signature
+def request_id(-Vars: Data, c: B.Context(Vars)) -> Maybe<&2, String>
+```
+
+The request ID that [`B.request_id`](middleware.md#b-request-id) assigned, or
+`None{}` before that middleware runs or without it. The ID is kept apart from
+the `Vars` record, so `C.set` and `C.variables` leave it in place. Treat an
+incoming ID as a label, never as an identity.
+
+```bend
+def ex_trace(+c: B.Context(Vars)) -> B.Res:
+  C.text(Vars, c, "request " ++ or_empty(C.request_id(Vars, c)))
 ```

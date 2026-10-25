@@ -73,7 +73,9 @@ here or an entry names something that is not public. Public means:
 - Every top-level def in `src/main.bend`, written `B.name`.
 - Every name that a shipped example (`examples/`), a `create-bendo` template,
   or a published guide calls through another module, such as `J.Json` or
-  `C.header`. A constructor counts as its type. Other defs in those modules
+  `C.header`. A guide counts its Bend examples and its inline code, in prose
+  and tables, under the aliases its examples import. A constructor counts as
+  its type. Other defs in those modules
   are internal and can change without notice. The laws and design decisions
   name internals too; they do not make them public.
 - Every export of each entry point in the `exports` map of `bendo` and

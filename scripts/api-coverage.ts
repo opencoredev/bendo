@@ -152,26 +152,46 @@ function aliasesIn(from: string, text: string): Map<string, string> {
   return aliases;
 }
 
-function bendCodeOf(page: string): string {
-  return codeBlocks(read(page))
-    .filter((block) => block.lang === "bend" || block.lang === "python")
-    .map((block) => block.code)
+/**
+ * The Bend a guide teaches: its `bend` fences, then every inline code span
+ * outside them (prose, lists and tables), one per line. The fences' imports
+ * give the spans their aliases.
+ */
+export function guideCode(markdown: string): string {
+  const { blocks } = markdownOutline(markdown);
+  const fenced = new Set(blocks.flatMap((block) => range(block.line, block.end)));
+  const prose = markdown
+    .split("\n")
+    .map((line, index) => (fenced.has(index + 1) ? "" : line))
     .join("\n");
+  const spans = [...prose.matchAll(/(?<!`)(`+)(?!`)([\s\S]*?[^`])\1(?!`)/g)].map(
+    (match) => match[2] ?? "",
+  );
+  const code = blocks
+    .filter((block) => block.lang === "bend" || block.lang === "python")
+    .map((block) => block.code);
+  return [...code, ...spans].join("\n");
 }
 
-/** Pages and programs that show users how to call Bendo. */
-function teachingSources(): { readonly file: string; readonly text: string }[] {
+function range(from: number, to: number): number[] {
+  return Array.from({ length: to - from + 1 }, (_, offset) => from + offset);
+}
+
+export type TeachingSource = { readonly file: string; readonly text: string };
+
+/** Pages and programs that show users how to call Bendo, as Bend code to search. */
+function teachingSources(): TeachingSource[] {
   const programs = [
     ...walk("examples", (path) => path.endsWith(".bend")),
     ...walk("packages/create-bendo/templates", (path) => path.endsWith(".bend")),
   ].map((file) => ({ file, text: read(file) }));
   const pages = walk("docs", (path) => path.endsWith(".md"))
     .filter((page) => !unpublished.has(page) && !nonGuidePages.some((re) => re.test(page)))
-    .map((file) => ({ file, text: bendCodeOf(file) }));
+    .map((file) => ({ file, text: guideCode(read(file)) }));
   return [...programs, ...pages];
 }
 
-export function bendPublicApi(): PublicApi[] {
+export function bendPublicApi(sources = teachingSources()): PublicApi[] {
   const main = bendModule("src/main.bend");
   const api: PublicApi[] = [...main.defs].map(([name, line]) => ({
     key: `B.${name}`,
@@ -180,7 +200,7 @@ export function bendPublicApi(): PublicApi[] {
   }));
   const found = new Map<string, PublicApi>();
   const unnamed = new Set<string>();
-  for (const { file, text } of teachingSources()) {
+  for (const { file, text } of sources) {
     const code = bendCode(text);
     for (const [alias, module] of aliasesIn(file, text)) {
       if (module === "src/main.bend") continue;
@@ -262,6 +282,8 @@ export type CodeBlock = {
   readonly code: string;
   /** 1-based line of the opening fence. */
   readonly line: number;
+  /** 1-based line of the closing fence, or the page's last line when unclosed. */
+  readonly end: number;
 };
 
 export type Heading = { readonly level: number; readonly text: string; readonly line: number };
@@ -302,7 +324,13 @@ export function markdownOutline(markdown: string): {
     const body: string[] = [];
     for (index++; index < lines.length && !close.test(lines[index] ?? ""); index++)
       body.push((lines[index] ?? "").replace(new RegExp(`^ {0,${indent.length}}`), ""));
-    blocks.push({ lang, meta, code: body.join("\n"), line: start + 1 });
+    blocks.push({
+      lang,
+      meta,
+      code: body.join("\n"),
+      line: start + 1,
+      end: Math.min(index + 1, lines.length),
+    });
   }
   return { blocks, headings, nested };
 }

@@ -219,6 +219,21 @@ def ex_serve_validated(+table: B.Routes(Tag)) -> IO(Unit):
     V.serve_with(~Unit, ~Tag, ~Env, ~handler, ~middleware, table, Env{"hi"}, B.config())
 ```
 
+### `V.serve_limits_with`
+
+```bend signature
+def serve_limits_with(~Vars: Data, ~Tag: Data, ~select: Tag -> Maybe<&2, U32>, ~Env: Data, ~dispatch: Tag -> B.Context(Vars) -> Env -> IO(B.Res), ~middleware: Tag -> B.Context(Vars) -> Env -> (B.Context(Vars) -> IO(B.Res)) -> IO(B.Res), table: B.Routes(Tag), env: Env, config: B.ServerConfig) -> IO(Unit)
+```
+
+`B.serve_limits_with` with the schema decoder linked in: oversized bodies are
+rejected before they are read, and every request is checked against its
+route's schemas.
+
+```bend
+def ex_serve_validated_limited(table: B.Routes(Tag)) -> IO(Unit):
+  V.serve_limits_with(~Unit, ~Tag, ~ex_limit, ~Env, ~handler, ~middleware, table, Env{"hi"}, B.config())
+```
+
 ### `B.handle`, `B.handle_with`
 
 ```bend signature
@@ -237,6 +252,27 @@ def ex_in_memory(+table: B.Routes(Tag)) -> IO(B.Res):
   do IO<B.Res>:
     plain : B.Res <- B.handle(~Tag, ~Env, ~dispatch, table, Env{"hi"}, ex_request(), [])
     wrapped : B.Res <- B.handle_with(~Unit, ~Tag, ~Env, ~handler, ~middleware, table, Env{"hi"}, ex_request(), [])
+    return wrapped
+```
+
+### `V.handle`, `V.handle_with`
+
+```bend signature
+import ./bendo/validated.bend as V
+
+def handle(~Tag: Data, ~Env: Data, ~dispatch: Tag -> B.Ctx -> Env -> IO(B.Res), table: B.Routes(Tag), env: Env, req: B.Req, body: List<&2, U32>) -> IO(B.Res)
+def handle_with(~Vars: Data, ~Tag: Data, ~Env: Data, ~dispatch: Tag -> B.Context(Vars) -> Env -> IO(B.Res), ~middleware: Tag -> B.Context(Vars) -> Env -> (B.Context(Vars) -> IO(B.Res)) -> IO(B.Res), table: B.Routes(Tag), env: Env, req: B.Req, body: List<&2, U32>) -> IO(B.Res)
+```
+
+`B.handle` and `B.handle_with` with validation, for testing an app whose
+routes declare schemas. A request that fails its schemas gets the same 400 or
+422 it would get from `V.serve`. They always run in development mode.
+
+```bend
+def ex_in_memory_validated(+table: B.Routes(Tag)) -> IO(B.Res):
+  do IO<B.Res>:
+    plain : B.Res <- V.handle(~Tag, ~Env, ~dispatch, table, Env{"hi"}, ex_request(), [])
+    wrapped : B.Res <- V.handle_with(~Unit, ~Tag, ~Env, ~handler, ~middleware, table, Env{"hi"}, ex_request(), [])
     return wrapped
 ```
 

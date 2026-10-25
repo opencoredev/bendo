@@ -110,10 +110,99 @@ def ex_remember(c: B.Ctx) -> B.Res:
   ex_remembered(B.set_cookie(c, "session", "abc123", ex_session_options()))
 ```
 
+### `Cookie.defaults`, `Cookie.deletion`
+
+```bend signature
+def defaults() -> Cookie.Options
+def deletion(options: Cookie.Options) -> Cookie.Options
+```
+
+`Cookie.defaults` leaves out every attribute. `Cookie.deletion` turns options
+into the ones `B.delete_cookie` sends: `Max-Age=0`, no `Expires`, and every
+other attribute as given.
+
+```bend
+def ex_forget_options() -> Cookie.Options:
+  Cookie.deletion(Cookie.defaults())
+```
+
+### `Cookie.Entry`, `Cookie.parse`, `Cookie.first`
+
+```bend signature
+type Entry is Data:
+  Entry{name: String, value: String}
+
+def parse(header: String) -> List<&2, Entry>
+def first(pairs: List<&2, Entry>, name: String) -> Maybe<&2, String>
+```
+
+The pure parser behind `B.cookies` and `B.cookie`. `Cookie.parse` reads one
+`Cookie` field value into its valid pairs in order, skipping malformed
+segments and keeping repeated names. `Cookie.first` returns the value of the
+first pair named `name`, compared case-sensitively.
+
+```bend
+def ex_pairs() -> List<&2, Cookie.Entry>:
+  Cookie.parse("theme=dark; session=abc123")
+
+def ex_theme() -> Maybe<&2, String>:
+  Cookie.first(ex_pairs(), "theme")
+```
+
+### `Cookie.serialize`, `Cookie.serialize_pair`
+
+```bend signature
+def serialize(+name: String, +value: String, +options: Cookie.Options) -> Result<&2, &2, Cookie.Error, String>
+def serialize_pair(name: String, value: String) -> String
+```
+
+`Cookie.serialize` builds the `Set-Cookie` field value that `B.set_cookie`
+appends, after the same checks, and fails with the same errors.
+`Cookie.serialize_pair` writes `name=value` without any check; use it only for
+values already validated.
+
+```bend
+def ex_set_cookie_value() -> Result<&2, &2, Cookie.Error, String>:
+  Cookie.serialize("session", "abc123", ex_session_options())
+
+def ex_trusted_pair() -> String:
+  Cookie.serialize_pair("theme", "dark")
+```
+
+### `Cookie.name_valid`, `Cookie.value_valid`
+
+```bend signature
+def name_valid(s: String) -> Bool
+def value_valid(s: String) -> Bool
+```
+
+The checks `Cookie.serialize` applies. A name must be a nonempty HTTP token. A
+value may be empty and may hold ASCII `0x21`, `0x23–0x2B`, `0x2D–0x3A`,
+`0x3C–0x5B` and `0x5D–0x7E`: no space, `"`, `,`, `;` or `\`.
+
+```bend
+def ex_storable(name: String, value: String) -> Bool:
+  Cookie.name_valid(name) && Cookie.value_valid(value)
+```
+
 ## Form and multipart bodies
 
 [Multipart form bodies](../../data/multipart.md) covers parsing, limits and
 memory use.
+
+### `Form.parse_body`
+
+```bend signature
+def parse_body(content_type: String, body: List<&2, U32>) -> Result<&2, &2, Multipart.Error, List<&2, Multipart.Part>>
+```
+
+`Form.parse_body_with_limits` with the default multipart limits: 1 MiB per
+file, 2 MiB per body, 128 parts and 8,192 header bytes per part.
+
+```bend
+def ex_form(content_type: String, body: List<&2, U32>) -> Result<&2, &2, Multipart.Error, List<&2, Multipart.Part>>:
+  Form.parse_body(content_type, body)
+```
 
 ### `Form.parse_body_with_limits`
 
@@ -128,6 +217,24 @@ multipart bodies only; the server's `B.body_limit` bounds every body.
 ```bend
 def ex_upload(content_type: String, body: List<&2, U32>) -> Result<&2, &2, Multipart.Error, List<&2, Multipart.Part>>:
   Form.parse_body_with_limits(content_type, body, Multipart.Limits{3145728, 4194304, 128, 8192})
+```
+
+### `Multipart.parse`, `Multipart.parse_with_limits`
+
+```bend signature
+def parse(content_type: String, body: List<&2, U32>) -> Result<&2, &2, Multipart.Error, List<&2, Multipart.Part>>
+def parse_with_limits(+content_type: String, +body: List<&2, U32>, +limits: Multipart.Limits) -> Result<&2, &2, Multipart.Error, List<&2, Multipart.Part>>
+```
+
+The `Form` parsers restricted to `multipart/form-data`: any other content type
+fails. `Multipart.parse` uses the default limits.
+
+```bend
+def ex_multipart_only(content_type: String, body: List<&2, U32>) -> Result<&2, &2, Multipart.Error, List<&2, Multipart.Part>>:
+  Multipart.parse(content_type, body)
+
+def ex_small_upload(content_type: String, body: List<&2, U32>) -> Result<&2, &2, Multipart.Error, List<&2, Multipart.Part>>:
+  Multipart.parse_with_limits(content_type, body, Multipart.Limits{65536, 131072, 16, 4096})
 ```
 
 ### `Multipart.Limits`
@@ -189,6 +296,22 @@ def ex_upload_status(error: Multipart.Error) -> U32:
 [JSON Schema export](../../data/json-schema.md) lists how each schema maps
 and where validators differ from Bendo's decoder.
 
+### `Multipart.error_status`
+
+```bend signature
+def error_status(e: Multipart.Error) -> U32
+```
+
+The status to answer a failed parse with: 413 for `TooLarge{}`, 400 for every
+other error.
+
+```bend
+def ex_upload_answer(c: B.Ctx, result: Result<&2, &2, Multipart.Error, List<&2, Multipart.Part>>) -> B.Res:
+  match result:
+    case Fail{error}: B.text(B.status(c, Multipart.error_status(error)), "Upload refused")
+    case Done{parts}: B.text(c, "Uploaded")
+```
+
 ### `JS.export`, `JS.document`
 
 ```bend signature
@@ -209,6 +332,22 @@ def ex_schema_text() -> Result<&2, &2, J.Error, String>:
 
 def ex_schema_value() -> J.Json:
   JS.export(ex_flag_schema())
+```
+
+### `JS.email`, `JS.url`
+
+```bend signature
+def email() -> String
+def url() -> String
+```
+
+The ECMAScript pattern sources that `JS.export` writes for strings with the
+`S.Email{}` and `S.Url{}` formats. Both are anchored and mean the same with or without the `u`
+flag.
+
+```bend
+def ex_text_patterns() -> List<&2, String>:
+  [JS.email(), JS.url()]
 ```
 
 ### `SchemaPattern.Pattern`, `SchemaPattern.Range`, `SchemaPattern.seq`
@@ -244,6 +383,26 @@ def ex_slug() -> SchemaPattern.Pattern:
 
 [Crypto and encoding](../../crypto.md) lists the other hashes, HMAC and Base64.
 
+### `SchemaPattern.matches`, `SchemaPattern.source`
+
+```bend signature
+def matches(+p: Pattern, s: String) -> Bool
+def source(p: Pattern) -> String
+```
+
+`SchemaPattern.matches` tests a whole string against a pattern with the proven
+derivative matcher. The decoder uses a faster compiled table and falls back to
+this one when the table fails its size check. `SchemaPattern.source` returns the anchored ECMAScript source that
+`JS.export` writes as `pattern`.
+
+```bend
+def ex_is_slug(s: String) -> Bool:
+  SchemaPattern.matches(ex_slug(), s)
+
+def ex_slug_source() -> String:
+  SchemaPattern.source(ex_slug())
+```
+
 ### `SHA.hash`, `Hex.encode`, `Utf8.encode`
 
 ```bend signature
@@ -263,6 +422,26 @@ def ex_digest(text: String) -> String:
 ```
 
 ## Requests and responses
+
+### `Utf8.valid`
+
+```bend signature
+def valid(s: String) -> Bool
+```
+
+`True` when every character is a Unicode scalar value, so `Utf8.encode` writes
+no U+FFFD. Check secrets with it before hashing them, since two strings that
+differ only in lone surrogates encode to the same bytes.
+
+```bend
+def ex_digest_if(valid: Bool, secret: String) -> Maybe<&2, String>:
+  match valid:
+    case True{}: Some{ex_digest(secret)}
+    case False{}: None{}
+
+def ex_safe_digest(+secret: String) -> Maybe<&2, String>:
+  ex_digest_if(Utf8.valid(secret), secret)
+```
 
 ### `Request.Method`
 
@@ -457,4 +636,65 @@ def ex_read_frame(bytes: List<&2, U32>) -> Frame.Decoded:
 
 def ex_role() -> Frame.Role:
   Frame.Client{}
+```
+
+### `Frame.start`, `Frame.resume`, `Frame.next`, `Frame.feed`
+
+```bend signature
+def start(cfg: Config, xs: List<&2, U32>) -> Decoded
+def resume(b: Body, xs: List<&2, U32>) -> Decoded
+def next(cfg: Config, body: Maybe<&2, Body>, xs: List<&2, U32>) -> Decoded
+def feed(+cfg: Config, +body: Maybe<&2, Body>, +pending: List<&2, U32>, chunks: List<&2, List<&2, U32>>) -> Decoded
+```
+
+The resumable decoder a connection uses, so a payload that arrives over many
+reads costs linear work. `Frame.start` answers like `Frame.decode`, except that
+a frame whose header was accepted but whose payload is incomplete comes back as
+`Partial{body}`: keep `body` and drop the buffer. `Frame.resume` continues that
+body with the next bytes; pass it only a body from `start` or `resume` with
+the same `Config`. While `start` answers `NeedMore`, append the next read and
+call `start` again. `Frame.next` makes that choice, `start` without a body and
+`resume` with one. `Frame.feed` folds `next` over a list of reads, and gives
+the same frame or rejection as `Frame.decode` on the whole input.
+
+```bend
+def ex_continue(cfg: Frame.Config, d: Frame.Decoded, pending: List<&2, U32>, read: List<&2, U32>) -> Frame.Decoded:
+  match d:
+    case Frame.Partial{body}: Frame.resume(body, read)
+    case _: Frame.start(cfg, List.append(&2, U32, pending, read))
+
+def ex_step(cfg: Frame.Config, body: Maybe<&2, Frame.Body>, read: List<&2, U32>) -> Frame.Decoded:
+  Frame.next(cfg, body, read)
+
+def ex_reads(cfg: Frame.Config, chunks: List<&2, List<&2, U32>>) -> Frame.Decoded:
+  Frame.feed(cfg, None{}, [], chunks)
+```
+
+### `Frame.encode`, `Frame.Key`
+
+```bend signature
+def encode(max: U32, +f: Frame, +k: Maybe<&2, Key>) -> Maybe<&2, List<&2, U32>>
+
+type Key is Data:
+  MaskKey{a: U32, b: U32, c: U32, d: U32}
+
+type Frame is Data:
+  Frame{fin: Bool, opcode: Opcode, payload: List<&2, U32>}
+```
+
+Encodes one frame with the shortest length form, or answers `None{}` when RFC
+6455 does not let an endpoint send it: a fragmented control frame, a control
+payload over 125 bytes, a payload over `max`, or a payload or key value above
+255. A server passes `None{}` as the key. A client passes
+`Some{Frame.MaskKey{a, b, c, d}}` with fresh random octets for every frame.
+
+```bend
+def ex_server_text() -> Maybe<&2, List<&2, U32>>:
+  Frame.encode(1048576, Frame.Frame{True{}, Frame.OpText{}, Utf8.encode("hi")}, None{})
+
+def ex_client_key(a: U32, b: U32, c: U32, d: U32) -> Frame.Key:
+  Frame.MaskKey{a, b, c, d}
+
+def ex_client_ping(key: Frame.Key) -> Maybe<&2, List<&2, U32>>:
+  Frame.encode(125, Frame.Frame{True{}, Frame.OpPing{}, []}, Some{key})
 ```

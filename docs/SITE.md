@@ -79,7 +79,9 @@ plus the examples. `docs/api/index.md` states which names count as public.
   Bend fences of a page form one program, compiled to C through the cached
   fixture harness; each TypeScript fence is typechecked as its own module.
 - Adding a def to `src/main.bend`, an export to a package entry point, or a new
-  companion call to an example fails the test until it has an entry. A newly
+  companion call to an example or a guide fails the test until it has an entry.
+  A guide's inline code counts too: writing `` `P.size(hub)` `` in a table on a
+  page whose examples import `P` makes `P.size` public. A newly
   imported companion module also needs an alias in `scripts/api-coverage.ts`.
 
 Planned additions: task and migration guides (BND-72). Add their pages to

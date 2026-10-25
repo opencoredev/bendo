@@ -644,6 +644,22 @@ def ex_startup() -> IO(ExEnv):
     return ExEnv{hub}
 ```
 
+### `P.hub_with_timeout`
+
+```bend signature
+def hub_with_timeout(timeout_ms: U32) -> IO(P.Hub)
+```
+
+`P.hub` with a different budget: each registry operation waits at most
+`timeout_ms` milliseconds for the hub before it fails.
+
+```bend
+def ex_patient_startup() -> IO(ExEnv):
+  do IO<ExEnv>:
+    hub : P.Hub <- P.hub_with_timeout(15000)
+    return ExEnv{hub}
+```
+
 ### `P.Peer`
 
 ```bend signature
@@ -696,6 +712,21 @@ def ex_follow(peer: P.Peer, topic: String) -> IO(Bool):
   P.subscribe(peer, topic)
 ```
 
+### `P.unsubscribe`
+
+```bend signature
+def unsubscribe(peer: P.Peer, topic: String) -> IO(Bool)
+```
+
+Removes the connection from `topic` and returns `True` once the registry has
+applied it. Leaving a topic the connection is not in also returns `True`.
+`False` means the hub timed out or is unavailable.
+
+```bend
+def ex_unfollow(peer: P.Peer, topic: String) -> IO(Bool):
+  P.unsubscribe(peer, topic)
+```
+
 ### `P.Delivery`
 
 ```bend signature
@@ -743,6 +774,64 @@ def ex_relay(state: Unit, peer: P.Peer, message: B.WebSocketMessage) -> IO(Unit)
         got : Result<&2, &2, B.StoreError, P.Delivery> <- P.publish_others(peer, "room", text)
         return state
     case _: IO.pure(Unit, state)
+```
+
+### `P.publish_binary`, `P.publish_binary_others`
+
+```bend signature
+def publish_binary(hub: P.Hub, topic: String, bytes: List<&2, U32>) -> IO(Result<&2, &2, B.StoreError, P.Delivery>)
+def publish_binary_others(peer: P.Peer, topic: String, bytes: List<&2, U32>) -> IO(Result<&2, &2, B.StoreError, P.Delivery>)
+```
+
+`P.publish` and `P.publish_others` for a binary message, sent with `bytes`
+unchanged.
+
+```bend
+def ex_announce_bytes(hub: P.Hub) -> IO(String):
+  do IO<String>:
+    got : Result<&2, &2, B.StoreError, P.Delivery> <- P.publish_binary(hub, "room", [1, 2, 3])
+    return ex_report(got)
+
+def ex_relay_bytes(state: Unit, peer: P.Peer, message: B.WebSocketMessage) -> IO(Unit):
+  match message:
+    case M.BinaryMessage{bytes}:
+      do IO<Unit>:
+        got : Result<&2, &2, B.StoreError, P.Delivery> <- P.publish_binary_others(peer, "room", bytes)
+        return state
+    case _: IO.pure(Unit, state)
+```
+
+### `P.members`, `P.size`, `P.connections`
+
+```bend signature
+def members(hub: P.Hub, topic: String) -> IO(Result<&2, &2, B.StoreError, List<&2, Nat>>)
+def size(hub: P.Hub) -> IO(Result<&2, &2, B.StoreError, Nat>)
+def connections(hub: P.Hub) -> IO(Result<&2, &2, B.StoreError, Nat>)
+```
+
+Read the registry. `P.members` returns the registry IDs subscribed to `topic`,
+the IDs `P.id` gives. `P.size` counts subscriptions across all topics, so a
+connection in two topics counts twice; it is zero once every connection has
+gone. `P.connections` counts connections that joined and have not closed.
+`Fail` means the registry could not be read.
+
+```bend
+def ex_count(got: Result<&2, &2, B.StoreError, Nat>) -> Nat:
+  match got:
+    case Done{n}: n
+    case Fail{e}: 0n
+
+def ex_in_room(got: Result<&2, &2, B.StoreError, List<&2, Nat>>) -> Nat:
+  match got:
+    case Done{ids}: List.length(&2, Nat, ids)
+    case Fail{e}: 0n
+
+def ex_stats(+hub: P.Hub) -> IO(String):
+  do IO<String>:
+    room : Result<&2, &2, B.StoreError, List<&2, Nat>> <- P.members(hub, "room")
+    subs : Result<&2, &2, B.StoreError, Nat> <- P.size(hub)
+    open : Result<&2, &2, B.StoreError, Nat> <- P.connections(hub)
+    return Nat.show(ex_in_room(room)) ++ " in the room, " ++ Nat.show(ex_count(subs)) ++ " subscriptions, " ++ Nat.show(ex_count(open)) ++ " connections"
 ```
 
 ### `P.handlers`

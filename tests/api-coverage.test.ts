@@ -3,6 +3,7 @@ import {
   bendPublicApi,
   checkTsExamples,
   coverageProblems,
+  guideCode,
   referencePages,
   tsPublicApi,
   writeBendPrograms,
@@ -143,6 +144,40 @@ test("a fence inside a blockquote or list is reported, not skipped", () => {
   expect(coverageProblems([page], api)).toEqual([nested(5), nested(7)]);
   const mixed: Page = { ...page, text: `${text}\n- > \`\`\`bend\n  > def broken() -> U32: "x"` };
   expect(coverageProblems([mixed], api)).toEqual([nested(5), nested(7), nested(8)]);
+});
+
+test("a guide teaches the names in its inline code, under the aliases its fences import", () => {
+  const guide = [
+    "```bend",
+    "import ./bendo/main.bend as B",
+    "import ./bendo/ws/pubsub.bend as P",
+    "def ex(hub: P.Hub) -> IO(P.Hub): IO.pure(P.Hub, hub) # P.unsubscribe",
+    "```",
+    "Count subscriptions with `P.size(hub)`; `B.text` and `Q.members` are not",
+    "companions here.",
+    "",
+    "| Call | Result |",
+    "| --- | --- |",
+    "| ``P.members(hub, topic)`` | IDs |",
+    "",
+    "```sh",
+    "echo `P.connections`",
+    "```",
+  ].join("\n");
+  const api = bendPublicApi([{ file: "docs/guide.md", text: guideCode(guide) }]).filter(
+    (item) => !item.key.startsWith("B."),
+  );
+  expect(api.map((item) => item.key)).toEqual(["P.Hub", "P.members", "P.size"]);
+  const documented: Page = {
+    page: "docs/api/bend/t.md",
+    language: "bend",
+    module: undefined,
+    text: ["### `P.Hub`", "```bend", "def ex(hub: P.Hub) -> P.Hub: hub", "```"].join("\n"),
+  };
+  expect(coverageProblems([documented], api).map((problem) => problem.split(" (")[0])).toEqual([
+    "no entry for P.members",
+    "no entry for P.size",
+  ]);
 });
 
 test("every public API has a reference entry with an example, and every entry names one", () => {

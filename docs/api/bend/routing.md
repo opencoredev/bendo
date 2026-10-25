@@ -332,6 +332,22 @@ def ex_explain(e: Methods.BuildError) -> String:
     case Methods.InvalidMethod{index, source, token}: "bad method " ++ token ++ " for " ++ source
 ```
 
+### `Methods.Registration`
+
+```bend signature
+def Registration(-T: Data) -> Data
+```
+
+One route registration from the low-level router: a method, a path pattern and
+a tag, with no middleware or hook case. `Methods.get` and `Methods.on` build
+one, `Methods.build_table` takes a list of them, and `B.registration` wraps
+one as a `B.Registration(Tag)`.
+
+```bend
+def ex_low_route() -> Methods.Registration(Tag):
+  Methods.get(Tag, "/health", Home{})
+```
+
 ### `Methods.get`, `Methods.on`
 
 ```bend signature
