@@ -109,7 +109,7 @@ def handle(tag: Route, c: B.Ctx, env: Env) -> IO(B.Res):
       create_todo(c, env)
 
 def main() -> IO(Unit):
-  B.serve(~handle, routes(), env_at_startup(), B.config_defaults)
+  B.serve(~handle, routes(), env_at_startup(), B.config())
 ```
 
 Middleware and schemas are data in the route table, so the spec router, the trie proof, `--bendo-routes` and `bendo gen` all read one description. Built-in middleware resolves through Bendo's own closed dispatcher; user middleware follows the same tag pattern. The tag type and the `handle` match repeat the route list once. Generating both from one declaration is a possible later convenience, not a v1 promise.
