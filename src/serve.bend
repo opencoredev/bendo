@@ -68,6 +68,36 @@ def drain(event: DrainEvent, +left: U32, +deadline: Nat) -> IO(Unit):
     case Polled{(s, _)}:
       Socket.close(s)
 
+# Every write to a client socket goes through `write` (BND-106): the first send
+# takes what the socket accepts at once and never waits, so its unsent suffix
+# is measured before the first window starts. Each later window waits up to
+# write_timeout_ms, and a window in which the client accepts no octet ends the
+# write as a timeout failure. The caller closes the socket on any failure.
+type WriteEvent is Type:
+  Pushed{result: Socket & Poll<&1, &1, Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>, List<&2, U32>>, window: Progress.Unsent}
+  Counted{socket: Socket, bytes: List<&2, U32>, left: Nat, progressed: Bool}
+
+@unsafe
+def write_windows(event: WriteEvent, +ms: U32) -> IO(Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>):
+  match event:
+    case Pushed{(s, Ready{result}), window}:
+      IO.pure(Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>, (s, result))
+    case Pushed{(s, Wait{+bytes}), window}:
+      +left = Progress.unsent(bytes, 0n)
+      write_windows(Counted{s, bytes, left, Progress.progressed(window, left)}, ms)
+    case Counted{s, bytes, left, True{}}:
+      do IO<Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>>:
+        out : Socket & Poll<&1, &1, Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>, List<&2, U32>> <- TCP.try_send_bytes(s, bytes, ms)
+        write_windows(Pushed{out, Progress.Left{left}}, ms)
+    # A whole window passed without the client accepting an octet.
+    case Counted{s, bytes, left, False{}}:
+      IO.pure(Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>, (s, Fail{(((110 : U32), "write timed out"), bytes)}))
+
+def write(s: Socket, bytes: List<&2, U32>, ms: U32) -> IO(Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>):
+  do IO<Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>>:
+    out : Socket & Poll<&1, &1, Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>, List<&2, U32>> <- TCP.try_send_bytes(s, bytes, 0)
+    write_windows(Pushed{out, Progress.Opening{}}, ms)
+
 def rejected(m: Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>) -> IO(Unit):
   (s, result) = m
   match result:
@@ -79,35 +109,23 @@ def rejected(m: Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>) -
     case Fail{e}:
       Socket.close(s)
 
-def reject(s: Socket, status: U32) -> IO(Unit):
+def reject(s: Socket, status: U32, ms: U32) -> IO(Unit):
   do IO<Unit>:
     bytes : List<&2, U32> <- DateWire.ensure(Write.write(R.Get{}, Response.body(status, Connection.headers([], True{}), [])))
-    out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- TCP.send_bytes(s, bytes)
+    out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- write(s, bytes, ms)
     rejected(out)
 
-def reject_body(s: Socket, +req: R.Req) -> IO(Unit):
+def reject_body(s: Socket, +req: R.Req, ms: U32) -> IO(Unit):
   +ctx = Context.create(req, [], [], [])
   method = Context.method(Unit, ctx)
   res = Context.error(Unit, Context.header(Unit, ctx, "connection", "close"), Errors.http_error(413, "Content Too Large"))
   do IO<Unit>:
     bytes : List<&2, U32> <- DateWire.ensure(Write.write(method, res))
-    out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- TCP.send_bytes(s, bytes)
+    out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- write(s, bytes, ms)
     rejected(out)
 
-def continue_result(m: Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>) -> IO(Socket):
-  (s, r) = m
-  do IO<Socket>:
-    # Leave failures to the next receive; the socket is always owned/closed.
-    return s
-
-def interim(s: Socket, send: Bool) -> IO(Socket):
-  match send:
-    case False{}:
-      IO.pure(Socket, s)
-    case True{}:
-      do IO<Socket>:
-        out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- TCP.send(s, "HTTP/1.1 100 Continue\r\n\r\n")
-        continue_result(out)
+def interim(s: Socket, ms: U32) -> IO(Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>):
+  write(s, Bytes.encode("HTTP/1.1 100 Continue\r\n\r\n"), ms)
 
 type Reply is Type:
   Reply{bytes: List<&2, U32>, close: Bool, after: IO(Unit)}
@@ -125,8 +143,7 @@ type ConnectionEvent is Type:
   UpgradeHead{result: Socket & Bool, rest: List<&2, U32>, action: StreamTypes.Handoff -> IO(Unit), after: IO(Unit)}
   StreamBody{outcome: StreamTypes.Outcome, state: Connection.State, rest: List<&2, U32>, close: Bool}
   Sent{sent: Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>, state: Connection.State, rest: List<&2, U32>, close: Bool}
-  Writing{result: Socket & Poll<&1, &1, Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>, List<&2, U32>>, window: Progress.Unsent, state: Connection.State, rest: List<&2, U32>, close: Bool, after: IO(Unit)}
-  Measured{socket: Socket, bytes: List<&2, U32>, left: Nat, progressed: Bool, state: Connection.State, rest: List<&2, U32>, close: Bool, after: IO(Unit)}
+  Continued{sent: Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>, state: Connection.State}
 
 def closing(+req: R.Req, state: Connection.State, config: Config.Config) -> Bool:
   Connection.State{input, count, phase, at} = state
@@ -143,31 +160,15 @@ def talk(~Env: Data, ~select: R.Req -> Env -> U32, ~app: R.Req -> List<&2, U32> 
       do IO<Unit>:
         reply : Reply <- app(req, body, env, closing(req, state, config), peer)
         talk(~Env, ~select, ~app, Replied{s, state, rest, reply}, env, config, peer)
-    # A buffered response is sent one write_timeout_ms window at a time
-    # (BND-106). The first send takes what the socket accepts at once and never
-    # waits, so its unsent suffix is measured before the first window starts.
-    # `after` runs once, when the send completes, fails or stalls.
+    # A buffered response goes out under the write deadline (BND-106).
+    # `after` runs once, when the write completes, fails or times out; a
+    # failure then closes the connection through Sent.
     case Replied{s, state, rest, Reply{bytes, close, after}}:
       do IO<Unit>:
         dated : List<&2, U32> <- DateWire.ensure(bytes)
-        out : Socket & Poll<&1, &1, Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>, List<&2, U32>> <- TCP.try_send_bytes(s, dated, 0)
-        talk(~Env, ~select, ~app, Writing{out, Progress.Opening{}, state, rest, close, after}, env, config, peer)
-    case Writing{(s, Ready{result}), window, state, rest, close, after}:
-      do IO<Unit>:
+        out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- write(s, dated, Config.write_timeout(config))
         after
-        talk(~Env, ~select, ~app, Sent{(s, result), state, rest, close}, env, config, peer)
-    case Writing{(s, Wait{+bytes}), window, state, rest, close, after}:
-      +left = Progress.unsent(bytes, 0n)
-      talk(~Env, ~select, ~app, Measured{s, bytes, left, Progress.progressed(window, left), state, rest, close, after}, env, config, peer)
-    case Measured{s, bytes, left, True{}, state, rest, close, after}:
-      do IO<Unit>:
-        out : Socket & Poll<&1, &1, Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>, List<&2, U32>> <- TCP.try_send_bytes(s, bytes, Config.write_timeout(config))
-        talk(~Env, ~select, ~app, Writing{out, Progress.Left{left}, state, rest, close, after}, env, config, peer)
-    # A whole window passed without the client accepting a byte.
-    case Measured{s, bytes, left, False{}, state, rest, close, after}:
-      do IO<Unit>:
-        after
-        Socket.close(s)
+        talk(~Env, ~select, ~app, Sent{out, state, rest, close}, env, config, peer)
     case Replied{s, state, rest, Streaming{bytes, close, StreamTypes.Plan{+timeout, length, action}, after}}:
       do IO<Unit>:
         dated : List<&2, U32> <- DateWire.ensure(bytes)
@@ -206,9 +207,9 @@ def talk(~Env: Data, ~select: R.Req -> Env -> U32, ~app: R.Req -> List<&2, U32> 
     case StreamBody{StreamTypes.Cancelled{}, state, rest, close}:
       IO.pure(Unit, Unit{})
     case Work{s, state, Connection.BodyRejected{req}}:
-      reject_body(s, req)
+      reject_body(s, req, Config.write_timeout(config))
     case Work{s, state, Connection.Reject{status}}:
-      reject(s, status)
+      reject(s, status, Config.write_timeout(config))
     case Work{s, state, Connection.Stop{}}:
       Socket.close(s)
     case Work{s, state, Connection.Read{ms}}:
@@ -217,8 +218,15 @@ def talk(~Env: Data, ~select: R.Req -> Env -> U32, ~app: R.Req -> List<&2, U32> 
       do IO<Unit>:
         now : Nat <- IO.now()
         talk(~Env, ~select, ~app, Fed{s, Connection.feed_policy(~Env, ~select, env, xs, state, now, config)}, env, config, peer)
-    case Fed{s, (next, send)}:
-      IO.bind(Socket, Unit, interim(s, send), sock => talk(~Env, ~select, ~app, Tick{sock, next}, env, config, peer))
+    case Fed{s, (next, False{})}:
+      talk(~Env, ~select, ~app, Tick{s, next}, env, config, peer)
+    case Fed{s, (next, True{})}:
+      IO.bind(Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>, Unit, interim(s, Config.write_timeout(config)), out => talk(~Env, ~select, ~app, Continued{out, next}, env, config, peer))
+    # A 100 Continue the client did not take ends the connection.
+    case Continued{(s, Done{u}), next}:
+      talk(~Env, ~select, ~app, Tick{s, next}, env, config, peer)
+    case Continued{(s, Fail{e}), next}:
+      Socket.close(s)
     case Read{(s, Ready{Done{None{}}}), +state}:
       talk(~Env, ~select, ~app, Work{s, state, Connection.eof(state)}, env, config, peer)
     case Read{(s, Ready{Fail{e}}), state}:

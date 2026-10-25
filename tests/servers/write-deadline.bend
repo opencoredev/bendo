@@ -1,6 +1,7 @@
 # BND-106: a buffered response's write deadline. /big and /slow answer an
 # 8 MiB buffered body and record each run of their after-response hook on a
-# channel; /count drains it and answers how many runs it held.
+# channel; /count drains it and answers how many runs it held. POST /ping
+# lets a request ask for 100 Continue.
 import Base
 import ../../src/main.bend as B
 import ../../src/app/config.bend as Config
@@ -85,5 +86,6 @@ def main() -> IO(Unit):
   ready(B.routes(Tag, [
     B.on_after_response(Tag, Observe{}),
     B.get(Tag, "/big", Big{}), B.get(Tag, "/slow", Big{}),
-    B.get(Tag, "/count", Count{}), B.get(Tag, "/ping", Ping{})
+    B.get(Tag, "/count", Count{}), B.get(Tag, "/ping", Ping{}),
+    B.post(Tag, "/ping", Ping{})
   ]))
