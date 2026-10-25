@@ -59,7 +59,9 @@ of the listed tokens. The responses follow RFC 6750:
 ## JWT
 
 `B.jwt_config(secret, leeway, realm)` configures HS256 verification with a UTF-8
-secret. `leeway` is the allowed clock skew in whole seconds. `B.jwt(config)`
+secret. A secret holding a non-scalar character (a lone surrogate, or a code
+point above U+10FFFF) has no UTF-8 form, so that config refuses every token.
+`leeway` is the allowed clock skew in whole seconds. `B.jwt(config)`
 reads `Authorization: Bearer <token>`, verifies it against the wall clock
 (`src/effects/clock.bend`) and calls the next layer. To hand the claim set to
 your handler, call `B.jwt_with` from your own middleware case and store it in
@@ -121,6 +123,8 @@ fails, the response is an empty 500. Cookie tokens are not supported.
 `B.jwt_sign(secret, claims)` signs a `JObject` claim set with the header
 `{"alg":"HS256","typ":"JWT"}` and returns `Result<.., B.JwtError, String>`.
 `B.jwt_verify(secret, token, now, leeway)` returns the claims or the error.
+With a secret holding a non-scalar character, `jwt_sign` fails with
+`BadEncoding` and `jwt_verify` with `BadSignature`.
 Both are pure. The tests check every direction against the `jose` npm package.
 Signing a claim set with a repeated member name, or with more than 256
 members, fails with the same error (`DuplicateMember` or `TooManyMembers`) that
