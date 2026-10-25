@@ -301,21 +301,26 @@ def ex_print_routes(table: B.Routes(Tag)) -> IO(Unit):
 def ServerConfig() -> Data
 
 type Config is Data:
-  Config{host: String, port: U32, body_limit: U32, header_limit: U32, idle_timeout_ms: U32, head_timeout_ms: U32, body_timeout_ms: U32, max_requests: U32, keep_alive: Bool, router: B.RouterKind, mode: Mode, workers: U32}
+  Config{host: String, port: U32, body_limit: U32, header_limit: U32, idle_timeout_ms: U32, head_timeout_ms: U32, body_timeout_ms: U32, write_timeout_ms: U32, max_requests: U32, keep_alive: Bool, router: B.RouterKind, mode: Mode, workers: U32}
 ```
 
 Startup settings for `B.serve` and its variants. `B.ServerConfig` names the
 type `Config.Config` from `app/config.bend`. `host` must be an IPv4 literal.
 `body_limit` and `header_limit` count bytes, the timeouts are milliseconds,
-and `max_requests` caps the requests on one connection. To change a field with
+and `max_requests` caps the requests on one connection. `write_timeout_ms`
+bounds sending a buffered response: the server sends it in windows of that
+length and closes the connection, after running the response's after-response
+hooks, when the client accepts no bytes during a whole window. A client that
+keeps reading gets the whole body however long it takes. Streaming responses
+use their own `B.StreamConfig` timeout instead. To change a field with
 no helper here, import `app/config.bend` as `Config`, take the record apart
 with the `Config.Config` constructor and build a new one, as below. Fields are
 positional, so keep the order of the signature.
 
 ```bend
 def ex_public(config: B.ServerConfig) -> B.ServerConfig:
-  Config.Config{host, port, body, header, idle, head, read, max, keep_alive, router, mode, workers} = config
-  Config.Config{"0.0.0.0", 3000, body, header, idle, head, read, max, keep_alive, router, mode, workers}
+  Config.Config{host, port, body, header, idle, head, read, write, max, keep_alive, router, mode, workers} = config
+  Config.Config{"0.0.0.0", 3000, body, header, idle, head, read, write, max, keep_alive, router, mode, workers}
 ```
 
 ### `B.config`
@@ -325,8 +330,8 @@ def config() -> B.ServerConfig
 ```
 
 The default config: host `127.0.0.1`, port 8787, a 1 MiB body limit, a
-64 KiB header limit, 5,000 ms idle, 10,000 ms to read the head and 30,000 ms
-to read the body, 100 requests per connection, keep-alive on, the trie
+64 KiB header limit, 5,000 ms idle, 10,000 ms to read the head, 30,000 ms
+to read the body, a 30,000 ms write window, 100 requests per connection, keep-alive on, the trie
 router, development mode and one worker. A decimal `PORT` from 1 to 65535
 overrides the port at startup.
 
@@ -350,8 +355,8 @@ the config's `router` field. See the [trie router](../../router-trie.md).
 
 ```bend
 def ex_with_router(config: B.ServerConfig, kind: B.RouterKind) -> B.ServerConfig:
-  Config.Config{host, port, body, header, idle, head, read, max, keep_alive, router, mode, workers} = config
-  Config.Config{host, port, body, header, idle, head, read, max, keep_alive, kind, mode, workers}
+  Config.Config{host, port, body, header, idle, head, read, write, max, keep_alive, router, mode, workers} = config
+  Config.Config{host, port, body, header, idle, head, read, write, max, keep_alive, kind, mode, workers}
 
 def ex_reference() -> B.ServerConfig:
   ex_with_router(B.config(), B.spec())

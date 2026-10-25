@@ -77,6 +77,45 @@ Each receive uses `TCP.try_recv_bytes` with the remaining monotonic deadline.
 reads; it does not cancel handlers or preempt pure computation (plan decision 9).
 The default body budget remains 1 MiB and max requests remains 100.
 
+## Write deadline
+
+BND-106 bounds the send of a buffered response. Before it, the shell called
+`TCP.send_bytes`, which in Bend 2.0.38 waits for the socket to become writable
+with no deadline. A client that asked for a large response and stopped reading
+held the connection, the unsent bytes and the response's after-response hooks
+forever. Streaming responses already used the bounded `Stream.send`.
+
+The shell now sends with `TCP.try_send_bytes`, the deadline-aware send that
+`Stream.send` uses, so no new effect is needed and the C and JavaScript builds
+behave alike. The first call has a zero deadline: it takes what the socket
+accepts at once and returns at once, so a response that fits in the socket
+buffer, which is nearly every response, costs nothing extra. Whatever is left
+goes out in windows of `write_timeout_ms` (default 30000 ms). After each window
+that ends with bytes unsent, the pure `http/write_progress.bend` decides: if
+the window shrank the unsent suffix, send another; if not, run the
+after-response hooks and close the socket. The hooks also run exactly once when
+the send completes or fails.
+
+The deadline is idle progress, not a total. The read deadlines above are
+absolute because the head and body limits bound what they read. Response size
+has no such limit: a handler may send a 100 MB download, and a total deadline
+would cut it off on any link slower than the size divided by the deadline.
+Measured per window, a client that reads slowly but steadily gets the whole
+body, while one that stops reading is closed between one and two windows after
+its last read (the window in which it stopped still counts as progress). The
+default matches the 30000 ms body deadline and the default stream write
+timeout. A client that accepts a few bytes every window can still hold a
+connection for as long as the transfer takes; that is the cost of not capping
+download time.
+
+The close is `Socket.close`, not the lingering close: there is no request to
+protect, and the client is not reading. The window only measures bytes the
+kernel accepted, so a client's own socket buffers absorb part of a response
+before its first window stalls. `tests/write-deadline.test.ts` serves an
+8 MiB buffered body with a 1000 ms window: a client that never reads is closed
+within two windows plus slack while other clients are served, the hooks run
+once, and a client reading 512 KiB every 200 ms gets the whole body.
+
 ## Verification
 
 `bun test --timeout 30000 tests/http-connection.test.ts` drives compiled servers

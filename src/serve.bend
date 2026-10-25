@@ -24,6 +24,7 @@ import ./http/response.bend as Response
 import ./http/write_response.bend as Write
 import ./http/bytes.bend as Bytes
 import ./http/date_wire.bend as DateWire
+import ./http/write_progress.bend as Progress
 
 type Config is Data:
   Config{port: U32, body_limit: U32}
@@ -124,6 +125,8 @@ type ConnectionEvent is Type:
   UpgradeHead{result: Socket & Bool, rest: List<&2, U32>, action: StreamTypes.Handoff -> IO(Unit), after: IO(Unit)}
   StreamBody{outcome: StreamTypes.Outcome, state: Connection.State, rest: List<&2, U32>, close: Bool}
   Sent{sent: Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>, state: Connection.State, rest: List<&2, U32>, close: Bool}
+  Writing{result: Socket & Poll<&1, &1, Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>, List<&2, U32>>, window: Progress.Unsent, state: Connection.State, rest: List<&2, U32>, close: Bool, after: IO(Unit)}
+  Measured{socket: Socket, bytes: List<&2, U32>, left: Nat, progressed: Bool, state: Connection.State, rest: List<&2, U32>, close: Bool, after: IO(Unit)}
 
 def closing(+req: R.Req, state: Connection.State, config: Config.Config) -> Bool:
   Connection.State{input, count, phase, at} = state
@@ -140,12 +143,31 @@ def talk(~Env: Data, ~select: R.Req -> Env -> U32, ~app: R.Req -> List<&2, U32> 
       do IO<Unit>:
         reply : Reply <- app(req, body, env, closing(req, state, config), peer)
         talk(~Env, ~select, ~app, Replied{s, state, rest, reply}, env, config, peer)
+    # A buffered response is sent one write_timeout_ms window at a time
+    # (BND-106). The first send takes what the socket accepts at once and never
+    # waits, so its unsent suffix is measured before the first window starts.
+    # `after` runs once, when the send completes, fails or stalls.
     case Replied{s, state, rest, Reply{bytes, close, after}}:
       do IO<Unit>:
         dated : List<&2, U32> <- DateWire.ensure(bytes)
-        out : Socket & Result<&1, &1, (U32 & String) & List<&2, U32>, Unit> <- TCP.send_bytes(s, dated)
+        out : Socket & Poll<&1, &1, Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>, List<&2, U32>> <- TCP.try_send_bytes(s, dated, 0)
+        talk(~Env, ~select, ~app, Writing{out, Progress.Opening{}, state, rest, close, after}, env, config, peer)
+    case Writing{(s, Ready{result}), window, state, rest, close, after}:
+      do IO<Unit>:
         after
-        talk(~Env, ~select, ~app, Sent{out, state, rest, close}, env, config, peer)
+        talk(~Env, ~select, ~app, Sent{(s, result), state, rest, close}, env, config, peer)
+    case Writing{(s, Wait{+bytes}), window, state, rest, close, after}:
+      +left = List.length(&2, U32, bytes)
+      talk(~Env, ~select, ~app, Measured{s, bytes, left, Progress.progressed(window, left), state, rest, close, after}, env, config, peer)
+    case Measured{s, bytes, left, True{}, state, rest, close, after}:
+      do IO<Unit>:
+        out : Socket & Poll<&1, &1, Result<&1, &1, (U32 & String) & List<&2, U32>, Unit>, List<&2, U32>> <- TCP.try_send_bytes(s, bytes, Config.write_timeout(config))
+        talk(~Env, ~select, ~app, Writing{out, Progress.Left{left}, state, rest, close, after}, env, config, peer)
+    # A whole window passed without the client accepting a byte.
+    case Measured{s, bytes, left, False{}, state, rest, close, after}:
+      do IO<Unit>:
+        after
+        Socket.close(s)
     case Replied{s, state, rest, Streaming{bytes, close, StreamTypes.Plan{+timeout, length, action}, after}}:
       do IO<Unit>:
         dated : List<&2, U32> <- DateWire.ensure(bytes)
@@ -288,7 +310,7 @@ def serve_config(~app: R.Req -> List<&2, U32> -> List<&2, U32>, config: Config) 
     +port : U32 = port_or(env, fallback)
     l : Listener <- IO.try(Listener, TCP.listen("127.0.0.1", port))
     IO.print("bendo listening on http://127.0.0.1:" ++ U32.show(port))
-    loop(~U32, ~(req => env => env), ~(req => body => env => close => peer => legacy(~app, req, body, env, close, peer)), l, limit, Config.Config{"127.0.0.1", port, limit, 65536, 5000, 10000, 30000, 1, False{}, Router.Spec{}, Config.Development{}, 1})
+    loop(~U32, ~(req => env => env), ~(req => body => env => close => peer => legacy(~app, req, body, env, close, peer)), l, limit, Config.Config{"127.0.0.1", port, limit, 65536, 5000, 10000, 30000, 30000, 1, False{}, Router.Spec{}, Config.Development{}, 1})
 
 def serve(~app: R.Req -> List<&2, U32> -> List<&2, U32>, port: U32) -> IO(Unit):
   serve_config(~app, defaults(port))
@@ -371,7 +393,7 @@ def startup_serving(~validator: Validate.Job -> Validate.Answer, ~Tag: Data, ~se
       do IO<Unit>:
         IO.print(Manifest.json(Tag, table))
         IO.exit(0)
-    case Config.Config{+host, +fallback, +limit, header_limit, idle, head, body, max_requests, keep_alive, router, mode, workers} False{}:
+    case Config.Config{+host, +fallback, +limit, header_limit, idle, head, body, write, max_requests, keep_alive, router, mode, workers} False{}:
       do IO<Unit>:
         +layers : List<&2, Table.Middleware<Tag>> = Table.layers(Tag, table)
         # Computed once: requests to a table without schemas skip every lookup (BND-96).

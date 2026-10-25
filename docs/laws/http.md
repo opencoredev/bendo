@@ -1,8 +1,9 @@
 # HTTP laws
 
 These laws cover the request parser, response framing, HTTP dates, conditional
-requests, media types and error responses. See the [laws index](README.md) for
-how to read an entry and for the laws on other areas.
+requests, the response write deadline, media types and error responses. See
+the [laws index](README.md) for how to read an entry and for the laws on other
+areas.
 
 ## Request parsing
 
@@ -100,6 +101,21 @@ caching](../limits-cache.md).
 - `conditional_304_spec`: a 304 built from a response keeps only its cache metadata headers, in order and with duplicates, and drops the body, the representation length and the content and framing headers.
 - `etag_middleware_spec`: the ETag middleware leaves every ineligible response untouched. An eligible buffered 200 response to GET or HEAD gets its body's validator and becomes exactly the 304 above when the request's `If-None-Match` matches it.
 - `body_limit_spec`: the body limit accepts a length exactly when it is at most the limit, for every length.
+
+## Response write deadline
+
+A buffered response goes out in windows of the server's write timeout. These
+laws pin the decision taken after each window that ends with bytes still
+unsent: send another window only if the client accepted some of them during
+this one. A client that keeps reading is never cut off, and one that stops
+reading is closed. The socket loop around the decision is IO, covered by
+`tests/write-deadline.test.ts`.
+See [decision 0009](../decisions/0009-connections.md#write-deadline).
+
+- `write_progress_continues`: a window that ends with fewer bytes unsent than it started with sends another window, for every count.
+- `write_stall_closes`: a window that ends with no fewer bytes unsent than it started with closes the connection, for every count.
+- `write_opening_continues`: the first send, which takes only what the socket accepts at once, always continues to a window.
+- `write_timeout_default`: the default write timeout in `B.config()` is 30,000 ms.
 
 ## Media types and whitespace
 

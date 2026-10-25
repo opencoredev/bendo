@@ -116,8 +116,8 @@ config field:
 
 ```bend
 def with_router(config: Config.Config, kind: B.RouterKind) -> Config.Config:
-  Config.Config{host, port, limit, headers, idle, head, body, max, keep, old, mode, workers} = config
-  Config.Config{host, port, limit, headers, idle, head, body, max, keep, kind, mode, workers}
+  Config.Config{host, port, limit, headers, idle, head, body, write, max, keep, old, mode, workers} = config
+  Config.Config{host, port, limit, headers, idle, head, body, write, max, keep, kind, mode, workers}
 ```
 
 There is no reason to pick `B.spec()` in production; it exists so the
