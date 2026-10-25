@@ -46,7 +46,9 @@ still selects its hooks. See [decision 0010](../decisions/0010-hooks.md) and
 
 At startup the server indexes the scoped layers by route identity and keeps
 the global layers in their own list, so a request reads its own route's hooks
-and never walks another route's (BND-82, [decision 0014](../decisions/0014-performance.md)).
+and, in apps with up to 65,536 routes, never walks another route's. Past that,
+routes whose identities share their low 16 bits share a bucket, and selection
+still filters by the full identity (BND-82, [decision 0014](../decisions/0014-performance.md)).
 These laws say the index changes nothing that is selected. The first five hold
 for every layer list, not only built ones, so every law above carries over to
 the index.
